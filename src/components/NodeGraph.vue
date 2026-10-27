@@ -43,7 +43,13 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ close: []; run: []; group: [ids: string[]] }>();
 const flowId = `graph-${props.block.id}`;
-const { fitView, screenToFlowCoordinate, getSelectedNodes } = useVueFlow({
+const {
+  fitView,
+  screenToFlowCoordinate,
+  getSelectedNodes,
+  findNode,
+  vueFlowRef,
+} = useVueFlow({
   id: flowId,
 });
 const notice = ref(""),
@@ -179,8 +185,39 @@ function updateWire(event: EdgeUpdateEvent) {
   graph.value.edges = graph.value.edges.filter((e) => e.id !== old.id);
   if (!connect(event.connection)) graph.value.edges.push(old);
 }
+// Vue Flow divides screen-space handle offsets by its internal zoom only.
+// Our canvas also scales the entire editor, so measure against the node's
+// actual screen scale to keep socket coordinates in unscaled node space.
+function measureSockets(id: string) {
+  const node = findNode(id);
+  const element = vueFlowRef.value?.querySelector<HTMLElement>(
+    `.vue-flow__node[data-id="${CSS.escape(id)}"]`,
+  );
+  if (!node || !element?.offsetWidth || !element.offsetHeight) return;
+  const box = element.getBoundingClientRect();
+  const scaleX = box.width / element.offsetWidth;
+  const scaleY = box.height / element.offsetHeight;
+  if (!scaleX || !scaleY) return;
+  for (const type of ["source", "target"] as const) {
+    const handles = [
+      ...element.querySelectorAll<HTMLElement>(`.vue-flow__handle.${type}`),
+    ];
+    for (const bounds of node.handleBounds[type] || []) {
+      const handle = handles.find(
+        (handle) => handle.getAttribute("data-handleid") === bounds.id,
+      );
+      if (!handle) continue;
+      const handleBox = handle.getBoundingClientRect();
+      bounds.x = (handleBox.left - box.left) / scaleX;
+      bounds.y = (handleBox.top - box.top) / scaleY;
+      bounds.width = handle.offsetWidth;
+      bounds.height = handle.offsetHeight;
+    }
+  }
+}
 function nodeChanges(changes: NodeChange[]) {
   for (const change of changes) {
+    if (change.type === "dimensions") measureSockets(change.id);
     if (change.type === "position" && change.position)
       graph.value.positions[change.id] = { ...change.position };
     if (change.type === "remove") remove(change.id);

@@ -168,6 +168,97 @@ test("graph entrance starts after nodes are framed and moves smoothly without ch
   await page.screenshot({ path: "artifacts/graph-refined.png" });
 });
 
+for (const canvasZoom of [0.55, 1, 1.35]) {
+  test(`wire endpoints meet their sockets at canvas zoom ${canvasZoom}`, async ({
+    page,
+  }) => {
+    const { w, button } = fixture();
+    await seed(page, w);
+    if (canvasZoom !== 1) {
+      await page.mouse.move(670, 455);
+      await page.keyboard.down("Control");
+      await page.mouse.wheel(0, -Math.log(canvasZoom) / 0.0025);
+      await page.keyboard.up("Control");
+      await expect
+        .poll(() =>
+          page
+            .locator(".canvas-plane")
+            .evaluate(
+              (el) => new DOMMatrixReadOnly(getComputedStyle(el).transform).a,
+            ),
+        )
+        .toBeCloseTo(canvasZoom, 2);
+    }
+    await graph(page);
+    await expect(page.locator(".node-workspace")).toHaveCSS(
+      "transform",
+      "none",
+    );
+    const measureErrors = () =>
+      page.locator(".vue-flow__edge").evaluateAll(
+        (edges, ids) =>
+          edges.map((edge, index) => {
+            const path = edge.querySelector<SVGPathElement>(
+              ".vue-flow__edge-path",
+            )!;
+            const source = document.querySelector<HTMLElement>(
+              `.vue-flow__node[data-id="${index === 0 ? "trigger" : ids[index - 1]}"] .source`,
+            );
+            const target = document.querySelector<HTMLElement>(
+              `.vue-flow__node[data-id="${ids[index]}"] .target`,
+            );
+            const matrix = path.getScreenCTM()!;
+            const distance = (
+              point: DOMPoint,
+              handle: HTMLElement | null,
+              side: "left" | "right",
+            ) => {
+              if (!handle) return Infinity;
+              const screen = point.matrixTransform(matrix),
+                box = handle.getBoundingClientRect();
+              return Math.hypot(
+                screen.x - box[side],
+                screen.y - box.y - box.height / 2,
+              );
+            };
+            return [
+              distance(path.getPointAtLength(0), source, "right"),
+              distance(
+                path.getPointAtLength(path.getTotalLength()),
+                target,
+                "left",
+              ),
+            ];
+          }),
+        button.rules.map((rule) => rule.id),
+      );
+    await expect
+      .poll(async () => Math.max(...(await measureErrors()).flat()))
+      .toBeLessThan(1.25);
+    const head = (await page
+      .locator(".trigger-node .node-drag")
+      .boundingBox())!;
+    await page.mouse.move(head.x + head.width / 2, head.y + head.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(
+      head.x + head.width / 2 + 25,
+      head.y + head.height / 2 + 35,
+      { steps: 5 },
+    );
+    await page.mouse.up();
+    await expect
+      .poll(async () => Math.max(...(await measureErrors()).flat()))
+      .toBeLessThan(1.25);
+    await page.getByRole("button", { name: "Frame", exact: true }).click();
+    await expect
+      .poll(async () => Math.max(...(await measureErrors()).flat()))
+      .toBeLessThan(1.25);
+    await page.screenshot({
+      path: `artifacts/graph-sockets-${canvasZoom}.png`,
+    });
+  });
+}
+
 test("Add node menu closes outside the menu, including graph panning and outer canvas", async ({
   page,
 }) => {
