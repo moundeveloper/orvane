@@ -6,10 +6,10 @@ test("new components and nodes reveal once; restoring an app has a brief arrival
   await page.goto("/");
   await page.getByRole("button", { name: "Create app", exact: true }).click();
   const app = page.locator(".canvas-app").last();
+  await app.getByRole("button", { name: "Build app", exact: true }).click();
   await app
     .getByRole("textbox", { name: "App name", exact: true })
     .fill("Motion workbench");
-  await app.getByRole("button", { name: "Build app", exact: true }).click();
   await app.getByRole("button", { name: "Add your first component" }).click();
   await app.getByRole("button", { name: "Button", exact: true }).click();
   const calls = () =>
@@ -88,7 +88,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("real app rows, values and checkbox feedback animate without delaying data", async ({
+test("rows and values animate while checkbox changes have no background flash", async ({
   page,
 }) => {
   await page.goto("/");
@@ -148,7 +148,7 @@ test("real app rows, values and checkbox feedback animate without delaying data"
     calls.some(
       (c) => c.frames[0]?.backgroundColor === "#e0ebf2" && c.duration === 180,
     ),
-  ).toBe(true);
+  ).toBe(false);
   await page
     .locator(".list-item")
     .filter({ hasText: "A small, visible change" })

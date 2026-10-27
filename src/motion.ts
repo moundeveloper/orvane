@@ -1,7 +1,7 @@
 import type { ObjectDirective } from "vue";
 
 type MotionKind =
-  "popover" | "panel" | "app" | "reveal" | "value" | "feedback" | "fade";
+  "popover" | "panel" | "app" | "reveal" | "value" | "workspace" | "fade";
 interface MotionOptions {
   kind: MotionKind;
   state?: unknown;
@@ -16,7 +16,7 @@ const durations: Record<MotionKind, number> = {
   app: 170,
   reveal: 160,
   value: 130,
-  feedback: 180,
+  workspace: 240,
   fade: 130,
 };
 
@@ -35,16 +35,10 @@ function animate(element: HTMLElement, options: MotionOptions) {
     interrupted = previous?.playState === "running";
   const current = interrupted ? getComputedStyle(element) : undefined;
   const fromOpacity = current?.opacity,
-    fromTransform = current?.transform,
-    fromBackground = current?.backgroundColor;
+    fromTransform = current?.transform;
   cancel(element);
   let frames: Keyframe[];
-  if (options.kind === "feedback")
-    frames = [
-      { backgroundColor: fromBackground || "#e0ebf2" },
-      { backgroundColor: "transparent" },
-    ];
-  else {
+  {
     const offset =
       options.kind === "popover"
         ? "translateY(-3px)"
@@ -52,12 +46,20 @@ function animate(element: HTMLElement, options: MotionOptions) {
           ? "translateX(4px)"
           : options.kind === "app"
             ? "translateY(5px)"
-            : options.kind === "reveal"
-              ? "translateY(3px)"
-              : "none";
+            : options.kind === "workspace"
+              ? "translateX(8px)"
+              : options.kind === "reveal"
+                ? "translateY(3px)"
+                : "none";
     frames = [
       {
-        opacity: fromOpacity || (options.kind === "value" ? 0.5 : 0.2),
+        opacity:
+          fromOpacity ||
+          (options.kind === "workspace"
+            ? 0
+            : options.kind === "value"
+              ? 0.5
+              : 0.2),
         transform: fromTransform || offset,
       },
       { opacity: 1, transform: "none" },

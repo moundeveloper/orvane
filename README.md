@@ -14,7 +14,7 @@ Open the local URL Vite prints. Four editable examples (Daily list, Notes, Tally
 ## Canvas
 
 - Drag empty space, Space-drag, or middle-drag to pan. Ctrl/Command-scroll or pinch on the background to zoom. Wheel zoom eases continuously toward the requested scale, anchored at the pointer. A single translate/scale transform is used throughout motion and at rest. There is no CSS-zoom handoff, end-of-gesture resize or forced blur/sharpen pass. Frame timing is measured only between animation-frame timestamps; the first frame cannot run backward. App dimensions, text layout and iframe viewports stay unchanged.
-- Alt/Option-drag an app to move it; drag any edge or corner to resize. App options also expose numeric position and size for keyboard and touch access.
+- Drag an app header to move it, or Alt/Option-drag its surface; drag any edge or corner to resize. Titles are editable only in Build mode. Header controls and title inputs keep their normal behavior. App options also expose numeric position and size for keyboard and touch access.
 - Dock tabs pan to apps while preserving their state and dimensions. Drag tabs to reorder, or focus a tab and press Alt+Left/Right. Search matches names and spatial groups. Use Groups in the top bar, or click a group label, to create/name groups and select their apps. Group bounds follow member positions without moving or resizing any app; Go to group pans without changing zoom. Ungroup apps keeps the apps and their content.
 - Defaults: **N** creates an app, **K** searches, **H** centers the canvas. Customize these in Workspace. Global shortcuts defer to text fields.
 

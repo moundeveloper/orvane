@@ -102,16 +102,9 @@ const sandboxDocument = (code: string) => {
         type="checkbox"
         v-model="block.checked"
         @change="emit('run', block)"
-      /><span
-        v-motion="{
-          kind: 'feedback',
-          state: block.checked,
-          initial: false,
-          enabled: !editing,
-        }"
-        :class="{ completed: block.checked }"
-        >{{ block.label }}</span
-      ></label
+      /><span :class="{ completed: block.checked }">{{
+        block.label
+      }}</span></label
     >
     <div v-else-if="block.kind === 'list'" class="runtime-list">
       <div class="list-title">
@@ -137,12 +130,6 @@ const sandboxDocument = (code: string) => {
         }"
         ><input type="checkbox" v-model="item.done" /><span
           :class="{ completed: item.done }"
-          v-motion="{
-            kind: 'feedback',
-            state: item.done,
-            initial: false,
-            enabled: !editing,
-          }"
           >{{ item.text }}</span
         ><button
           class="icon-button remove-item"

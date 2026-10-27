@@ -365,7 +365,17 @@ function touchEnd(e: PointerEvent) {
 function pointerDown(e: PointerEvent, app?: CanvasApp, edge = "") {
   if (pinch) return;
   if (e.button !== 0 && e.button !== 1) return;
-  if (!edge && app && !e.altKey && !space.value && e.button !== 1) {
+  if (app) active.value = app.id;
+  const target = e.target as HTMLElement;
+  const headerDrag =
+    !!app &&
+    !!target.closest(".app-topline") &&
+    !target.closest(
+      "button,input,textarea,select,a,[contenteditable],.floating-panel",
+    );
+  const moveApp =
+    !!app && (e.altKey || (headerDrag && !space.value && e.button === 0));
+  if (!edge && app && !moveApp && !space.value && e.button !== 1) {
     active.value = app.id;
     return;
   }
@@ -382,11 +392,11 @@ function pointerDown(e: PointerEvent, app?: CanvasApp, edge = "") {
   (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   dragging.value = true;
   gesture = {
-    type: edge ? "resize" : app && e.altKey ? "move" : "pan",
+    type: edge ? "resize" : moveApp ? "move" : "pan",
     px: e.clientX,
     py: e.clientY,
-    x: app && (edge || e.altKey) ? app.x : camera.x,
-    y: app && (edge || e.altKey) ? app.y : camera.y,
+    x: app && (edge || moveApp) ? app.x : camera.x,
+    y: app && (edge || moveApp) ? app.y : camera.y,
     width: app?.width || 0,
     height: app?.height || 0,
     app,
@@ -1050,7 +1060,7 @@ onBeforeUnmount(() => {
       <div class="gesture-row">
         <Icon name="app" /><span
           >Move an app<small
-            >Hold Alt / Option and drag its surface</small
+            >Drag its header, or Alt / Option-drag its surface</small
           ></span
         >
       </div>

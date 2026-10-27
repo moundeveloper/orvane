@@ -66,6 +66,108 @@ async function graph(page: import("@playwright/test").Page, count = 3) {
   await expect(page.locator(".vue-flow__node")).toHaveCount(count);
 }
 
+test("app headers drag directly and titles are editable only in Build mode", async ({
+  page,
+}) => {
+  const { w } = fixture();
+  await seed(page, w);
+  const app = page.locator(".canvas-app");
+  await expect(
+    app.getByRole("textbox", { name: "App name", exact: true }),
+  ).toHaveCount(0);
+  const before = (await app.boundingBox())!;
+  const camera = await page.locator(".canvas-plane").getAttribute("style");
+  const title = (await app.locator(".app-title").boundingBox())!;
+  await page.mouse.move(title.x + 25, title.y + title.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(title.x + 110, title.y + title.height / 2 + 45, {
+    steps: 8,
+  });
+  await page.mouse.up();
+  const after = (await app.boundingBox())!;
+  expect(after.x - before.x).toBeCloseTo(85, 0);
+  expect(after.y - before.y).toBeCloseTo(45, 0);
+  expect(await page.locator(".canvas-plane").getAttribute("style")).toBe(
+    camera,
+  );
+  await app.getByRole("button", { name: "Build app", exact: true }).click();
+  const name = app.getByRole("textbox", { name: "App name", exact: true });
+  await name.fill("Renamed in Build");
+  await name.selectText();
+  expect((await app.boundingBox())!.x).toBe(after.x);
+  await app.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(name).toHaveCount(0);
+  await expect(app.locator(".app-title")).toHaveText("Renamed in Build");
+  await page.reload();
+  await expect(app.locator(".app-title")).toHaveText("Renamed in Build");
+  expect((await app.boundingBox())!.x).toBe(after.x);
+});
+
+test("graph entrance starts after nodes are framed and moves smoothly without changing their layout", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = Element.prototype.animate;
+    const samples: { opacity: number; x: number; viewport: string }[] = [];
+    (window as unknown as { graphSamples: typeof samples }).graphSamples =
+      samples;
+    Element.prototype.animate = function (frames, options) {
+      const animation = original.call(this, frames, options);
+      if (this.classList.contains("node-workspace")) {
+        const start = performance.now();
+        const sample = () => {
+          const css = getComputedStyle(this);
+          samples.push({
+            opacity: Number(css.opacity),
+            x: new DOMMatrixReadOnly(css.transform).m41,
+            viewport:
+              this.querySelector(".vue-flow__transformationpane")?.getAttribute(
+                "style",
+              ) || "",
+          });
+          if (performance.now() - start < 320) requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      }
+      return animation;
+    };
+  });
+  const { w } = fixture();
+  await seed(page, w);
+  await graph(page);
+  await expect(page.locator(".node-workspace")).toHaveAttribute(
+    "data-ready",
+    "true",
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as unknown as { graphSamples: unknown[] }).graphSamples
+            .length,
+      ),
+    )
+    .toBeGreaterThan(5);
+  await expect(page.locator(".node-workspace")).toHaveCSS("transform", "none");
+  const samples = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          graphSamples: { opacity: number; x: number; viewport: string }[];
+        }
+      ).graphSamples,
+  );
+  expect(samples.some((s) => s.opacity < 0.95 && s.x > 0)).toBe(true);
+  expect(new Set(samples.map((s) => s.viewport)).size).toBe(1);
+  for (let i = 1; i < samples.length; i++) {
+    expect(samples[i]!.x).toBeLessThanOrEqual(samples[i - 1]!.x + 0.01);
+    expect(samples[i]!.opacity).toBeGreaterThanOrEqual(
+      samples[i - 1]!.opacity - 0.01,
+    );
+  }
+  await page.screenshot({ path: "artifacts/graph-refined.png" });
+});
+
 test("Add node menu closes outside the menu, including graph panning and outer canvas", async ({
   page,
 }) => {
@@ -270,6 +372,7 @@ test("app name releases focus on canvas, other apps and dock without losing the 
 }) => {
   const { w } = fixture();
   await seed(page, w);
+  await page.getByRole("button", { name: "Build app", exact: true }).click();
   const name = page.getByRole("textbox", { name: "App name", exact: true });
   await name.fill("A name that stays");
   await page.mouse.click(30, 65);

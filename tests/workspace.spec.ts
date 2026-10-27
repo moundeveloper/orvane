@@ -36,10 +36,10 @@ test("empty start, creation, edit, archive, restore and reload", async ({
   await page.screenshot({ path: "artifacts/empty-desktop.png" });
   await page.getByRole("button", { name: "Create app", exact: true }).click();
   await expect(page.locator(".canvas-app")).toHaveCount(1);
+  await page.getByRole("button", { name: "Build app", exact: true }).click();
   await page
     .getByRole("textbox", { name: "App name", exact: true })
     .fill("Daily notes");
-  await page.getByRole("button", { name: "Build app", exact: true }).click();
   await page.getByRole("button", { name: "Add your first component" }).click();
   await page.getByRole("button", { name: "Text", exact: true }).click();
   await page
@@ -70,10 +70,10 @@ test("builds and runs an explicit add-item → clear-field chain", async ({
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Create app", exact: true }).click();
+  await page.getByRole("button", { name: "Build app", exact: true }).click();
   await page
     .getByRole("textbox", { name: "App name", exact: true })
     .fill("A small list");
-  await page.getByRole("button", { name: "Build app", exact: true }).click();
   const add = async (name: string) => {
     await page
       .getByRole("button", { name: "Add component", exact: true })
@@ -151,6 +151,7 @@ test("gestures preserve app input ownership; move and resize persist", async ({
   await page.mouse.up();
   const resized = (await app.boundingBox())!;
   expect(Math.round(resized.width - moved.width)).toBe(50);
+  await page.getByRole("button", { name: "Build app", exact: true }).click();
   await page
     .getByRole("textbox", { name: "App name", exact: true })
     .fill("nkh space typing");
@@ -178,10 +179,10 @@ test("small-screen creation and search are usable", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.getByRole("button", { name: "Create app", exact: true }).click();
+  await page.getByRole("button", { name: "Build app", exact: true }).click();
   await page
     .getByRole("textbox", { name: "App name", exact: true })
     .fill("Pocket notes");
-  await page.getByRole("button", { name: "Build app", exact: true }).click();
   await page.getByRole("button", { name: "Add your first component" }).click();
   await page.getByRole("button", { name: "Counter", exact: true }).click();
   await page.getByRole("button", { name: "Done", exact: true }).click();
@@ -225,9 +226,13 @@ test("cross-app actions use stable IDs, survive rename and fail visibly after ar
   );
   await page.goto("/");
   await page
+    .getByRole("region", { name: "Receiver", exact: true })
+    .getByRole("button", { name: "Build app", exact: true })
+    .click();
+  await page
     .getByRole("textbox", { name: "App name", exact: true })
-    .nth(1)
     .fill("Renamed receiver");
+  await page.getByRole("button", { name: "Done", exact: true }).click();
   await page
     .getByRole("textbox", { name: "A message", exact: true })
     .fill("An explicit connection");
@@ -362,6 +367,10 @@ test("storage failure is visible without blocking app use", async ({
   await expect(page.locator(".status-area")).toContainText(
     "Saving is unavailable",
   );
+  await page
+    .getByRole("button", { name: "Build app", exact: true })
+    .last()
+    .click();
   await page
     .getByRole("textbox", { name: "App name", exact: true })
     .fill("Still usable");

@@ -167,8 +167,8 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
 }
 .spatial-group {
   position: absolute;
-  border: 1px solid #c9d7e140;
-  background: #d4e0e91a;
+  border: 1px solid #a2b5c2;
+  background: #d4e0e933;
   border-radius: 10px;
   pointer-events: none;
   z-index: 0;

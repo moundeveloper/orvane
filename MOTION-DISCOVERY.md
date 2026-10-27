@@ -44,4 +44,6 @@ Follow-up delegation: “commit and add animations where it makes sense” with 
 
 ## Open details
 
+Subsequent live feedback rejects the checkbox background flash: the previous quiet-highlight candidate is superseded for both standalone and list checkboxes. Checking now changes only the checked/completed state. The user also reports graph entry flashing into place; the workbench now waits for measured nodes and initial framing before a coordinated 240ms opacity/8px entrance. No graph layout or camera scale is animated during that entrance. Group boundaries are strengthened, headers become directly draggable, and titles are editable only in Build mode per the same request.
+
 Taste feedback on the live defaults, any refinements to timings, and whether further C/B/A interviews are useful. Natural data-driven layout changes happen immediately; no extra animated reflow is introduced. Do not present implementation defaults as explicitly selected taste decisions.

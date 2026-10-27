@@ -51,6 +51,13 @@ const notice = ref(""),
   selectedEdge = ref("");
 const addTrigger = ref<HTMLButtonElement>();
 const addMenu = ref<HTMLDivElement>();
+const ready = ref(false);
+async function prepareGraph() {
+  if (ready.value) return;
+  await fitView({ padding: 0.16, maxZoom: 1, duration: 0 });
+  await nextTick();
+  ready.value = true;
+}
 function closeAddMenu() {
   addOpen.value = false;
 }
@@ -248,7 +255,9 @@ function disconnectInput(id: string) {
 <template>
   <div
     class="node-workspace"
-    v-motion="{ kind: 'fade' }"
+    v-motion="{ kind: 'workspace', show: ready, initial: false }"
+    :style="{ opacity: ready ? undefined : 0 }"
+    :data-ready="ready"
     @pointerdown.stop
     @wheel.stop
   >
@@ -299,7 +308,7 @@ function disconnectInput(id: string) {
         @edges-change="edgeChanges"
         @edge-click="selectedEdge = $event.edge.id"
         @pane-click="selectedEdge = ''"
-        @init="fitView({ padding: 0.16, maxZoom: 1 })"
+        @nodes-initialized="prepareGraph"
         ><Background
           :gap="20"
           :size="0.65"

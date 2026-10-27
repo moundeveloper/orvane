@@ -32,6 +32,7 @@ test("backup import validates before replacing and exports the previous workspac
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Create app", exact: true }).click();
+  await page.getByRole("button", { name: "Build app", exact: true }).click();
   await page
     .getByRole("textbox", { name: "App name", exact: true })
     .fill("Keep me safe");

@@ -423,12 +423,16 @@ defineExpose({
   >
     <div class="app-topline">
       <input
+        v-if="editing"
         class="app-name"
         v-model="app.name"
         aria-label="App name"
         placeholder="Untitled app"
         maxlength="80"
       />
+      <span v-else class="app-name app-title" :title="app.name">{{
+        app.name || "Untitled app"
+      }}</span>
       <div class="app-top-actions">
         <button
           v-if="!editing"

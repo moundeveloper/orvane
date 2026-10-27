@@ -310,6 +310,9 @@ button:hover {
   touch-action: auto;
 }
 .app-topline {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -332,6 +335,18 @@ button:hover {
 }
 .app-name:focus {
   background: #edf2f5;
+}
+.app-title {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.app-topline:active {
+  cursor: grabbing;
+}
+.app-topline input {
+  cursor: text;
+  user-select: text;
 }
 .app-top-actions {
   display: flex;
