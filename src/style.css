@@ -297,6 +297,70 @@ button:hover {
   position: absolute;
   container-type: inline-size;
 }
+@property --locator-spread {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 4px;
+}
+.app-locator {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+}
+.app-locator::before,
+.app-locator::after {
+  content: "";
+  position: absolute;
+  inset: calc(var(--locator-spread) * -1);
+  border: 2px solid #718fa3;
+  border-radius: calc(var(--locator-radius, 0px) + var(--locator-spread));
+  animation:
+    app-ripple-spread 1000ms cubic-bezier(0.45, 0, 0.3, 1) both,
+    app-ripple-fade 1000ms ease-in-out both;
+}
+.app-locator::after {
+  animation-name: app-ripple-spread, app-ripple-fade-echo;
+  animation-delay: 320ms;
+}
+@keyframes app-ripple-spread {
+  0% {
+    --locator-spread: 2px;
+  }
+  100% {
+    --locator-spread: 20px;
+  }
+}
+@keyframes app-ripple-fade {
+  0% {
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes app-ripple-fade-echo {
+  0% {
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-locator::before {
+    animation: none;
+  }
+  .app-locator::after {
+    display: none;
+  }
+}
 .app-surface {
   height: 100%;
   width: 100%;
@@ -1295,6 +1359,12 @@ kbd {
   border-radius: 4px;
   text-align: left;
   font-size: 12px;
+}
+.search-results > button.selected {
+  background: #e5ecf0;
+}
+.search-results > button:not(.selected) > svg:last-child {
+  visibility: hidden;
 }
 .search-results > button > span {
   flex: 1;

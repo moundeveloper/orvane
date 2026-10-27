@@ -71,6 +71,23 @@ const filtered = computed(() =>
     `${a.name} ${a.group}`.toLowerCase().includes(query.value.toLowerCase()),
   ),
 );
+const searchIndex = ref(0),
+  searchResults = ref<HTMLElement>();
+watch(query, () => (searchIndex.value = 0));
+function moveSearch(step: number) {
+  const count = filtered.value.length;
+  if (!count) return;
+  searchIndex.value = (searchIndex.value + step + count) % count;
+  nextTick(() =>
+    searchResults.value
+      ?.querySelector(".selected")
+      ?.scrollIntoView({ block: "nearest" }),
+  );
+}
+function commitSearch() {
+  const app = filtered.value[searchIndex.value];
+  if (app) focusApp(app, true);
+}
 const archived = computed(() => workspace.apps.filter((a) => a.archived));
 const selectedGroup = ref(""),
   groupNameInput = ref<HTMLInputElement>();
@@ -229,12 +246,26 @@ function panTo(x: number, y: number, done?: () => void) {
   };
   panFrame = requestAnimationFrame(tick);
 }
-function focusApp(a: CanvasApp) {
+const locatedAppId = ref("");
+const locatorSequence = ref(0);
+let locatorTimer: ReturnType<typeof setTimeout> | undefined;
+function clearLocator() {
+  clearTimeout(locatorTimer);
+  locatedAppId.value = "";
+}
+onBeforeUnmount(clearLocator);
+function focusApp(a: CanvasApp, locate = false) {
+  clearLocator();
   active.value = a.id;
   panTo(
     viewport.width / 2 - (a.x + a.width / 2) * camera.zoom,
     (viewport.height - 80) / 2 - (a.y + a.height / 2) * camera.zoom,
     () => {
+      if (locate) {
+        locatedAppId.value = a.id;
+        locatorSequence.value++;
+        locatorTimer = setTimeout(clearLocator, 1360);
+      }
       const el = lastFocus.get(a.id);
       if (el?.isConnected && document.activeElement?.closest(".dock"))
         el.focus({ preventScroll: true });
@@ -249,6 +280,7 @@ function showSearch() {
     searchOrigin.value = `${button.x + button.width / 2 - (viewport.width - width) / 2}px calc(100% + ${(viewport.width <= 600 ? 76 : 85) - (viewport.height - button.y - button.height / 2)}px)`;
   panel.value = panel.value === "search" ? null : "search";
   query.value = "";
+  searchIndex.value = 0;
   nextTick(() => searchInput.value?.focus({ preventScroll: true }));
 }
 function addExamples() {
@@ -937,6 +969,13 @@ onBeforeUnmount(() => {
         @pointerdown.stop="pointerDown($event, app)"
         @focusin="focusIn($event, app)"
       >
+        <div
+          v-if="locatedAppId === app.id"
+          :key="locatorSequence"
+          class="app-locator"
+          aria-hidden="true"
+          :style="{ '--locator-radius': app.radius + 'px' }"
+        ></div>
         <AppSurface
           :app="app"
           :workspace="workspace"
@@ -1005,11 +1044,20 @@ onBeforeUnmount(() => {
             v-model="query"
             placeholder="Find an app or group…"
             aria-label="Search apps"
-            @keydown.enter="filtered[0] && focusApp(filtered[0])"
+            @keydown.down.prevent="moveSearch(1)"
+            @keydown.up.prevent="moveSearch(-1)"
+            @keydown.enter="commitSearch"
           /><button class="key-cap" @click="panel = null">esc</button>
         </div>
-        <div class="search-results">
-          <button v-for="a in filtered" :key="a.id" @click="focusApp(a)">
+        <div ref="searchResults" class="search-results">
+          <button
+            v-for="(a, i) in filtered"
+            :key="a.id"
+            :class="{ selected: i === searchIndex }"
+            :aria-current="i === searchIndex || undefined"
+            @pointermove="searchIndex = i"
+            @click="focusApp(a, true)"
+          >
             <Icon :name="a.icon" /><span
               >{{ a.name || "Untitled"
               }}<small v-if="a.group">{{ a.group }}</small></span

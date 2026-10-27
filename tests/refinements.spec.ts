@@ -1,5 +1,97 @@
 import { test, expect } from "@playwright/test";
 
+for (const reducedMotion of [false, true]) {
+  test(`search briefly outlines only its destination, reduced motion ${reducedMotion}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({
+      reducedMotion: reducedMotion ? "reduce" : "no-preference",
+    });
+    await page.goto("/");
+    for (const [name, keyboard] of [
+      ["Tally", false],
+      ["Daily list", true],
+    ] as const) {
+      const app = page
+        .locator(".canvas-app")
+        .filter({ has: page.getByRole("region", { name, exact: true }) });
+      const dimensions = await app.evaluate((el) => [
+        (el as HTMLElement).offsetWidth,
+        (el as HTMLElement).offsetHeight,
+      ]);
+      await page
+        .getByRole("button", { name: "Find an app", exact: true })
+        .click();
+      const input = page.getByRole("textbox", {
+        name: "Search apps",
+        exact: true,
+      });
+      await input.fill(name);
+      if (keyboard) await input.press("Enter");
+      else await page.locator(".search-results button").click();
+      const outline = app.locator(".app-locator");
+      await expect(outline).toBeVisible();
+      await expect(page.locator(".app-locator")).toHaveCount(1);
+      await expect(outline).toHaveCSS("opacity", "1");
+      expect(
+        await app.evaluate((el) => [
+          (el as HTMLElement).offsetWidth,
+          (el as HTMLElement).offsetHeight,
+        ]),
+      ).toEqual(dimensions);
+      await expect(outline).toHaveCSS("pointer-events", "none");
+      if (!reducedMotion && !keyboard)
+        await page.screenshot({
+          path: "artifacts/search-destination-outline.png",
+        });
+      if (keyboard) {
+        const field = app.getByRole("textbox", {
+          name: "New task",
+          exact: true,
+        });
+        await field.fill("Still usable during the highlight");
+        await expect(field).toBeFocused();
+      }
+    }
+    await expect(page.locator(".app-locator")).toHaveCount(0);
+  });
+}
+
+test("search arrow keys move the selection and enter opens the selected app", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Find an app", exact: true }).click();
+  const input = page.getByRole("textbox", { name: "Search apps", exact: true });
+  const results = page.locator(".search-results button");
+  const count = await results.count();
+  expect(count).toBeGreaterThan(2);
+  await expect(results.nth(0)).toHaveClass(/selected/);
+  await input.press("ArrowDown");
+  await input.press("ArrowDown");
+  await expect(results.nth(2)).toHaveClass(/selected/);
+  await expect(page.locator(".search-results button.selected")).toHaveCount(1);
+  await input.press("ArrowUp");
+  await expect(results.nth(1)).toHaveClass(/selected/);
+  await input.press("ArrowUp");
+  await input.press("ArrowUp");
+  await expect(results.nth(count - 1)).toHaveClass(/selected/);
+  await input.press("ArrowDown");
+  await input.press("ArrowDown");
+  await expect(input).toBeFocused();
+  const name = (
+    await results
+      .nth(1)
+      .locator("span")
+      .evaluate((el) => el.firstChild?.textContent ?? "")
+  ).trim();
+  await input.press("Enter");
+  const app = page
+    .locator(".canvas-app")
+    .filter({ has: page.getByRole("region", { name, exact: true }) });
+  await expect(app.locator(".app-locator")).toBeVisible();
+});
+
 test("examples install once, calculator works, and the sample cross-app flow is live", async ({
   page,
 }) => {
