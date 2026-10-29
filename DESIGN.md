@@ -1,5 +1,7 @@
 # Orvane interface
 
+Table scrolling rule: headers belong in a separate, opaque, non-scrolling row above the scroll viewport. Only the data rows scroll; their scrollbar starts below the header. Never place a sticky/floating or translucent table header over scrolling rows. Clip rows at the body boundary and keep columns aligned with a shared grid and matching scrollbar gutters. This applies to Projects Hub, Git history, SuiteCloud file lists and future tables. The global canvas header retains its separate frosted treatment.
+
 Live motion: use small local reveals for new list rows, opacity fades for values, and quiet checkbox feedback. Builder panels, newly created apps and popovers receive short simultaneous entry effects; node/code workspaces fade in. Do not animate layout dimensions, gate input, stagger controls, bounce, linger on exit or change the camera pipeline. Repeated effects retarget the current rendered state and reduced motion disables these effects. See MOTION-DISCOVERY.md for user decisions versus implementation defaults.
 
 Mode: Operate. The detailed supplied brief pins the visual world and spatial composition.
@@ -7,6 +9,8 @@ Mode: Operate. The detailed supplied brief pins the visual world and spatial com
 Canvas #e9edf0, app #f7f9fa, text #455968, accent #6f8998. Inter Variable, compact 12–14px controls, 6–10px radii. Sparse dividers, restrained soft offset shadows. A barely visible dot field conveys spatial continuity. The dock is the primary persistent control. The user requested four editable example apps after the initial empty-canvas implementation; these are installed once without replacing existing work. No hero, empty-state CTA or dashboard.
 
 App creation has no wizard. A blank app offers direct naming and a visible Build app entry. Editing is temporary and contained within that app. The hierarchy and contextual controls share one narrow editor area. Shortcuts always defer to text fields. Rendered app dimensions, rather than camera zoom, govern layouts. Reduced motion is honored.
+
+Selecting an app through the dock or search pans and zooms the camera together to fit that app between the current top controls and dock, with quiet edge margins. Small apps zoom in and large apps zoom out; app dimensions, content and mounted state remain unchanged. Navigation waits for contextual hints to lay out before measuring the usable viewport, and newer navigation or direct gestures cancel pending camera movement. Reduced motion applies the final fit without animation.
 
 Follow-up refinements: all fields use a faint surface tint and inset baseline instead of a rectangular focus outline. Keyboard focus stays visible. The workspace and app headers are compact. Popovers dismiss on outside pointerdown, including clicks inside other apps. Search enters and exits with an opacity/scale transition anchored precisely to the dock's search icon, for both button and keyboard entry. Zoom uses continuous frame-based interpolation and one uniform transform at every stage.
 
@@ -16,8 +20,12 @@ Code-app sizing: a standalone code block fills the app content region instead of
 
 Spatial groups use a faint enclosing boundary and small persistent name label. Group management is a compact popover with custom controls, not a folder navigation system. Members remain independently movable. Camera panning and zooming use animation-frame state rather than CSS transitions, so interrupting one gesture with another starts at the actually displayed pose.
 
+Groups can be deliberately dragged from their label or border to move member apps as one unit, preserving their relative offsets and sizes. A simple label click opens management; middle-drag and Space-drag retain canvas panning. Numeric fields use a shared authored text-and-stepper control with muted inline minus/plus buttons, keyboard stepping and committed finite drafts, never browser-native number spinners.
+
 Motion stays local: new builder components and graph nodes fade in over 130ms, restored apps share the brief new-app arrival, and runtime errors fade into view. Existing content does not replay entrances on load. Direct manipulation and dismissal remain immediate; no dimensions or surrounding layout are animated. The shared motion directive retargets interrupted effects from their current appearance and respects reduced motion.
 
 Latest refinement: checkbox labels have no background pulse. Graph entry begins only after nodes have dimensions and the initial viewport is framed, then reveals the complete workbench with an 8px horizontal movement and opacity over 240ms. Group boundaries use a solid muted blue-gray stroke with a light interior tint. App headers drag directly; titles render as text outside Build mode, and controls never start a header drag.
 
 Graph sockets are measured in node-local coordinates using the actual rendered node scale, including the surrounding canvas transform. Vue Flow's internal zoom alone is insufficient when the canvas is zoomed. Recompute socket bounds on node dimension changes so wires remain attached after opening, resizing, dragging and reframing.
+
+Graph wiring controls live in a collapsed-by-default Connections section in the graph toolbar. When opened, labeled Source, Outcome and Target fields share a compact row, with existing-connection selection beside them or below at narrower widths. Toolbar, controls, graph and status occupy separate grid rows so controls cannot cover nodes. Toggling Connections retains the graph's current pan and zoom. Live wire dragging and reconnection convert screen coordinates into unscaled viewport coordinates before Vue Flow applies its own transform; target hit testing uses the actual pointer location on screen. Escape, pointer cancellation and window blur clear the live connection without deleting the original wire.

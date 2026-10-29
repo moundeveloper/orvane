@@ -1,6 +1,18 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, watch } from "vue";
-import type { Block } from "../model";
+import {
+  onMounted,
+  onBeforeUnmount,
+  ref,
+  watch,
+  defineAsyncComponent,
+} from "vue";
+const GitViewer = defineAsyncComponent(() => import("./GitViewer.vue"));
+const NotesView = defineAsyncComponent(() => import("./notes/NotesView.vue"));
+const BrowserView = defineAsyncComponent(() => import("./BrowserView.vue"));
+const ProjectsHub = defineAsyncComponent(
+  () => import("./projects/ProjectsHub.vue"),
+);
+import { uid, type Block } from "../model";
 import Icon from "./Icon.vue";
 import { vMotion } from "../motion";
 const props = defineProps<{
@@ -20,7 +32,7 @@ function addItem(b: Block, e: Event) {
   const input = e.target as HTMLInputElement;
   if (input.value.trim()) {
     b.items.push({
-      id: crypto.randomUUID(),
+      id: uid(),
       text: input.value.trim(),
       done: false,
     });
@@ -39,10 +51,19 @@ function onMessage(event: MessageEvent) {
 }
 onMounted(() => window.addEventListener("message", onMessage));
 onBeforeUnmount(() => window.removeEventListener("message", onMessage));
+const runningCode = ref(props.block.code);
+let codeTimer: ReturnType<typeof setTimeout>;
 watch(
   () => props.block.code,
-  () => (frameError.value = ""),
+  (code) => {
+    clearTimeout(codeTimer);
+    codeTimer = setTimeout(() => {
+      runningCode.value = code;
+      frameError.value = "";
+    }, 450);
+  },
 );
+onBeforeUnmount(() => clearTimeout(codeTimer));
 const sandboxDocument = (code: string) => {
   const scrollbars = `<style>:root{color-scheme:light;scrollbar-width:thin;scrollbar-color:#b8cbd6 transparent}*{scrollbar-width:thin;scrollbar-color:#b8cbd6 transparent}::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#b8cbd6;border-radius:3px}::-webkit-scrollbar-button{display:none;width:0;height:0}</style>`;
   const gutter = `<style>html.orvane-scroll-y{box-sizing:border-box;padding-inline-end:10px}</style><script>(()=>{let pending=false;const update=()=>{pending=false;const root=document.documentElement;const needed=root.scrollHeight>innerHeight+1;if(root.classList.contains('orvane-scroll-y')!==needed)root.classList.toggle('orvane-scroll-y',needed)};const schedule=()=>{if(!pending){pending=true;requestAnimationFrame(update)}};addEventListener('DOMContentLoaded',()=>{new ResizeObserver(schedule).observe(document.body);new MutationObserver(schedule).observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true});schedule()});addEventListener('resize',schedule)})();<\/script>`;
@@ -70,8 +91,28 @@ const sandboxDocument = (code: string) => {
       @click.stop="emit('select', block.id)"
       :aria-label="`Edit ${block.label}`"
     ></div>
+    <NotesView
+      v-if="block.kind === 'notes'"
+      :block="block"
+      :editing="editing"
+    />
+    <BrowserView
+      v-else-if="block.kind === 'browser'"
+      :block="block"
+      :editing="editing"
+    />
+    <ProjectsHub
+      v-else-if="block.kind === 'projects'"
+      :block="block"
+      :editing="editing"
+    />
+    <GitViewer
+      v-else-if="block.kind === 'git'"
+      :block="block"
+      :editing="editing"
+    />
     <h2
-      v-if="block.kind === 'text'"
+      v-else-if="block.kind === 'text'"
       class="app-text"
       v-motion="{
         kind: 'fade',
@@ -200,7 +241,7 @@ const sandboxDocument = (code: string) => {
         ref="frame"
         :title="block.label"
         sandbox="allow-scripts"
-        :srcdoc="sandboxDocument(block.code)"
+        :srcdoc="sandboxDocument(runningCode)"
         class="custom-frame"
         :style="
           !fillHeight && block.height

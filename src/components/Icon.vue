@@ -39,6 +39,14 @@ import {
   Workflow,
   Play,
   ExternalLink,
+  GitBranch,
+  Globe,
+  ArrowRight,
+  GitCommitHorizontal,
+  Folder,
+  FolderOpen,
+  RefreshCw,
+  FileText,
 } from "@lucide/vue";
 const props = withDefaults(defineProps<{ name: string; size?: number }>(), {
   size: 16,
@@ -60,6 +68,7 @@ const icons: Record<string, unknown> = {
   list: List,
   counter: Hash,
   divider: Minus,
+  minus: Minus,
   container: Columns2,
   code: Code2,
   back: ArrowLeft,
@@ -83,6 +92,14 @@ const icons: Record<string, unknown> = {
   workflow: Workflow,
   play: Play,
   external: ExternalLink,
+  git: GitBranch,
+  globe: Globe,
+  forward: ArrowRight,
+  commit: GitCommitHorizontal,
+  folder: Folder,
+  "folder-open": FolderOpen,
+  refresh: RefreshCw,
+  file: FileText,
 };
 const icon = computed(() => icons[props.name] || LayoutGrid);
 </script>

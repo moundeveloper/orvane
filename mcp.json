@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "orvane": {
+      "command": "node",
+      "args": ["C:/Projects/Orvane/server/launch.mjs"]
+    }
+  }
+}

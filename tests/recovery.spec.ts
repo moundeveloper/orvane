@@ -5,7 +5,7 @@ test.beforeEach(async ({ page }) => {
       localStorage.setItem("orvane.examples.v1", "installed"),
   );
 });
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { emptyWorkspace, makeBlock, uid, type CanvasApp } from "../src/model";
 function fixtureApp(name: string, x = 140): CanvasApp {
   return {
@@ -27,7 +27,7 @@ function fixtureApp(name: string, x = 140): CanvasApp {
   };
 }
 
-test("backup import validates before replacing and exports the previous workspace", async ({
+test("backup import previews replacement and retains a local recovery snapshot", async ({
   page,
 }) => {
   await page.goto("/");
@@ -48,14 +48,19 @@ test("backup import validates before replacing and exports the previous workspac
   await expect(page.locator(".dock-tab")).toContainText("Keep me safe");
   const replacement = emptyWorkspace();
   replacement.apps = [fixtureApp("Restored backup")];
-  const downloaded = page.waitForEvent("download");
+  const downloads: string[] = [];
+  page.on("download", (d) => downloads.push(d.suggestedFilename()));
   await file.setInputFiles({
     name: "backup.json",
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify(replacement)),
   });
-  const backup = await downloaded;
-  expect(backup.suggestedFilename()).toMatch(/^orvane-.*\.json$/);
+  await expect(
+    page.getByRole("dialog", { name: "Backup import preview" }),
+  ).toBeVisible();
+  await expect(page.locator(".dock-tab")).toContainText("Keep me safe");
+  await page.getByRole("button", { name: "Replace", exact: true }).click();
+  expect(downloads).toEqual([]);
   await expect(page.locator(".dock-tab")).toContainText("Restored backup");
   await expect(page.locator(".status-area")).toHaveCount(0);
   await page.waitForTimeout(250);

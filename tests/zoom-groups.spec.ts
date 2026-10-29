@@ -1,4 +1,5 @@
-import { test, expect } from "@playwright/test";
+import { readStored } from "./storage-helper";
+import { test, expect } from "./fixtures";
 
 test("rendered apps, text and iframes keep one scale throughout zoom and after settling", async ({
   page,
@@ -7,6 +8,8 @@ test("rendered apps, text and iframes keep one scale throughout zoom and after s
   await page.evaluate(async () => {
     await document.fonts.ready;
   });
+  await expect(page.locator(".canvas-app").first()).toBeVisible();
+  await expect(page.locator("iframe").first()).toBeVisible();
   async function trace(delta: number) {
     const recording = page.evaluate(
       () =>
@@ -106,13 +109,10 @@ test("groups are visible, editable, persistent and do not bind app movement", as
     .getByRole("checkbox", { name: "Include Notes in group", exact: true })
     .check();
   await expect(page.locator(".spatial-group")).toHaveCount(2);
-  const stored = await page.evaluate(() => {
-    const data = JSON.parse(localStorage.getItem("orvane.workspace.v1")!);
-    return data.apps.map((a: { name: string; id: string }) => ({
-      name: a.name,
-      id: a.id,
-    }));
-  });
+  const stored = (await readStored(page)).apps.map((a) => ({
+    name: a.name,
+    id: a.id,
+  }));
   await page.getByRole("button", { name: "Close groups", exact: true }).click();
   const first = page.locator(".canvas-app").filter({
       has: page.getByRole("region", { name: "Daily list", exact: true }),

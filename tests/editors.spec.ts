@@ -1,4 +1,5 @@
-import { test, expect } from "@playwright/test";
+import { readStored } from "./storage-helper";
+import { test, expect } from "./fixtures";
 import { emptyWorkspace, makeBlock, uid, type CanvasApp } from "../src/model";
 function fixture() {
   const w = emptyWorkspace();
@@ -169,6 +170,121 @@ test("graph entrance starts after nodes are framed and moves smoothly without ch
 });
 
 for (const canvasZoom of [0.55, 1, 1.35]) {
+  test(`live wire follows the cursor and drops on its actual target at canvas zoom ${canvasZoom}`, async ({
+    page,
+  }) => {
+    const { w, button } = fixture();
+    await seed(page, w);
+    if (canvasZoom !== 1) {
+      await page.mouse.move(670, 455);
+      await page.keyboard.down("Control");
+      await page.mouse.wheel(0, -Math.log(canvasZoom) / 0.0025);
+      await page.keyboard.up("Control");
+      await expect
+        .poll(() =>
+          page
+            .locator(".canvas-plane")
+            .evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).a),
+        )
+        .toBeCloseTo(canvasZoom, 2);
+    }
+    await graph(page);
+    await expect(page.locator(".node-workspace")).toHaveAttribute(
+      "data-ready",
+      "true",
+    );
+    // Exercise the graph's own zoom and pan as well as the outer canvas scale.
+    await expect(page.locator(".node-workspace")).toHaveCSS(
+      "transform",
+      "none",
+    );
+    const stage = (await page.locator(".node-stage").boundingBox())!;
+    const oldViewport = await page
+      .locator(".vue-flow__transformationpane")
+      .getAttribute("style");
+    await page.mouse.move(
+      stage.x + stage.width - 30,
+      stage.y + stage.height - 35,
+    );
+    await page.mouse.wheel(0, 80);
+    await expect(
+      page.locator(".vue-flow__transformationpane"),
+    ).not.toHaveAttribute("style", oldViewport!);
+    await page.mouse.down({ button: "middle" });
+    await page.mouse.move(
+      stage.x + stage.width - 65,
+      stage.y + stage.height - 50,
+      { steps: 4 },
+    );
+    await page.mouse.up({ button: "middle" });
+    const start = (await page.locator(".trigger-node .source").boundingBox())!;
+    await page.mouse.move(
+      start.x + start.width / 2,
+      start.y + start.height / 2,
+    );
+    await page.mouse.down();
+    for (const [dx, dy] of [
+      [35, 70],
+      [100, 105],
+      [65, -50],
+    ]) {
+      const pointer = {
+        x: start.x + start.width / 2 + dx!,
+        y: start.y + start.height / 2 + dy!,
+      };
+      await page.mouse.move(pointer.x, pointer.y, { steps: 4 });
+      await expect
+        .poll(() =>
+          page
+            .locator(".vue-flow__connection-path")
+            .evaluate((path: SVGPathElement, pointer) => {
+              const endpoint = path
+                .getPointAtLength(path.getTotalLength())
+                .matrixTransform(path.getScreenCTM()!);
+              return Math.hypot(endpoint.x - pointer.x, endpoint.y - pointer.y);
+            }, pointer),
+        )
+        .toBeLessThan(1.5);
+    }
+    const target = (await page
+      .locator(`.vue-flow__node[data-id="${button.rules[1]!.id}"] .target`)
+      .boundingBox())!;
+    await page.mouse.move(
+      target.x + target.width / 2,
+      target.y + target.height / 2,
+      { steps: 5 },
+    );
+    await page.mouse.up();
+    await expect(page.locator(".vue-flow__edge")).toHaveCount(3);
+    await expect(page.locator(".vue-flow__connection-path")).toHaveCount(0);
+
+    // Reconnecting an existing wire uses the same corrected coordinates. A drop
+    // onto empty space leaves the original connection intact.
+    const updater = page.locator(".vue-flow__edgeupdater-target").first();
+    const anchor = (await updater.boundingBox())!;
+    await page.mouse.move(
+      anchor.x + anchor.width / 2,
+      anchor.y + anchor.height / 2,
+    );
+    await page.mouse.down();
+    const pointer = { x: anchor.x + 50, y: anchor.y - 65 };
+    await page.mouse.move(pointer.x, pointer.y, { steps: 4 });
+    await expect
+      .poll(() =>
+        page
+          .locator(".vue-flow__connection-path")
+          .evaluate((path: SVGPathElement, pointer) => {
+            const endpoint = path
+              .getPointAtLength(path.getTotalLength())
+              .matrixTransform(path.getScreenCTM()!);
+            return Math.hypot(endpoint.x - pointer.x, endpoint.y - pointer.y);
+          }, pointer),
+      )
+      .toBeLessThan(1.5);
+    await page.mouse.up();
+    await expect(page.locator(".vue-flow__edge")).toHaveCount(3);
+  });
+
   test(`wire endpoints meet their sockets at canvas zoom ${canvasZoom}`, async ({
     page,
   }) => {
@@ -258,6 +374,85 @@ for (const canvasZoom of [0.55, 1, 1.35]) {
     });
   });
 }
+
+test("Connections stays compact, never overlaps the graph, and preserves the viewport on toggle", async ({
+  page,
+}) => {
+  const { w } = fixture();
+  await seed(page, w);
+  await graph(page);
+  await expect(page.locator(".node-workspace")).toHaveAttribute(
+    "data-ready",
+    "true",
+  );
+  const toggle = page.getByRole("button", { name: "Connections", exact: true });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator(".graph-connections")).toHaveCount(0);
+  const viewport = await page
+    .locator(".vue-flow__transformationpane")
+    .getAttribute("style");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  const controls = (await page.locator(".graph-connections").boundingBox())!,
+    stage = (await page.locator(".node-stage").boundingBox())!;
+  expect(controls.y + controls.height).toBeLessThanOrEqual(stage.y + 1);
+  expect(controls.height).toBeLessThan(100);
+  expect(stage.height).toBeGreaterThan(400);
+  expect(
+    await page.locator(".vue-flow__transformationpane").getAttribute("style"),
+  ).toBe(viewport);
+  await page.screenshot({ path: "artifacts/graph-connections-open.png" });
+  await page
+    .getByRole("combobox", { name: "Connection source", exact: true })
+    .focus();
+  await page.keyboard.press("Escape");
+  await expect(toggle).toBeFocused();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await page.screenshot({ path: "artifacts/graph-connections-collapsed.png" });
+});
+
+test("narrow graph controls wrap above the stage and wire cancellation leaves the next drag usable", async ({
+  page,
+}) => {
+  const { w, app } = fixture();
+  app.width = 560;
+  await seed(page, w);
+  await graph(page);
+  await expect(page.locator(".node-workspace")).toHaveCSS("transform", "none");
+  await page.getByRole("button", { name: "Connections", exact: true }).click();
+  const controls = (await page.locator(".graph-connections").boundingBox())!,
+    stage = (await page.locator(".node-stage").boundingBox())!;
+  expect(controls.y + controls.height).toBeLessThanOrEqual(stage.y + 1);
+  expect(controls.height).toBeLessThan(160);
+  expect(stage.height).toBeGreaterThan(300);
+  const overflow = await page
+    .locator(".graph-connections")
+    .evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+  await page
+    .locator(".canvas-app")
+    .screenshot({ path: "artifacts/graph-connections-narrow.png" });
+  await page.getByRole("button", { name: "Connections", exact: true }).click();
+  const box = (await page.locator(".trigger-node .source").boundingBox())!;
+  for (const cancellation of ["Escape", "pointercancel", "blur"]) {
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 25, box.y - 30);
+    await expect(page.locator(".vue-flow__connection-path")).toHaveCount(1);
+    if (cancellation === "Escape") await page.keyboard.press("Escape");
+    else if (cancellation === "blur")
+      await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    else
+      await page.evaluate(() =>
+        document.dispatchEvent(
+          new PointerEvent("pointercancel", { pointerId: 1 }),
+        ),
+      );
+    await expect(page.locator(".vue-flow__connection-path")).toHaveCount(0);
+    await page.mouse.up();
+    await expect(page.locator(".vue-flow__edge")).toHaveCount(2);
+  }
+});
 
 test("Add node menu closes outside the menu, including graph panning and outer canvas", async ({
   page,
@@ -412,9 +607,7 @@ test("node sockets connect branches; disconnecting a wire changes execution and 
   await page.reload();
   await graph(page, 4);
   await expect(page.locator(".vue-flow__edge")).toHaveCount(2);
-  const stored = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("orvane.workspace.v1")!),
-  );
+  const stored = await readStored(page);
   expect(
     stored.apps[0].blocks[3].graph.positions[button.rules[0]!.id].y,
   ).toBeGreaterThan(150);
@@ -527,7 +720,9 @@ test("selected nodes form a reusable group with an editable internal graph", asy
   await page.screenshot({ path: "artifacts/node-group.png" });
   await page.waitForTimeout(250);
   await page.reload();
-  await expect(page.locator(".status-area")).toHaveCount(0);
+  await expect
+    .poll(() => page.locator(".status-area").allTextContents())
+    .toEqual([]);
 });
 
 test("wheel gestures use a single transform without layout zoom or a settling handoff", async ({

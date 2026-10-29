@@ -13,8 +13,8 @@ The original empty canvas was superseded by the request for prebuilt example app
 Light only, cool blue-gray canvas, soft off-white surfaces, slate text, muted blue accents, precise compact controls, restrained corners and flat fields. The supplied brief is the visual authority.
 
 ## Open decisions
-The user confirmed reversible archive and restore in this session. Browser local storage is the implementation choice; backup/import is provided. Audience is unspecified; do not fabricate personas. The node editor supports persistent spatial graphs, branching, explicit connections and reusable node groups. Code uses CodeMirror. Builder panels are resizable.
+The user confirmed reversible archive and restore in this session. SQLite on the local Orvane backend is the persistence implementation. Browsers on this computer share one database; existing browser storage is retained for migration/recovery. Backup/import is provided. Audience is unspecified; do not fabricate personas. The node editor supports persistent spatial graphs, branching, explicit connections and reusable node groups. Code uses CodeMirror. Builder panels are resizable.
 
 
 ## Spatial groups
-Apps can be assigned to named groups through the Groups control or the app builder. Groups have stable IDs, persistent membership and small canvas labels. Group membership does not cause apps to move together. Existing string group names are migrated without changing app positions, content or sizes.
+Apps can be assigned to named groups through the Groups control or the app builder. Groups have stable IDs, persistent membership and small canvas labels. Dragging a group label or border moves its member apps together; individual app drags leave other members in place. Existing string group names are migrated without changing app positions, content or sizes.

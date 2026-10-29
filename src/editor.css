@@ -174,6 +174,9 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   z-index: 0;
 }
 .spatial-group-label {
+  cursor: grab;
+  touch-action: none;
+  z-index: 1;
   position: absolute;
   left: 11px;
   top: 7px;
@@ -187,6 +190,92 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   pointer-events: auto;
   max-width: calc(100% - 22px);
   background: #e9edf0;
+}
+.group-drag-edge {
+  position: absolute;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+}
+.group-edge-n {
+  top: -4px;
+  left: 0;
+  right: 0;
+  height: 8px;
+}
+.group-edge-s {
+  bottom: -4px;
+  left: 0;
+  right: 0;
+  height: 8px;
+}
+.group-edge-w {
+  left: -4px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+}
+.group-edge-e {
+  right: -4px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+}
+
+.number-field {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+  background: #e7eef2;
+  border-radius: 4px;
+  color: #455968;
+}
+.number-field:focus-within {
+  box-shadow: inset 0 -1px #8da6b5;
+}
+.number-field > input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  width: 0;
+  max-width: none;
+  margin: 0;
+  padding: 8px 9px;
+  border: 0;
+  background: transparent;
+  border-radius: 4px;
+  box-shadow: none;
+  font-variant-numeric: tabular-nums;
+}
+.number-field > input[type="text"]:focus {
+  background: transparent;
+  box-shadow: none;
+}
+.number-stepper {
+  display: flex;
+  gap: 1px;
+  padding: 3px;
+  flex: none;
+}
+.number-stepper > button {
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border-radius: 3px;
+  color: inherit;
+}
+.number-stepper > button:hover:not(:disabled) {
+  background: #d9e5ec;
+}
+.number-stepper > button:focus-visible {
+  outline: 1px solid #7a96a6;
+  outline-offset: -2px;
+}
+.number-field-disabled {
+  opacity: 0.5;
 }
 .spatial-group-label > span {
   overflow: hidden;
@@ -356,8 +445,8 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   position: absolute;
   inset: 0;
   z-index: 24;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
   background: #eaf0f4;
@@ -366,6 +455,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   touch-action: none;
 }
 .node-toolbar {
+  grid-row: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -398,12 +488,15 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   gap: 3px;
 }
 .node-stage {
+  grid-row: 3;
   flex: 1;
   position: relative;
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 .node-status {
+  grid-row: 4;
   display: flex;
   justify-content: space-between;
   gap: 15px;

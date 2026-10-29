@@ -36,19 +36,27 @@ import RuleControl from "./RuleControl.vue";
 import CustomSelect from "./CustomSelect.vue";
 import Icon from "./Icon.vue";
 import { vMotion } from "../motion";
-const props = defineProps<{
-  block: Pick<Block, "id" | "kind" | "label" | "rules" | "graph">;
-  app: CanvasApp;
-  workspace: Workspace;
-}>();
+const props = withDefaults(
+  defineProps<{
+    block: Pick<Block, "id" | "kind" | "label" | "rules" | "graph">;
+    app: CanvasApp;
+    workspace: Workspace;
+    error?: string;
+    allowGroup?: boolean;
+  }>(),
+  { allowGroup: true },
+);
 const emit = defineEmits<{ close: []; run: []; group: [ids: string[]] }>();
 const flowId = `graph-${props.block.id}`;
 const {
   fitView,
-  screenToFlowCoordinate,
   getSelectedNodes,
   findNode,
   vueFlowRef,
+  viewport,
+  startConnection,
+  updateConnection,
+  endConnection,
 } = useVueFlow({
   id: flowId,
 });
@@ -58,6 +66,22 @@ const notice = ref(""),
 const addTrigger = ref<HTMLButtonElement>();
 const addMenu = ref<HTMLDivElement>();
 const ready = ref(false);
+const connectionsOpen = ref(false);
+const connectionsButton = ref<HTMLButtonElement>();
+function toggleConnections() {
+  connectionsOpen.value = !connectionsOpen.value;
+}
+function connectionsKey(event: KeyboardEvent) {
+  if (
+    event.key !== "Escape" ||
+    (event.target as Element).closest('[role="combobox"][aria-expanded="true"]')
+  )
+    return;
+  event.preventDefault();
+  event.stopPropagation();
+  connectionsOpen.value = false;
+  connectionsButton.value?.focus();
+}
 async function prepareGraph() {
   if (ready.value) return;
   await fitView({ padding: 0.16, maxZoom: 1, duration: 0 });
@@ -98,8 +122,14 @@ const actions: { value: ActionKind; label: string }[] = [
   { value: "set-text", label: "Set text / value" },
   { value: "emit", label: "Send event" },
   { value: "custom", label: "Reusable action" },
+  { value: "workspace-action", label: "Run workspace action" },
+  { value: "navigate", label: "Go to app" },
+  { value: "open-view", label: "Open app view" },
+  { value: "read-field", label: "Read exposed field" },
+  { value: "message", label: "Show message" },
 ];
-if (!props.block.graph) {
+const draftGraph = ref<ActionGraph>({ positions: {}, edges: [] });
+function resetDraftGraph() {
   const positions: ActionGraph["positions"] = { trigger: { x: 40, y: 140 } };
   const edges: ActionGraph["edges"] = [];
   props.block.rules.forEach((r, i) => {
@@ -110,9 +140,25 @@ if (!props.block.graph) {
       target: r.id,
     });
   });
-  props.block.graph = { positions, edges };
+  draftGraph.value = { positions, edges };
 }
-const graph = computed(() => props.block.graph!);
+if (!props.block.graph) resetDraftGraph();
+const graph = computed(() => props.block.graph || draftGraph.value);
+function commitGraph() {
+  if (!props.block.graph)
+    props.block.graph = JSON.parse(JSON.stringify(draftGraph.value));
+}
+const connectionSource = ref("trigger"),
+  connectionTarget = ref(""),
+  connectionKind = ref<"success" | "failure">("success");
+const disconnectedCount = computed(() => {
+  const reached = new Set(["trigger"]);
+  for (let i = 0; i <= props.block.rules.length; i++)
+    graph.value.edges.forEach((e) => {
+      if (reached.has(e.source)) reached.add(e.target);
+    });
+  return props.block.rules.filter((r) => !reached.has(r.id)).length;
+});
 const initialNodeIds = new Set(props.block.rules.map((rule) => rule.id));
 const nodes = shallowRef<Node[]>([]),
   edges = shallowRef<Edge[]>([]);
@@ -138,11 +184,19 @@ function sync() {
     ...e,
     type: "default",
     updatable: true,
+    label: e.on === "failure" ? "On failure" : undefined,
     style: { stroke: "#8da6b6", strokeWidth: 1.5 },
   }));
 }
 sync();
 watch(() => props.block.rules.map((r) => r.id).join(), sync);
+watch(
+  () => props.block,
+  () => {
+    if (!props.block.graph) resetDraftGraph();
+    sync();
+  },
+);
 watch(
   () => graph.value.edges.map((e) => e.id + e.source + e.target).join(),
   () => {
@@ -150,11 +204,17 @@ watch(
       ...e,
       type: "default",
       updatable: true,
+      label: e.on === "failure" ? "On failure" : undefined,
       style: { stroke: "#8da6b6", strokeWidth: 1.5 },
     }));
   },
 );
 function connect(c: Connection) {
+  const ids = new Set(props.block.rules.map((rule) => rule.id));
+  if ((c.source !== "trigger" && !ids.has(c.source)) || !ids.has(c.target)) {
+    notice.value = "Choose an available source and target.";
+    return false;
+  }
   if (
     c.target === "trigger" ||
     c.source === c.target ||
@@ -175,16 +235,152 @@ function connect(c: Connection) {
     notice.value = "That connection would create a loop.";
     return false;
   }
-  graph.value.edges.push({ id: uid(), source: c.source, target: c.target });
+  commitGraph();
+  graph.value.edges.push({
+    id: uid(),
+    source: c.source,
+    target: c.target,
+    on: connectionKind.value,
+  });
   notice.value = "";
   return true;
 }
 function updateWire(event: EdgeUpdateEvent) {
-  const old = graph.value.edges.find((e) => e.id === event.edge.id);
+  replaceWire(event.edge.id, event.connection);
+}
+function replaceWire(id: string, connection: Connection) {
+  commitGraph();
+  const old = graph.value.edges.find((e) => e.id === id);
   if (!old) return;
   graph.value.edges = graph.value.edges.filter((e) => e.id !== old.id);
-  if (!connect(event.connection)) graph.value.edges.push(old);
+  if (!connect(connection)) graph.value.edges.push(old);
+  else Object.assign(graph.value.edges.at(-1)!, { id: old.id, on: old.on });
 }
+// Vue Flow's pointer math assumes an unscaled ancestor. The app canvas applies
+// its own transform, so convert client coordinates into unscaled viewport space
+// before using Vue Flow's public connection API. Hit testing stays in screen space.
+function viewportPoint(clientX: number, clientY: number) {
+  const element = vueFlowRef.value!;
+  const rect = element.getBoundingClientRect();
+  return {
+    x: ((clientX - rect.left) * element.offsetWidth) / rect.width,
+    y: ((clientY - rect.top) * element.offsetHeight) / rect.height,
+  };
+}
+let wireDrag:
+  { pointerId: number; handle: HTMLElement; edgeId?: string } | undefined;
+function handleDetails(handle: HTMLElement) {
+  return {
+    nodeId: handle.dataset.nodeid!,
+    id: handle.getAttribute("data-handleid"),
+    type: handle.classList.contains("source")
+      ? ("source" as const)
+      : ("target" as const),
+    position: handle.getAttribute("data-handlepos") as Position,
+  };
+}
+function startWire(event: PointerEvent) {
+  const target = event.target as Element;
+  const updater = target.closest(".vue-flow__edgeupdater");
+  let handle = target.closest<HTMLElement>(".vue-flow__handle");
+  let edgeId: string | undefined;
+  if (updater) {
+    edgeId =
+      updater.closest(".vue-flow__edge")?.getAttribute("data-id") || undefined;
+    const edge = graph.value.edges.find((e) => e.id === edgeId);
+    if (!edge) return;
+    const movingSource = updater.classList.contains(
+      "vue-flow__edgeupdater-source",
+    );
+    const fixedId = movingSource ? edge.target : edge.source;
+    handle =
+      vueFlowRef.value?.querySelector<HTMLElement>(
+        `.vue-flow__node[data-id="${CSS.escape(fixedId)}"] .vue-flow__handle.${movingSource ? "target" : "source"}`,
+      ) || null;
+  }
+  if (!handle || event.button !== 0 || wireDrag) return;
+  event.preventDefault();
+  event.stopPropagation();
+  measureSockets(handle.dataset.nodeid!);
+  wireDrag = { pointerId: event.pointerId, handle, edgeId };
+  const point = viewportPoint(event.clientX, event.clientY);
+  startConnection({ ...handleDetails(handle), ...point }, point);
+  document.addEventListener("pointermove", moveWire, true);
+  document.addEventListener("pointerup", finishWire, true);
+  document.addEventListener("pointercancel", cancelWire, true);
+  document.addEventListener("keydown", wireKey, true);
+  window.addEventListener("blur", cancelWire);
+}
+function wireTarget(event: PointerEvent) {
+  const target = document
+    .elementFromPoint(event.clientX, event.clientY)
+    ?.closest<HTMLElement>(".vue-flow__handle");
+  if (!target || !vueFlowRef.value?.contains(target) || !wireDrag) return;
+  const from = handleDetails(wireDrag.handle),
+    to = handleDetails(target);
+  if (from.type === to.type || from.nodeId === to.nodeId) return;
+  return {
+    target,
+    connection: {
+      source: from.type === "source" ? from.nodeId : to.nodeId,
+      sourceHandle: from.type === "source" ? from.id : to.id,
+      target: from.type === "target" ? from.nodeId : to.nodeId,
+      targetHandle: from.type === "target" ? from.id : to.id,
+    },
+  };
+}
+function moveWire(event: PointerEvent) {
+  if (!wireDrag || event.pointerId !== wireDrag.pointerId) return;
+  event.preventDefault();
+  event.stopPropagation();
+  // Keep the live endpoint exactly under the pointer; completed edges snap to
+  // socket bounds after drop, using the same node-local geometry as other edges.
+  const candidate = wireTarget(event);
+  updateConnection(
+    viewportPoint(event.clientX, event.clientY),
+    null,
+    candidate ? "valid" : null,
+  );
+}
+function finishWire(event: PointerEvent) {
+  if (!wireDrag || event.pointerId !== wireDrag.pointerId) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const candidate = wireTarget(event),
+    edgeId = wireDrag.edgeId;
+  cancelWire();
+  if (candidate) {
+    if (edgeId) replaceWire(edgeId, candidate.connection);
+    else connect(candidate.connection);
+  }
+}
+function cancelWire() {
+  wireDrag = undefined;
+  endConnection();
+  document.removeEventListener("pointermove", moveWire, true);
+  document.removeEventListener("pointerup", finishWire, true);
+  document.removeEventListener("pointercancel", cancelWire, true);
+  document.removeEventListener("keydown", wireKey, true);
+  window.removeEventListener("blur", cancelWire);
+}
+function wireKey(event: KeyboardEvent) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    cancelWire();
+  }
+}
+function blockNativeWire(event: MouseEvent | TouchEvent) {
+  if (
+    (event.target as Element).closest(
+      ".vue-flow__handle,.vue-flow__edgeupdater",
+    )
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+}
+onBeforeUnmount(cancelWire);
 // Vue Flow divides screen-space handle offsets by its internal zoom only.
 // Our canvas also scales the entire editor, so measure against the node's
 // actual screen scale to keep socket coordinates in unscaled node space.
@@ -218,17 +414,21 @@ function measureSockets(id: string) {
 function nodeChanges(changes: NodeChange[]) {
   for (const change of changes) {
     if (change.type === "dimensions") measureSockets(change.id);
-    if (change.type === "position" && change.position)
+    if (change.type === "position" && change.position && change.dragging) {
+      commitGraph();
       graph.value.positions[change.id] = { ...change.position };
+    }
     if (change.type === "remove") remove(change.id);
   }
 }
 function edgeChanges(changes: EdgeChange[]) {
+  if (changes.some((c) => c.type === "remove")) commitGraph();
   for (const change of changes)
     if (change.type === "remove")
       graph.value.edges = graph.value.edges.filter((e) => e.id !== change.id);
 }
 function remove(id: string) {
+  commitGraph();
   if (id === "trigger") return;
   const index = props.block.rules.findIndex((r) => r.id === id);
   if (index < 0) return;
@@ -239,16 +439,23 @@ function remove(id: string) {
   delete graph.value.positions[id];
 }
 function add(action: ActionKind) {
+  commitGraph();
   const rule: Rule = { id: uid(), action, target: "", appId: "", value: "" };
   props.block.rules.push(rule);
   const bounds = document
     .querySelector(`[data-flow-id="${flowId}"]`)
     ?.getBoundingClientRect();
   graph.value.positions[rule.id] = bounds
-    ? screenToFlowCoordinate({
-        x: bounds.x + bounds.width * 0.5,
-        y: bounds.y + bounds.height * 0.4,
-      })
+    ? (() => {
+        const point = viewportPoint(
+          bounds.x + bounds.width * 0.5,
+          bounds.y + bounds.height * 0.4,
+        );
+        return {
+          x: (point.x - viewport.value.x) / viewport.value.zoom,
+          y: (point.y - viewport.value.y) / viewport.value.zoom,
+        };
+      })()
     : { x: 320, y: 100 };
   const position = graph.value.positions[rule.id]!;
   while (
@@ -277,15 +484,18 @@ function group() {
     notice.value = "Shift-click the nodes you want to group.";
     return;
   }
+  commitGraph();
   emit("group", ids);
 }
 function deleteWire() {
+  commitGraph();
   graph.value.edges = graph.value.edges.filter(
     (e) => e.id !== selectedEdge.value,
   );
   selectedEdge.value = "";
 }
 function disconnectInput(id: string) {
+  commitGraph();
   graph.value.edges = graph.value.edges.filter((e) => e.target !== id);
 }
 </script>
@@ -295,6 +505,9 @@ function disconnectInput(id: string) {
     v-motion="{ kind: 'workspace', show: ready, initial: false }"
     :style="{ opacity: ready ? undefined : 0 }"
     :data-ready="ready"
+    @pointerdown.capture="startWire"
+    @mousedown.capture="blockNativeWire"
+    @touchstart.capture="blockNativeWire"
     @pointerdown.stop
     @wheel.stop
   >
@@ -306,11 +519,24 @@ function disconnectInput(id: string) {
       >
       <div class="node-toolbar-actions">
         <button
+          ref="connectionsButton"
+          class="subtle-button"
+          :aria-expanded="connectionsOpen"
+          :aria-controls="`${flowId}-connections`"
+          @click="toggleConnections"
+        >
+          <Icon name="link" :size="13" />Connections
+        </button>
+        <button
           class="subtle-button"
           @click="fitView({ padding: 0.18, duration: 180 })"
         >
           <Icon name="resize" :size="13" />Frame</button
-        ><button class="subtle-button" @click="group">
+        ><button
+          v-if="allowGroup !== false"
+          class="subtle-button"
+          @click="group"
+        >
           <Icon name="layers" :size="13" />Group</button
         ><button class="subtle-button" @click="emit('run')">
           <Icon name="play" :size="13" />Test</button
@@ -324,6 +550,83 @@ function disconnectInput(id: string) {
         </button>
       </div>
     </header>
+    <div
+      v-if="connectionsOpen"
+      :id="`${flowId}-connections`"
+      class="graph-connections"
+      aria-label="Graph connections"
+      @keydown.capture="connectionsKey"
+    >
+      <div class="connection-create-row">
+        <label class="connection-field"
+          ><span>Source</span>
+          <CustomSelect
+            v-model="connectionSource"
+            aria-label="Connection source"
+            ><option value="trigger">Trigger</option>
+            <option v-for="r in block.rules" :key="r.id" :value="r.id">
+              {{ actions.find((a) => a.value === r.action)?.label }}
+              {{ block.rules.indexOf(r) + 1 }}
+            </option></CustomSelect
+          ></label
+        >
+        <label class="connection-field connection-outcome"
+          ><span>Outcome</span>
+          <CustomSelect v-model="connectionKind" aria-label="Connection outcome"
+            ><option value="success">On success</option>
+            <option value="failure">On failure</option></CustomSelect
+          ></label
+        >
+        <label class="connection-field"
+          ><span>Target</span>
+          <CustomSelect
+            v-model="connectionTarget"
+            aria-label="Connection target"
+            ><option value="">Choose target</option>
+            <option v-for="r in block.rules" :key="r.id" :value="r.id">
+              {{ actions.find((a) => a.value === r.action)?.label }}
+              {{ block.rules.indexOf(r) + 1 }}
+            </option></CustomSelect
+          ></label
+        >
+        <button
+          class="subtle-button"
+          :disabled="!connectionTarget"
+          @click="
+            connect({
+              source: connectionSource,
+              target: connectionTarget,
+              sourceHandle: null,
+              targetHandle: null,
+            })
+          "
+        >
+          Connect
+        </button>
+      </div>
+      <div class="connection-remove-row">
+        <label class="connection-field"
+          ><span>Existing connection</span>
+          <CustomSelect v-model="selectedEdge" aria-label="Select connection"
+            ><option value="">Choose connection</option>
+            <option
+              v-for="(edge, i) in graph.edges"
+              :key="edge.id"
+              :value="edge.id"
+            >
+              Connection {{ i + 1 }} / {{ edge.on || "success" }}
+            </option></CustomSelect
+          ></label
+        >
+        <button
+          class="subtle-button"
+          :disabled="!selectedEdge"
+          @click="deleteWire"
+        >
+          Disconnect
+        </button>
+      </div>
+    </div>
     <div class="node-stage" :data-flow-id="flowId">
       <VueFlow
         :id="flowId"
@@ -354,11 +657,13 @@ function disconnectInput(id: string) {
           ><div class="flow-node trigger-node">
             <div class="node-drag">
               <Icon name="button" :size="14" /><strong>{{
-                block.kind === "input"
-                  ? "On Enter"
-                  : block.kind === "checkbox"
-                    ? "On change"
-                    : "On click"
+                app.id === "__workspace__"
+                  ? "Action invoked"
+                  : block.kind === "input"
+                    ? "On Enter"
+                    : block.kind === "checkbox"
+                      ? "On change"
+                      : "On click"
               }}</strong>
             </div>
             <div class="trigger-detail">{{ block.label }}</div>
@@ -427,6 +732,10 @@ function disconnectInput(id: string) {
     <footer class="node-status">
       <span v-motion="{ kind: 'fade', state: notice, initial: false }">{{
         notice ||
+        error ||
+        (disconnectedCount
+          ? `${disconnectedCount} disconnected actions will not run. Connect them to a trigger or an action.`
+          : "") ||
         "Drag a socket to connect · Drag a node header to move · Shift-click to select · Middle-drag to pan"
       }}</span
       ><span

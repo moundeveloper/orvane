@@ -1,4 +1,5 @@
-import { test, expect } from "@playwright/test";
+import { readStored } from "./storage-helper";
+import { test, expect } from "./fixtures";
 import {
   exampleApps,
   LEGACY_CALCULATOR_CODE,
@@ -109,9 +110,7 @@ test("only the exact legacy calculator is upgraded; custom code stays intact", a
   await page.goto("/");
   await page.getByRole("button", { name: "Canvas guide", exact: true }).click();
   await page.waitForTimeout(250);
-  const stored = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("orvane.workspace.v1")!),
-  );
+  const stored = await readStored(page);
   expect(stored.apps[0].blocks[0].code).toBe(CALCULATOR_CODE);
   expect(stored.apps[1].blocks[0].code).toBe(custom.blocks[0]!.code);
   expect(stored.apps[0].height).toBe(legacy.height);

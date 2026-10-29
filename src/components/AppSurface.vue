@@ -6,9 +6,11 @@ import {
   onMounted,
   onBeforeUnmount,
   defineAsyncComponent,
+  nextTick,
 } from "vue";
 import {
   flatten,
+  appMinimum,
   kinds,
   makeBlock,
   uid,
@@ -17,10 +19,12 @@ import {
   type Rule,
   type Workspace,
   type Kind,
+  type ActionGraph,
 } from "../model";
 import BlockView from "./BlockView.vue";
 import Icon from "./Icon.vue";
 import CustomSelect from "./CustomSelect.vue";
+import CustomNumber from "./CustomNumber.vue";
 import { vMotion } from "../motion";
 const CodeEditor = defineAsyncComponent(() => import("./CodeEditor.vue"));
 const NodeGraph = defineAsyncComponent(() => import("./NodeGraph.vue"));
@@ -45,6 +49,64 @@ const editing = ref(false),
   menu = ref(false),
   collapsed = ref<string[]>([]),
   ruleError = ref("");
+const expandedRule = ref<Rule>();
+async function openView(view: "settings" | "graph", target: string) {
+  editing.value = true;
+  await nextTick();
+  customGraphOpen.value = false;
+  codeTarget.value = null;
+  if (view === "graph") {
+    const block = flatten(props.app.blocks).find((b) => b.id === target);
+    if (!block)
+      throw Error("Choose an existing component whose graph should open.");
+    selected.value = block.id;
+    expandedRule.value = undefined;
+    graph.value = true;
+  } else {
+    graph.value = false;
+    tab.value = "style";
+  }
+}
+const ruleDraft = ref<{ rules: Rule[]; graph?: ActionGraph }>();
+const ruleGraphSource = computed(() =>
+  expandedRule.value && ruleDraft.value
+    ? {
+        id: expandedRule.value.id,
+        kind: "button" as const,
+        label: "Rule flow",
+        get rules() {
+          return ruleDraft.value!.rules;
+        },
+        set rules(value: Rule[]) {
+          ruleDraft.value!.rules = value;
+        },
+        get graph() {
+          return ruleDraft.value!.graph;
+        },
+        set graph(value: ActionGraph | undefined) {
+          ruleDraft.value!.graph = value;
+        },
+      }
+    : undefined,
+);
+function expandRule(rule: Rule) {
+  expandedRule.value = undefined;
+  const single = JSON.parse(JSON.stringify(rule));
+  delete single.flow;
+  ruleDraft.value = JSON.parse(
+    JSON.stringify(rule.flow || { rules: [single] }),
+  );
+  expandedRule.value = rule;
+  graph.value = true;
+}
+watch(
+  ruleDraft,
+  () => {
+    if (expandedRule.value && ruleDraft.value)
+      expandedRule.value.flow = JSON.parse(JSON.stringify(ruleDraft.value));
+  },
+  { deep: true, flush: "sync" },
+);
 const addedBlockId = ref("");
 const blocks = computed(() => flatten(props.app.blocks));
 const current = computed(() =>
@@ -136,6 +198,16 @@ const customName = ref(""),
   customId = ref("");
 const customEditing = computed(() =>
   props.workspace.customNodes.find((n) => n.id === customId.value),
+);
+watch(
+  customEditing,
+  (node) => {
+    if (node) {
+      customName.value = node.name;
+      customCode.value = node.code;
+    }
+  },
+  { flush: "sync" },
 );
 const customGraphOpen = ref(false);
 const customGraphSource = computed(() => {
@@ -290,9 +362,10 @@ function saveNode() {
   ruleError.value = "";
 }
 function groupRules(ids?: string[]) {
+  ruleError.value = "";
   const source = customGraphOpen.value
     ? customGraphSource.value
-    : current.value;
+    : ruleGraphSource.value || current.value;
   if (!source?.rules.length) return;
   const selectedIds = Array.isArray(ids) ? ids : source.rules.map((r) => r.id);
   const selectedRules = source.rules.filter((r) => selectedIds.includes(r.id));
@@ -323,7 +396,11 @@ function groupRules(ids?: string[]) {
   const nodeId = uid();
   const groupedGraph = outer
     ? {
-        positions: JSON.parse(JSON.stringify(outer.positions)),
+        positions: Object.fromEntries(
+          Object.entries(outer.positions).filter(
+            ([id]) => id === "trigger" || selectedIds.includes(id),
+          ),
+        ),
         edges: outer.edges
           .filter(
             (e) =>
@@ -372,6 +449,7 @@ function groupRules(ids?: string[]) {
       x: 320,
       y: 120,
     };
+    selectedIds.forEach((id) => delete outer.positions[id]);
     const seen = new Set<string>();
     outer.edges = outer.edges
       .filter(
@@ -399,6 +477,7 @@ watch(editing, () => {
   codeTarget.value = null;
 });
 defineExpose({
+  openView,
   edit: () => {
     editing.value = true;
   },
@@ -492,6 +571,7 @@ defineExpose({
         :block="customGraphSource"
         :app="app"
         :workspace="workspace"
+        :error="ruleError"
         @close="customGraphOpen = false"
         @run="
           emit('run', app, {
@@ -505,12 +585,28 @@ defineExpose({
       />
       <NodeGraph
         v-if="graph && current"
-        :key="current.id"
-        :block="current"
+        :key="ruleGraphSource?.id || current.id"
+        :block="ruleGraphSource || current"
         :app="app"
         :workspace="workspace"
-        @close="graph = false"
-        @run="emit('run', app, current)"
+        :error="ruleError"
+        @close="
+          graph = false;
+          expandedRule = undefined;
+        "
+        @run="
+          emit(
+            'run',
+            app,
+            ruleGraphSource
+              ? {
+                  ...current,
+                  rules: ruleGraphSource.rules,
+                  graph: ruleGraphSource.graph,
+                }
+              : current,
+          )
+        "
         @group="groupRules"
       />
       <div v-if="codeTarget" class="code-workspace" v-motion="{ kind: 'fade' }">
@@ -726,6 +822,11 @@ defineExpose({
                 <label class="property"
                   >Label<input v-model="current.label"
                 /></label>
+                <p v-if="current.kind === 'git'" class="field-help">
+                  Leave Build mode to choose a local repository or switch saved
+                  Git workspaces. This viewer reads your Git history and
+                  changes.
+                </p>
                 <template v-if="current.kind === 'container'"
                   ><label class="property"
                     >Arrangement<CustomSelect v-model="current.layout">
@@ -751,9 +852,9 @@ defineExpose({
                   >Value<input v-model="current.value"
                 /></label>
                 <label v-if="current.kind === 'counter'" class="property"
-                  >Starting value<input
-                    type="number"
-                    v-model.number="current.count"
+                  >Starting value<CustomNumber
+                    aria-label="Starting value"
+                    v-model="current.count"
                 /></label>
                 <label v-if="current.kind === 'code'" class="property"
                   >Frame sizing<CustomSelect
@@ -772,22 +873,12 @@ defineExpose({
                 <label
                   v-if="current.kind === 'code' && !codeFills"
                   class="property"
-                  >Frame height<input
-                    type="number"
+                  >Frame height<CustomNumber
                     aria-label="Code frame height"
-                    :value="current.height || 210"
-                    min="60"
-                    max="1600"
-                    @change="
-                      current.height = Math.max(
-                        60,
-                        Math.min(
-                          1600,
-                          Number(($event.target as HTMLInputElement).value) ||
-                            210,
-                        ),
-                      )
-                    "
+                    :model-value="current.height || 210"
+                    :min="60"
+                    :max="1600"
+                    @update:model-value="current.height = $event"
                 /></label>
                 <label v-if="current.kind === 'code'" class="property"
                   >HTML / CSS / JavaScript<CodeEditor
@@ -823,92 +914,26 @@ defineExpose({
                   <p v-if="!current.rules.length" class="field-help">
                     Connect this component to an action.
                   </p>
-                  <div
+                  <RuleControl
                     v-for="(rule, i) in current.rules"
-                    v-show="!graph && !current.graph"
                     :key="rule.id"
-                    class="rule"
+                    :rule="rule"
+                    :app="app"
+                    :workspace="workspace"
+                    :index="i"
+                    :total="current.rules.length"
+                    expandable
+                    @expand="expandRule(rule)"
+                    @remove="current.rules.splice(i, 1)"
+                    @move="moveRule(current.rules, i, $event)"
+                  />
+                  <button
+                    class="subtle-button"
+                    @click="
+                      expandedRule = undefined;
+                      graph = !graph;
+                    "
                   >
-                    <div class="rule-order">
-                      <span>{{ i + 1 }}<Icon name="right" :size="11" /></span
-                      ><button
-                        class="icon-button"
-                        title="Remove action"
-                        @click="current.rules.splice(i, 1)"
-                      >
-                        <Icon name="close" :size="12" />
-                      </button>
-                    </div>
-                    <label class="property"
-                      ><span class="sr-only">Action</span
-                      ><CustomSelect v-model="rule.action" aria-label="Action">
-                        <option value="add-item">Add item to list</option>
-                        <option value="clear">Clear field</option>
-                        <option value="increment">Increase counter</option>
-                        <option value="toggle">Toggle checkbox</option>
-                        <option value="set-text">Set text / value</option>
-                        <option value="emit">Send event</option>
-                        <option value="custom">Reusable action</option>
-                      </CustomSelect></label
-                    ><template v-if="rule.action !== 'custom'"
-                      ><label class="property"
-                        ><span class="sr-only">Target app</span
-                        ><CustomSelect
-                          aria-label="Target app"
-                          v-model="rule.appId"
-                          @change="rule.target = ''"
-                        >
-                          <option value="">This app</option>
-                          <option
-                            v-for="other in workspace.apps.filter(
-                              (a) =>
-                                a.id !== app.id && !a.archived && a.exposed,
-                            )"
-                            :key="other.id"
-                            :value="other.id"
-                          >
-                            {{ other.name }}
-                          </option>
-                        </CustomSelect></label
-                      ><label class="property"
-                        ><span class="sr-only">Target component</span
-                        ><CustomSelect
-                          v-model="rule.target"
-                          aria-label="Target component"
-                        >
-                          <option disabled value="">Choose a component</option>
-                          <option
-                            v-for="b in availableTargets(rule)"
-                            :key="b.id"
-                            :value="b.id"
-                          >
-                            {{ b.label }}
-                          </option>
-                        </CustomSelect></label
-                      ><input
-                        v-if="!['clear', 'toggle'].includes(rule.action)"
-                        v-model="rule.value"
-                        aria-label="Action value"
-                        :placeholder="
-                          rule.action === 'increment'
-                            ? 'Amount (default: 1)'
-                            : 'Text, or {field label}'
-                        "
-                        class="rule-value" /></template
-                    ><label v-else class="property"
-                      >Reusable action<CustomSelect v-model="rule.nodeId">
-                        <option value="">Choose an action</option>
-                        <option
-                          v-for="n in workspace.customNodes"
-                          :key="n.id"
-                          :value="n.id"
-                        >
-                          {{ n.name }}
-                        </option>
-                      </CustomSelect></label
-                    >
-                  </div>
-                  <button class="subtle-button" @click="graph = !graph">
                     <Icon name="workflow" :size="13" />{{
                       graph ? "Hide graph" : "Expand to graph"
                     }}
@@ -960,76 +985,24 @@ defineExpose({
                 <option value="box">Box</option>
               </CustomSelect></label
             ><label class="property"
-              >Stack grid below<input
-                type="number"
-                :value="app.breakpoint || 440"
-                min="180"
-                max="1600"
+              >Stack grid below<CustomNumber
+                :model-value="app.breakpoint || 440"
+                :min="180"
+                :max="1600"
                 aria-label="Responsive breakpoint"
-                @change="
-                  app.breakpoint = Math.max(
-                    180,
-                    Math.min(
-                      1600,
-                      Number(($event.target as HTMLInputElement).value) || 440,
-                    ),
-                  )
-                "
-              /><span class="field-help"
-                >App width in pixels. Canvas zoom never changes the
-                layout.</span
-              ></label
+                @update:model-value="app.breakpoint = $event" /></label
             ><label class="property"
-              >Accent
-              <div class="color-property">
-                <span
-                  class="current-color"
-                  :style="{ background: app.accent }"
-                ></span
-                ><input
-                  aria-label="Accent hex color"
-                  :value="app.accent"
-                  maxlength="7"
-                  @input="
-                    /^#[0-9a-f]{6}$/i.test(
-                      ($event.target as HTMLInputElement).value,
-                    ) &&
-                    (app.accent = ($event.target as HTMLInputElement).value)
-                  "
-                  @change="
-                    !/^#[0-9a-f]{6}$/i.test(
-                      ($event.target as HTMLInputElement).value,
-                    ) &&
-                    (($event.target as HTMLInputElement).value = app.accent)
-                  "
-                />
-              </div>
-              <div class="color-swatches">
-                <button
-                  v-for="color in [
-                    '#6f8998',
-                    '#6f8c83',
-                    '#8a9275',
-                    '#a18c77',
-                    '#967e83',
-                    '#86809d',
-                    '#586c7a',
-                  ]"
-                  :key="color"
-                  :style="{ background: color }"
-                  :aria-label="`Use accent ${color}`"
-                  :aria-pressed="app.accent === color"
-                  @click="app.accent = color"
-                >
-                  <Icon v-if="app.accent === color" name="check" :size="12" />
-                </button></div></label
+              >Minimum width<CustomNumber
+                :model-value="appMinimum(app).width"
+                :min="180"
+                aria-label="Minimum app width"
+                @update:model-value="app.minWidth = $event" /></label
             ><label class="property"
-              >Content inset <span>{{ app.padding }}px</span
-              ><input
-                type="range"
-                v-model.number="app.padding"
-                min="8"
-                max="48" /></label
+              >Minimum height<CustomNumber
+                :model-value="appMinimum(app).height"
+                :min="160"
+                aria-label="Minimum app height"
+                @update:model-value="app.minHeight = $event" /></label
             ><label class="property"
               >Component spacing <span>{{ app.gap }}px</span
               ><input
@@ -1087,8 +1060,8 @@ defineExpose({
               ></label
             >
             <p class="field-help">
-              Groups help you find apps. Moving one app leaves the others in
-              place.
+              Drag a group label or border to move its apps together. Moving one
+              app leaves the others in place.
             </p>
             <div class="section-line actions-heading">Reusable code action</div>
             <label class="property"

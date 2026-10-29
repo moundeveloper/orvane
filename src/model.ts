@@ -7,7 +7,11 @@ export type Kind =
   | "counter"
   | "divider"
   | "container"
-  | "code";
+  | "code"
+  | "git"
+  | "projects"
+  | "notes"
+  | "browser";
 export type ActionKind =
   | "add-item"
   | "clear"
@@ -15,7 +19,12 @@ export type ActionKind =
   | "toggle"
   | "set-text"
   | "emit"
-  | "custom";
+  | "custom"
+  | "workspace-action"
+  | "navigate"
+  | "open-view"
+  | "read-field"
+  | "message";
 export interface Rule {
   id: string;
   action: ActionKind;
@@ -23,9 +32,17 @@ export interface Rule {
   appId: string;
   value: string;
   nodeId?: string;
+  bindings?: Record<string, string>;
+  view?: "settings" | "graph";
+  flow?: { rules: Rule[]; graph?: ActionGraph };
 }
 export interface ActionGraph {
-  edges: { id: string; source: string; target: string }[];
+  edges: {
+    id: string;
+    source: string;
+    target: string;
+    on?: "success" | "failure";
+  }[];
   positions: Record<string, { x: number; y: number }>;
 }
 export interface Block {
@@ -45,6 +62,7 @@ export interface Block {
   height?: number;
   sizing?: "fill" | "fixed";
   graph?: ActionGraph;
+  gitWorkspaceId?: string;
 }
 export interface CanvasApp {
   id: string;
@@ -54,8 +72,11 @@ export interface CanvasApp {
   y: number;
   width: number;
   height: number;
+  minWidth?: number;
+  minHeight?: number;
   blocks: Block[];
   archived: boolean;
+  deleted?: boolean;
   group: string;
   groupId?: string;
   exposed: boolean;
@@ -74,6 +95,26 @@ export interface CustomNode {
   rules?: Rule[];
   graph?: ActionGraph;
 }
+export function appMinimum(app: CanvasApp) {
+  const git = flatten(app.blocks).some((block) => block.kind === "git");
+  const notes = flatten(app.blocks).some((block) => block.kind === "notes");
+  const browser = flatten(app.blocks).some((block) => block.kind === "browser");
+  const projects = flatten(app.blocks).some(
+    (block) => block.kind === "projects",
+  );
+  return {
+    width: Math.max(
+      180,
+      app.minWidth ??
+        (projects ? 900 : git ? 720 : notes ? 640 : browser ? 480 : 180),
+    ),
+    height: Math.max(
+      160,
+      app.minHeight ??
+        (projects ? 580 : git ? 440 : notes ? 440 : browser ? 320 : 160),
+    ),
+  };
+}
 export interface Workspace {
   version: 1;
   apps: CanvasApp[];
@@ -81,8 +122,37 @@ export interface Workspace {
   customNodes: CustomNode[];
   shortcuts: { create: string; search: string; home: string };
   groups?: { id: string; name: string }[];
+  wheel?: WheelEntry[];
+  actions?: WorkspaceAction[];
 }
-export const uid = () => crypto.randomUUID();
+export interface WorkspaceAction {
+  id: string;
+  name: string;
+  icon: string;
+  inputs: string[];
+  rules: Rule[];
+  graph?: ActionGraph;
+}
+export interface WheelEntry {
+  id: string;
+  parent: string;
+  name: string;
+  kind: "group" | "app" | "action";
+  appId: string;
+  actionId?: string;
+  bindings?: Record<string, string>;
+}
+export const uid = () => {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6]! & 15) | 64;
+  bytes[8] = (bytes[8]! & 63) | 128;
+  return Array.from(
+    bytes,
+    (b, i) =>
+      ([4, 6, 8, 10].includes(i) ? "-" : "") + b.toString(16).padStart(2, "0"),
+  ).join("");
+};
 export function validGraph(
   graph: ActionGraph | undefined,
   rules: Rule[],
@@ -113,6 +183,16 @@ export function validGraph(
   );
 }
 export const kinds: { kind: Kind; name: string; description: string }[] = [
+  {
+    kind: "notes",
+    name: "Notes workspace",
+    description: "Nested pages, rich text, databases, search and trash",
+  },
+  {
+    kind: "projects",
+    name: "Projects Hub",
+    description: "Local projects, groups, terminal and SuiteCloud files",
+  },
   { kind: "text", name: "Text", description: "A heading or a few words" },
   {
     kind: "input",
@@ -134,6 +214,16 @@ export const kinds: { kind: Kind; name: string; description: string }[] = [
     name: "Custom code",
     description: "Your own HTML, CSS and JavaScript",
   },
+  {
+    kind: "git",
+    name: "Git viewer",
+    description: "Local repositories, commit graphs and diffs",
+  },
+  {
+    kind: "browser",
+    name: "Web browser",
+    description: "Tabs, an address bar and web pages",
+  },
 ];
 export function makeBlock(kind: Kind): Block {
   return {
@@ -149,6 +239,10 @@ export function makeBlock(kind: Kind): Block {
       container: "Layout",
       divider: "Divider",
       code: "Custom code",
+      git: "Git viewer",
+      projects: "Projects Hub",
+      notes: "Notes workspace",
+      browser: "Web browser",
     }[kind],
     value: "",
     checked: false,

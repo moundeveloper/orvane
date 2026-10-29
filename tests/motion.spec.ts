@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test("new components and nodes reveal once; restoring an app has a brief arrival", async ({
   page,
@@ -52,6 +52,7 @@ test("new components and nodes reveal once; restoring an app has a brief arrival
     .getByRole("button", { name: "Options for Motion workbench" })
     .click();
   await app.getByRole("button", { name: "Archive app", exact: true }).click();
+  await page.getByRole("button", { name: "Archive app", exact: true }).click();
   const arrivalsBefore = (await calls()).filter(
     (c) => c.target === "app-surface",
   ).length;

@@ -1,4 +1,5 @@
-import { test, expect } from "@playwright/test";
+import { clickFrameButton } from "./frame-pointer";
+import { test, expect } from "./fixtures";
 
 for (const reducedMotion of [false, true]) {
   test(`search briefly outlines only its destination, reduced motion ${reducedMotion}`, async ({
@@ -112,10 +113,10 @@ test("examples install once, calculator works, and the sample cross-app flow is 
   await page.getByRole("button", { name: "Calculator", exact: true }).click();
   await expect(page.locator(".canvas-plane")).not.toHaveClass(/camera-moving/);
   const calc = page.frameLocator('iframe[title="Calculator"]');
-  await calc.getByRole("button", { name: "7", exact: true }).click();
-  await calc.getByRole("button", { name: "+", exact: true }).click();
-  await calc.getByRole("button", { name: "3", exact: true }).click();
-  await calc.getByRole("button", { name: "=", exact: true }).click();
+  await clickFrameButton(page, "Calculator", "7");
+  await clickFrameButton(page, "Calculator", "+");
+  await clickFrameButton(page, "Calculator", "3");
+  await clickFrameButton(page, "Calculator", "=");
   await expect(calc.locator("output")).toHaveText("10");
   await page.waitForTimeout(250);
   await page.reload();
@@ -155,12 +156,15 @@ test("global popovers and each app menu close on outside pointerdown", async ({
   await page.mouse.click(12, 60);
   await expect(page.locator(".app-menu")).toHaveCount(0);
   await page.getByRole("button", { name: "Calculator", exact: true }).click();
+  // The iframe's own button is stationary in frame coordinates while its parent
+  // app is still panning. Wait for that camera movement before targeting it.
+  await expect(page.locator(".canvas-plane")).not.toHaveClass(/camera-moving/);
   await page.getByRole("button", { name: "Canvas guide", exact: true }).click();
-  await page
-    .frameLocator('iframe[title="Calculator"]')
-    .getByRole("button", { name: "7", exact: true })
-    .click();
-  await expect(page.locator(".guide-panel")).toHaveCount(0);
+  await clickFrameButton(page, "Calculator", "7");
+  await expect(page.locator(".guide-panel")).toHaveCount(1);
+  await expect(
+    page.frameLocator('iframe[title="Calculator"]').locator("output"),
+  ).toHaveText("7");
 });
 
 test("search animates from the dock icon for mouse and shortcut; fields have no rectangular focus outline", async ({

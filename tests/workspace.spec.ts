@@ -5,7 +5,7 @@ test.beforeEach(async ({ page }) => {
       localStorage.setItem("orvane.examples.v1", "installed"),
   );
 });
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { emptyWorkspace, makeBlock, uid, type CanvasApp } from "../src/model";
 
 function fixtureApp(name: string, x = 140): CanvasApp {
@@ -55,6 +55,7 @@ test("empty start, creation, edit, archive, restore and reload", async ({
     page.getByRole("heading", { name: "A place for the next idea." }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Options for Daily notes" }).click();
+  await page.getByRole("button", { name: "Archive app", exact: true }).click();
   await page.getByRole("button", { name: "Archive app", exact: true }).click();
   await expect(page.locator(".canvas-app")).toHaveCount(0);
   await page.getByRole("button", { name: "Workspace options" }).click();
@@ -175,6 +176,98 @@ test("gestures preserve app input ownership; move and resize persist", async ({
   );
 });
 
+for (const zoom of [0.6, 1, 1.4]) {
+  test(`middle-drag pans from every app resize border without changing geometry at zoom ${zoom}`, async ({
+    page,
+  }) => {
+    await page.goto("/");
+    if (zoom !== 1) {
+      await page.mouse.move(720, 500);
+      await page.keyboard.down("Control");
+      await page.mouse.wheel(0, -Math.log(zoom) / 0.0025);
+      await page.keyboard.up("Control");
+      await expect
+        .poll(() =>
+          page
+            .locator(".canvas-plane")
+            .evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).a),
+        )
+        .toBeCloseTo(zoom, 5);
+    }
+    await page.getByRole("button", { name: "Create app", exact: true }).click();
+    const app = page.locator(".canvas-app");
+    const geometry = () =>
+      app.evaluate((el: HTMLElement) => [
+        el.style.left,
+        el.style.top,
+        el.style.width,
+        el.style.height,
+      ]);
+    const original = await geometry();
+    const camera = () =>
+      page.locator(".canvas-plane").evaluate((el) => {
+        const m = new DOMMatrix(getComputedStyle(el).transform);
+        return { x: m.e, y: m.f };
+      });
+    for (const [index, edge] of [
+      "n",
+      "e",
+      "s",
+      "w",
+      "ne",
+      "se",
+      "sw",
+      "nw",
+    ].entries()) {
+      const before = await camera();
+      const bounds = (await page
+        .locator(`.resize-edge.edge-${edge}`)
+        .boundingBox())!;
+      const start = {
+        x: bounds.x + bounds.width / 2,
+        y: bounds.y + bounds.height / 2,
+      };
+      const delta = index % 2 ? -26 : 26;
+      // Alt must not turn a middle-button pan into an app move either.
+      if (index % 2) await page.keyboard.down("Alt");
+      await page.mouse.move(start.x, start.y);
+      await page.mouse.down({ button: "middle" });
+      await page.mouse.move(start.x + delta, start.y + delta, { steps: 4 });
+      await page.mouse.up({ button: "middle" });
+      if (index % 2) await page.keyboard.up("Alt");
+      expect(await geometry(), `geometry after middle drag on ${edge}`).toEqual(
+        original,
+      );
+      const after = await camera();
+      expect(after.x - before.x).toBeCloseTo(delta, 1);
+      expect(after.y - before.y).toBeCloseTo(delta, 1);
+    }
+  });
+}
+
+test("Space-drag on an app corner pans instead of resizing", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Create app", exact: true }).click();
+  const app = page.locator(".canvas-app");
+  // Space on a focused button intentionally activates it. Release that focus
+  // before exercising the canvas pan shortcut.
+  await page.keyboard.press("Escape");
+  const before = await app.getAttribute("style");
+  const corner = (await page.locator(".edge-se").boundingBox())!;
+  await page.mouse.move(
+    corner.x + corner.width / 2,
+    corner.y + corner.height / 2,
+  );
+  await page.keyboard.down("Space");
+  await page.mouse.down();
+  await page.mouse.move(corner.x + 35, corner.y + 30, { steps: 4 });
+  await page.mouse.up();
+  await page.keyboard.up("Space");
+  expect(await app.getAttribute("style")).toBe(before);
+});
+
 test("small-screen creation and search are usable", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
@@ -243,6 +336,7 @@ test("cross-app actions use stable IDs, survive rename and fail visibly after ar
   await page
     .getByRole("button", { name: "Options for Renamed receiver" })
     .click();
+  await page.getByRole("button", { name: "Archive app", exact: true }).click();
   await page.getByRole("button", { name: "Archive app", exact: true }).click();
   await page.getByRole("button", { name: "Send to receiver" }).click();
   await expect(page.locator(".app-error")).toContainText(
@@ -346,7 +440,9 @@ test("shared definitions and detached copies survive reload", async ({
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await page.waitForTimeout(250);
   await page.reload();
-  await expect(page.locator(".status-area")).toHaveCount(0);
+  await expect
+    .poll(() => page.locator(".status-area").allTextContents())
+    .toEqual([]);
   await expect(page.locator(".app-text")).toHaveText([
     "Together, until detached.",
     "A thought of my own.",
@@ -356,13 +452,17 @@ test("shared definitions and detached copies survive reload", async ({
 test("storage failure is visible without blocking app use", async ({
   page,
 }) => {
-  await page.addInitScript(() => {
-    if (window !== window.top) return;
-    Storage.prototype.setItem = () => {
-      throw new DOMException("Quota exceeded", "QuotaExceededError");
-    };
-  });
   await page.goto("/");
+  await expect(page.locator("main")).toHaveAttribute("data-editable", "true");
+  await page.route("**/__orvane/storage/state", (route) =>
+    route.request().method() === "PUT"
+      ? route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "Disk full" }),
+        })
+      : route.continue(),
+  );
   await page.getByRole("button", { name: "Create app", exact: true }).click();
   await expect(page.locator(".status-area")).toContainText(
     "Saving is unavailable",

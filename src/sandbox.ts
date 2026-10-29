@@ -1,10 +1,11 @@
+import { uid } from "./model";
 // User actions run in an opaque-origin frame and a terminable worker. No main-thread eval.
 export function runIsolated(code: string, value: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const frame = document.createElement("iframe");
     frame.setAttribute("sandbox", "allow-scripts");
     frame.hidden = true;
-    const token = crypto.randomUUID();
+    const token = uid();
     const cleanup = () => {
       clearTimeout(timer);
       window.removeEventListener("message", listener);
@@ -22,7 +23,7 @@ export function runIsolated(code: string, value: string): Promise<string> {
         return;
       }
       cleanup();
-      if (event.data.error) reject(new Error(String(event.data.error)));
+      if ("error" in event.data) reject(new Error(String(event.data.error)));
       else resolve(String(event.data.value ?? ""));
     };
     let timer = setTimeout(() => {
@@ -39,11 +40,11 @@ export function runIsolated(code: string, value: string): Promise<string> {
       const payload = ${payload};
       const respond = result => parent.postMessage({...result, token: payload.token}, '*');
       try {
-        const source = 'postMessage({ready:true});onmessage=async(e)=>{try{const result=await (new Function("value",e.data.code))(e.data.value);postMessage({value:String(result??"")})}catch(e){postMessage({error:e.message})}}';
+        const source = 'postMessage({ready:true});onmessage=async(e)=>{try{const result=await (new Function("value",e.data.code))(e.data.value);postMessage({value:String(result??"")})}catch(e){postMessage({error:String(e?.message ?? e)})}}';
         const worker = new Worker(URL.createObjectURL(new Blob([source], {type:'text/javascript'})));
         worker.onmessage = e => {if(e.data.ready){respond({ready:true});worker.postMessage(payload);setTimeout(()=>{worker.terminate();respond({error:'Custom action exceeded its 2-second time limit.'})},2000);return}worker.terminate(); respond(e.data)};
-        worker.onerror = e => {worker.terminate(); respond({error:e.message || 'Custom action could not run.'})};
-      } catch(e) {respond({error:e.message})}
+        worker.onerror = e => {worker.terminate(); respond({error:String(e?.message ?? e) || 'Custom action could not run.'})};
+      } catch(e) {respond({error:String(e?.message ?? e)})}
       <\/script>`;
     document.body.append(frame);
   });
