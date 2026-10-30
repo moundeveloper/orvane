@@ -68,6 +68,7 @@ const block: z.ZodType<Block> = z.lazy(() =>
       "projects",
       "notes",
       "browser",
+      "netsuite",
     ]),
     label: z.string(),
     value: z.string(),
@@ -217,7 +218,11 @@ function checkFlow(rules: Rule[], value?: ActionGraph, depth = 0) {
   }
   ids.forEach(visit);
 }
-export function parseWorkspace(input: unknown): Workspace {
+// serializedLength lets callers that already hold the JSON skip re-serializing.
+export function parseWorkspace(
+  input: unknown,
+  serializedLength?: number,
+): Workspace {
   // Bound nesting before recursive schema parsing or flattening touches untrusted
   // input. Backup files can be valid JSON while exhausting the JS call stack.
   const pending: { value: unknown; depth: number }[] = [
@@ -234,7 +239,7 @@ export function parseWorkspace(input: unknown): Workspace {
     for (const item of Object.values(value))
       pending.push({ value: item, depth: depth + 1 });
   }
-  if (JSON.stringify(input).length > 25_000_000)
+  if ((serializedLength ?? JSON.stringify(input).length) > 25_000_000)
     throw Error("This backup is too large (maximum 25 MB).");
   if (
     input &&

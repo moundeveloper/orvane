@@ -35,7 +35,16 @@ interface WebviewElement extends HTMLElement {
   canGoForward(): boolean;
   getWebContentsId(): number;
 }
+interface ProcessingTab { id: string; label: string; status: string; autoRefresh: boolean; }
+interface ProcessingApi {
+  list(): Promise<ProcessingTab[]>;
+  create(id: number): Promise<ProcessingTab>;
+  refresh(origin: string): Promise<ProcessingTab>;
+  close(origin: string): Promise<void>;
+  onChanged(callback: () => void): () => void;
+}
 interface OrvaneDesktop {
+  processing?: ProcessingApi;
   webview: boolean;
   partition: string;
   setPageDensity(webContentsId: number, density: number): Promise<void>;
@@ -58,6 +67,26 @@ interface OrvaneDesktop {
 const desktop = (window as unknown as { orvaneDesktop?: OrvaneDesktop })
   .orvaneDesktop;
 const useWebview = !!desktop?.webview;
+const processing = desktop?.processing;
+const processingTabs = ref<ProcessingTab[]>([]), processingOpen = ref(false), processingError = ref(''), processingGroup = ref<HTMLElement>();
+async function refreshProcessing() {
+  if (!processing) return;
+  try { processingTabs.value = await processing.list(); } catch (e) { processingError.value = String(e); }
+}
+async function createProcessing() {
+  const view = webviews.get(state.value.active);
+  if (!processing || !view) return;
+  try { processingError.value = ''; await processing.create(view.getWebContentsId()); processingOpen.value = true; await refreshProcessing(); }
+  catch (e) { processingError.value = e instanceof Error ? e.message : String(e); }
+}
+async function processingAction(action: 'refresh' | 'close', id: string) {
+  try { processingError.value = ''; await processing?.[action](id); await refreshProcessing(); }
+  catch (e) { processingError.value = e instanceof Error ? e.message : String(e); }
+}
+let stopProcessing: (() => void) | undefined;
+function closeProcessingOutside(event: PointerEvent) { if (!processingGroup.value?.contains(event.target as Node)) processingOpen.value = false; }
+onMounted(() => { stopProcessing = processing?.onChanged(refreshProcessing); void refreshProcessing(); document.addEventListener('pointerdown', closeProcessingOutside, true); });
+onBeforeUnmount(() => { stopProcessing?.(); document.removeEventListener('pointerdown', closeProcessingOutside, true); });
 
 const START = "";
 const MAX_TABS = 12;
@@ -591,6 +620,15 @@ function browserWheel(event: WheelEvent) {
         <Icon name="plus" :size="13" />
       </button>
     </div>
+    <div v-if="processing" ref="processingGroup" class="processing-group">
+      <button class="processing-toggle" :aria-expanded="processingOpen" @click="processingOpen = !processingOpen">Processing tabs <span>{{ processingTabs.length }}</span></button>
+      <button class="processing-add" :disabled="!activeTab.url" @click="createProcessing">Use current tab</button>
+      <div v-if="processingOpen" class="processing-list">
+        <p v-if="!processingTabs.length">No processing tabs yet. Use the current tab to create one.</p>
+        <div v-for="tab in processingTabs" :key="tab.id" class="processing-row"><span class="processing-name">{{ tab.label }}</span><span>{{ tab.status }}</span><button @click="processingAction('refresh', tab.id)">Refresh</button><button @click="processingAction('close', tab.id)">Close</button></div>
+      </div>
+      <p v-if="processingError" role="alert">{{ processingError }}</p>
+    </div>
     <form class="browser-bar" @submit.prevent="go()" @keydown.stop>
       <button
         type="button"
@@ -807,6 +845,15 @@ function browserWheel(event: WheelEvent) {
   min-width: 0;
   overflow: hidden;
 }
+.processing-group { position: relative; display: flex; align-items: center; gap: 8px; flex: none; padding: 3px 10px; background: #f1f5f7; color: #607482; font-size: 11px; }
+.processing-group button { border: 0; background: none; color: inherit; cursor: pointer; padding: 4px; }
+.processing-group button:hover { color: #344d5b; }
+.processing-group button:disabled { opacity: .5; cursor: default; }
+.processing-toggle span { background: #dfeaf0; border-radius: 4px; padding: 1px 5px; margin-left: 4px; }
+.processing-list { position: absolute; z-index: 20; top: 100%; left: 10px; min-width: 320px; max-width: min(520px, 90%); background: #f7f9fa; border: 1px solid #d5e1e7; box-shadow: 0 8px 20px #425c6b24; padding: 8px; }
+.processing-list p { margin: 8px; }
+.processing-row { display: flex; align-items: center; gap: 8px; padding: 5px; }
+.processing-name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .browser-tab {
   display: flex;
   align-items: center;

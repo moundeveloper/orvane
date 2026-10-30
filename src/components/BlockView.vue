@@ -8,6 +8,7 @@ import {
 } from "vue";
 const GitViewer = defineAsyncComponent(() => import("./GitViewer.vue"));
 const NotesView = defineAsyncComponent(() => import("./notes/NotesView.vue"));
+const NetSuiteView = defineAsyncComponent(() => import("./NetSuiteView.vue"));
 const BrowserView = defineAsyncComponent(() => import("./BrowserView.vue"));
 const ProjectsHub = defineAsyncComponent(
   () => import("./projects/ProjectsHub.vue"),
@@ -96,6 +97,7 @@ const sandboxDocument = (code: string) => {
       :block="block"
       :editing="editing"
     />
+    <NetSuiteView v-else-if="block.kind === 'netsuite'" :block="block" />
     <BrowserView
       v-else-if="block.kind === 'browser'"
       :block="block"

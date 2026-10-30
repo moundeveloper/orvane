@@ -342,7 +342,14 @@ const traces = ref<
   }[]
 >([]);
 const lastFocus = new Map<string, HTMLElement>();
+// Saves wait for a pause in editing; hiding, blurring or closing the window flushes.
+const SAVE_DELAY = 1000;
 let saveTimer: ReturnType<typeof setTimeout>;
+function flushSave() {
+  if (!unsavedChanges.value) return;
+  clearTimeout(saveTimer);
+  void persist();
+}
 async function persist() {
   if (!canEdit.value || loadError.value || applying) return;
   const revision = workspaceRevision.value;
@@ -367,7 +374,7 @@ watch(
     unsavedChanges.value = true;
     workspaceRevision.value++;
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => void persist(), 180);
+    saveTimer = setTimeout(() => void persist(), SAVE_DELAY);
   },
   { deep: true, flush: "sync" },
 );
@@ -413,6 +420,7 @@ const toolApps = {
   projects: { name: "Projects Hub", icon: "folder" },
   notes: { name: "Notes", icon: "text" },
   browser: { name: "Browser", icon: "globe" },
+  netsuite: { name: "NetSuite", icon: "globe" },
 };
 function createGitViewer(kind: keyof typeof toolApps = "git") {
   if (!canEdit.value || importBusy.value) return;
@@ -1776,7 +1784,7 @@ async function executeMcp(request: BridgeRequest, revision: string) {
   } finally {
     mcpBusy.value = false;
     importBusy.value = false;
-    if (!committed) saveTimer = setTimeout(() => void persist(), 180);
+    if (!committed) saveTimer = setTimeout(() => void persist(), SAVE_DELAY);
   }
 }
 const runtimeErrors = reactive<Record<string, string>>({});
@@ -1847,6 +1855,7 @@ function hidePage() {
 }
 onMounted(() => {
   window.addEventListener("beforeunload", beforeUnload);
+  window.addEventListener("blur", flushSave);
   window.addEventListener("pageshow", restorePage);
   window.addEventListener("online", persist);
   document.addEventListener("pointerdown", dismissOutside, true);
@@ -1871,6 +1880,7 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   window.removeEventListener("beforeunload", beforeUnload);
+  window.removeEventListener("blur", flushSave);
   window.removeEventListener("pageshow", restorePage);
   window.removeEventListener("online", persist);
   mcpBridge?.close();
@@ -2549,6 +2559,9 @@ onBeforeUnmount(() => {
         @click="createGitViewer('browser')"
       >
         <Icon name="globe" :size="14" />Create Browser
+      </button>
+      <button class="subtle-button" :disabled="!canEdit || importBusy" @click="createGitViewer('netsuite')">
+        <Icon name="globe" :size="14" />Create NetSuite app
       </button>
       <button
         class="subtle-button"

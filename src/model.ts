@@ -11,7 +11,8 @@ export type Kind =
   | "git"
   | "projects"
   | "notes"
-  | "browser";
+  | "browser"
+  | "netsuite";
 export type ActionKind =
   | "add-item"
   | "clear"
@@ -224,6 +225,7 @@ export const kinds: { kind: Kind; name: string; description: string }[] = [
     name: "Web browser",
     description: "Tabs, an address bar and web pages",
   },
+  { kind: "netsuite", name: "NetSuite", description: "Query an open NetSuite session" },
 ];
 export function makeBlock(kind: Kind): Block {
   return {
@@ -243,6 +245,7 @@ export function makeBlock(kind: Kind): Block {
       projects: "Projects Hub",
       notes: "Notes workspace",
       browser: "Web browser",
+      netsuite: "NetSuite",
     }[kind],
     value: "",
     checked: false,

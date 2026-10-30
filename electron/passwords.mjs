@@ -264,13 +264,14 @@ export function setupPasswords({ partition, isOrvane, folder }) {
     return true;
   });
   // Copied for 30 seconds, then cleared if it is still on the clipboard.
-  handle("orvane:passwords-copy", (id) => {
+  // Electron 45 made clipboard calls asynchronous; awaiting works either way.
+  handle("orvane:passwords-copy", async (id) => {
     const login = state === "ok" && vault.logins.find((l) => l.id === id);
     if (!login) return false;
     const { password } = login;
-    clipboard.writeText(password);
-    setTimeout(() => {
-      if (clipboard.readText() === password) clipboard.clear();
+    await clipboard.writeText(password);
+    setTimeout(async () => {
+      if ((await clipboard.readText()) === password) await clipboard.clear();
     }, CLIPBOARD_LIFE);
     return true;
   });

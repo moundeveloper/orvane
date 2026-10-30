@@ -33,6 +33,7 @@ const kind = z.enum([
   "projects",
   "notes",
   "browser",
+  "netsuite",
 ]);
 const componentPatch = z
   .object({

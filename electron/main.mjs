@@ -4,8 +4,10 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
+  Menu,
   screen,
   session,
   shell,
@@ -16,6 +18,8 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { setupPasswords } from "./passwords.mjs";
+import { setupNetSuite } from "./netsuite.mjs";
+import { setupProcessing } from "./processing.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.ORVANE_PORT || 5173);
@@ -36,25 +40,22 @@ const CANVAS_GESTURES = `(() => {
     const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? innerHeight : 1;
     send({ kind: "zoom", x: event.clientX, y: event.clientY, deltaY: event.deltaY * unit });
   }, { capture: true, passive: false });
-  let panning = false, moved = false;
+  let pressed = false, moved = false, startX = 0, startY = 0;
   addEventListener("pointerdown", (event) => {
     if (event.button !== 1) return;
-    stop(event);
-    panning = true;
-    moved = false;
-    try { document.documentElement.setPointerCapture(event.pointerId); } catch {}
+    pressed = true; moved = false; startX = event.screenX; startY = event.screenY;
     send({ kind: "pan-start" });
   }, true);
-  addEventListener("mousedown", (event) => { if (event.button === 1) stop(event); }, true);
   addEventListener("pointermove", (event) => {
-    if (!panning) return;
-    stop(event);
-    moved = true;
-    if (!(event.buttons & 4)) { panning = false; send({ kind: "pan-end" }); }
+    if (!pressed) return;
+    if (!(event.buttons & 4)) { pressed = false; send({ kind: "pan-end" }); return; }
+    if (Math.hypot(event.screenX - startX, event.screenY - startY) >= 4) moved = true;
+    if (moved) stop(event);
   }, true);
-  // A middle click without dragging still opens links in a new tab.
   addEventListener("pointerup", (event) => {
-    if (event.button === 1 && panning) { panning = false; send({ kind: "pan-end" }); }
+    if (event.button !== 1 || !pressed) return;
+    pressed = false; send({ kind: "pan-end" });
+    if (moved) stop(event);
   }, true);
   addEventListener("auxclick", (event) => { if (event.button === 1 && moved) stop(event); }, true);
 })();`;
@@ -132,6 +133,9 @@ function secure() {
     done(isOrvane(contents.getURL()) && permission === "clipboard-sanitized-write"),
   );
 
+  const processing = setupProcessing({ partition: sites, isOrvane });
+  setupNetSuite(isOrvane, sites, processing);
+
   // Saved logins: offered on sign-in forms, saved after a sign-in works.
   const trackPasswords = setupPasswords({
     partition: BROWSER_PARTITION,
@@ -142,6 +146,20 @@ function secure() {
   app.on("web-contents-created", (_event, contents) => {
     if (contents.session === sites) trackPasswords(contents);
     if (contents.getType() === "webview") {
+      // Discovery follows the real Browser tab as login and navigation finish.
+      // The host UI can update its environment list without a refresh button.
+      let wasNetSuite = false, environmentHost;
+      const notifyEnvironment = (url) => {
+        let isNetSuite = false;
+        try { const u = new URL(url); isNetSuite = u.protocol === "https:" && /^[a-z0-9-]+\.app\.netsuite\.com$/i.test(u.hostname); } catch {}
+        environmentHost = contents.hostWebContents || environmentHost;
+        if ((isNetSuite || wasNetSuite) && environmentHost && !environmentHost.isDestroyed()) environmentHost.send("orvane:processing-changed");
+        wasNetSuite = isNetSuite;
+      };
+      contents.on("did-navigate", (_event, url) => notifyEnvironment(url));
+      contents.on("did-navigate-in-page", (_event, url, isMainFrame) => { if (isMainFrame) notifyEnvironment(url); });
+      contents.on("dom-ready", () => { notifyEnvironment(contents.getURL()); processing.sourceChanged(contents); });
+      contents.on("destroyed", () => { if (wasNetSuite && environmentHost && !environmentHost.isDestroyed()) environmentHost.send("orvane:processing-changed"); });
       // Canvas zoom is handled by render density, never by site zoom, which
       // Chromium remembers per site and would leak into popups.
       contents.on("dom-ready", () => {
@@ -221,6 +239,31 @@ function secure() {
           };
         }
         if (relay) contents.hostWebContents?.send("orvane:guest-input", { from: contents.id, ...relay });
+      });
+      // Electron does not provide Chrome's page context menu automatically.
+      contents.on("context-menu", (_event, params) => {
+        const items = [];
+        if (web(params.linkURL) && !isOrvane(params.linkURL)) items.push(
+          { label: "Open link in new tab", click: () => contents.hostWebContents?.send("orvane:open-tab", { from: contents.id, url: params.linkURL, background: true }) },
+          { label: "Copy link address", click: () => clipboard.writeText(params.linkURL) },
+          { type: "separator" },
+        );
+        if (params.isEditable) items.push(
+          { label: "Undo", enabled: params.editFlags.canUndo, click: () => contents.undo() },
+          { label: "Redo", enabled: params.editFlags.canRedo, click: () => contents.redo() },
+          { type: "separator" },
+          { label: "Cut", enabled: params.editFlags.canCut, click: () => contents.cut() },
+          { label: "Copy", enabled: params.editFlags.canCopy, click: () => contents.copy() },
+          { label: "Paste", enabled: params.editFlags.canPaste, click: () => contents.paste() },
+          { label: "Select all", enabled: params.editFlags.canSelectAll, click: () => contents.selectAll() },
+        );
+        else if (params.selectionText) items.push({ label: "Copy", enabled: params.editFlags.canCopy, click: () => contents.copy() });
+        else items.push(
+          { label: "Back", enabled: contents.navigationHistory.canGoBack(), click: () => contents.navigationHistory.goBack() },
+          { label: "Forward", enabled: contents.navigationHistory.canGoForward(), click: () => contents.navigationHistory.goForward() },
+          { label: "Reload", click: () => contents.reload() },
+        );
+        Menu.buildFromTemplate(items).popup({ window: BrowserWindow.fromWebContents(contents.hostWebContents) || undefined });
       });
       contents.on("will-navigate", (event, url) => {
         if (!web(url) || isOrvane(url)) event.preventDefault();

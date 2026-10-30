@@ -74,7 +74,9 @@ export class WorkspaceStorage {
       headers: json ? { "Content-Type": "application/json" } : undefined,
       body: json,
       keepalive:
-        json !== undefined && new TextEncoder().encode(json).length < 60_000,
+        json !== undefined &&
+        json.length < 60_000 &&
+        new TextEncoder().encode(json).length < 60_000,
     });
     let result;
     try {
@@ -165,7 +167,9 @@ export class WorkspaceStorage {
       );
   }
   write(data: Workspace, reason?: string, snapshotBase?: Workspace) {
-    const clean = parseWorkspace(clone(data));
+    // One serialization doubles as the detached copy and the size check.
+    const json = JSON.stringify(data);
+    const clean = parseWorkspace(JSON.parse(json), json.length);
     this.closingData = reason ? undefined : clean;
     const base = snapshotBase ? parseWorkspace(clone(snapshotBase)) : undefined;
     const operation = this.queue.then(async () => {

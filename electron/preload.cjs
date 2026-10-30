@@ -21,6 +21,22 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
     ipcRenderer.on("orvane:open-tab", listener);
     return () => ipcRenderer.removeListener("orvane:open-tab", listener);
   },
+  processing: {
+    list: () => ipcRenderer.invoke("orvane:processing-list"),
+    create: id => ipcRenderer.invoke("orvane:processing-create", id),
+    refresh: origin => ipcRenderer.invoke("orvane:processing-refresh", origin),
+    close: origin => ipcRenderer.invoke("orvane:processing-close", origin),
+    onChanged(callback) {
+      const listener = () => callback();
+      ipcRenderer.on("orvane:processing-changed", listener);
+      return () => ipcRenderer.removeListener("orvane:processing-changed", listener);
+    },
+  },
+  netsuite: {
+    tabs: () => ipcRenderer.invoke("orvane:netsuite-tabs"),
+    openRecord: (origin, kind, id) => ipcRenderer.invoke("orvane:netsuite-open-record", origin, kind, id),
+    run: (id, operation, args) => ipcRenderer.invoke("orvane:netsuite-run", id, operation, args),
+  },
   passwords: {
     list: () => ipcRenderer.invoke("orvane:passwords-list"),
     remove: (id) => ipcRenderer.invoke("orvane:passwords-remove", id),

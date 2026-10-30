@@ -92,8 +92,11 @@ const highlight = HighlightStyle.define([
   { tag: tags.attributeName, color: "#7a7597" },
   { tag: tags.operator, color: "#667c8c" },
 ]);
+// Very large documents skip parsing and lint, which otherwise block typing.
+const LARGE = 300_000;
 onMounted(() => {
   if (!host.value) return;
+  const large = props.modelValue.length > LARGE;
   view = new EditorView({
     parent: host.value,
     state: EditorState.create({
@@ -102,10 +105,12 @@ onMounted(() => {
         basicSetup,
         theme,
         syntaxHighlighting(highlight),
-        languageConfig.of(props.language === "html" ? html() : javascript()),
+        languageConfig.of(
+          large ? [] : props.language === "html" ? html() : javascript(),
+        ),
         keymap.of([indentWithTab]),
-        lintGutter(),
-        linter((v) => {
+        large ? [] : lintGutter(),
+        large ? [] : linter((v) => {
           const diagnostics: {
             from: number;
             to: number;

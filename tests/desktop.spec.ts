@@ -56,6 +56,37 @@ test("Desktop Browser app loads frame-blocking sites in a webview", async ({}, i
       timeout: 15000,
     });
 
+    // A middle click opens an ordinary link in a background Browser tab.
+    await app.evaluate(async ({ webContents }) => {
+      const guest = webContents.getAllWebContents().find(c => c.getType() === "webview")!;
+      const pos = await guest.executeJavaScript(`(() => { const a = document.querySelector('#tab'); a.removeAttribute('target'); const r = a.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+      guest.sendInputEvent({ type: 'mouseDown', button: 'middle', clickCount: 1, ...pos });
+      guest.sendInputEvent({ type: 'mouseUp', button: 'middle', clickCount: 1, ...pos });
+    });
+    await expect(tabs).toHaveCount(2);
+    await expect(tabs.nth(1)).toContainText("Fixture two", { timeout: 15000 });
+    await tabs.nth(1).getByRole('button').click();
+    await expect(tabs).toHaveCount(1);
+
+    // Right click invokes the guest page's native context menu.
+    const contextMenu = await app.evaluate(async ({ webContents }) => {
+      const guest = webContents.getAllWebContents().find(c => c.getType() === 'webview')!;
+      const event = new Promise<boolean>(resolve => { guest.once('context-menu', () => resolve(true)); setTimeout(() => resolve(false), 3000); });
+      guest.sendInputEvent({ type: 'mouseDown', button: 'right', clickCount: 1, x: 20, y: 20 });
+      guest.sendInputEvent({ type: 'mouseUp', button: 'right', clickCount: 1, x: 20, y: 20 });
+      return event;
+    });
+    expect(contextMenu).toBe(true);
+    await page.keyboard.press('Escape');
+
+    // Processing pages are compact, share the browser session and can close.
+    await browser.getByRole('button', { name: 'Use current tab' }).click();
+    const processing = browser.locator('.processing-list');
+    await expect(processing).toContainText('ready', { timeout: 15000 });
+    await processing.getByRole('button', { name: 'Close' }).click();
+    await expect(processing).toContainText('No processing tabs');
+    await browser.getByRole('button', { name: /Processing tabs/ }).click();
+
     // Real history from the page itself.
     await addressBar.fill(`${origin}/three`);
     await addressBar.focus();
