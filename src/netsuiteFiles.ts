@@ -28,11 +28,14 @@ db.version(1).stores({ drafts: "key, environment", trash: "id, environment" });
 const draftKey = (d: { environment: string; id: number }) =>
   `${d.environment}|${d.id}`;
 export const drafts = ref<FileDraft[]>([]),
-  trash = ref<TrashEntry[]>([]);
+  trash = ref<TrashEntry[]>([]),
+  // Set when IndexedDB is unavailable: drafts then live only until reload.
+  storageError = ref("");
 let loading: Promise<void> | undefined;
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 function failed(error: unknown) {
   console.warn("File Cabinet drafts could not be stored.", error);
+  storageError.value = error instanceof Error ? error.message : String(error);
 }
 const validDraft = (d: FileDraft) =>
   d &&

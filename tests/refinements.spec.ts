@@ -250,6 +250,9 @@ test("wheel zoom interpolates continuously and repaints text without a scaled co
     .toBeCloseTo(Math.exp(0.45), 3);
   expect(midway).toBeGreaterThan(1);
   expect(midway).toBeLessThan(Math.exp(0.45));
+  await expect.poll(() => page.locator(".canvas-plane").evaluate(
+    (el) => getComputedStyle(el).willChange,
+  )).toBe("auto");
   const style = await page.locator(".canvas-plane").evaluate((el) => ({
     transform: getComputedStyle(el).transform,
     scale: new DOMMatrix(getComputedStyle(el).transform).a,

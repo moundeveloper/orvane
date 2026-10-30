@@ -10,6 +10,18 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
   setPageDensity(webContentsId, density) {
     return ipcRenderer.invoke("orvane:page-density", webContentsId, density);
   },
+  /** Run a Browser page normally (true) or pause it while nobody sees it. */
+  setPageActive(webContentsId, active) {
+    return ipcRenderer.invoke("orvane:page-active", webContentsId, active);
+  },
+  /** Before discarding a page: { edited } and, when not edited, a picture. */
+  snapshotPage(webContentsId, picture) {
+    return ipcRenderer.invoke("orvane:page-snapshot", webContentsId, picture);
+  },
+  /** Keep a picture of a page now on screen, shown if it is discarded. */
+  rememberPage(webContentsId) {
+    return ipcRenderer.invoke("orvane:page-remember", webContentsId);
+  },
   /** Canvas zoom/pan gestures made over a Browser page. */
   onGuestInput(callback) {
     const listener = (_event, input) => callback(input);

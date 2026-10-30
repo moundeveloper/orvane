@@ -312,14 +312,8 @@ function secure() {
 // render at the on-screen density instead (per page, unlike site zoom, so
 // popups and layout are unaffected).
 ipcMain.handle("orvane:page-density", (event, id, density) => {
-  const guest = typeof id === "number" ? webContents.fromId(id) : undefined;
-  if (
-    !guest ||
-    guest.getType() !== "webview" ||
-    guest.hostWebContents !== event.sender ||
-    typeof density !== "number" ||
-    !Number.isFinite(density)
-  )
+  const guest = ownGuest(event, id);
+  if (!guest || typeof density !== "number" || !Number.isFinite(density))
     return;
   guest.enableDeviceEmulation({
     screenPosition: "desktop",
@@ -329,6 +323,125 @@ ipcMain.handle("orvane:page-density", (event, id, density) => {
     viewSize: { width: 0, height: 0 },
     scale: 1,
   });
+});
+
+/** A <webview> guest of the window that sent this IPC message, or nothing. */
+function ownGuest(event, id) {
+  const guest = typeof id === "number" ? webContents.fromId(id) : undefined;
+  return guest &&
+    !guest.isDestroyed() &&
+    guest.getType() === "webview" &&
+    guest.hostWebContents === event.sender
+    ? guest
+    : undefined;
+}
+
+// Off-screen pages. Electron keeps <webview> guests "visible" to Chromium
+// whatever their CSS (display:none, visibility:hidden, off-screen) and
+// ignores Page.setWebLifecycleState there, so they keep running
+// requestAnimationFrame and repainting at 60 fps. What does stop them is
+// pausing the page's JavaScript through the debugger: no rAF, no timers, no
+// script-driven repaint until the page is shown again (like Chrome's tab
+// freezing). Compositor-only animations (CSS, video) still run.
+const pausedGuests = new Set();
+async function pauseGuest(guest) {
+  if (pausedGuests.has(guest.id)) return;
+  const debug = guest.debugger;
+  try {
+    if (debug.isAttached()) return; // Do not take over someone else's debugger.
+    debug.attach("1.3");
+  } catch {
+    return; // Another debugger owns the page; leave it running.
+  }
+  pausedGuests.add(guest.id);
+  const forget = () => pausedGuests.delete(guest.id);
+  debug.once("detach", forget);
+  guest.once("destroyed", forget);
+  try {
+    await debug.sendCommand("Debugger.enable", {});
+    if (!pausedGuests.has(guest.id)) return;
+    await debug.sendCommand("Debugger.pause", {});
+  } catch {
+    resumeGuest(guest);
+  }
+}
+function resumeGuest(guest) {
+  if (!pausedGuests.delete(guest.id) || guest.isDestroyed()) return;
+  // Detaching ends the session, which resumes the page.
+  try {
+    guest.debugger.detach();
+  } catch {
+    // Already detached.
+  }
+}
+ipcMain.handle("orvane:page-active", (event, id, active) => {
+  const guest = ownGuest(event, id);
+  if (!guest || typeof active !== "boolean") return;
+  if (active) resumeGuest(guest);
+  else return pauseGuest(guest);
+});
+// A new document (cross-site navigation) starts unpaused; keep it paused.
+app.on("web-contents-created", (_event, contents) => {
+  if (contents.getType() !== "webview") return;
+  contents.on("dom-ready", () => {
+    if (pausedGuests.has(contents.id))
+      void contents.debugger.sendCommand("Debugger.pause", {}).catch(() => undefined);
+  });
+});
+
+// Before a Browser tab is discarded: whether it holds edited form fields
+// (main document only), and a picture of it to show until it is reloaded.
+const EDITED_WORLD = 1988;
+const EDITED_FIELDS = `(() => {
+  // Embedded documents and rich editors can hold work we cannot inspect here.
+  if (document.querySelector('iframe, frame, [contenteditable]:not([contenteditable="false"])')) return true;
+  for (const el of document.querySelectorAll("input, textarea, select")) {
+    if (el instanceof HTMLSelectElement) {
+      if ([...el.options].some((o) => o.selected !== o.defaultSelected)) return true;
+    } else if (el.type === "checkbox" || el.type === "radio") {
+      if (el.checked !== el.defaultChecked) return true;
+    } else if (el.type === "file" && el.files?.length) return true;
+    else if (!["hidden", "submit", "button", "reset", "image", "file"].includes(el.type) && el.value !== el.defaultValue) return true;
+  }
+  return false;
+})()`;
+// Pictures of pages taken while on screen (Chromium draws no new frame for
+// an off-screen or hidden page, so one can't be captured when discarding).
+const pictures = new Map();
+ipcMain.handle("orvane:page-remember", async (event, id) => {
+  const guest = ownGuest(event, id);
+  if (!guest) return;
+  let timer;
+  try {
+    let image = await Promise.race([
+      guest.capturePage(),
+      new Promise((done) => (timer = setTimeout(() => done(undefined), 1500))),
+    ]);
+    if (!image || image.isEmpty() || guest.isDestroyed()) return;
+    if (image.getSize().width > 1600) image = image.resize({ width: 1600, quality: "good" });
+    if (!pictures.has(guest.id)) guest.once("destroyed", () => pictures.delete(guest.id));
+    pictures.set(guest.id, `data:image/jpeg;base64,${image.toJPEG(72).toString("base64")}`);
+  } catch {
+    // No picture; the tab still reloads when clicked.
+  } finally {
+    clearTimeout(timer);
+  }
+});
+ipcMain.handle("orvane:page-snapshot", async (event, id, picture) => {
+  const guest = ownGuest(event, id);
+  if (!guest) return null;
+  resumeGuest(guest);
+  let timer;
+  const edited = await Promise.race([
+    guest
+      .executeJavaScriptInIsolatedWorld(EDITED_WORLD, [{ code: EDITED_FIELDS }])
+      .catch(() => true),
+    new Promise((done) => (timer = setTimeout(() => done(true), 2000))),
+  ]);
+  clearTimeout(timer);
+  // Unknown (no answer) counts as edited: never drop work we can't see.
+  if (edited !== false || guest.isDestroyed()) return { edited: true };
+  return { edited: false, image: (picture === true && pictures.get(guest.id)) || "" };
 });
 
 function createWindow() {

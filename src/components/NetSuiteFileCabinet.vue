@@ -22,6 +22,7 @@ import {
   importLegacy,
   removeDraft,
   removeTrash,
+  storageError,
   trash,
   updateDraft as storeDraft,
   type TrashEntry,
@@ -1951,7 +1952,13 @@ onBeforeUnmount(() => {
                 <input v-model="p.editing" type="checkbox" />
                 <span />{{ p.editing ? "Editing" : "Read-only" }}
               </label>
-              <span v-if="dirtyOf(p)" class="fc-hint">Unsaved draft · kept locally</span>
+              <span v-if="dirtyOf(p)" class="fc-hint" :class="{ 'fc-warn': storageError }"
+                >{{
+                  storageError
+                    ? "Unsaved draft · can't be kept locally right now, save before reloading"
+                    : "Unsaved draft · kept locally"
+                }}</span
+              >
               <div class="fc-spacer" />
               <template v-if="p.editing">
                 <button
@@ -2657,6 +2664,9 @@ onBeforeUnmount(() => {
 }
 .fc-bookmark:hover button:last-child {
   opacity: 1;
+}
+.fc-hint.fc-warn {
+  color: #a5603d;
 }
 .fc-hint {
   color: #718591;

@@ -238,6 +238,10 @@ button:hover {
   height: 0;
   transform-origin: 0 0;
 }
+/* Composited only while moving; dropping it afterwards re-rasterizes text sharp. */
+.canvas-plane.camera-moving {
+  will-change: transform;
+}
 .topbar {
   position: absolute;
   left: 22px;
@@ -301,18 +305,26 @@ button:hover {
 .workspace-options {
   color: #556c7a;
 }
-.is-panning,
-.is-panning * {
-  cursor: grab !important;
-  user-select: none !important;
+/* One layer carries the grab cursor while panning or dragging: a universal
+   `.is-panning *` rule restyled every element on the page twice per gesture. */
+.is-panning {
+  user-select: none;
 }
-.is-panning:active,
-.is-panning:active * {
-  cursor: grabbing !important;
+.pan-shield {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  cursor: grab;
+}
+.pan-shield:active {
+  cursor: grabbing;
 }
 .canvas-app {
   position: absolute;
   container-type: inline-size;
+}
+.canvas-app.offscreen {
+  content-visibility: hidden;
 }
 @property --locator-spread {
   syntax: "<length>";

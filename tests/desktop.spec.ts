@@ -89,9 +89,9 @@ test("Desktop Browser app loads frame-blocking sites in a webview", async ({}, i
 
     // Real history from the page itself.
     await addressBar.fill(`${origin}/three`);
-    await addressBar.focus();
-    // Plain key press: locator.press can wait on the embedded page's navigation.
-    await page.keyboard.press("Enter");
+    // Submit without a key press: once the page takes focus and navigates,
+    // even a plain key press can stall waiting on it (flaky here).
+    await addressBar.evaluate((input) => (input as HTMLInputElement).form!.requestSubmit());
     await expect(tabs.first()).toContainText("Fixture three");
     await browser.getByRole("button", { name: "Back", exact: true }).click();
     await expect(tabs.first()).toContainText("Fixture one");

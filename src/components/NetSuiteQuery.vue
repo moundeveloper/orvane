@@ -2,7 +2,14 @@
 export type QueryFile = { id: string; name: string; sql: string };
 </script>
 <script setup lang="ts">
-import { computed, onActivated, onDeactivated, ref, watch } from "vue";
+import {
+  computed,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  ref,
+  watch,
+} from "vue";
 import SuiteQLEditor from "./SuiteQLEditor.vue";
 import SuiteQLSchema from "./SuiteQLSchema.vue";
 import { format as formatSql } from "sql-formatter";
@@ -216,6 +223,42 @@ const filteredResults = computed(() => {
         ) * (sortDescending.value ? -1 : 1),
     );
   return items;
+});
+// Only rows near the viewport are rendered; spacers keep the scroll height.
+const resultBody = ref<HTMLElement>(),
+  resultScroll = ref(0),
+  resultHeight = ref(400),
+  rowHeight = ref(32);
+let resultObserver: ResizeObserver | undefined;
+watch(resultBody, (body) => {
+  resultObserver?.disconnect();
+  if (!body) return;
+  resultObserver = new ResizeObserver(() => {
+    resultHeight.value = body.clientHeight || 400;
+    const row = body.querySelector<HTMLElement>(".ns-result-row");
+    if (row?.offsetHeight) rowHeight.value = row.offsetHeight;
+  });
+  resultObserver.observe(body);
+});
+onBeforeUnmount(() => resultObserver?.disconnect());
+watch([filteredResults, resultBody], () => {
+  resultScroll.value = 0;
+  if (resultBody.value) resultBody.value.scrollTop = 0;
+});
+const visibleRows = computed(() => {
+  const all = filteredResults.value,
+    height = rowHeight.value,
+    start = Math.max(0, Math.floor(resultScroll.value / height) - 10),
+    end = Math.min(
+      all.length,
+      start + Math.ceil(resultHeight.value / height) + 20,
+    );
+  return {
+    start,
+    rows: all.slice(start, end),
+    before: start * height,
+    after: (all.length - end) * height,
+  };
 });
 function sortResults(col: string) {
   if (sortColumn.value === col) sortDescending.value = !sortDescending.value;
@@ -792,16 +835,30 @@ onDeactivated(() => (active.value = false));
                     }}
                   </button>
                 </div>
-                <div class="ns-result-body">
+                <div
+                  ref="resultBody"
+                  class="ns-result-body"
+                  @scroll.passive="resultScroll = ($event.target as HTMLElement).scrollTop"
+                >
                   <div
-                    v-for="(row, i) in filteredResults"
-                    :key="i"
+                    v-if="visibleRows.before"
+                    class="ns-result-spacer"
+                    :style="{ height: visibleRows.before + 'px' }"
+                  />
+                  <div
+                    v-for="(row, i) in visibleRows.rows"
+                    :key="visibleRows.start + i"
                     class="ns-result-row"
                   >
                     <span v-for="col in columns" :key="col">{{
                       row[col]
                     }}</span>
                   </div>
+                  <div
+                    v-if="visibleRows.after"
+                    class="ns-result-spacer"
+                    :style="{ height: visibleRows.after + 'px' }"
+                  />
                 </div>
               </div>
             </div>
@@ -1124,6 +1181,9 @@ onDeactivated(() => (active.value = false));
   display: grid;
   grid-template-columns: subgrid;
   align-content: start;
+}
+.ns-result-spacer {
+  grid-column: 1/-1;
 }
 .ns-result-head span,
 .ns-result-row span {

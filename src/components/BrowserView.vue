@@ -1,3 +1,68 @@
+<script lang="ts">
+// Shared by every Browser app: a budget of live pages. Each <webview> costs
+// a renderer process (about 100 MB on a trivial page, far more on NetSuite),
+// so beyond the limit the pages nobody has seen for a while are replaced by
+// a picture until clicked.
+interface LivePage {
+  /** Last time the page was on screen (now while it is). */
+  seen(): number;
+  /** On screen, or the one the user is working in: never discarded. */
+  kept(): boolean;
+  discard(): Promise<void>;
+  /** Keep a current picture of the page, if it is on screen. */
+  remember(): void;
+}
+const livePages = new Set<LivePage>();
+/** Settings (localStorage, positive numbers), read when used. */
+function browserSetting(name: "liveLimit" | "discardAfterMs" | "pauseAfterMs") {
+  const defaults = { liveLimit: 6, discardAfterMs: 120_000, pauseAfterMs: 1500 };
+  try {
+    const value = Number(localStorage.getItem(`orvane.browser.${name}`));
+    if (Number.isFinite(value) && value > 0) return value;
+  } catch {
+    // Storage unavailable: defaults.
+  }
+  return defaults[name];
+}
+let sweepTimer: ReturnType<typeof setTimeout> | undefined;
+let sweeping = false;
+async function sweep() {
+  sweepTimer = undefined;
+  if (!sweeping) {
+    sweeping = true;
+    try {
+      const limit = browserSetting("liveLimit"),
+        after = browserSetting("discardAfterMs"),
+        now = Date.now();
+      let excess = livePages.size - limit;
+      const idle = [...livePages]
+        .filter((page) => !page.kept() && now - page.seen() > after)
+        .sort((a, b) => a.seen() - b.seen());
+      for (const page of idle) {
+        if (excess-- <= 0) break;
+        await page.discard();
+      }
+    } finally {
+      sweeping = false;
+    }
+  }
+  scheduleSweep();
+}
+function scheduleSweep() {
+  if (sweepTimer || !livePages.size) return;
+  const after = browserSetting("discardAfterMs");
+  sweepTimer = setTimeout(sweep, Math.min(30_000, Math.max(250, after / 4)));
+}
+function addLivePage(page: LivePage) {
+  livePages.add(page);
+  // Over budget from now on: the pages on screen keep a picture to show if
+  // they are discarded later (an off-screen page can't be captured).
+  if (livePages.size > browserSetting("liveLimit"))
+    for (const other of livePages) other.remember();
+  scheduleSweep();
+}
+</script>
+
 <script setup lang="ts">
 import {
   computed,
@@ -6,6 +71,7 @@ import {
   onMounted,
   reactive,
   ref,
+  watch,
 } from "vue";
 import { uid, type Block } from "../model";
 import { siteName, type PasswordPrompt, type PasswordsApi } from "../passwords";
@@ -48,6 +114,12 @@ interface OrvaneDesktop {
   webview: boolean;
   partition: string;
   setPageDensity(webContentsId: number, density: number): Promise<void>;
+  setPageActive?(webContentsId: number, active: boolean): Promise<void>;
+  rememberPage?(webContentsId: number): Promise<void>;
+  snapshotPage?(
+    webContentsId: number,
+    picture: boolean,
+  ): Promise<{ edited: boolean; image?: string } | null>;
   onGuestInput(
     callback: (
       input:
@@ -214,6 +286,8 @@ const activeTab = computed(
 const started = reactive<Record<string, string>>({});
 for (const tab of state.value.tabs) if (tab.url) started[tab.id] = tab.url;
 const webviews = new Map<string, WebviewElement>();
+/** Tabs whose page was discarded to save memory: a picture until reloaded. */
+const discarded = reactive<Record<string, { image: string }>>({});
 const webviewNav = reactive<Record<string, { back: boolean; forward: boolean }>>(
   {},
 );
@@ -257,6 +331,7 @@ function go(text = address.value) {
     const tab = activeTab.value;
     if (!result.url) return;
     tab.title = undefined;
+    delete discarded[tab.id];
     const view = webviews.get(tab.id);
     if (view && started[tab.id]) {
       view.loadURL(result.url).catch(() => undefined);
@@ -289,7 +364,8 @@ function step(delta: number) {
 }
 function reload() {
   if (useWebview) {
-    webviews.get(activeTab.value.id)?.reload();
+    if (discarded[activeTab.value.id]) restoreTab(activeTab.value.id);
+    else webviews.get(activeTab.value.id)?.reload();
     return;
   }
   history(activeTab.value).reloads++;
@@ -331,6 +407,8 @@ function addTab(url = START, background = false) {
 }
 function selectTab(id: string) {
   state.value.active = id;
+  // Choosing a tab whose page was discarded is asking for it back.
+  if (discarded[id]) restoreTab(id);
   address.value = activeTab.value.url;
   error.value = "";
   save();
@@ -340,6 +418,8 @@ function closeTab(id: string) {
   const index = tabs.findIndex((t) => t.id === id);
   histories.delete(id);
   webviews.delete(id);
+  dropLivePage(id);
+  delete discarded[id];
   dismissPrompt(id);
   delete started[id];
   delete webviewNav[id];
@@ -369,6 +449,7 @@ function bindWebview(tab: BrowserTab, element: unknown) {
   const view = element as WebviewElement;
   if (webviews.get(tab.id) === view) return;
   webviews.set(tab.id, view);
+  addLivePageFor(tab, view);
   const sync = () => {
     try {
       webviewNav[tab.id] = {
@@ -408,12 +489,22 @@ function bindWebview(tab: BrowserTab, element: unknown) {
     if (detail.isMainFrame && detail.errorCode !== -3 && tab.id === state.value.active)
       error.value = `This page couldn't load (${detail.errorDescription || detail.errorCode}).`;
   });
+  view.addEventListener("did-stop-loading", () => {
+    if (tab.id !== state.value.active) return;
+    rememberedAt = 0;
+    setTimeout(rememberPicture, 300);
+  });
   view.addEventListener("did-start-loading", () => {
     if (tab.id === state.value.active) error.value = "";
   });
   view.addEventListener("dom-ready", () => {
     sync();
     applyZoom(view);
+    // A new document starts running: pause it again if nobody sees it.
+    if (webviews.get(tab.id) === view) {
+      delete pageActive[tab.id];
+      updateActivity();
+    }
   });
 }
 function webviewFor(id: number) {
@@ -537,8 +628,10 @@ onBeforeUnmount(() => {
 });
 // The canvas scales apps with a CSS transform, which would stretch a page
 // rendered at normal density and blur it. Webview pages render at the
-// on-screen density instead (layout unchanged), applied once the canvas
-// zoom settles so pages are not re-rastered on every animation frame.
+// on-screen density instead (layout unchanged). Nothing polls: the scale is
+// measured once when the canvas camera settles ("orvane-camera" events from
+// the canvas), when the page area resizes or comes into view, so pages are
+// not re-rastered on every animation frame and the window can idle.
 const pageBox = ref<HTMLElement>();
 const renderScale = ref(1);
 function applyZoom(view: WebviewElement) {
@@ -550,27 +643,216 @@ function applyZoom(view: WebviewElement) {
     // Not attached yet; dom-ready applies it.
   }
 }
-let zoomFrame = 0;
-if (useWebview) {
-  let pending = 1,
-    since = 0;
-  const watchZoom = (time: number) => {
-    const box = pageBox.value;
-    if (box?.offsetWidth) {
-      const measured = box.getBoundingClientRect().width / box.offsetWidth;
-      const scale = Math.min(4, Math.max(0.25, Math.round(measured * 100) / 100));
-      if (scale !== pending) {
-        pending = scale;
-        since = time;
-      } else if (scale !== renderScale.value && time - since > 160) {
-        renderScale.value = scale;
-        for (const view of webviews.values()) applyZoom(view);
-      }
+/** Below this canvas scale a page is too small to read: it may pause. */
+const READABLE_SCALE = 0.25;
+// On-screen scale of the page area (1 = actual size): measured exactly when
+// the camera settles, estimated from the camera zoom while it moves.
+let measuredScale = 1,
+  cameraZoomAtMeasure = 0,
+  estimatedScale = 1;
+const onScreen = ref(true);
+function measure() {
+  const box = pageBox.value;
+  if (!box?.offsetWidth) return;
+  const previous = measuredScale;
+  measuredScale = box.getBoundingClientRect().width / box.offsetWidth;
+  // Scale changes nobody announces (the app animating in, a layout change):
+  // look again shortly, until it holds still.
+  clearTimeout(recheck);
+  if (Math.abs(measuredScale - previous) > 0.005) recheck = setTimeout(measure, 250);
+  estimatedScale = measuredScale;
+  cameraZoomAtMeasure = lastCameraZoom;
+  const scale = Math.min(4, Math.max(0.25, Math.round(measuredScale * 100) / 100));
+  if (scale !== renderScale.value) {
+    renderScale.value = scale;
+    for (const view of webviews.values()) applyZoom(view);
+  }
+  updateActivity();
+  rememberPicture();
+}
+let lastCameraZoom = 0,
+  cameraMoving = false,
+  recheck: ReturnType<typeof setTimeout> | undefined;
+function cameraChanged(event: Event) {
+  const detail = (event as CustomEvent<{ zoom?: number; moving?: boolean }>).detail;
+  if (typeof detail?.zoom === "number" && detail.zoom > 0) {
+    // While moving only arithmetic (no layout reads): enough to wake a page
+    // that is zoomed back into view without waiting for the camera to stop.
+    if (cameraZoomAtMeasure)
+      estimatedScale = measuredScale * (detail.zoom / cameraZoomAtMeasure);
+    lastCameraZoom = detail.zoom;
+  }
+  if (detail?.moving) {
+    // The camera starts moving: pages may be leaving the screen.
+    if (!cameraMoving) rememberPicture();
+    updateActivity();
+  } else measure();
+  cameraMoving = !!detail?.moving;
+}
+
+// ---- Pausing and discarding pages nobody sees (desktop app only) ----
+// A page is "seen" when its Browser app is on screen at a readable zoom and
+// it is the app's selected tab. Unseen pages pause shortly after (no
+// JavaScript, no repaint) and resume at once when seen again; beyond the
+// shared live-page budget, long-unseen ones are discarded (see livePages).
+const seenAt: Record<string, number> = {};
+const wasSeen: Record<string, boolean> = {};
+const pageActive: Record<string, boolean> = {};
+/** Paused pages take no input: gestures over them reach the canvas. */
+const asleep = reactive<Record<string, boolean>>({});
+const pauseTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+const livePageOf = new Map<string, LivePage>();
+const seenNow = (tabId: string) =>
+  tabId === state.value.active &&
+  ((onScreen.value && estimatedScale >= READABLE_SCALE) || interacting.value);
+function setPageActive(tabId: string, active: boolean) {
+  const view = webviews.get(tabId);
+  if (!view || !desktop?.setPageActive) return;
+  let id: number;
+  try {
+    id = view.getWebContentsId();
+  } catch {
+    return; // Not attached yet; dom-ready calls updateActivity again.
+  }
+  pageActive[tabId] = active;
+  if (active) delete asleep[tabId];
+  else asleep[tabId] = true;
+  void desktop.setPageActive(id, active).catch(() => undefined);
+}
+function updateActivity() {
+  if (!useWebview) return;
+  const now = Date.now();
+  for (const tab of state.value.tabs) {
+    if (!webviews.has(tab.id)) continue;
+    const seen = seenNow(tab.id);
+    // Last seen: now while seen, and the moment it stopped being seen.
+    if (seen || wasSeen[tab.id] !== false || seenAt[tab.id] === undefined) seenAt[tab.id] = now;
+    wasSeen[tab.id] = seen;
+    if (seen) {
+      clearTimeout(pauseTimers[tab.id]);
+      delete pauseTimers[tab.id];
+      if (pageActive[tab.id] !== true) setPageActive(tab.id, true);
+    } else if (pageActive[tab.id] !== false && !pauseTimers[tab.id]) {
+      pauseTimers[tab.id] = setTimeout(() => {
+        delete pauseTimers[tab.id];
+        if (webviews.has(tab.id) && !seenNow(tab.id)) setPageActive(tab.id, false);
+      }, browserSetting("pauseAfterMs"));
     }
-    zoomFrame = requestAnimationFrame(watchZoom);
+  }
+}
+// The picture shown for a discarded page is taken while it is on screen:
+// Chromium draws no new frame for an off-screen page. Only needed (and only
+// taken) when there are more live pages than the budget.
+let rememberedAt = 0;
+function rememberPicture() {
+  const tabId = state.value.active,
+    view = webviews.get(tabId);
+  if (!view || !desktop?.rememberPage || !seenNow(tabId)) return;
+  if (livePages.size <= browserSetting("liveLimit") || Date.now() - rememberedAt < 1000) return;
+  rememberedAt = Date.now();
+  try {
+    void desktop.rememberPage(view.getWebContentsId()).catch(() => undefined);
+  } catch {
+    // Not attached yet.
+  }
+}
+function addLivePageFor(tab: BrowserTab, view: WebviewElement) {
+  dropLivePage(tab.id);
+  seenAt[tab.id] = Date.now();
+  let skipUntil = 0;
+  const page: LivePage = {
+    seen: () => (seenNow(tab.id) ? Date.now() : (seenAt[tab.id] ?? Date.now())),
+    kept: () =>
+      seenNow(tab.id) ||
+      Date.now() < skipUntil ||
+      (tab.id === state.value.active &&
+        (interacting.value || document.activeElement === view)),
+    remember: () => {
+      if (tab.id === state.value.active) rememberPicture();
+    },
+    async discard() {
+      if (!desktop?.snapshotPage || webviews.get(tab.id) !== view) return;
+      let snapshot: Awaited<ReturnType<NonNullable<OrvaneDesktop["snapshotPage"]>>> = null;
+      try {
+        // Only a selected tab shows its picture (others reload when chosen).
+        snapshot = await desktop.snapshotPage(
+          view.getWebContentsId(),
+          tab.id === state.value.active,
+        );
+      } catch {
+        snapshot = null;
+      }
+      // Taking the picture resumed the page; it may also have come back
+      // into view, or hold edited fields: keep it then, and ask again later.
+      if (!snapshot || snapshot.edited || page.kept() || webviews.get(tab.id) !== view) {
+        skipUntil = Date.now() + browserSetting("discardAfterMs");
+        delete pageActive[tab.id];
+        updateActivity();
+        return;
+      }
+      discarded[tab.id] = { image: snapshot.image || "" };
+      unbindWebview(tab.id);
+    },
   };
-  onMounted(() => (zoomFrame = requestAnimationFrame(watchZoom)));
-  onBeforeUnmount(() => cancelAnimationFrame(zoomFrame));
+  livePageOf.set(tab.id, page);
+  addLivePage(page);
+}
+function dropLivePage(tabId: string) {
+  const page = livePageOf.get(tabId);
+  if (page) livePages.delete(page);
+  livePageOf.delete(tabId);
+  clearTimeout(pauseTimers[tabId]);
+  delete pauseTimers[tabId];
+  delete pageActive[tabId];
+  delete asleep[tabId];
+  delete seenAt[tabId];
+  delete wasSeen[tabId];
+}
+function unbindWebview(tabId: string) {
+  webviews.delete(tabId);
+  delete webviewNav[tabId];
+  dropLivePage(tabId);
+}
+/** Bring a discarded tab back: a new page at the same address. */
+function restoreTab(tabId: string) {
+  const tab = state.value.tabs.find((t) => t.id === tabId);
+  if (!tab || !discarded[tabId]) return;
+  delete discarded[tabId];
+  if (tab.url) started[tabId] = tab.url;
+  if (tabId === state.value.active) focusFrame();
+}
+watch(() => state.value.active, () => updateActivity());
+watch(interacting, () => updateActivity());
+
+if (useWebview) {
+  let visibility: IntersectionObserver | undefined,
+    resize: ResizeObserver | undefined,
+    settleTimer: ReturnType<typeof setTimeout> | undefined;
+  onMounted(() => {
+    const box = pageBox.value;
+    window.addEventListener("orvane-camera", cameraChanged);
+    if (!box) return;
+    visibility = new IntersectionObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      if (!entry) return;
+      onScreen.value = entry.isIntersecting;
+      if (entry.isIntersecting) measure();
+      else updateActivity();
+    });
+    visibility.observe(box);
+    resize = new ResizeObserver(() => measure());
+    resize.observe(box);
+    // The app may still be animating in (scaled) when it mounts.
+    settleTimer = setTimeout(measure, 450);
+  });
+  onBeforeUnmount(() => {
+    window.removeEventListener("orvane-camera", cameraChanged);
+    visibility?.disconnect();
+    resize?.disconnect();
+    clearTimeout(settleTimer);
+    clearTimeout(recheck);
+    for (const tabId of [...livePageOf.keys()]) dropLivePage(tabId);
+  });
 }
 // Middle-click closes a tab; keep the press from starting a canvas pan,
 // which would capture the pointer before the tab sees the click.
@@ -770,11 +1052,22 @@ function browserWheel(event: WheelEvent) {
       />
       <template v-if="useWebview">
         <template v-for="tab in state.tabs" :key="tab.id">
+          <button
+            v-if="discarded[tab.id]"
+            v-show="tab.id === state.active"
+            type="button"
+            class="browser-discarded"
+            :aria-label="`Reload ${label(tab)}`"
+            @click="restoreTab(tab.id)"
+          >
+            <img v-if="discarded[tab.id]!.image" :src="discarded[tab.id]!.image" alt="" />
+            <span>Click to reload</span>
+          </button>
           <webview
-            v-if="started[tab.id]"
+            v-else-if="started[tab.id]"
             :ref="(element: unknown) => bindWebview(tab, element)"
             class="browser-webview"
-            :class="{ 'browser-hidden': tab.id !== state.active }"
+            :class="{ 'browser-hidden': tab.id !== state.active, 'browser-asleep': asleep[tab.id] }"
             :src="started[tab.id]"
             :partition="desktop!.partition"
             allowpopups
@@ -1037,9 +1330,46 @@ function browserWheel(event: WheelEvent) {
   width: 100%;
   height: 100%;
 }
+.browser-webview.browser-asleep {
+  pointer-events: none;
+}
 .browser-webview.browser-hidden {
   visibility: hidden;
   pointer-events: none;
+}
+.browser-discarded {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: #f1f5f7;
+  cursor: pointer;
+  overflow: hidden;
+}
+.browser-discarded img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
+  filter: grayscale(0.35) opacity(0.75);
+}
+.browser-discarded span {
+  position: relative;
+  padding: 7px 14px;
+  border-radius: 6px;
+  background: #344d5be6;
+  color: #fff;
+  font-size: 12px;
+}
+.browser-discarded:hover span,
+.browser-discarded:focus-visible span {
+  background: #344d5b;
 }
 .browser-page iframe {
   display: block;

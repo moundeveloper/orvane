@@ -246,6 +246,77 @@ const filtered = computed(() =>
       .includes(query.value.toLowerCase()),
   ),
 );
+// Camera activity: the plane gets its own GPU layer only while it moves (so
+// text re-renders sharp once it settles), and embedded apps such as Browser
+// learn about zoom/pan without polling every frame.
+const cameraActive = ref(false);
+let cameraSettle: ReturnType<typeof setTimeout> | undefined,
+  cameraFrame = 0;
+function announceCamera(moving: boolean) {
+  window.dispatchEvent(
+    new CustomEvent("orvane-camera", {
+      detail: { zoom: camera.zoom, x: camera.x, y: camera.y, moving },
+    }),
+  );
+}
+watch(
+  () => [camera.x, camera.y, camera.zoom],
+  () => {
+    cameraActive.value = true;
+    clearTimeout(cameraSettle);
+    cameraSettle = setTimeout(() => {
+      cameraActive.value = false;
+      announceCamera(false);
+    }, 150);
+    cameraFrame ||= requestAnimationFrame(() => {
+      cameraFrame = 0;
+      announceCamera(true);
+    });
+  },
+);
+// Apps well outside the viewport keep their state but skip style, layout and
+// paint (content-visibility: hidden). Recomputed per frame at most.
+const offscreen = ref(new Set<string>());
+let cullFrame = 0;
+function cull() {
+  cullFrame = 0;
+  const margin = 0.5,
+    left = (-camera.x - viewport.width * margin) / camera.zoom,
+    top = (-camera.y - viewport.height * margin) / camera.zoom,
+    right = (-camera.x + viewport.width * (1 + margin)) / camera.zoom,
+    bottom = (-camera.y + viewport.height * (1 + margin)) / camera.zoom,
+    next = new Set<string>();
+  for (const a of apps.value)
+    if (
+      a.id !== active.value &&
+      (a.x > right ||
+        a.y > bottom ||
+        a.x + a.width < left ||
+        a.y + a.height < top)
+    )
+      next.add(a.id);
+  const current = offscreen.value;
+  if (next.size !== current.size || [...next].some((id) => !current.has(id)))
+    offscreen.value = next;
+}
+watch(
+  () => [
+    camera.x,
+    camera.y,
+    camera.zoom,
+    viewport.width,
+    viewport.height,
+    active.value,
+    ...apps.value.flatMap((a) => [a.id, a.x, a.y, a.width, a.height]),
+  ],
+  () => (cullFrame ||= requestAnimationFrame(cull)),
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  clearTimeout(cameraSettle);
+  cancelAnimationFrame(cameraFrame);
+  cancelAnimationFrame(cullFrame);
+});
 const searchIndex = ref(0),
   searchResults = ref<HTMLElement>();
 watch(query, () => (searchIndex.value = 0));
@@ -2224,11 +2295,12 @@ onBeforeUnmount(() => {
         backgroundSize: `${24 * camera.zoom}px ${24 * camera.zoom}px`,
       }"
     ></div>
+    <div v-if="space || dragging" class="pan-shield" aria-hidden="true"></div>
     <div
       class="canvas-plane"
       v-show="ready"
       :inert="!canEdit || importBusy"
-      :class="{ 'camera-moving': movingCamera }"
+      :class="{ 'camera-moving': movingCamera || cameraActive }"
       :style="{
         transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})`,
       }"
@@ -2269,6 +2341,7 @@ onBeforeUnmount(() => {
         v-for="app in apps"
         :key="`${renderGeneration}:${app.id}`"
         class="canvas-app"
+        :class="{ offscreen: offscreen.has(app.id) }"
         :data-app-id="app.id"
         :style="{
           left: app.x + 'px',

@@ -687,3 +687,44 @@ test("File Cabinet drafts survive reload outside the workspace JSON", async ({
     restored.getByText("Unsaved draft", { exact: false }),
   ).toBeVisible();
 });
+
+test("SuiteQL renders only the visible result rows", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("orvane.examples.v1", "installed");
+    (window as any).orvaneDesktop = {
+      netsuite: {
+        tabs: async () => [
+          {
+            id: "https://123.app.netsuite.com",
+            label: "123.app.netsuite.com",
+            status: "ready",
+            count: 1,
+          },
+        ],
+        run: async (_id: string, op: string) =>
+          op === "query"
+            ? {
+                rows: Array.from({ length: 2000 }, (_, i) => ({
+                  id: i + 1,
+                  name: `Row ${i + 1}`,
+                })),
+                totalCount: 2000,
+                offset: 0,
+              }
+            : { rows: [] },
+      },
+    };
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Workspace options" }).click();
+  await page.getByRole("button", { name: "Create NetSuite app" }).click();
+  const app = page.locator(".ns-workspace");
+  await app.locator(".ns-home .home-open").filter({ hasText: "SuiteQL" }).click();
+  await app.locator(".ns-query-toolbar").getByRole("button", { name: "Run query" }).click();
+  await expect(app.locator(".ns-result-row").first()).toContainText("Row 1");
+  expect(await app.locator(".ns-result-row").count()).toBeLessThan(120);
+  await app.locator(".ns-result-body").evaluate((el) => (el.scrollTop = el.scrollHeight));
+  // The default limit is 1,000 rows.
+  await expect(app.locator(".ns-result-row").last()).toContainText("Row 1000");
+  expect(await app.locator(".ns-result-row").count()).toBeLessThan(120);
+});

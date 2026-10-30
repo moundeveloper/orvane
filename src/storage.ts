@@ -31,12 +31,20 @@ async function browserData(): Promise<{
     preferences: "id",
   });
   try {
-    const previous = await db.table("workspace").get("current");
+    // IndexedDB can be locked by another window on the same profile or be
+    // unreadable; that only skips the legacy import, it must not stop loading.
+    let previous: { data?: unknown } | undefined,
+      preferences: string[] = [];
+    try {
+      previous = await db.table("workspace").get("current");
+      preferences = (await db.table("preferences").toArray())
+        .filter((p) => p.value)
+        .map((p) => String(p.id));
+    } catch (error) {
+      console.warn("Legacy browser storage is unavailable.", error);
+    }
     const raw = localStorage.getItem(LEGACY_STORAGE);
     const data = previous?.data ?? (raw ? JSON.parse(raw) : undefined);
-    const preferences = (await db.table("preferences").toArray())
-      .filter((p) => p.value)
-      .map((p) => String(p.id));
     return {
       data: data === undefined ? undefined : parseWorkspace(data),
       preferences,
