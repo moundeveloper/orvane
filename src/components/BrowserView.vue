@@ -8,7 +8,9 @@ import {
   ref,
 } from "vue";
 import { uid, type Block } from "../model";
+import { siteName, type PasswordPrompt, type PasswordsApi } from "../passwords";
 import Icon from "./Icon.vue";
+import PasswordsPanel from "./PasswordsPanel.vue";
 
 const props = defineProps<{ block: Block; editing: boolean }>();
 
@@ -41,12 +43,14 @@ interface OrvaneDesktop {
     callback: (
       input:
         | { from: number; kind: "zoom"; x: number; y: number; deltaY: number }
+        | { from: number; kind: "zoom"; clientX: number; clientY: number; deltaY: number }
         | { from: number; kind: "pan"; dx: number; dy: number },
     ) => void,
   ): () => void;
   onOpenTab(
     callback: (request: { from: number; url: string; background: boolean }) => void,
   ): () => void;
+  passwords?: PasswordsApi;
 }
 
 // Inside the Orvane desktop app pages load in <webview>, which sites can't
@@ -307,6 +311,7 @@ function closeTab(id: string) {
   const index = tabs.findIndex((t) => t.id === id);
   histories.delete(id);
   webviews.delete(id);
+  dismissPrompt(id);
   delete started[id];
   delete webviewNav[id];
   if (tabs.length === 1) {
@@ -391,6 +396,44 @@ function webviewFor(id: number) {
     }
   });
 }
+// ---- Saved passwords (desktop app only) ----
+const passwords = desktop?.passwords;
+const showPasswords = ref(false);
+const passwordsRevision = ref(0);
+/** Save-password prompts by tab; the password itself stays in Electron. */
+const prompts = reactive<Record<string, PasswordPrompt>>({});
+const prompt = computed(() => prompts[state.value.active]);
+const activeOrigin = computed(() => {
+  try {
+    return new URL(activeTab.value.url).origin;
+  } catch {
+    return undefined;
+  }
+});
+function dismissPrompt(tabId: string) {
+  const open = prompts[tabId];
+  if (!open) return;
+  delete prompts[tabId];
+  void passwords?.decide(open.id, "dismiss").catch(() => undefined);
+}
+async function decide(choice: "save" | "never") {
+  const tabId = state.value.active;
+  const open = prompts[tabId];
+  if (!open) return;
+  delete prompts[tabId];
+  await passwords?.decide(open.id, choice).catch(() => undefined);
+  passwordsRevision.value++;
+}
+let stopPrompt: (() => void) | undefined;
+onMounted(() => {
+  stopPrompt = passwords?.onPrompt((request) => {
+    const view = webviewFor(request.from);
+    const tab = view && state.value.tabs.find((t) => webviews.get(t.id) === view);
+    if (tab) prompts[tab.id] = request;
+  });
+});
+onBeforeUnmount(() => stopPrompt?.());
+
 let stopOpenTab: (() => void) | undefined, stopGuestInput: (() => void) | undefined;
 onMounted(() => {
   stopOpenTab = desktop?.onOpenTab(({ from, url, background }) => {
@@ -409,13 +452,17 @@ onMounted(() => {
       );
       return;
     }
-    // Page CSS pixels → Orvane screen pixels at the current canvas zoom.
+    // Page CSS pixels → Orvane screen pixels at the current canvas zoom
+    // (zooms over an iframe arrive already in Orvane's window pixels).
     const rect = view.getBoundingClientRect();
     const scale = view.offsetWidth ? rect.width / view.offsetWidth : 1;
+    const at =
+      "clientX" in input
+        ? { clientX: input.clientX, clientY: input.clientY }
+        : { clientX: rect.left + input.x * scale, clientY: rect.top + input.y * scale };
     view.dispatchEvent(
       new WheelEvent("wheel", {
-        clientX: rect.left + input.x * scale,
-        clientY: rect.top + input.y * scale,
+        ...at,
         deltaY: input.deltaY,
         deltaMode: 0,
         ctrlKey: true,
@@ -595,6 +642,18 @@ function browserWheel(event: WheelEvent) {
         <Icon name="star" :size="13" />
       </button>
       <button
+        v-if="passwords"
+        type="button"
+        class="icon-button"
+        :class="{ on: showPasswords }"
+        aria-label="Saved passwords"
+        data-passwords-toggle
+        :aria-pressed="showPasswords"
+        @click="showPasswords = !showPasswords"
+      >
+        <Icon name="key" :size="13" />
+      </button>
+      <button
         type="button"
         class="icon-button"
         aria-label="Open in your browser"
@@ -637,7 +696,40 @@ function browserWheel(event: WheelEvent) {
       </div>
     </nav>
     <p v-if="error" class="browser-error" role="alert">{{ error }}</p>
+    <div
+      v-if="prompt"
+      class="browser-password-prompt"
+      role="dialog"
+      aria-label="Save password"
+      @keydown.stop
+    >
+      <Icon name="key" :size="13" />
+      <p>
+        {{ prompt.update ? "Update the saved password" : "Save password" }} for
+        <strong>{{ prompt.username || "this login" }}</strong> on
+        <strong>{{ siteName(prompt.origin) }}</strong>?
+      </p>
+      <button type="button" class="primary" @click="decide('save')">
+        {{ prompt.update ? "Update" : "Save" }}
+      </button>
+      <button v-if="!prompt.update" type="button" @click="decide('never')">Never</button>
+      <button
+        type="button"
+        class="icon-button"
+        aria-label="Not now"
+        @click="dismissPrompt(state.active)"
+      >
+        <Icon name="close" :size="12" />
+      </button>
+    </div>
     <div ref="pageBox" class="browser-page">
+      <PasswordsPanel
+        v-if="passwords && showPasswords"
+        :api="passwords"
+        :origin="activeOrigin"
+        :revision="passwordsRevision"
+        @close="showPasswords = false"
+      />
       <template v-if="useWebview">
         <template v-for="tab in state.tabs" :key="tab.id">
           <webview
@@ -775,6 +867,39 @@ function browserWheel(event: WheelEvent) {
   background: var(--surface, #f7f9fa);
   color: inherit;
   font-size: 12px;
+}
+.browser-password-prompt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 14px;
+  background: #eef4f1;
+  border-top: 1px solid var(--line);
+  flex: none;
+}
+.browser-password-prompt p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.browser-password-prompt strong {
+  font-weight: 600;
+}
+.browser-password-prompt > button:not(.icon-button) {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface, #f7f9fa);
+  color: inherit;
+  font-size: 12px;
+}
+.browser-password-prompt > button.primary {
+  border-color: #4f7a68;
+  background: #4f7a68;
+  color: #fff;
 }
 .browser-star.on {
   color: #b5874a;

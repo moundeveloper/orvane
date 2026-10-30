@@ -10,10 +10,12 @@ import {
   session,
   shell,
   webContents,
+  webFrameMain,
 } from "electron";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { setupPasswords } from "./passwords.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.ORVANE_PORT || 5173);
@@ -115,6 +117,13 @@ function stopServer() {
 
 function secure() {
   const sites = session.fromPartition(BROWSER_PARTITION);
+  // Pages see a plain Chrome user agent: CDNs such as Akamai (NetSuite)
+  // answer "Access Denied" to one naming Electron or this app.
+  sites.setUserAgent(
+    app.userAgentFallback
+      .replace(/ Electron\/\S+/, "")
+      .replace(new RegExp(` ${app.getName()}\\/\\S+`, "i"), ""),
+  );
   // Websites get no camera, microphone, location or notifications.
   sites.setPermissionRequestHandler((_contents, permission, done) =>
     done(["fullscreen", "clipboard-sanitized-write"].includes(permission)),
@@ -123,7 +132,15 @@ function secure() {
     done(isOrvane(contents.getURL()) && permission === "clipboard-sanitized-write"),
   );
 
+  // Saved logins: offered on sign-in forms, saved after a sign-in works.
+  const trackPasswords = setupPasswords({
+    partition: BROWSER_PARTITION,
+    isOrvane,
+    folder: app.getPath("userData"),
+  });
+
   app.on("web-contents-created", (_event, contents) => {
+    if (contents.session === sites) trackPasswords(contents);
     if (contents.getType() === "webview") {
       // Canvas zoom is handled by render density, never by site zoom, which
       // Chromium remembers per site and would leak into popups.
@@ -138,6 +155,15 @@ function secure() {
       contents.on("dom-ready", () => {
         contents
           .executeJavaScriptInIsolatedWorld(CANVAS_WORLD, [{ code: CANVAS_GESTURES }])
+          .catch(() => undefined);
+      });
+      // Iframes (NetSuite's Setup Manager…) get their own input, so they need
+      // the listener too; Electron can only run it in their main world there.
+      contents.on("did-frame-finish-load", (_event, isMainFrame, processId, routingId) => {
+        if (isMainFrame) return;
+        webFrameMain
+          .fromId(processId, routingId)
+          ?.executeJavaScript(CANVAS_GESTURES)
           .catch(() => undefined);
       });
       // Middle-drag: the page's own coordinates shift as it moves with the
@@ -177,10 +203,23 @@ function secure() {
         if (input?.kind === "pan-start") return startPan();
         if (input?.kind === "pan-end") return stopPan();
         const finite = (...values) => values.every((v) => Number.isFinite(v) && Math.abs(v) < 1e5);
-        const relay =
-          input?.kind === "zoom" && finite(input.x, input.y, input.deltaY)
-            ? { kind: "zoom", x: input.x, y: input.y, deltaY: input.deltaY }
-            : undefined;
+        if (input?.kind !== "zoom" || !finite(input.x, input.y, input.deltaY)) return;
+        let relay = { kind: "zoom", x: input.x, y: input.y, deltaY: input.deltaY };
+        // Inside an iframe the position is the iframe's own: use the real
+        // cursor in Orvane's window instead.
+        if (details?.frame?.parent) {
+          const host = contents.hostWebContents;
+          const window = host && BrowserWindow.fromWebContents(host);
+          if (!window) return;
+          const bounds = window.getContentBounds();
+          const point = screen.getCursorScreenPoint();
+          relay = {
+            kind: "zoom",
+            clientX: point.x - bounds.x,
+            clientY: point.y - bounds.y,
+            deltaY: input.deltaY,
+          };
+        }
         if (relay) contents.hostWebContents?.send("orvane:guest-input", { from: contents.id, ...relay });
       });
       contents.on("will-navigate", (event, url) => {
@@ -194,7 +233,6 @@ function secure() {
           return {
             action: "allow",
             overrideBrowserWindowOptions: {
-              autoHideMenuBar: true,
               webPreferences: {
                 partition: BROWSER_PARTITION,
                 sandbox: true,
@@ -257,7 +295,6 @@ function createWindow() {
     minWidth: 800,
     minHeight: 560,
     title: "Orvane",
-    autoHideMenuBar: true,
     backgroundColor: "#e9eef1",
     webPreferences: {
       preload: join(root, "electron/preload.cjs"),
@@ -324,6 +361,13 @@ function createWindow() {
   void window.loadURL(origin);
   return window;
 }
+
+// No menu bar, not even on Alt: Alt+drag moves apps on the canvas. The menu
+// stays installed so its shortcuts (copy, paste, reload…) still work.
+app.on("browser-window-created", (_event, window) => {
+  window.setAutoHideMenuBar(false);
+  window.setMenuBarVisibility(false);
+});
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {

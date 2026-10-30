@@ -1,0 +1,302 @@
+// Saved passwords for the Browser app, like Chromium/Brave's: the vault is
+// one file encrypted with the OS key store (DPAPI on Windows, Keychain on
+// macOS, libsecret/KWallet on Linux) and lives only in this process.
+// Passwords travel only to pages of the origin they were saved for, or, when
+// the user picks one, of the same site (another host under the same
+// registrable domain over https, like Chromium's public-suffix matches),
+// via a sandboxed preload (password-fill.cjs); Orvane's own window sees sites
+// and usernames, never a password.
+import { clipboard, ipcMain, safeStorage, session, webContents } from "electron";
+import { randomUUID } from "node:crypto";
+import { readFile, rename, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { getDomain } from "tldts";
+
+const MAX_LOGINS = 5000;
+const CANDIDATE_LIFE = 3 * 60000;
+const USERNAME_LIFE = 10 * 60000;
+const PROMPT_LIFE = 5 * 60000;
+const CLIPBOARD_LIFE = 30000;
+const LOCAL = ["localhost", "127.0.0.1", "[::1]"];
+
+const text = (value, max) =>
+  typeof value === "string" && value.length <= max ? value : undefined;
+const secureOrigin = (origin) => {
+  const { protocol, hostname } = new URL(origin);
+  return protocol === "https:" || LOCAL.includes(hostname);
+};
+/** Registrable domain of an https origin ("netsuite.com"), private suffixes
+ * included so separate owners (x.github.io, y.github.io) never match. */
+const siteKey = (origin) => {
+  const { protocol, hostname } = new URL(origin);
+  if (protocol !== "https:") return;
+  return getDomain(hostname, { allowPrivateDomains: true }) ?? undefined;
+};
+/** Another host of the same site: offered only on request, never auto-filled. */
+const related = (a, b) => a !== b && !!siteKey(a) && siteKey(a) === siteKey(b);
+
+/**
+ * @param {{ partition: string, isOrvane: (url: string) => boolean, folder: string }} options
+ * @returns {(contents: Electron.WebContents) => void} call for every page
+ *   contents (webviews and their popups) in the Browser session.
+ */
+export function setupPasswords({ partition, isOrvane, folder }) {
+  const file = join(folder, "passwords.vault");
+  const sites = session.fromPartition(partition);
+  sites.registerPreloadScript({
+    type: "frame",
+    id: "orvane-passwords",
+    filePath: join(import.meta.dirname, "password-fill.cjs"),
+  });
+
+  /** @type {{ logins: { id: string, origin: string, username: string, password: string, created: number, updated: number }[], never: string[] }} */
+  let vault = { logins: [], never: [] };
+  /** "ok", "unavailable" (no OS encryption) or "unreadable" (left untouched). */
+  let state = "loading";
+  let loading;
+  const ready = () => (loading ??= load()).then(() => state === "ok");
+  async function load() {
+    const backend =
+      process.platform === "linux" ? safeStorage.getSelectedStorageBackend() : "";
+    if (!(await safeStorage.isAsyncEncryptionAvailable()) || backend === "basic_text") {
+      state = "unavailable";
+      return;
+    }
+    let data;
+    try {
+      data = await readFile(file);
+    } catch (error) {
+      state = error?.code === "ENOENT" ? "ok" : "unreadable";
+      return;
+    }
+    try {
+      const { result } = await safeStorage.decryptStringAsync(data);
+      const saved = JSON.parse(result);
+      vault = {
+        logins: Array.isArray(saved.logins) ? saved.logins : [],
+        never: Array.isArray(saved.never) ? saved.never : [],
+      };
+      state = "ok";
+    } catch {
+      // Another user/machine's key or a damaged file: never overwrite it.
+      state = "unreadable";
+    }
+  }
+  let writing = Promise.resolve();
+  const persist = async () => {
+    const data = await safeStorage.encryptStringAsync(JSON.stringify(vault));
+    const temp = `${file}.${process.pid}.tmp`;
+    await writeFile(temp, data, { mode: 0o600 });
+    await rename(temp, file);
+  };
+  const save = () => (writing = writing.catch(() => undefined).then(persist));
+
+  // ---- Pages (Browser session, top frame only) ----
+  /** The page's origin as Chromium reports it, never what the page claims. */
+  function siteOf(event) {
+    const frame = event.senderFrame;
+    if (event.sender.session !== sites || !frame || frame.parent) return;
+    const { origin } = frame;
+    if (!/^https?:\/\/[^/]+$/.test(origin) || isOrvane(origin)) return;
+    return origin;
+  }
+  // Popups belong to the Browser tab (webview) that opened them.
+  const owners = new Map();
+  const ownerOf = (id) => owners.get(id) ?? id;
+  /** Submitted logins waiting to see whether the sign-in worked. */
+  const candidates = new Map();
+  /** Usernames from the first step of two-step sign-ins. */
+  const usernames = new Map();
+  const prompts = new Map();
+
+  function dropCandidate(id) {
+    clearTimeout(candidates.get(id)?.timer);
+    candidates.delete(id);
+  }
+  function flush(id) {
+    const candidate = candidates.get(id);
+    dropCandidate(id);
+    // The owner is looked up now: a closing popup forgets it right after.
+    if (candidate && Date.now() - candidate.at < CANDIDATE_LIFE)
+      void offer(ownerOf(id), candidate).catch(() => undefined);
+  }
+  async function offer(ownerId, { origin, username, password }) {
+    if (!(await ready()) || vault.never.includes(origin)) return;
+    const saved = vault.logins.filter((l) => l.origin === origin);
+    // A password-only form on a site with one saved login updates that login.
+    const existing =
+      saved.find((l) => l.username === username) ??
+      (!username && saved.length === 1 ? saved[0] : undefined);
+    if (existing?.password === password) return;
+    if (!existing && vault.logins.length >= MAX_LOGINS) return;
+    const owner = webContents.fromId(ownerId);
+    const host = owner?.hostWebContents;
+    if (!host || host.isDestroyed()) return;
+    for (const [key, prompt] of prompts)
+      if (prompt.owner === owner.id) forgetPrompt(key);
+    const id = randomUUID();
+    prompts.set(id, {
+      owner: owner.id,
+      origin,
+      username: existing?.username ?? username,
+      password,
+      existing: existing?.id,
+      timer: setTimeout(() => forgetPrompt(id), PROMPT_LIFE),
+    });
+    host.send("orvane:password-prompt", {
+      from: owner.id,
+      id,
+      origin,
+      username: existing?.username ?? username,
+      update: !!existing,
+    });
+  }
+  function forgetPrompt(id) {
+    clearTimeout(prompts.get(id)?.timer);
+    prompts.delete(id);
+  }
+
+  ipcMain.handle("orvane:pw-logins", async (event, hasPassword) => {
+    const origin = siteOf(event);
+    if (!origin) return { logins: [], secure: false };
+    // The login form is back after submitting: the sign-in failed.
+    const candidate = candidates.get(event.sender.id);
+    if (hasPassword === true && candidate?.navigated) dropCandidate(event.sender.id);
+    if (!(await ready())) return { logins: [], secure: false };
+    const newest = (a, b) => b.updated - a.updated;
+    return {
+      secure: secureOrigin(origin),
+      logins: [
+        ...vault.logins.filter((l) => l.origin === origin).sort(newest),
+        ...vault.logins.filter((l) => related(l.origin, origin)).sort(newest),
+      ].map(({ id, username, origin: from }) => ({
+        id,
+        username,
+        ...(from === origin ? {} : { site: new URL(from).host }),
+      })),
+    };
+  });
+  ipcMain.handle("orvane:pw-fill", async (event, id) => {
+    const origin = siteOf(event);
+    if (!origin || typeof id !== "string" || !(await ready())) return;
+    const login = vault.logins.find(
+      (l) => l.id === id && (l.origin === origin || related(l.origin, origin)),
+    );
+    return login && { username: login.username, password: login.password };
+  });
+  ipcMain.on("orvane:pw-username", (event, value) => {
+    const origin = siteOf(event);
+    const username = text(value, 512)?.trim();
+    if (origin && username) usernames.set(event.sender.id, { origin, username, at: Date.now() });
+  });
+  ipcMain.on("orvane:pw-submitted", (event, login) => {
+    const origin = siteOf(event);
+    const password = text(login?.password, 1024);
+    let username = text(login?.username, 512)?.trim() ?? "";
+    if (!origin || !password) return;
+    const first = usernames.get(event.sender.id);
+    if (!username && first?.origin === origin && Date.now() - first.at < USERNAME_LIFE)
+      username = first.username;
+    dropCandidate(event.sender.id);
+    candidates.set(event.sender.id, { origin, username, password, at: Date.now() });
+  });
+  // A single-page app removed its login form after submitting: signed in.
+  ipcMain.on("orvane:pw-form-gone", (event) => {
+    if (siteOf(event)) flush(event.sender.id);
+  });
+
+  function track(contents) {
+    contents.on("did-create-window", (window) => {
+      owners.set(window.webContents.id, ownerOf(contents.id));
+    });
+    // A new page after submitting: offer to save unless the login form
+    // comes back (see orvane:pw-logins).
+    contents.on("did-navigate", () => {
+      const candidate = candidates.get(contents.id);
+      if (!candidate) return;
+      candidate.navigated = true;
+      clearTimeout(candidate.timer);
+      candidate.timer = setTimeout(() => flush(contents.id), 2500);
+    });
+    contents.on("destroyed", () => {
+      // Sign-in popups usually close once they are done.
+      if (owners.has(contents.id)) flush(contents.id);
+      else dropCandidate(contents.id);
+      owners.delete(contents.id);
+      usernames.delete(contents.id);
+    });
+  }
+
+  // ---- Orvane window: manage saved logins and answer save prompts ----
+  const fromOrvane = (event) =>
+    event.sender.getType() === "window" &&
+    event.sender.session === session.defaultSession &&
+    !event.senderFrame?.parent &&
+    isOrvane(event.senderFrame?.url ?? "");
+  const handle = (channel, run) =>
+    ipcMain.handle(channel, async (event, ...args) => {
+      if (!fromOrvane(event)) return;
+      await ready();
+      return run(...args);
+    });
+
+  handle("orvane:passwords-list", () => ({
+    state,
+    logins:
+      state === "ok"
+        ? vault.logins
+            .map(({ id, origin, username, updated }) => ({ id, origin, username, updated }))
+            .sort((a, b) => a.origin.localeCompare(b.origin) || a.username.localeCompare(b.username))
+        : [],
+    never: state === "ok" ? [...vault.never].sort() : [],
+  }));
+  handle("orvane:passwords-remove", async (id) => {
+    if (state !== "ok") return false;
+    const before = vault.logins.length;
+    vault.logins = vault.logins.filter((l) => l.id !== id);
+    if (vault.logins.length !== before) await save();
+    return true;
+  });
+  handle("orvane:passwords-allow", async (origin) => {
+    if (state !== "ok" || !vault.never.includes(origin)) return false;
+    vault.never = vault.never.filter((o) => o !== origin);
+    await save();
+    return true;
+  });
+  // Copied for 30 seconds, then cleared if it is still on the clipboard.
+  handle("orvane:passwords-copy", (id) => {
+    const login = state === "ok" && vault.logins.find((l) => l.id === id);
+    if (!login) return false;
+    const { password } = login;
+    clipboard.writeText(password);
+    setTimeout(() => {
+      if (clipboard.readText() === password) clipboard.clear();
+    }, CLIPBOARD_LIFE);
+    return true;
+  });
+  handle("orvane:password-decide", async (id, choice) => {
+    const prompt = prompts.get(id);
+    forgetPrompt(id);
+    if (!prompt || state !== "ok") return false;
+    if (choice === "never") {
+      if (!vault.never.includes(prompt.origin)) vault.never.push(prompt.origin);
+    } else if (choice === "save") {
+      const now = Date.now();
+      const existing = vault.logins.find((l) => l.id === prompt.existing);
+      if (existing) Object.assign(existing, { password: prompt.password, updated: now });
+      else if (vault.logins.length < MAX_LOGINS)
+        vault.logins.push({
+          id: randomUUID(),
+          origin: prompt.origin,
+          username: prompt.username,
+          password: prompt.password,
+          created: now,
+          updated: now,
+        });
+    } else return true;
+    await save();
+    return true;
+  });
+
+  return track;
+}

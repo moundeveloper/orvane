@@ -50,6 +50,8 @@ import {
   FolderOpen,
   RefreshCw,
   FileText,
+  KeyRound,
+  Trash2,
 } from "@lucide/vue";
 const props = withDefaults(defineProps<{ name: string; size?: number }>(), {
   size: 16,
@@ -106,6 +108,8 @@ const icons: Record<string, unknown> = {
   "folder-open": FolderOpen,
   refresh: RefreshCw,
   file: FileText,
+  key: KeyRound,
+  trash: Trash2,
 };
 const icon = computed(() => icons[props.name] || LayoutGrid);
 </script>
