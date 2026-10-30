@@ -246,10 +246,7 @@ const filtered = computed(() =>
       .includes(query.value.toLowerCase()),
   ),
 );
-// Camera activity: the plane gets its own GPU layer only while it moves (so
-// text re-renders sharp once it settles), and embedded apps such as Browser
-// learn about zoom/pan without polling every frame.
-const cameraActive = ref(false);
+// Notify embedded Browser pages when the camera moves or settles.
 let cameraSettle: ReturnType<typeof setTimeout> | undefined,
   cameraFrame = 0;
 function announceCamera(moving: boolean) {
@@ -262,10 +259,8 @@ function announceCamera(moving: boolean) {
 watch(
   () => [camera.x, camera.y, camera.zoom],
   () => {
-    cameraActive.value = true;
     clearTimeout(cameraSettle);
     cameraSettle = setTimeout(() => {
-      cameraActive.value = false;
       announceCamera(false);
     }, 150);
     cameraFrame ||= requestAnimationFrame(() => {
@@ -274,48 +269,9 @@ watch(
     });
   },
 );
-// Apps well outside the viewport keep their state but skip style, layout and
-// paint (content-visibility: hidden). Recomputed per frame at most.
-const offscreen = ref(new Set<string>());
-let cullFrame = 0;
-function cull() {
-  cullFrame = 0;
-  const margin = 0.5,
-    left = (-camera.x - viewport.width * margin) / camera.zoom,
-    top = (-camera.y - viewport.height * margin) / camera.zoom,
-    right = (-camera.x + viewport.width * (1 + margin)) / camera.zoom,
-    bottom = (-camera.y + viewport.height * (1 + margin)) / camera.zoom,
-    next = new Set<string>();
-  for (const a of apps.value)
-    if (
-      a.id !== active.value &&
-      (a.x > right ||
-        a.y > bottom ||
-        a.x + a.width < left ||
-        a.y + a.height < top)
-    )
-      next.add(a.id);
-  const current = offscreen.value;
-  if (next.size !== current.size || [...next].some((id) => !current.has(id)))
-    offscreen.value = next;
-}
-watch(
-  () => [
-    camera.x,
-    camera.y,
-    camera.zoom,
-    viewport.width,
-    viewport.height,
-    active.value,
-    ...apps.value.flatMap((a) => [a.id, a.x, a.y, a.width, a.height]),
-  ],
-  () => (cullFrame ||= requestAnimationFrame(cull)),
-  { immediate: true },
-);
 onBeforeUnmount(() => {
   clearTimeout(cameraSettle);
   cancelAnimationFrame(cameraFrame);
-  cancelAnimationFrame(cullFrame);
 });
 const searchIndex = ref(0),
   searchResults = ref<HTMLElement>();
@@ -417,6 +373,7 @@ const lastFocus = new Map<string, HTMLElement>();
 const SAVE_DELAY = 1000;
 let saveTimer: ReturnType<typeof setTimeout>;
 function flushSave() {
+  resumeWorkspaceTracking();
   if (!unsavedChanges.value) return;
   clearTimeout(saveTimer);
   void persist();
@@ -438,7 +395,7 @@ async function persist() {
       "Saving is unavailable. Your changes are still here; export a backup from Workspace or retry saving.";
   }
 }
-watch(
+const workspaceWatch = watch(
   workspace,
   () => {
     if (!canEdit.value || applying) return;
@@ -449,6 +406,19 @@ watch(
   },
   { deep: true, flush: "sync" },
 );
+// Geometry changes arrive many times per second during a drag. Vue's deep
+// watcher otherwise traverses the entire workspace for every coordinate.
+let trackingPaused = false;
+function pauseWorkspaceTracking() {
+  if (trackingPaused) return;
+  trackingPaused = true;
+  workspaceWatch.pause();
+}
+function resumeWorkspaceTracking() {
+  if (!trackingPaused) return;
+  trackingPaused = false;
+  workspaceWatch.resume();
+}
 const typing = (e: EventTarget | null) =>
   e instanceof HTMLElement &&
   !!e.closest("input,textarea,select,[contenteditable=true]");
@@ -877,6 +847,7 @@ function pointerMove(e: PointerEvent) {
       return;
     groupMoved = true;
     dragging.value = true;
+    pauseWorkspaceTracking();
     g.members?.forEach(({ app, x, y }) => {
       app.x = x + dx;
       app.y = y + dy;
@@ -885,9 +856,11 @@ function pointerMove(e: PointerEvent) {
     camera.x = g.x + dx;
     camera.y = g.y + dy;
   } else if (g.app && g.type === "move") {
+    pauseWorkspaceTracking();
     g.app.x = g.x + dx;
     g.app.y = g.y + dy;
   } else if (g.app) {
+    pauseWorkspaceTracking();
     const minimum = appMinimum(g.app);
     if (g.edge.includes("e"))
       g.app.width = Math.max(minimum.width, g.width + dx);
@@ -912,6 +885,7 @@ function pointerUp(event?: Event) {
     return;
   gesture = null;
   dragging.value = false;
+  resumeWorkspaceTracking();
   persist();
 }
 let zoomFrame = 0;
@@ -1911,6 +1885,7 @@ function shortcutChanged(key: keyof Workspace["shortcuts"]) {
   }
 }
 function beforeUnload(event: BeforeUnloadEvent) {
+  resumeWorkspaceTracking();
   if (!unsavedChanges.value) return;
   event.preventDefault();
   event.returnValue = "";
@@ -1921,6 +1896,7 @@ function restorePage(event: PageTransitionEvent) {
 function hidePage() {
   // Capture the latest in-memory state before synchronously queuing the final
   // beacon. Deferring lease release to a microtask can lose it on navigation.
+  resumeWorkspaceTracking();
   void persist();
   void store.close();
 }
@@ -2295,12 +2271,11 @@ onBeforeUnmount(() => {
         backgroundSize: `${24 * camera.zoom}px ${24 * camera.zoom}px`,
       }"
     ></div>
-    <div v-if="space || dragging" class="pan-shield" aria-hidden="true"></div>
     <div
       class="canvas-plane"
       v-show="ready"
       :inert="!canEdit || importBusy"
-      :class="{ 'camera-moving': movingCamera || cameraActive }"
+      :class="{ 'camera-moving': movingCamera }"
       :style="{
         transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})`,
       }"
@@ -2341,7 +2316,6 @@ onBeforeUnmount(() => {
         v-for="app in apps"
         :key="`${renderGeneration}:${app.id}`"
         class="canvas-app"
-        :class="{ offscreen: offscreen.has(app.id) }"
         :data-app-id="app.id"
         :style="{
           left: app.x + 'px',

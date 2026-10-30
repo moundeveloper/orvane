@@ -26,9 +26,18 @@ function browserSetting(name: "liveLimit" | "discardAfterMs" | "pauseAfterMs") {
 }
 let sweepTimer: ReturnType<typeof setTimeout> | undefined;
 let sweeping = false;
+// A page can keep unsaved state in JavaScript, outside any form we can
+// inspect. Unloading is therefore opt-in; pausing preserves the live page.
+function discardEnabled() {
+  try {
+    return localStorage.getItem("orvane.browser.discardEnabled") === "true";
+  } catch {
+    return false;
+  }
+}
 async function sweep() {
   sweepTimer = undefined;
-  if (!sweeping) {
+  if (!sweeping && discardEnabled()) {
     sweeping = true;
     try {
       const limit = browserSetting("liveLimit"),
@@ -675,6 +684,7 @@ let lastCameraZoom = 0,
   recheck: ReturnType<typeof setTimeout> | undefined;
 function cameraChanged(event: Event) {
   const detail = (event as CustomEvent<{ zoom?: number; moving?: boolean }>).detail;
+  const wasReadable = estimatedScale >= READABLE_SCALE;
   if (typeof detail?.zoom === "number" && detail.zoom > 0) {
     // While moving only arithmetic (no layout reads): enough to wake a page
     // that is zoomed back into view without waiting for the camera to stop.
@@ -685,7 +695,7 @@ function cameraChanged(event: Event) {
   if (detail?.moving) {
     // The camera starts moving: pages may be leaving the screen.
     if (!cameraMoving) rememberPicture();
-    updateActivity();
+    if (wasReadable !== (estimatedScale >= READABLE_SCALE)) updateActivity();
   } else measure();
   cameraMoving = !!detail?.moving;
 }
@@ -745,6 +755,7 @@ function updateActivity() {
 // taken) when there are more live pages than the budget.
 let rememberedAt = 0;
 function rememberPicture() {
+  if (!discardEnabled()) return;
   const tabId = state.value.active,
     view = webviews.get(tabId);
   if (!view || !desktop?.rememberPage || !seenNow(tabId)) return;

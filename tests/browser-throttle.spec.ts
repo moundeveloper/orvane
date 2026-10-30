@@ -225,8 +225,12 @@ test("Desktop Browser discards long-unseen pages beyond the live limit", async (
       });
     };
 
-    // Two pages, a limit of one: the background one is discarded.
+    // Even over budget, background pages stay loaded unless unloading is enabled.
     await openInNewTab("/b");
+    await page.waitForTimeout(1200);
+    expect(await liveGuests(app)).toEqual(["/a", "/b"]);
+    await page.evaluate(() => localStorage.setItem("orvane.browser.discardEnabled", "true"));
+    // With explicit opt-in, the background page can be discarded.
     await expect.poll(() => liveGuests(app), { timeout: 10000 }).toEqual(["/b"]);
     await expect(browser.locator(".browser-discarded")).toHaveCount(1);
     await expect(tabs.first()).toContainText("Fixture a");

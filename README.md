@@ -98,6 +98,8 @@ Opens Orvane in its own window. It reuses a dev server already running on `http:
 
 In the desktop app the Browser app uses Electron's `<webview>` instead of an iframe, so sites that refuse embedding (NetSuite, Google, GitHub…) load normally, with real back/forward history, page titles on tabs and one live page per tab. Sign-ins persist in a separate `persist:orvane-browser` session, isolated from Orvane itself. Links that open a new tab become Browser tabs; `window.open` popups (e.g. NetSuite selectors) open as small windows. Web pages never get Node, a preload script, or camera/microphone/location/notification permissions, and can't navigate to Orvane's own address. Orvane's window only navigates within Orvane; other links open in your system browser.
 
+Desktop Browser pages that are out of view are paused and resume when visible. They remain loaded by default, preserving their navigation history and in-page state. This means many Browser pages can still use substantial memory. Advanced users who accept losing page state and back/forward history can opt into automatic unloading by setting `localStorage.setItem('orvane.browser.discardEnabled', 'true')` in Orvane's developer console. A discarded page reloads from its address when selected. Remove that setting to disable unloading.
+
 ## Local Git viewer
 
 Open **Workspace → Create Git viewer**, or add a **Git viewer** component in an app's builder. Choose **Add folder** to browse local directories or enter an absolute path. Valid Git folders are saved as named workspaces in the shared SQLite database. The workspace selector switches repositories; each viewer's selected workspace survives reloads. Multiple viewers can target different repositories.

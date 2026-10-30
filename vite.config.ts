@@ -10,6 +10,10 @@ import { notesApi } from "./server/notes-api.ts";
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Electron's newer Chromium requires the unprefixed backdrop-filter.
+  // Lightning CSS currently folds it into only -webkit-backdrop-filter,
+  // which makes the frosted header disappear in the production desktop app.
+  build: { cssMinify: "esbuild" },
   plugins: [
     // <webview> is Electron's built-in element (desktop Browser app).
     vue({
