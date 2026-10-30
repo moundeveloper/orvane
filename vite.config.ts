@@ -11,7 +11,12 @@ import { notesApi } from "./server/notes-api.ts";
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
-    vue(),
+    // <webview> is Electron's built-in element (desktop Browser app).
+    vue({
+      template: {
+        compilerOptions: { isCustomElement: (tag) => tag === "webview" },
+      },
+    }),
     notesApi(
       process.env.ORVANE_DATA_DIR ||
         fileURLToPath(new URL("./.orvane", import.meta.url)),

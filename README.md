@@ -88,6 +88,16 @@ Open **Workspace → Create Browser**, or add a **Web browser** component in an 
 
 Pages load in a sandboxed iframe, so this is a light embedded browser, not a full one: many sites (Google, GitHub, banks, most sign-in pages) forbid being embedded and stay blank; use **Open in your browser** for those. Links clicked inside a page don't update the address bar or back/forward history. Only `http`/`https` addresses load, and Orvane's own address is refused so pages can't reach its local APIs. While you're not using a page, a transparent shield covers it so middle-drag, Space-drag and Ctrl+scroll still move the canvas; click the page once to use it, click anywhere outside to give the canvas back.
 
+## Desktop app (Electron)
+
+```sh
+pnpm desktop
+```
+
+Opens Orvane in its own window. It reuses a dev server already running on `http://localhost:5173`, otherwise starts one with the system `node` (so `better-sqlite3` stays built for the same Node as the MCP server) and stops it on exit. Set `ORVANE_PORT` to use another port (MCP browser bridging then also needs `ORVANE_MCP_ORIGINS`).
+
+In the desktop app the Browser app uses Electron's `<webview>` instead of an iframe, so sites that refuse embedding (NetSuite, Google, GitHub…) load normally, with real back/forward history, page titles on tabs and one live page per tab. Sign-ins persist in a separate `persist:orvane-browser` session, isolated from Orvane itself. Links that open a new tab become Browser tabs; `window.open` popups (e.g. NetSuite selectors) open as small windows. Web pages never get Node, a preload script, or camera/microphone/location/notification permissions, and can't navigate to Orvane's own address. Orvane's window only navigates within Orvane; other links open in your system browser.
+
 ## Local Git viewer
 
 Open **Workspace → Create Git viewer**, or add a **Git viewer** component in an app's builder. Choose **Add folder** to browse local directories or enter an absolute path. Valid Git folders are saved as named workspaces in the shared SQLite database. The workspace selector switches repositories; each viewer's selected workspace survives reloads. Multiple viewers can target different repositories.

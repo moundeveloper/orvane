@@ -1413,20 +1413,44 @@ kbd {
   bottom: 88px;
   left: 24px;
   max-width: min(440px, calc(100vw - 48px));
-  background: #f3ece6;
+  background: #f7f9fa;
   box-shadow: var(--shadow);
   border-radius: 6px;
-  padding: 12px 14px;
+  border-left: 3px solid #8fa4b1;
+  padding: 10px 8px 10px 12px;
   display: flex;
-  gap: 15px;
-  align-items: center;
+  gap: 10px;
+  align-items: flex-start;
   font-size: 11px;
   line-height: 1.6;
-  color: #805f4d;
+  color: #455968;
   z-index: 45;
   touch-action: auto;
 }
+.status-area.status-warning {
+  background: #f8f1ec;
+  border-left-color: #c08a6a;
+  color: #6f5040;
+}
+.status-icon {
+  flex: none;
+  margin-top: 2px;
+  color: #6f8998;
+}
+.status-warning .status-icon {
+  color: #b5774f;
+}
+.status-text {
+  flex: 1;
+  min-width: 0;
+  padding-top: 0.5px;
+}
+.status-area .icon-button {
+  flex: none;
+  margin: -3px 0 -3px 2px;
+}
 .status-area .subtle-button {
+  flex: none;
   white-space: normal;
   min-width: 100px;
   font-size: 10px;

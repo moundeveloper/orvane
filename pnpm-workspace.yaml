@@ -1,4 +1,5 @@
 allowBuilds:
+  electron: true
   better-sqlite3: false
   esbuild: false
   vue-demi: set this to true or false

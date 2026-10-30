@@ -280,6 +280,55 @@ test("unborn Git repositories show empty history and accept canonical subfolder 
   }
 });
 
+test("opening a commit with very long lines keeps the viewer width; the patch scrolls", async ({
+  page,
+}, info) => {
+  const repo = await repository(info.outputPath("Long lines"));
+  await writeFile(join(repo.path, "plan.md"), `${"wide ".repeat(600)}\n`);
+  await repo.git("add", "plan.md");
+  await repo.git("commit", "-m", "Add a very wide plan");
+  await page.addInitScript(() =>
+    localStorage.setItem("orvane.examples.v1", "installed"),
+  );
+  await page.goto("/");
+  await page.getByRole("button", { name: "Workspace options" }).click();
+  await page
+    .getByRole("button", { name: "Create Git viewer", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Choose a folder", exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Local folder path" })
+    .fill(repo.path);
+  await page.getByRole("button", { name: "Go", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Use this folder", exact: true })
+    .click();
+  const viewer = page.locator(".git-viewer");
+  const widths = () =>
+    viewer.evaluate((root) => ({
+      viewer: root.scrollWidth,
+      box: root.clientWidth,
+      history: root.querySelector(".git-history-rows")!.scrollWidth,
+      historyBox: root.querySelector(".git-history-rows")!.clientWidth,
+    }));
+  await expect(page.locator(".git-commit-row")).toHaveCount(5);
+  await page
+    .locator(".git-commit-row")
+    .filter({ hasText: "Add a very wide plan" })
+    .click();
+  await expect(page.getByLabel("Git diff", { exact: true })).toContainText(
+    "+wide wide",
+  );
+  const after = await widths();
+  expect(after.viewer).toBeLessThanOrEqual(after.box + 1);
+  expect(after.history).toBeLessThanOrEqual(after.historyBox + 1);
+  const patch = page.getByLabel("Git diff", { exact: true });
+  expect(
+    await patch.evaluate((el) => el.scrollWidth > el.clientWidth + 100),
+  ).toBe(true);
+});
 test("folder picker saves a local Git workspace and preserves selection across reloads", async ({
   page,
 }, info) => {

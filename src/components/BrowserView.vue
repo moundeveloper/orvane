@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+} from "vue";
 import { uid, type Block } from "../model";
 import Icon from "./Icon.vue";
 
@@ -8,20 +15,80 @@ const props = defineProps<{ block: Block; editing: boolean }>();
 interface BrowserTab {
   id: string;
   url: string;
+  title?: string;
 }
 interface TabHistory {
   stack: string[];
   index: number;
   reloads: number;
 }
+/** The parts of Electron's <webview> element this app uses. */
+interface WebviewElement extends HTMLElement {
+  src: string;
+  loadURL(url: string): Promise<void>;
+  goBack(): void;
+  goForward(): void;
+  reload(): void;
+  canGoBack(): boolean;
+  canGoForward(): boolean;
+  getWebContentsId(): number;
+}
+interface OrvaneDesktop {
+  webview: boolean;
+  partition: string;
+  setPageDensity(webContentsId: number, density: number): Promise<void>;
+  onGuestInput(
+    callback: (
+      input:
+        | { from: number; kind: "zoom"; x: number; y: number; deltaY: number }
+        | { from: number; kind: "pan"; dx: number; dy: number },
+    ) => void,
+  ): () => void;
+  onOpenTab(
+    callback: (request: { from: number; url: string; background: boolean }) => void,
+  ): () => void;
+}
+
+// Inside the Orvane desktop app pages load in <webview>, which sites can't
+// refuse like an iframe and which has real history; otherwise an iframe.
+const desktop = (window as unknown as { orvaneDesktop?: OrvaneDesktop })
+  .orvaneDesktop;
+const useWebview = !!desktop?.webview;
 
 const START = "";
+const MAX_TABS = 12;
+const MAX_BOOKMARKS = 60;
+interface Bookmark {
+  id: string;
+  url: string;
+  title: string;
+}
+function readBookmarks(saved: { bookmarks?: unknown }): Bookmark[] {
+  if (!Array.isArray(saved.bookmarks)) return [];
+  return saved.bookmarks
+    .filter(
+      (b): b is Bookmark =>
+        !!b &&
+        typeof b.id === "string" &&
+        typeof b.url === "string" &&
+        !!safeUrl(b.url),
+    )
+    .map((b) => ({
+      id: b.id,
+      url: b.url,
+      title: typeof b.title === "string" ? b.title.slice(0, 200) : "",
+    }))
+    .slice(0, MAX_BOOKMARKS);
+}
 function readState() {
+  let bookmarks: Bookmark[] = [];
   try {
     const saved = JSON.parse(props.block.value || "{}") as {
       tabs?: unknown;
       active?: unknown;
+      bookmarks?: unknown;
     };
+    bookmarks = readBookmarks(saved);
     const tabs = Array.isArray(saved.tabs)
       ? saved.tabs
           .filter(
@@ -31,7 +98,12 @@ function readState() {
               typeof t.url === "string" &&
               (t.url === START || !!safeUrl(t.url)),
           )
-          .slice(0, 12)
+          .map((t) => ({
+            id: t.id,
+            url: t.url,
+            ...(typeof t.title === "string" ? { title: t.title } : {}),
+          }))
+          .slice(0, MAX_TABS)
       : [];
     if (tabs.length)
       return {
@@ -39,12 +111,13 @@ function readState() {
         active: tabs.some((t) => t.id === saved.active)
           ? (saved.active as string)
           : tabs[0]!.id,
+        bookmarks,
       };
   } catch {
     // Unreadable state starts a fresh browser.
   }
   const id = uid();
-  return { tabs: [{ id, url: START }], active: id };
+  return { tabs: [{ id, url: START } as BrowserTab], active: id, bookmarks };
 }
 
 /** Only plain web pages; never this Orvane origin (its local APIs). */
@@ -103,8 +176,20 @@ const revision = ref(0);
 const activeTab = computed(
   () => state.value.tabs.find((t) => t.id === state.value.active)!,
 );
+// Webview tabs: the first URL each was created with (later navigation goes
+// through loadURL so Vue never resets src), and live back/forward state.
+const started = reactive<Record<string, string>>({});
+for (const tab of state.value.tabs) if (tab.url) started[tab.id] = tab.url;
+const webviews = new Map<string, WebviewElement>();
+const webviewNav = reactive<Record<string, { back: boolean; forward: boolean }>>(
+  {},
+);
 const nav = computed(() => {
   void revision.value;
+  if (useWebview) {
+    const live = webviewNav[activeTab.value.id];
+    return { back: !!live?.back, forward: !!live?.forward, reloads: 0 };
+  }
   const entry = history(activeTab.value);
   return {
     back: entry.index > 0,
@@ -119,6 +204,7 @@ function save() {
   props.block.value = JSON.stringify({
     tabs: state.value.tabs,
     active: state.value.active,
+    bookmarks: state.value.bookmarks,
   });
 }
 function show(url: string) {
@@ -134,6 +220,18 @@ function go(text = address.value) {
     error.value = result.error!;
     return;
   }
+  if (useWebview) {
+    const tab = activeTab.value;
+    if (!result.url) return;
+    tab.title = undefined;
+    const view = webviews.get(tab.id);
+    if (view && started[tab.id]) {
+      view.loadURL(result.url).catch(() => undefined);
+    } else started[tab.id] = result.url;
+    show(result.url);
+    focusFrame();
+    return;
+  }
   const entry = history(activeTab.value);
   entry.stack = entry.stack.slice(0, entry.index + 1);
   if (entry.stack[entry.index] !== result.url) {
@@ -144,6 +242,12 @@ function go(text = address.value) {
   if (result.url) focusFrame();
 }
 function step(delta: number) {
+  if (useWebview) {
+    const view = webviews.get(activeTab.value.id);
+    if (delta < 0) view?.goBack();
+    else view?.goForward();
+    return;
+  }
   const entry = history(activeTab.value);
   const index = entry.index + delta;
   if (index < 0 || index >= entry.stack.length) return;
@@ -151,18 +255,46 @@ function step(delta: number) {
   show(entry.stack[index]!);
 }
 function reload() {
+  if (useWebview) {
+    webviews.get(activeTab.value.id)?.reload();
+    return;
+  }
   history(activeTab.value).reloads++;
   revision.value++;
+}
+const bookmarked = computed(() =>
+  state.value.bookmarks.find((b) => b.url === activeTab.value.url),
+);
+function toggleBookmark() {
+  const tab = activeTab.value;
+  if (!tab.url) return;
+  const existing = bookmarked.value;
+  if (existing) removeBookmark(existing.id);
+  else if (state.value.bookmarks.length < MAX_BOOKMARKS) {
+    state.value.bookmarks.push({ id: uid(), url: tab.url, title: label(tab) });
+    save();
+  }
+}
+function removeBookmark(id: string) {
+  state.value.bookmarks = state.value.bookmarks.filter((b) => b.id !== id);
+  save();
+}
+function openBookmark(bookmark: Bookmark, newTab = false) {
+  if (newTab) addTab(bookmark.url);
+  else go(bookmark.url);
 }
 function openExternal() {
   if (activeTab.value.url)
     window.open(activeTab.value.url, "_blank", "noopener,noreferrer");
 }
-function addTab() {
-  const tab = { id: uid(), url: START };
+function addTab(url = START, background = false) {
+  if (state.value.tabs.length >= MAX_TABS) return;
+  const tab: BrowserTab = { id: uid(), url };
+  if (url) started[tab.id] = url;
   state.value.tabs.push(tab);
-  selectTab(tab.id);
-  nextTick(() => addressInput.value?.focus());
+  if (background) save();
+  else selectTab(tab.id);
+  if (!url) nextTick(() => addressInput.value?.focus());
 }
 function selectTab(id: string) {
   state.value.active = id;
@@ -174,6 +306,9 @@ function closeTab(id: string) {
   const tabs = state.value.tabs;
   const index = tabs.findIndex((t) => t.id === id);
   histories.delete(id);
+  webviews.delete(id);
+  delete started[id];
+  delete webviewNav[id];
   if (tabs.length === 1) {
     tabs[0] = { id: uid(), url: START };
     selectTab(tabs[0].id);
@@ -184,29 +319,133 @@ function closeTab(id: string) {
     selectTab(tabs[Math.max(0, index - 1)]!.id);
   else save();
 }
-function label(url: string) {
-  if (!url) return "New tab";
+function label(tab: BrowserTab) {
+  if (tab.title) return tab.title;
+  if (!tab.url) return "New tab";
   try {
-    return new URL(url).hostname.replace(/^www\./, "");
+    return new URL(tab.url).hostname.replace(/^www\./, "");
   } catch {
-    return url;
+    return tab.url;
   }
 }
 
-// A cross-origin page swallows every pointer and wheel event, which would
-// stop canvas panning and zooming over it. A shield covers the page until
-// it is clicked, and returns as soon as focus leaves the frame.
+// ---- <webview> wiring (desktop app only) ----
+function bindWebview(tab: BrowserTab, element: unknown) {
+  if (!element) return;
+  const view = element as WebviewElement;
+  if (webviews.get(tab.id) === view) return;
+  webviews.set(tab.id, view);
+  const sync = () => {
+    try {
+      webviewNav[tab.id] = {
+        back: view.canGoBack(),
+        forward: view.canGoForward(),
+      };
+    } catch {
+      // Not attached yet.
+    }
+  };
+  const navigated = (url: string) => {
+    if (!safeUrl(url)) return;
+    tab.url = url;
+    if (tab.id === state.value.active && document.activeElement !== addressInput.value)
+      address.value = url;
+    sync();
+    save();
+  };
+  view.addEventListener("did-navigate", (event) =>
+    navigated((event as Event & { url: string }).url),
+  );
+  view.addEventListener("did-navigate-in-page", (event) => {
+    const detail = event as Event & { url: string; isMainFrame: boolean };
+    if (detail.isMainFrame) navigated(detail.url);
+  });
+  view.addEventListener("page-title-updated", (event) => {
+    tab.title = (event as Event & { title: string }).title.slice(0, 200);
+    save();
+  });
+  view.addEventListener("did-fail-load", (event) => {
+    const detail = event as Event & {
+      errorCode: number;
+      errorDescription: string;
+      isMainFrame: boolean;
+    };
+    // -3 is an aborted load, e.g. a redirect or a new navigation.
+    if (detail.isMainFrame && detail.errorCode !== -3 && tab.id === state.value.active)
+      error.value = `This page couldn't load (${detail.errorDescription || detail.errorCode}).`;
+  });
+  view.addEventListener("did-start-loading", () => {
+    if (tab.id === state.value.active) error.value = "";
+  });
+  view.addEventListener("dom-ready", () => {
+    sync();
+    applyZoom(view);
+  });
+}
+function webviewFor(id: number) {
+  return [...webviews.values()].find((view) => {
+    try {
+      return view.getWebContentsId() === id;
+    } catch {
+      return false;
+    }
+  });
+}
+let stopOpenTab: (() => void) | undefined, stopGuestInput: (() => void) | undefined;
+onMounted(() => {
+  stopOpenTab = desktop?.onOpenTab(({ from, url, background }) => {
+    if (webviewFor(from) && safeUrl(url)) addTab(url, background);
+  });
+  // Canvas gestures made over a page arrive from the main process; replay
+  // them where the canvas listens, in canvas screen coordinates.
+  stopGuestInput = desktop?.onGuestInput((input) => {
+    const view = webviewFor(input.from);
+    if (!view) return;
+    if (input.kind === "pan") {
+      window.dispatchEvent(
+        new CustomEvent("orvane-canvas-pan", {
+          detail: { dx: input.dx, dy: input.dy },
+        }),
+      );
+      return;
+    }
+    // Page CSS pixels → Orvane screen pixels at the current canvas zoom.
+    const rect = view.getBoundingClientRect();
+    const scale = view.offsetWidth ? rect.width / view.offsetWidth : 1;
+    view.dispatchEvent(
+      new WheelEvent("wheel", {
+        clientX: rect.left + input.x * scale,
+        clientY: rect.top + input.y * scale,
+        deltaY: input.deltaY,
+        deltaMode: 0,
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+});
+onBeforeUnmount(() => {
+  stopOpenTab?.();
+  stopGuestInput?.();
+});
+
+// A web page swallows every pointer and wheel event, which would stop
+// canvas panning and zooming over it. A shield covers the page until it is
+// clicked, and returns as soon as focus leaves the page.
 const frame = ref<HTMLIFrameElement>();
 const addressInput = ref<HTMLInputElement>();
 const interacting = ref(false);
+const pageElement = () =>
+  useWebview ? webviews.get(state.value.active) : frame.value;
 function focusFrame() {
   interacting.value = true;
-  nextTick(() => frame.value?.focus());
+  nextTick(() => pageElement()?.focus());
 }
 function leaveFrame(event: Event) {
-  // Events inside the cross-origin page never reach this document, so any
-  // pointer or focus event here means the user is outside the page.
-  if (event.target !== frame.value) interacting.value = false;
+  // Events inside the page never reach this document, so any pointer or
+  // focus event here means the user is outside the page.
+  if (event.target !== pageElement()) interacting.value = false;
 }
 function shieldDown(event: PointerEvent) {
   if (event.button !== 0 || props.editing) return;
@@ -220,6 +459,50 @@ onBeforeUnmount(() => {
   document.removeEventListener("focusin", leaveFrame);
   document.removeEventListener("pointerdown", leaveFrame, true);
 });
+// The canvas scales apps with a CSS transform, which would stretch a page
+// rendered at normal density and blur it. Webview pages render at the
+// on-screen density instead (layout unchanged), applied once the canvas
+// zoom settles so pages are not re-rastered on every animation frame.
+const pageBox = ref<HTMLElement>();
+const renderScale = ref(1);
+function applyZoom(view: WebviewElement) {
+  try {
+    void desktop
+      ?.setPageDensity(view.getWebContentsId(), devicePixelRatio * renderScale.value)
+      .catch(() => undefined);
+  } catch {
+    // Not attached yet; dom-ready applies it.
+  }
+}
+let zoomFrame = 0;
+if (useWebview) {
+  let pending = 1,
+    since = 0;
+  const watchZoom = (time: number) => {
+    const box = pageBox.value;
+    if (box?.offsetWidth) {
+      const measured = box.getBoundingClientRect().width / box.offsetWidth;
+      const scale = Math.min(4, Math.max(0.25, Math.round(measured * 100) / 100));
+      if (scale !== pending) {
+        pending = scale;
+        since = time;
+      } else if (scale !== renderScale.value && time - since > 160) {
+        renderScale.value = scale;
+        for (const view of webviews.values()) applyZoom(view);
+      }
+    }
+    zoomFrame = requestAnimationFrame(watchZoom);
+  };
+  onMounted(() => (zoomFrame = requestAnimationFrame(watchZoom)));
+  onBeforeUnmount(() => cancelAnimationFrame(zoomFrame));
+}
+// Middle-click closes a tab; keep the press from starting a canvas pan,
+// which would capture the pointer before the tab sees the click.
+function tabMiddleDown(event: MouseEvent) {
+  if (event.button !== 1) return;
+  event.preventDefault();
+  event.stopPropagation();
+}
 function browserWheel(event: WheelEvent) {
   if (!(event.ctrlKey || event.metaKey)) event.stopPropagation();
 }
@@ -238,23 +521,25 @@ function browserWheel(event: WheelEvent) {
         tabindex="0"
         @click="selectTab(tab.id)"
         @keydown.enter="selectTab(tab.id)"
+        @pointerdown="tabMiddleDown"
+        @mousedown="tabMiddleDown"
         @auxclick.prevent="$event.button === 1 && closeTab(tab.id)"
       >
         <Icon name="globe" :size="12" />
-        <span>{{ label(tab.url) }}</span>
+        <span>{{ label(tab) }}</span>
         <button
           class="browser-tab-close"
-          :aria-label="`Close ${label(tab.url)}`"
+          :aria-label="`Close ${label(tab)}`"
           @click.stop="closeTab(tab.id)"
         >
           <Icon name="close" :size="11" />
         </button>
       </div>
       <button
-        v-if="state.tabs.length < 12"
+        v-if="state.tabs.length < MAX_TABS"
         class="icon-button"
         aria-label="New tab"
-        @click="addTab"
+        @click="addTab()"
       >
         <Icon name="plus" :size="13" />
       </button>
@@ -300,6 +585,17 @@ function browserWheel(event: WheelEvent) {
       />
       <button
         type="button"
+        class="icon-button browser-star"
+        :class="{ on: bookmarked }"
+        :aria-label="bookmarked ? 'Remove bookmark' : 'Bookmark this page'"
+        :aria-pressed="!!bookmarked"
+        :disabled="!activeTab.url"
+        @click="toggleBookmark"
+      >
+        <Icon name="star" :size="13" />
+      </button>
+      <button
+        type="button"
         class="icon-button"
         aria-label="Open in your browser"
         :disabled="!activeTab.url"
@@ -308,28 +604,73 @@ function browserWheel(event: WheelEvent) {
         <Icon name="external" :size="13" />
       </button>
     </form>
+    <nav
+      v-if="state.bookmarks.length"
+      class="browser-bookmarks"
+      aria-label="Bookmarks"
+    >
+      <div
+        v-for="bookmark in state.bookmarks"
+        :key="bookmark.id"
+        class="browser-bookmark"
+        :class="{ current: bookmark.url === activeTab.url }"
+      >
+        <button
+          type="button"
+          :title="bookmark.url"
+          @click="openBookmark(bookmark)"
+          @pointerdown="tabMiddleDown"
+          @mousedown="tabMiddleDown"
+          @auxclick.prevent="$event.button === 1 && openBookmark(bookmark, true)"
+        >
+          <Icon name="globe" :size="11" />
+          <span>{{ bookmark.title || bookmark.url }}</span>
+        </button>
+        <button
+          type="button"
+          class="browser-bookmark-remove"
+          :aria-label="`Remove bookmark ${bookmark.title || bookmark.url}`"
+          @click="removeBookmark(bookmark.id)"
+        >
+          <Icon name="close" :size="10" />
+        </button>
+      </div>
+    </nav>
     <p v-if="error" class="browser-error" role="alert">{{ error }}</p>
-    <div class="browser-page">
+    <div ref="pageBox" class="browser-page">
+      <template v-if="useWebview">
+        <template v-for="tab in state.tabs" :key="tab.id">
+          <webview
+            v-if="started[tab.id]"
+            :ref="(element: unknown) => bindWebview(tab, element)"
+            class="browser-webview"
+            :class="{ 'browser-hidden': tab.id !== state.active }"
+            :src="started[tab.id]"
+            :partition="desktop!.partition"
+            allowpopups
+          ></webview>
+        </template>
+      </template>
       <iframe
-        v-if="activeTab.url"
+        v-else-if="activeTab.url"
         ref="frame"
         :key="`${activeTab.id}:${nav.reloads}:${activeTab.url}`"
         :src="activeTab.url"
-        :title="`Web page: ${label(activeTab.url)}`"
+        :title="`Web page: ${label(activeTab)}`"
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads"
         referrerpolicy="strict-origin-when-cross-origin"
         allow=""
       ></iframe>
-      <div v-else class="browser-start">
+      <div v-if="!activeTab.url" class="browser-start">
         <Icon name="globe" :size="22" />
         <p>Search or enter an address above.</p>
-        <small
+        <small v-if="!useWebview"
           >Some sites refuse to be shown inside other apps. If a page stays
-          blank, open it in your browser.</small
+          blank, open it in your browser or use the Orvane desktop app.</small
         >
       </div>
       <div
-        v-if="activeTab.url && (!interacting || editing)"
+        v-if="activeTab.url && (editing || (!useWebview && !interacting))"
         class="browser-shield"
         :aria-label="editing ? undefined : 'Click to use this page'"
         @pointerdown="shieldDown"
@@ -435,6 +776,72 @@ function browserWheel(event: WheelEvent) {
   color: inherit;
   font-size: 12px;
 }
+.browser-star.on {
+  color: #b5874a;
+}
+.browser-star.on :deep(svg) {
+  fill: currentColor;
+}
+.browser-bookmarks {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 10px 6px;
+  background: #e7edf0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: none;
+}
+.browser-bookmark {
+  display: flex;
+  align-items: center;
+  flex: none;
+  max-width: 180px;
+  border-radius: 4px;
+  color: #556b78;
+}
+.browser-bookmark:hover,
+.browser-bookmark.current {
+  background: #dbe4e9;
+  color: #455968;
+}
+.browser-bookmark > button:first-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 4px 4px 8px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.browser-bookmark > button:first-child > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.browser-bookmark-remove {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  opacity: 0;
+}
+.browser-bookmark:hover .browser-bookmark-remove,
+.browser-bookmark-remove:focus-visible {
+  opacity: 0.7;
+}
+.browser-bookmark-remove:hover {
+  opacity: 1;
+  background: #cfdae0;
+}
 .browser-error {
   margin: 0;
   padding: 7px 14px;
@@ -444,11 +851,23 @@ function browserWheel(event: WheelEvent) {
   flex: none;
 }
 .browser-page {
+  overflow: hidden;
   position: relative;
   flex: 1;
   min-height: 0;
   border-top: 1px solid var(--line);
   background: #fff;
+}
+.browser-webview {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+.browser-webview.browser-hidden {
+  visibility: hidden;
+  pointer-events: none;
 }
 .browser-page iframe {
   display: block;

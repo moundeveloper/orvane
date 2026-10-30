@@ -80,6 +80,12 @@ const status = ref(""),
   loadError = ref(false),
   ready = ref(false),
   canEdit = ref(false);
+// Confirmations read as neutral notes; everything else needs attention.
+const statusIsProblem = computed(
+  () =>
+    loadError.value ||
+    !/ (moved to trash|archived)\. Restore it/.test(status.value),
+);
 const workspace = reactive<Workspace>(emptyWorkspace());
 watch(
   () =>
@@ -192,6 +198,14 @@ const apps = computed(() =>
 const active = ref(""),
   camera = reactive({ x: 0, y: 0, zoom: 1 }),
   movingCamera = ref(false);
+// Front-to-back order: each app activated moves to the top of the stack;
+// the rest keep their relative order.
+const stack = ref<string[]>([]);
+watch(active, (id) => {
+  if (!id) return;
+  stack.value = [...stack.value.filter((other) => other !== id), id];
+});
+const stackLevel = (id: string) => stack.value.indexOf(id) + 2;
 const hint = ref("");
 const hintText = computed(() =>
   hint.value === "move"
@@ -678,7 +692,8 @@ function pointerDown(e: PointerEvent, app?: CanvasApp, edge = "") {
   // Explicit pan gestures take precedence over edge resizing and Alt-move.
   const panning = e.button === 1 || space.value;
   if (panning) edge = "";
-  if (app) active.value = app.id;
+  // Panning only moves the view; it never brings an app to the front.
+  if (app && !panning) active.value = app.id;
   const target = e.target as HTMLElement;
   const headerDrag =
     !!app &&
@@ -762,6 +777,16 @@ function groupClick(event: MouseEvent, id: string) {
   }
   groupMoved = false;
   openGroups(id);
+}
+// Pans relayed from embedded pages (desktop Browser webviews), whose own
+// pointer events never reach this document. Deltas are screen pixels.
+function embeddedPan(event: Event) {
+  const { dx, dy } = (event as CustomEvent<{ dx: number; dy: number }>).detail;
+  if (gesture || pinch || !Number.isFinite(dx) || !Number.isFinite(dy)) return;
+  stopZoom();
+  stopPan();
+  camera.x += dx;
+  camera.y += dy;
 }
 function pointerMove(e: PointerEvent) {
   if (!gesture || e.pointerId !== gesture.pointerId) return;
@@ -1842,12 +1867,14 @@ onMounted(() => {
   window.addEventListener("blur", pointerUp);
   window.addEventListener("pagehide", hidePage);
   window.addEventListener("wheel", wheel, { passive: false });
+  window.addEventListener("orvane-canvas-pan", embeddedPan);
 });
 onBeforeUnmount(() => {
   window.removeEventListener("beforeunload", beforeUnload);
   window.removeEventListener("pageshow", restorePage);
   window.removeEventListener("online", persist);
   mcpBridge?.close();
+  window.removeEventListener("orvane-canvas-pan", embeddedPan);
   stopPan();
   stopZoom();
   document.removeEventListener("pointerdown", dismissOutside, true);
@@ -2238,7 +2265,7 @@ onBeforeUnmount(() => {
           top: app.y + 'px',
           width: app.width + 'px',
           height: app.height + 'px',
-          zIndex: active === app.id ? 2 : 1,
+          zIndex: stackLevel(app.id),
         }"
         @pointerdown.stop="pointerDown($event, app)"
         @focusin="focusIn($event, app)"
@@ -2299,8 +2326,19 @@ onBeforeUnmount(() => {
         ></div>
       </div>
     </div>
-    <div v-if="status" class="status-area" role="alert" @pointerdown.stop>
-      <span>{{ status }}</span
+    <div
+      v-if="status"
+      class="status-area"
+      :class="{ 'status-warning': statusIsProblem }"
+      :role="statusIsProblem ? 'alert' : 'status'"
+      @pointerdown.stop
+    >
+      <Icon
+        class="status-icon"
+        :name="statusIsProblem ? 'alert' : 'info'"
+        :size="15"
+      />
+      <span class="status-text">{{ status }}</span
       ><button
         v-if="status.startsWith('Saving')"
         class="subtle-button"
@@ -2312,8 +2350,7 @@ onBeforeUnmount(() => {
         class="subtle-button"
         @click="exportWorkspace()"
       >
-        Export current data
-      </button>
+        Export current data</button
       ><button
         v-if="loadError"
         class="subtle-button"
