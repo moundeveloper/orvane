@@ -30,6 +30,8 @@ interface State {
   pages: Page[];
   /** blocks of currently open page */
   blocks: Block[];
+  /** Identity of the document whose initial block read has completed. */
+  blocksPageId: string | null;
   currentPageId: string | null;
   recentIds: string[];
   loaded: boolean;
@@ -50,6 +52,7 @@ const createWorkspaceDefinition = (id: string) =>
     state: (): State => ({
       pages: [],
       blocks: [],
+      blocksPageId: null,
       currentPageId: null,
       recentIds: [],
       loaded: false,
@@ -141,6 +144,7 @@ const createWorkspaceDefinition = (id: string) =>
         ) {
           this.currentPageId = null;
           this.blocks = [];
+          this.blocksPageId = null;
           this.undoStack = [];
           this.redoStack = [];
         }
@@ -156,6 +160,7 @@ const createWorkspaceDefinition = (id: string) =>
         )
           return;
         this.blocks = sortByPosition(blocks);
+        this.blocksPageId = pageId;
         if (this.ensureTrailingParagraph()) await this.persistBlocks();
       },
 
@@ -273,10 +278,12 @@ const createWorkspaceDefinition = (id: string) =>
         this.undoStack = [];
         this.redoStack = [];
         this.blocks = [];
+        this.blocksPageId = null;
         const blocks = await db.blocks.where("pageId").equals(id).toArray();
         if (this.currentPageId !== id || documentReads.get(this) !== version)
           return;
         this.blocks = sortByPosition(blocks);
+        this.blocksPageId = id;
         if (this.ensureTrailingParagraph()) await this.persistBlocks();
         this.recentIds = [id, ...this.recentIds.filter((r) => r !== id)].slice(
           0,

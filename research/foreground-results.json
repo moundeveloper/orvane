@@ -1,0 +1,649 @@
+{
+  "baselineCommit": "805bbc8",
+  "candidateCommit": "265a83be27065a8855c58faf39b66094d62a23e8",
+  "workload": {
+    "notes": 12,
+    "netsuite": 20,
+    "git": 10,
+    "projects": 8,
+    "pages": 500,
+    "blocksPerDocument": 100,
+    "scripts": 1000,
+    "folders": 1000,
+    "projectsPerRoot": 100,
+    "savedTerminals": 20
+  },
+  "sources": {
+    "commonFixedBaselineStoreSha256": "40887f15bd0dcab5a0bc3a205a2040705105e3fe869ba1845e279f156377bdde",
+    "candidateStoreSha256": "f4bfc88a07fc6a1a7b92a8f2508f8dca3f37143679e7f2bfd974dcf3420bac42",
+    "commonPageViewSha256": "70c52a07d422564703bfe3c49ceebc06e2af7a65571b4d0865eb862a6aaa1aad"
+  },
+  "comparisonsCompleted": true,
+  "repetitions": 5,
+  "results": [
+    {
+      "variant": "baseline",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94535,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 156,
+      "warmSelectionMs": 129.59999999776483,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 50,
+      "maxFrameInterval": 499.6999999999998,
+      "frameSamples": 84,
+      "longTasks": [
+        71,
+        62,
+        507,
+        479
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 6,
+        "/__orvane/storage/preferences": 1,
+        "/__orvane/storage/state": 8,
+        "/__orvane/storage/preference/orvane.examples.v1": 1,
+        "/__orvane/projects/workspace": 1,
+        "/__orvane/notes/data": 19,
+        "/__orvane/git/git_workspace_list": 1,
+        "/__orvane/projects/terminal/state": 16,
+        "/__orvane/git/git_history": 1,
+        "/__orvane/git/git_status": 1,
+        "/__orvane/mcp": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 85
+      },
+      "browserVersion": "153.0.8010.12"
+    },
+    {
+      "variant": "candidate",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94535,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 138.80000000074506,
+      "warmSelectionMs": 130.5,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 49.80000000000018,
+      "maxFrameInterval": 466.2999999999993,
+      "frameSamples": 81,
+      "longTasks": [
+        50,
+        68,
+        480,
+        434
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 5,
+        "/__orvane/storage/preferences": 1,
+        "/__orvane/storage/state": 8,
+        "/__orvane/storage/preference/orvane.examples.v1": 1,
+        "/__orvane/projects/workspace": 1,
+        "/__orvane/notes/data": 19,
+        "/__orvane/git/git_workspace_list": 1,
+        "/__orvane/projects/terminal/state": 16,
+        "/__orvane/git/git_history": 1,
+        "/__orvane/git/git_status": 1,
+        "/__orvane/mcp": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 82
+      },
+      "browserVersion": "153.0.8010.12"
+    },
+    {
+      "variant": "candidate",
+      "index": 1,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94535,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 138.60000000149012,
+      "warmSelectionMs": 119,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 50,
+      "maxFrameInterval": 516.5,
+      "frameSamples": 83,
+      "longTasks": [
+        50,
+        61,
+        525,
+        468
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 5,
+        "/__orvane/storage/preferences": 1,
+        "/__orvane/storage/state": 8,
+        "/__orvane/storage/preference/orvane.examples.v1": 1,
+        "/__orvane/notes/data": 19,
+        "/__orvane/git/git_workspace_list": 1,
+        "/__orvane/projects/workspace": 1,
+        "/__orvane/git/git_history": 1,
+        "/__orvane/git/git_status": 1,
+        "/__orvane/projects/terminal/state": 16,
+        "/__orvane/mcp": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 84
+      },
+      "browserVersion": "153.0.8010.12"
+    },
+    {
+      "variant": "baseline",
+      "index": 1,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94535,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 142.39999999850988,
+      "warmSelectionMs": 119.80000000074506,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 33.399999999999636,
+      "maxFrameInterval": 482.89999999999964,
+      "frameSamples": 86,
+      "longTasks": [
+        67,
+        60,
+        493,
+        457
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 6,
+        "/__orvane/storage/preferences": 1,
+        "/__orvane/storage/state": 8,
+        "/__orvane/storage/preference/orvane.examples.v1": 1,
+        "/__orvane/notes/data": 19,
+        "/__orvane/projects/workspace": 1,
+        "/__orvane/git/git_workspace_list": 1,
+        "/__orvane/projects/terminal/state": 16,
+        "/__orvane/git/git_history": 1,
+        "/__orvane/git/git_status": 1,
+        "/__orvane/mcp": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 87
+      },
+      "browserVersion": "153.0.8010.12"
+    },
+    {
+      "variant": "baseline",
+      "index": 2,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94535,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 140.09999999776483,
+      "warmSelectionMs": 119.39999999850988,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 50.099999999999454,
+      "maxFrameInterval": 483,
+      "frameSamples": 85,
+      "longTasks": [
+        65,
+        62,
+        486,
+        484
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 5,
+        "/__orvane/storage/preferences": 1,
+        "/__orvane/storage/state": 8,
+        "/__orvane/storage/preference/orvane.examples.v1": 1,
+        "/__orvane/notes/data": 19,
+        "/__orvane/git/git_workspace_list": 1,
+        "/__orvane/projects/workspace": 1,
+        "/__orvane/git/git_history": 1,
+        "/__orvane/git/git_status": 1,
+        "/__orvane/projects/terminal/state": 16,
+        "/__orvane/mcp": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 86
+      },
+      "browserVersion": "153.0.8010.12"
+    },
+    {
+      "variant": "candidate",
+      "index": 2,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94535,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 138.5,
+      "warmSelectionMs": 124.69999999925494,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 49.899999999999636,
+      "maxFrameInterval": 483.10000000000036,
+      "frameSamples": 82,
+      "longTasks": [
+        55,
+        64,
+        492,
+        485
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 5,
+        "/__orvane/storage/preferences": 1,
+        "/__orvane/storage/state": 8,
+        "/__orvane/storage/preference/orvane.examples.v1": 1,
+        "/__orvane/projects/workspace": 1,
+        "/__orvane/notes/data": 19,
+        "/__orvane/git/git_workspace_list": 1,
+        "/__orvane/projects/terminal/state": 16,
+        "/__orvane/git/git_history": 1,
+        "/__orvane/git/git_status": 1,
+        "/__orvane/mcp": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 83
+      },
+      "browserVersion": "153.0.8010.12"
+    },
+    {
+      "variant": "candidate",
+      "index": 3,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94535,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 138.39999999850988,
+      "warmSelectionMs": 124.70000000298023,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 50,
+      "maxFrameInterval": 499.6999999999998,
+      "frameSamples": 82,
+      "longTasks": [
+        51,
+        64,
+        503,
+        485
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 6,
+        "/__orvane/storage/preferences": 1,
+        "/__orvane/storage/state": 8,
+        "/__orvane/storage/preference/orvane.examples.v1": 1,
+        "/__orvane/projects/workspace": 1,
+        "/__orvane/notes/data": 19,
+        "/__orvane/git/git_workspace_list": 1,
+        "/__orvane/projects/terminal/state": 16,
+        "/__orvane/git/git_history": 1,
+        "/__orvane/git/git_status": 1,
+        "/__orvane/mcp": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 83
+      },
+      "browserVersion": "153.0.8010.12"
+    },
+    {
+      "variant": "baseline",
+      "index": 3,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94535,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 144,
+      "warmSelectionMs": 123.90000000223517,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 50.099999999999454,
+      "maxFrameInterval": 533,
+      "frameSamples": 80,
+      "longTasks": [
+        71,
+        65,
+        535,
+        482
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 5,
+        "/__orvane/storage/preferences": 1,
+        "/__orvane/storage/state": 8,
+        "/__orvane/storage/preference/orvane.examples.v1": 1,
+        "/__orvane/notes/data": 19,
+        "/__orvane/projects/workspace": 1,
+        "/__orvane/git/git_workspace_list": 1,
+        "/__orvane/projects/terminal/state": 16,
+        "/__orvane/git/git_history": 1,
+        "/__orvane/git/git_status": 1,
+        "/__orvane/mcp": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 81
+      },
+      "browserVersion": "153.0.8010.12"
+    },
+    {
+      "variant": "baseline",
+      "index": 4,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94535,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 141.89999999850988,
+      "warmSelectionMs": 118.09999999776483,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 33.20000000000073,
+      "maxFrameInterval": 549.7999999999993,
+      "frameSamples": 87,
+      "longTasks": [
+        70,
+        59,
+        519,
+        564
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 5,
+        "/__orvane/storage/preferences": 1,
+        "/__orvane/storage/state": 8,
+        "/__orvane/storage/preference/orvane.examples.v1": 1,
+        "/__orvane/projects/workspace": 1,
+        "/__orvane/notes/data": 19,
+        "/__orvane/git/git_workspace_list": 1,
+        "/__orvane/projects/terminal/state": 16,
+        "/__orvane/git/git_history": 1,
+        "/__orvane/git/git_status": 1,
+        "/__orvane/mcp": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 88
+      },
+      "browserVersion": "153.0.8010.12"
+    },
+    {
+      "variant": "candidate",
+      "index": 4,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94535,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 138.59999999776483,
+      "warmSelectionMs": 124.30000000074506,
+      "frameIntervalP50": 16.600000000000364,
+      "frameIntervalP95": 33.400000000000546,
+      "maxFrameInterval": 500.59999999999945,
+      "frameSamples": 88,
+      "longTasks": [
+        52,
+        59,
+        482,
+        503
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 5,
+        "/__orvane/storage/preferences": 1,
+        "/__orvane/storage/state": 8,
+        "/__orvane/storage/preference/orvane.examples.v1": 1,
+        "/__orvane/notes/data": 19,
+        "/__orvane/git/git_workspace_list": 1,
+        "/__orvane/projects/workspace": 1,
+        "/__orvane/git/git_history": 1,
+        "/__orvane/git/git_status": 1,
+        "/__orvane/projects/terminal/state": 16,
+        "/__orvane/mcp": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 89
+      },
+      "browserVersion": "153.0.8010.12"
+    },
+    {
+      "variant": "candidate",
+      "index": 5,
+      "diagnostic": true,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94535,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 166.30000000074506,
+      "warmSelectionMs": 162.19999999925494,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 66.59999999999945,
+      "maxFrameInterval": 483,
+      "frameSamples": 85,
+      "longTasks": [
+        58,
+        64,
+        79,
+        492,
+        462
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 8,
+        "/__orvane/storage/preferences": 1,
+        "/__orvane/storage/state": 8,
+        "/__orvane/storage/preference/orvane.examples.v1": 1,
+        "/__orvane/projects/workspace": 1,
+        "/__orvane/notes/data": 19,
+        "/__orvane/git/git_workspace_list": 1,
+        "/__orvane/projects/terminal/state": 16,
+        "/__orvane/git/git_history": 1,
+        "/__orvane/git/git_status": 1,
+        "/__orvane/mcp": 3
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 86
+      },
+      "browserVersion": "153.0.8010.12"
+    }
+  ],
+  "limits": [
+    "Production Chromium browser, not Electron.",
+    "Focused/visible document checks; screenshots support visual review but do not establish presented frame rate.",
+    "Only child lookup implementation differs; both variants include the common document-loading correctness fix discovered during setup.",
+    "Mock external reads; real isolated SQLite workspace and Notes storage.",
+    "No query outputs, expanded deployment panels, Git diff or active terminal commands in this initial fixture.",
+    "Frame intervals cover selection and scripted pan together; first/warm readiness ends after two animation callbacks, not a measured physical display presentation.",
+    "No heap snapshots, 30-minute soak or 50-app capacity guarantee."
+  ],
+  "date": "2026-11-02",
+  "artifacts": "artifacts/performance/foreground/2026-11-02T16-24-14-170Z",
+  "summary": {
+    "baseline": {
+      "firstSelectionMs": {
+        "median": 142.4,
+        "min": 140.1,
+        "max": 156
+      },
+      "warmSelectionMs": {
+        "median": 119.8,
+        "min": 118.1,
+        "max": 129.6
+      },
+      "frameIntervalP95": {
+        "median": 50,
+        "min": 33.2,
+        "max": 50.1
+      },
+      "maxFrameInterval": {
+        "median": 499.7,
+        "min": 482.9,
+        "max": 549.8
+      }
+    },
+    "candidate": {
+      "firstSelectionMs": {
+        "median": 138.6,
+        "min": 138.4,
+        "max": 138.8
+      },
+      "warmSelectionMs": {
+        "median": 124.7,
+        "min": 119,
+        "max": 130.5
+      },
+      "frameIntervalP95": {
+        "median": 49.9,
+        "min": 33.4,
+        "max": 50
+      },
+      "maxFrameInterval": {
+        "median": 499.7,
+        "min": 466.3,
+        "max": 516.5
+      }
+    }
+  },
+  "documentsPreservedInAll11Databases": true,
+  "diagnosticPanStyleRecalculations": {
+    "events": 62,
+    "totalMs": 890.4,
+    "worstMs": [
+      457.8,
+      424.7
+    ],
+    "interpretation": "Separate traced run, not comparative timing. Global is-panning descendant cursor/user-select rules are a candidate cause to test, not a proven exclusive cause."
+  },
+  "validation": {
+    "unitServiceChecks": 17,
+    "browserChecks": 10,
+    "buildPassed": true,
+    "designDetectorFindings": []
+  }
+}

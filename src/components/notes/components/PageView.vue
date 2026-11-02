@@ -13,19 +13,35 @@ const closePageTab = inject<(id: string) => void>("closePageTab");
 
 const titleEl = ref<HTMLElement>();
 const editorEl = ref<InstanceType<typeof BlockEditor>>();
+const loadError = ref("");
+const loadAttempt = ref(0);
 
 watch(
   [
     () => props.id,
     () => !!ws.pages.find((p) => p.id === props.id && !p.trashedAt),
+    () => loadAttempt.value,
   ],
-  async ([id, exists]) => {
+  async ([id, exists], _previous, onCleanup) => {
+    let current = true;
+    onCleanup(() => {
+      current = false;
+    });
+    loadError.value = "";
     if (!exists) {
       if (closePageTab) closePageTab(id);
       else navigateNotesRoot();
       return;
     }
-    await ws.openPage(id);
+    try {
+      await ws.openPage(id);
+    } catch (error) {
+      if (current)
+        loadError.value =
+          error instanceof Error ? error.message : String(error);
+      return;
+    }
+    if (!current) return;
     if (ws.currentPage?.type === "page" && ws.blocks.length === 0) {
       await nextTick();
       await editorEl.value?.focusFirstBlock();
@@ -130,7 +146,18 @@ function startSideSelection(e: PointerEvent | MouseEvent) {
         />
 
         <DatabaseView v-if="page.type === 'database'" :page="page" />
-        <BlockEditor v-else ref="editorEl" :key="page.id" />
+        <BlockEditor
+          v-else-if="ws.blocksPageId === page.id"
+          ref="editorEl"
+          :key="page.id"
+        />
+        <p v-else-if="loadError" role="alert">
+          {{ loadError }}
+          <button class="subtle-button" @click="loadAttempt++">
+            Retry loading page
+          </button>
+        </p>
+        <p v-else role="status">Loading page…</p>
       </div>
     </div>
   </div>

@@ -174,6 +174,8 @@ Validation: all 16 browser checks pass across `scripts-deployments`, `scripts-wi
 
 ### Fourteenth pass: Notes page-tree metadata indexing
 
+Committed as `265a83b`.
+
 Profiling the actual owned Notes stores identified repeated full-page scans in `childrenOf()`. The sidebar asks for root pages, then each visible tree item asks whether it has children, including collapsed items. With 12 stores and 500 root pages each, two sidebar-style lookup passes performed 12,024 lookups and read `parentId` 6,012,000 times on baseline `805bbc8`. Another pass after a title edit in each store read it 3,006,000 times. The candidate returns the same page counts with 6,000 initial parent-field reads and zero additional parent-field reads after those renames. These deterministic operation counts are not measured UI latency or heap savings. Reproduce with `node --import tsx research/notes-metadata.ts`; raw counts are in `research/notes-metadata-results.json`.
 
 A computed index groups active pages by parent and sorts each sibling group once, with invalidation driven by membership, parent, ordering and trash state. Title/icon/favorite/timestamp edits retain the index and expose their changed values through the existing reactive records. `childrenOf()` still returns a fresh array containing editable, store-owned Page records, preserving caller isolation when rearranging the returned list. Separate views retain independent metadata, navigation and undo state; no canonical shared editable cache or persistence protocol was introduced.
@@ -182,11 +184,34 @@ Index construction and sibling sorting still cost work after structural changes.
 
 Validation: all 17 unit/service checks pass across `notes-metadata`, `notes-snapshots` and `performance`, including cache reuse, equal-position stability, direct parent/order/trash edits, insertion/removal/replacement, detached child arrays, editable record identity, independent stores and disposal. All eight browser checks pass across `notes`, `notes-snapshots` and `performance`, covering existing Notes UI/MCP/database workflows, durable edits and undo/redo, multi-view synchronization, read/write barriers, failures/recovery, SQLite atomicity and existing lazy-view/splitter workflows. `pnpm build` passes, including Vue/TypeScript checking, with the existing Vite warnings. No UI markup or styles changed.
 
+### Fifteenth pass: production-browser foreground comparison and Notes loading correctness
+
+Added `research/foreground.ts` and an isolated fixture for actual production components: 20 NetSuite apps (seven Scripts, seven File Cabinet, six SuiteQL), 12 Notes apps, 10 Git viewers and eight Projects apps. Notes share 500 persisted page records and two seeded 100-block documents; Scripts and folder fixtures contain 1,000 records, Git histories contain 150 commits and Projects roots contain 100 projects with 20 saved terminal tabs each. Eight selected xterm views initialize. Workspace and Notes use disposable SQLite databases under ignored artifacts; Git/Projects/NetSuite use fixed fixture responses, with terminal-layout acknowledgments and no command execution. No user workspace, live NetSuite account or repository is used.
+
+The first real document-selection smoke run exposed a correctness bug: `BlockEditor` mounted while `openPage()` was awaiting its read, interpreted the temporary empty blocks array as an empty document, and persisted a blank block over saved content. This was reproduced in the disposable fixture SQLite database. Stores now track the identity of successfully loaded block data, and PageView waits for that identity before mounting the editor. Real empty documents initialize only after their read completes; superseded responses cannot initialize a different document. Failed reads show an error with a retry action. Both comparison builds include this common correction, rather than timing a baseline that overwrites fixture data.
+
+The comparison changes only the child-lookup implementation: the baseline getter is extracted from `805bbc8`, and the candidate uses the Notes index introduced in `265a83b`; other production source, including the loading fix, is common. Source hashes are recorded. Five alternating baseline/candidate pairs ran in headed production Chromium 153.0.8010.12 at 1440×1000. All measured windows stayed focused and visible, with zero blur/hidden events. Screenshots were reviewed and computed header blur remained `blur(8px) saturate(1.2)`. Each fixture had 50 apps and 94,535 document elements before selection. Browser-visible checks are not proof of physical presentation or absence of every kind of OS occlusion.
+
+| Diagnostic across five runs | Baseline median (range), ms | Candidate median (range), ms |
+|---|---:|---:|
+| First new Notes document selection | 142.4 (140.1–156.0) | 138.6 (138.4–138.8) |
+| Return to previously visited document | 119.8 (118.1–129.6) | 124.7 (119.0–130.5) |
+| Per-run p95 animation-callback interval during selection and pan | 50.0 (33.2–50.1) | 49.9 (33.4–50.0) |
+| Largest callback interval per run | 499.7 (482.9–549.8) | 499.7 (466.3–516.5) |
+
+Selection measures click capture until matching document content is present followed by two animation callbacks. It excludes app startup, fit-camera animation and physical screen presentation. The small first-selection difference and overlapping warm results do not establish a broad responsiveness gain. Callback intervals are cadence diagnostics, not presented FPS or a p99 estimate. This compares the Notes indexing pass in one loaded workload, not all cumulative optimizations against the original application.
+
+A separate candidate trace, excluded from those ten timing samples, records approximately 890.4 ms in style recalculation during the pan interval, with a single recalculation reaching 457.8 ms. The global `.is-panning *` / `.is-panning:active *` cursor and user-selection rules are a strong candidate for the next controlled experiment; the trace does not prove they are the exclusive cause. No camera rewrite or speculative CSS change was included here. Raw accepted run summaries, source hashes and trace location are in `research/foreground-results.json`; rerun with `node --import tsx research/foreground.ts` (opens dedicated foreground browser windows). The default is five pairs plus a separate diagnostic trace; `ORVANE_FOREGROUND_REPETITIONS=1` is only a smoke run.
+
+Validation: all 17 unit/service checks and all 10 browser checks pass, including a new delayed-read regression covering initial load, page switching, stale responses, genuine empty pages, saved-content preservation and failed-read retry. Both saved fixture documents were checked directly in all 11 completed SQLite databases and remained intact. `pnpm build` passes with existing Vite warnings. Loading and populated Notes views were visually reviewed; the scoped design detector reports no findings.
+
+Limits: this is a browser run, not Electron. Other desktop activity, power and thermal state were not controlled. The fixture omits active terminal commands, retained query outputs, expanded deployments and large Git diffs; it is not a complete 50-app soak or capacity guarantee. Heap behavior and first initialization of every hidden inner view remain unmeasured.
+
 ### Remaining work, in current order
 
-1. Run foreground Electron/browser comparative traces and first-use latency checks. These remain the main evidence gap for the cumulative optimizations.
-2. Capture heap/open-close behavior and run the 30-minute mixed 50-app soak, including realistic page counts, documents, query outputs, deployment panels and terminal views.
-3. Use those traces to decide whether further Notes caching/persistence work, many retained expanded panels, camera/controller work or filesystem concurrency need changes. Capped execution logs/search remain lower priority unless representative evidence changes that ranking.
+1. Test a focused change to pan cursor/style invalidation using the new foreground comparison and diagnostic trace. Preserve cursor feedback, text selection behavior, header blur and text sharpness.
+2. Repeat representative foreground and first-use checks in Electron, including overview and normal zoom, hidden inner views, query outputs, expanded deployment panels and larger diffs/documents.
+3. Capture heap/open-close behavior and run the 30-minute mixed 50-app soak. Use those results to prioritize further Notes caching/persistence, retained-panel, camera/controller or filesystem-concurrency work.
 
 ## Conclusion and limits
 
