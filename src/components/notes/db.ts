@@ -5,7 +5,8 @@ let writeBarrier: Promise<unknown> = pending;
 const reads = new Map<string, Promise<unknown>>();
 async function request<T>(payload: Record<string, unknown>): Promise<T> {
   const read = payload.action === "get" || payload.action === "list";
-  const key = JSON.stringify(payload);
+  // Only reads participate in deduplication; write payloads can be large.
+  const key = read ? JSON.stringify(payload) : "";
   if (read) {
     const existing = reads.get(key);
     if (existing) return structuredClone(await existing) as T;

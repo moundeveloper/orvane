@@ -1,0 +1,47 @@
+{
+  "date": "2026-11-02",
+  "baselineCommit": "d475f56",
+  "fixture": "tests/notes-snapshots-harness.ts",
+  "method": "Playwright Chromium running the actual owned Pinia Notes store. 1000 blocks with roughly 1KB HTML each; 100 snapshots, modifying only the first block between captures. Instrument JSON.stringify/parse for fixture documents and block-write payloads; count distinct raw block objects referenced by retained history. Persistence is measured separately after the history loop. ORVANE_NOTES_SNAPSHOT_BASELINE=1 enables the diagnostic against the baseline checkout.",
+  "context": "Serialization and object-retention counts, not foreground latency, frame-rate, process RAM or heap stabilization measurements",
+  "blocks": 1000,
+  "snapshots": 100,
+  "history": {
+    "baseline": {
+      "documentSerializations": 100,
+      "serializedDocumentCharacters": 122075287,
+      "parsedDocuments": 100,
+      "historyEntries": 100,
+      "uniqueHistoryBlockObjects": 100000
+    },
+    "candidate": {
+      "documentSerializations": 0,
+      "serializedDocumentCharacters": 0,
+      "parsedDocuments": 0,
+      "historyEntries": 100,
+      "uniqueHistoryBlockObjects": 1099
+    }
+  },
+  "replaceBlocks": {
+    "baseline": {
+      "documentCloneSerializations": 1,
+      "documentCloneCharacters": 1220753,
+      "parsedDocuments": 1,
+      "blockPayloadSerializations": 2
+    },
+    "candidate": {
+      "documentCloneSerializations": 0,
+      "documentCloneCharacters": 0,
+      "parsedDocuments": 0,
+      "blockPayloadSerializations": 1
+    }
+  },
+  "policy": "The existing 100-entry history, operation grouping, full-document atomic saves, ownership, ordering and failure reporting remain. Immutable snapshot records can be shared within one store; restored live records and queued write records are detached mutable copies.",
+  "limits": [
+    "Capturing history still scans block fields and stores a full array of references for each step.",
+    "The retention count is for one changed block per capture. Reindexing or changing many blocks can require many new history records.",
+    "Unknown nested/non-scalar fields retain JSON cloning and deep-freezing rather than the scalar fast path.",
+    "Final HTTP payload serialization remains; no Notes SQLite schema or transport migration was made.",
+    "Foreground profiling, actual heap measurements and the mixed 50-app soak remain pending."
+  ]
+}

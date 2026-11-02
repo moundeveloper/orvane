@@ -3,6 +3,12 @@ import { inject, type InjectionKey } from "vue";
 import { defineStore, getActivePinia, type Pinia } from "pinia";
 import { db, uid, now } from "../db";
 import type { Block, BlockType, DbSchema, Page } from "../types";
+import {
+  captureBlockSnapshot,
+  cloneBlockRecord,
+  cloneBlockRecords,
+  type BlockSnapshot,
+} from "../blockSnapshots";
 
 export const NOTES_WORKSPACE_CHANGED_EVENT = "magic-notes-workspace-changed";
 
@@ -27,8 +33,8 @@ interface State {
   currentPageId: string | null;
   recentIds: string[];
   loaded: boolean;
-  undoStack: Block[][];
-  redoStack: Block[][];
+  undoStack: BlockSnapshot[];
+  redoStack: BlockSnapshot[];
 }
 
 function sortByPosition<T extends { position: number }>(arr: T[]): T[] {
@@ -358,22 +364,28 @@ const createWorkspaceDefinition = (id: string) =>
       // ---- blocks ----
 
       snapshot() {
-        this.undoStack.push(JSON.parse(JSON.stringify(this.blocks)));
+        this.undoStack.push(
+          captureBlockSnapshot(this.blocks, this.undoStack.at(-1)),
+        );
         if (this.undoStack.length > 100) this.undoStack.shift();
         this.redoStack = [];
       },
 
       async undo() {
         if (!this.undoStack.length) return;
-        this.redoStack.push(JSON.parse(JSON.stringify(this.blocks)));
-        this.blocks = this.undoStack.pop()!;
+        this.redoStack.push(
+          captureBlockSnapshot(this.blocks, this.undoStack.at(-1)),
+        );
+        this.blocks = cloneBlockRecords(this.undoStack.pop()!);
         await this.persistBlocks();
       },
 
       async redo() {
         if (!this.redoStack.length) return;
-        this.undoStack.push(JSON.parse(JSON.stringify(this.blocks)));
-        this.blocks = this.redoStack.pop()!;
+        this.undoStack.push(
+          captureBlockSnapshot(this.blocks, this.redoStack.at(-1)),
+        );
+        this.blocks = cloneBlockRecords(this.redoStack.pop()!);
         await this.persistBlocks();
       },
 
@@ -383,7 +395,7 @@ const createWorkspaceDefinition = (id: string) =>
         const p = this.currentPage;
         nextDocumentRead(this);
         this.ensureTrailingParagraph();
-        await db.replaceBlocks(pageId, JSON.parse(JSON.stringify(this.blocks)));
+        await db.replaceBlocks(pageId, cloneBlockRecords(this.blocks));
         if (p) {
           p.updatedAt = now();
           await db.pages.put(JSON.parse(JSON.stringify(p)));
@@ -443,7 +455,7 @@ const createWorkspaceDefinition = (id: string) =>
           await this.persistBlocks();
           return;
         }
-        await db.blocks.put(JSON.parse(JSON.stringify(b)));
+        await db.blocks.put(cloneBlockRecord(b));
         notifyWorkspaceChanged({ source: this.$id, blocksPageId: b.pageId });
       },
 
