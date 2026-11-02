@@ -6,6 +6,7 @@ import type { Block } from "../src/model";
 export function mountScriptsFixture(
   kind: "scripts" | "search" = "scripts",
   count = 5000,
+  deploymentCount = 5,
 ) {
   const root = document.createElement("div");
   root.id = "scripts-fixture";
@@ -41,7 +42,7 @@ export function mountScriptsFixture(
       held = undefined;
       if (pending) await pending;
       return {
-        rows: Array.from({ length: 5 }, (_, i) => ({
+        rows: Array.from({ length: deploymentCount }, (_, i) => ({
           primarykey: Number(args.id) * 10 + i,
           scriptid: `customdeploy_${args.id}_${i}`,
           status: "Released",

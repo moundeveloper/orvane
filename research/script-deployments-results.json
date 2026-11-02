@@ -1,0 +1,44 @@
+{
+  "date": "2026-11-02",
+  "baselineCommit": "cd51d8c",
+  "fixture": "tests/scripts-windowing-harness.ts",
+  "diagnostic": "tests/scripts-deployments.spec.ts",
+  "method": "Actual Scripts component in Playwright Chromium at 1440x1000 with mocked deployment reads. ORVANE_DEPLOYMENTS_BASELINE=1 selects baseline assertions before implementation.",
+  "workload": {
+    "expandedScripts": 20,
+    "deploymentsPerScript": 1000
+  },
+  "baseline": {
+    "viewerElements": 60381,
+    "mountedDeploymentRows": 20000,
+    "expandedPanels": 20,
+    "deploymentRequests": 20
+  },
+  "candidate": {
+    "viewerElements": 6481,
+    "mountedDeploymentRows": 2000,
+    "expandedPanels": 20,
+    "deploymentRequests": 20,
+    "pageSize": 100
+  },
+  "behavior": {
+    "allResponseRowsRetained": true,
+    "pagingRequests": 0,
+    "smallListsUnpagedThrough": 100,
+    "pageTraversalValidatedRows": 210
+  },
+  "validation": {
+    "browserChecks": 16,
+    "finalTargetedReruns": 4,
+    "buildPassed": true,
+    "designDetectorFindings": [],
+    "narrowScreenshot": "artifacts/performance/script-deployment-pages.png"
+  },
+  "limits": [
+    "Synthetic DOM diagnostics, not foreground timing or heap measurements.",
+    "All fetched response data stays in memory; the number of retained expanded panels remains unbounded.",
+    "Browser-native Find sees deployment text on the current page.",
+    "No change to bridge response limits; upstream completeness is not established.",
+    "Mixed 50-app foreground traces, heap checks and soak remain pending."
+  ]
+}

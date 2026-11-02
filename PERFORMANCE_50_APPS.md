@@ -146,6 +146,8 @@ Validation: all 14 unit/service checks pass with `node --import tsx --test resea
 
 ### Twelfth pass: query-output budgets and raw snapshots
 
+Committed as `cd51d8c`.
+
 Inactive SuiteQL results and traces now share a 64 MiB estimated-data budget across query views within one renderer. Older inactive outputs are released first. Active output is outside this budget; selecting a tab takes its output before admitting the previous tab, protecting the selected result. An individually oversized output is released when leaving it without displacing other useful entries. Released tabs show an accessible rerun prompt and never execute automatically. Editable SQL and undo history retain their separate owners. Closing/deleting tabs, changing environments and destroying views remove their cache accounting.
 
 Query result arrays and trace snapshots now use shallow ownership after auditing nested writes. Trace progress explicitly notifies the view, while result sorting copies only when needed. Trace row display text is formatted once per completed stage while displayed and discarded when leaving the trace pane. Output-size accounting traverses fields without JSON encoding; saved weights are reused on tab switches.
@@ -156,11 +158,23 @@ This budget is an accounting estimate, not a process-memory or JavaScript-heap c
 
 Validation: seven unit checks and 23 browser checks pass across query ownership, memory and NetSuite workflows, with targeted reruns after the trace-formatting change. Coverage includes shared eviction across views, oversized admission, selected-output protection, SQL undo/redo, explicit reruns, trace progress, formatting counts, raw-data sorting/filtering/export/pagination, environment changes and teardown. `pnpm build` passes with the existing Vite warnings. The released-output prompt was visually reviewed, and the scoped design detector reports no findings.
 
+### Thirteenth pass: large deployment lists in expanded Scripts panels
+
+The actual Scripts component with mocked deployment reads was measured at 20 expanded scripts with 1,000 deployments each. Baseline `cd51d8c` mounted 20,000 deployment rows and 60,381 viewer elements. The candidate mounts 2,000 rows and 6,481 elements, with the same 20 deployment requests. These are synthetic DOM counts, not foreground timings, real account workload frequencies or heap measurements. Raw diagnostics are in `research/script-deployments-results.json`.
+
+Deployment responses remain complete in memory, but panels show at most 100 deployment rows at a time. Larger lists have Previous/Next controls and an announced visible range; lists of 100 or fewer keep every row and omit paging controls. Every fetched deployment remains reachable and opens its original record ID. Browser-native Find sees only the current deployment page. Paging is local and makes no additional requests; it does not change the bridge's response limits or promise that upstream responses include every account record.
+
+A dedicated deployment component owns each panel's page. Other panels loading, execution logs, sorting the script list, outer scrolling and resize do not reset that page. Collapse/filter removal, reload and environment changes recreate panels on their first page. Expanded controls, log scroll and file previews remain mounted; variable-height unmount/remount of entire expanded panels was unnecessary for the measured deployment-row cost. The number of expanded panels and their cached data still grows with user expansion, so this is not a total DOM or memory cap.
+
+Script and deployment row snapshots use shallow refs after auditing their read-only usage. Deployment arrivals replace the response map, notifying the view without deep-proxying each record; editable state and log controls retain their existing behavior. Loading, error/retry and generation checks remain unchanged.
+
+Validation: all 16 browser checks pass across `scripts-deployments`, `scripts-windowing` and `netsuite`, followed by all four deployment checks again after adjusting narrow paging layout. Coverage includes complete 210-row page traversal, last-page record actions, keyboard navigation and exit, empty/100/101-row boundaries, independent panel state, logs, sorting, reload, resize/zoom, existing preview/clipboard/edit actions, scroll anchoring, environment changes and request failures. `pnpm build` passes with the existing Vite warnings. The narrow paging layout was visually reviewed; the scoped design detector reports no findings.
+
 ### Remaining work, in current order
 
-1. Profile many expanded Scripts panels and large deployment responses. Compare variable-height windowing with retained panels if that workload warrants it. The desktop bridge's capped logs/search remain lower priorities unless representative multi-app traces identify meaningful cost.
-2. Profile remaining Notes metadata/cache and persistence costs if representative workloads warrant it. Canonical caching, more compact history and per-app commits remain subject to the consistency/migration gates; the work above does not establish a need for them.
-3. Run foreground Electron/browser comparative traces, first-use latency checks, heap/open-close profiling and the 30-minute mixed 50-app soak. Use those results to decide whether camera/controller or filesystem-concurrency changes are warranted.
+1. Profile remaining Notes metadata/cache and persistence costs with representative workloads. Apply further canonical caching or smaller persistence commits only if measurements warrant their consistency/migration costs.
+2. Run foreground Electron/browser comparative traces, first-use latency checks, heap/open-close profiling and the 30-minute mixed 50-app soak. These remain the main validation gap for the cumulative optimizations.
+3. Use those traces to decide whether many retained expanded panels, camera/controller work or filesystem concurrency need further changes. Capped execution logs/search remain lower priority unless representative evidence changes that ranking.
 
 ## Conclusion and limits
 

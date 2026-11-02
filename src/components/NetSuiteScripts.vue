@@ -6,9 +6,11 @@ import {
   onDeactivated,
   onMounted,
   ref,
+  shallowRef,
   watch,
 } from "vue";
 import Icon from "./Icon.vue";
+import ScriptDeployments from "./ScriptDeployments.vue";
 import WindowedScriptsBody from "./WindowedScriptsBody.vue";
 import type { Block } from "../model";
 
@@ -26,9 +28,9 @@ const emit = defineEmits<{
 }>();
 const busy = ref(false),
   error = ref(""),
-  scripts = ref<Row[]>([]),
+  scripts = shallowRef<Row[]>([]),
   expandedScripts = ref<number[]>([]),
-  deployments = ref<Record<number, Row[]>>({}),
+  deployments = shallowRef<Record<number, Row[]>>({}),
   scriptLoading = ref<number[]>([]),
   scriptErrors = ref<Record<number, string>>({}),
   scriptLogs = ref<Record<number, Row[]>>({}),
@@ -140,7 +142,8 @@ async function toggleScript(row: Row) {
   delete scriptErrors.value[id];
   try {
     const data = await props.request("deployments", { id });
-    if (request === generation) deployments.value[id] = rows(data.rows);
+    if (request === generation)
+      deployments.value = { ...deployments.value, [id]: rows(data.rows) };
   } catch (e) {
     if (request === generation) scriptErrors.value[id] = message(e);
   } finally {
@@ -318,7 +321,15 @@ onBeforeUnmount(() => {
           class="ns-script-body"
           :rows="filteredScripts"
           :expanded="expandedScripts"
-          :reset-key="JSON.stringify([environment, search, scriptTypesSelected, scriptOrder, scriptDescending])"
+          :reset-key="
+            JSON.stringify([
+              environment,
+              search,
+              scriptTypesSelected,
+              scriptOrder,
+              scriptDescending,
+            ])
+          "
         >
           <template #default="{ row }">
             <div
@@ -326,7 +337,10 @@ onBeforeUnmount(() => {
               :key="String(row.id)"
               class="ns-record"
             >
-              <button class="ns-table-row script-row" @click="toggleScript(row)">
+              <button
+                class="ns-table-row script-row"
+                @click="toggleScript(row)"
+              >
                 <span
                   >{{ expandedScripts.includes(Number(row.id)) ? "−" : "+" }}
                   {{ row.name }}</span
@@ -380,8 +394,8 @@ onBeforeUnmount(() => {
                   <div>
                     <strong>Execution logs</strong
                     ><span
-                      >{{ scriptLogCounts[Number(row.id)] }} total · showing first
-                      {{ scriptLogs[Number(row.id)]?.length }}</span
+                      >{{ scriptLogCounts[Number(row.id)] }} total · showing
+                      first {{ scriptLogs[Number(row.id)]?.length }}</span
                     ><button
                       class="subtle-button"
                       @click="delete scriptLogs[Number(row.id)]"
@@ -389,7 +403,9 @@ onBeforeUnmount(() => {
                       Close
                     </button>
                   </div>
-                  <p v-if="!scriptLogs[Number(row.id)]?.length">No logs found.</p>
+                  <p v-if="!scriptLogs[Number(row.id)]?.length">
+                    No logs found.
+                  </p>
                   <div
                     v-for="log in scriptLogs[Number(row.id)]"
                     :key="String(log.internalid)"
@@ -422,27 +438,10 @@ onBeforeUnmount(() => {
                 <p v-else-if="!deployments[Number(row.id)]?.length">
                   No deployments found.
                 </p>
-                <div
-                  v-for="d in deployments[Number(row.id)] || []"
-                  :key="String(d.primarykey)"
-                  class="ns-deployment"
-                >
-                  <button
-                    class="ns-record-link"
-                    @click="openRecord('deployment', d.primarykey)"
-                  >
-                    {{ d.scriptid }}
-                  </button>
-                  <span
-                    >{{ d.status }} · {{ d.recordtype || "All records" }} ·
-                    {{
-                      d.isdeployed === "T" || d.isdeployed === true
-                        ? "Deployed"
-                        : "Not deployed"
-                    }}
-                    · {{ d.loglevel || "—" }}</span
-                  >
-                </div>
+                <ScriptDeployments
+                  :rows="deployments[Number(row.id)] || []"
+                  :open-record="openRecord"
+                />
               </div>
             </div>
           </template>
@@ -655,27 +654,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
 }
-.ns-record-link {
-  border: 0;
-  padding: 0;
-  background: none;
-  color: #547589;
-  cursor: pointer;
-}
-.ns-record-link:hover {
-  text-decoration: underline;
-}
 .ns-deployments p {
-  color: #657b89;
-}
-.ns-deployment {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid #dce6ea;
-}
-.ns-deployment span {
   color: #657b89;
 }
 button:disabled {
