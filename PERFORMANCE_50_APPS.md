@@ -132,6 +132,8 @@ Validation: all 15 checks pass across `scripts-windowing`, `netsuite` and `perfo
 
 ### Eleventh pass: Notes snapshots and block-write serialization
 
+Committed as `1c117c3`.
+
 Measured the actual owned Notes store with 1,000 blocks (roughly 1 KB HTML each) and 100 snapshots, changing only the first block between captures. Baseline `d475f56` serialized and parsed the entire document 100 times: 122,075,287 serialized characters and 100,000 distinct retained history block objects. The candidate performs no document JSON serialization/parsing for those snapshots and retains 1,099 distinct history block objects, while keeping all 100 history entries. These counts describe this one-block-change fixture, not arbitrary reorder/reindex workloads or measured process RAM.
 
 History now shares immutable, frozen copies of unchanged scalar Block records within each store. Full field/shape comparison catches direct component mutations without relying on timestamps or callers to report changes. Active records restored by undo/redo are detached mutable copies. Current Block fields are scalar; unknown nested/non-scalar imported fields keep the previous JSON-copy behavior, with deeply frozen history copies, so mutable extension objects cannot leak into another history step. The 100-entry limit, action grouping, redo invalidation and independent per-view histories remain. History remains in memory; no persisted format or migration changed.
@@ -142,12 +144,23 @@ Snapshots still scan fields across the document and retain a full array of block
 
 Validation: all 14 unit/service checks pass with `node --import tsx --test research/notes-snapshots.test.ts research/performance.test.ts`. All eight browser checks pass across `notes-snapshots`, `notes` and `performance`. Coverage includes immutable history and writable restores, unknown nested fields, JSON-compatible edge values, the 100-step boundary, full undo/redo cycles and branching, rich block reordering/metadata, independent views, durable reopen/page switching, queued payload detachment and page identity, injected failure/retry, read/write barriers, owned-store disposal, SQLite atomicity and existing Notes UI/MCP workflows. `pnpm build` passes, including Vue/TypeScript checking, with the existing Vite warnings.
 
+### Twelfth pass: query-output budgets and raw snapshots
+
+Inactive SuiteQL results and traces now share a 64 MiB estimated-data budget across query views within one renderer. Older inactive outputs are released first. Active output is outside this budget; selecting a tab takes its output before admitting the previous tab, protecting the selected result. An individually oversized output is released when leaving it without displacing other useful entries. Released tabs show an accessible rerun prompt and never execute automatically. Editable SQL and undo history retain their separate owners. Closing/deleting tabs, changing environments and destroying views remove their cache accounting.
+
+Query result arrays and trace snapshots now use shallow ownership after auditing nested writes. Trace progress explicitly notifies the view, while result sorting copies only when needed. Trace row display text is formatted once per completed stage while displayed and discarded when leaving the trace pane. Output-size accounting traverses fields without JSON encoding; saved weights are reused on tab switches.
+
+The 20-tab fixture with 100 rows and approximately 1 KB cells retains the same 19 inactive outputs and makes the same 20 requests. Reactive retained result rows fall from 1,900 to zero; the two-stage trace fixture similarly falls from 125 reactive trace rows to zero. These are proxy counts, not heap savings. In a separate wide-cell retention diagnostic, lowering the candidate's control budget from 1 GiB to the default 64 MiB reduces retained inactive tabs from 19 to 10 and rows from 1,900 to 1,000. Estimated accounting falls from 124,974,508 to 65,776,918 bytes; serialized diagnostic payload size falls from 62,425,200 to 32,855,799 bytes. The active result stays visible, request count remains 20 and teardown returns cache accounting to zero. Raw diagnostics and baseline identity are in `research/query-memory-results.json`.
+
+This budget is an accounting estimate, not a process-memory or JavaScript-heap cap. Active results, SQL/history, in-flight payloads, other app data and temporary display data are outside it. Foreground heap calibration and the mixed-app soak remain necessary.
+
+Validation: seven unit checks and 23 browser checks pass across query ownership, memory and NetSuite workflows, with targeted reruns after the trace-formatting change. Coverage includes shared eviction across views, oversized admission, selected-output protection, SQL undo/redo, explicit reruns, trace progress, formatting counts, raw-data sorting/filtering/export/pagination, environment changes and teardown. `pnpm build` passes with the existing Vite warnings. The released-output prompt was visually reviewed, and the scoped design detector reports no findings.
+
 ### Remaining work, in current order
 
-1. Measure retained output for open SuiteQL tabs and choose an explicit byte-budget/eviction policy. Closed-tab eviction is complete; no new policy should discard editable text or undo history.
-2. Profile many expanded Scripts panels and large deployment responses. Compare variable-height windowing with retained panels if that workload warrants it. The desktop bridge's capped logs/search are lower priorities than the unbounded collapsed list just addressed; optimize them if representative multi-app traces identify meaningful cost.
-3. Profile remaining Notes metadata/cache and persistence costs if representative workloads warrant it. Canonical caching, more compact history and per-app commits remain subject to the consistency/migration gates; the work above does not establish a need for them.
-4. Run foreground Electron/browser comparative traces, first-use latency checks, heap/open-close profiling and the 30-minute mixed 50-app soak. Use those results to decide whether camera/controller or filesystem-concurrency changes are warranted.
+1. Profile many expanded Scripts panels and large deployment responses. Compare variable-height windowing with retained panels if that workload warrants it. The desktop bridge's capped logs/search remain lower priorities unless representative multi-app traces identify meaningful cost.
+2. Profile remaining Notes metadata/cache and persistence costs if representative workloads warrant it. Canonical caching, more compact history and per-app commits remain subject to the consistency/migration gates; the work above does not establish a need for them.
+3. Run foreground Electron/browser comparative traces, first-use latency checks, heap/open-close profiling and the 30-minute mixed 50-app soak. Use those results to decide whether camera/controller or filesystem-concurrency changes are warranted.
 
 ## Conclusion and limits
 

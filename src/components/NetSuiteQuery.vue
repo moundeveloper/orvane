@@ -8,6 +8,8 @@ import {
   onBeforeUnmount,
   onDeactivated,
   ref,
+  shallowRef,
+  triggerRef,
   watch,
 } from "vue";
 import SuiteQLEditor from "./SuiteQLEditor.vue";
@@ -17,7 +19,11 @@ import type { SuiteQLTracePlan } from "../suiteqlTrace";
 import Icon from "./Icon.vue";
 import type { Block } from "../model";
 import { uid } from "../model";
-import { QueryOutputCache } from "../queryOutputs";
+import {
+  QueryOutputCache,
+  estimateQueryOutputBytes,
+  queryOutputBudget,
+} from "../queryOutputs";
 
 defineOptions({ name: "NetSuiteQuery" });
 type Row = Record<string, any>;
@@ -123,7 +129,8 @@ const outputs = new QueryOutputCache<{
   hasResult: boolean;
   limit: number | null;
   trace: SuiteQLTracePlan | null;
-}>();
+  bytes: number;
+}>({ budget: queryOutputBudget, sizeOf: (output) => output.bytes });
 watch(
   () => {
     const ids = new Set(files.value.map((file) => file.id));
@@ -178,8 +185,27 @@ function editorResizeKey(event: KeyboardEvent) {
     ),
   );
 }
-const tracePlan = ref<SuiteQLTracePlan | null>(null),
+// Response rows are read-only snapshots; trace status changes are notified
+// explicitly rather than proxying every retained stage and row.
+const tracePlan = shallowRef<SuiteQLTracePlan | null>(null),
   bottomTab = ref<"results" | "trace">("results");
+// Format each stage's read-only rows once while the trace is displayed. Drop
+// display text when leaving the trace so it is not retained outside the budget.
+let traceText = new WeakMap<object, { rows: Row[]; text: string }>();
+function traceRowsText(stage: SuiteQLTracePlan["stages"][number]) {
+  const cached = traceText.get(stage);
+  if (cached?.rows === stage.rows) return cached.text;
+  const text = JSON.stringify(stage.rows, null, 2);
+  traceText.set(stage, { rows: stage.rows, text });
+  return text;
+}
+watch(
+  [tracePlan, bottomTab],
+  ([plan, tab], [previous]) => {
+    if (plan !== previous || tab !== "trace") traceText = new WeakMap();
+  },
+  { flush: "sync" },
+);
 const queryLimit = ref<number | null>(1000),
   executedLimit = ref<number | null>(1000),
   customLimit = ref("");
@@ -201,11 +227,24 @@ const schemaOpen = ref(false),
   sortColumn = ref(""),
   sortDescending = ref(false),
   feedback = ref("");
-const results = ref<Row[]>([]),
+const results = shallowRef<Row[]>([]),
   total = ref(0),
   offset = ref(0),
   executedSql = ref(""),
   hasResult = ref(false);
+const outputBytes = ref(0),
+  outputReleased = ref(false);
+function measureOutput() {
+  outputBytes.value = estimateQueryOutputBytes({
+    rows: results.value,
+    total: total.value,
+    offset: offset.value,
+    sql: executedSql.value,
+    hasResult: hasResult.value,
+    limit: executedLimit.value,
+    trace: tracePlan.value,
+  });
+}
 const queryFiles = computed(() =>
   files.value.filter((f) =>
     f.name.toLowerCase().includes(fileFilter.value.toLowerCase()),
@@ -221,7 +260,9 @@ const filteredResults = computed(() => {
             .includes(text),
         ),
       )
-    : [...results.value];
+    : sortColumn.value
+      ? [...results.value]
+      : results.value;
   if (sortColumn.value)
     items.sort(
       (a, b) =>
@@ -269,13 +310,17 @@ const visibleRows = computed(() => {
     after: (all.length - end) * height,
   };
 });
-watch(results, (rows) => {
-  if (rows.length) return;
-  // Lazy computed values can otherwise retain their last row snapshot while
-  // the empty-state template stops reading them after a close or clear.
-  void filteredResults.value;
-  void visibleRows.value;
-}, { flush: "sync" });
+watch(
+  results,
+  (rows) => {
+    if (rows.length) return;
+    // Lazy computed values can otherwise retain their last row snapshot while
+    // the empty-state template stops reading them after a close or clear.
+    void filteredResults.value;
+    void visibleRows.value;
+  },
+  { flush: "sync" },
+);
 function sortResults(col: string) {
   if (sortColumn.value === col) sortDescending.value = !sortDescending.value;
   else {
@@ -388,6 +433,8 @@ function clearResults() {
   results.value = [];
   total.value = 0;
   outputs.delete(activeFile.value);
+  outputReleased.value = false;
+  measureOutput();
 }
 const columns = computed(() =>
   Array.from(new Set(results.value.flatMap((row) => Object.keys(row)))),
@@ -433,10 +480,14 @@ async function runTrace() {
     if (!ownsRequest()) return;
     const plan = createSuiteQLTracePlan(sql);
     tracePlan.value = plan;
+    outputs.delete(file);
+    outputReleased.value = false;
+    measureOutput();
     for (const stage of plan.stages) {
       if (!ownsRequest()) return;
       if (!stage.executable) continue;
       stage.status = "running";
+      triggerRef(tracePlan);
       try {
         const data = await props.request("query", {
           sql: stage.sql,
@@ -455,6 +506,8 @@ async function runTrace() {
         stage.status = "error";
         stage.error = message(e);
       }
+      measureOutput();
+      triggerRef(tracePlan);
     }
   } catch (e) {
     if (generation === request) error.value = message(e);
@@ -487,6 +540,9 @@ async function runQuery(page?: number) {
     total.value = Number(data.totalCount || 0);
     offset.value = Number(data.offset || 0);
     hasResult.value = true;
+    outputs.delete(file);
+    outputReleased.value = false;
+    measureOutput();
   }
 }
 function newQuery() {
@@ -530,6 +586,8 @@ watch(
     generation++;
     error.value = "";
     outputs.clear();
+    outputBytes.value = 0;
+    outputReleased.value = false;
     tracePlan.value = null;
     bottomTab.value = "results";
     results.value = [];
@@ -545,6 +603,9 @@ watch(
   activeFile,
   (id, previous) => {
     generation++;
+    // Protect the newly active output before admitting the outgoing one.
+    const released = outputs.wasEvicted(id);
+    const saved = outputs.take(id);
     if (previous && (hasResult.value || tracePlan.value))
       outputs.save(previous, {
         rows: results.value,
@@ -554,8 +615,10 @@ watch(
         hasResult: hasResult.value,
         limit: executedLimit.value,
         trace: tracePlan.value,
+        bytes: outputBytes.value,
       });
-    const saved = outputs.take(id);
+    outputReleased.value = released;
+    outputBytes.value = saved?.bytes ?? 0;
     tracePlan.value = saved?.trace ?? null;
     bottomTab.value = "results";
     results.value = saved?.rows || [];
@@ -575,6 +638,7 @@ onBeforeUnmount(() => {
   disposed = true;
   generation++;
   outputs.clear();
+  outputBytes.value = 0;
   tracePlan.value = null;
   results.value = [];
 });
@@ -810,8 +874,16 @@ onBeforeUnmount(() => {
             >
               {{ warning }}
             </p>
-            <p v-if="!tracePlan" class="ns-trace-note">
-              Trace a query to inspect its stages.
+            <p
+              v-if="!tracePlan"
+              class="ns-trace-note"
+              :role="outputReleased ? 'status' : undefined"
+            >
+              {{
+                outputReleased
+                  ? "Previous results and trace were released to free memory. Trace the query again."
+                  : "Trace a query to inspect its stages."
+              }}
             </p>
             <details
               v-for="stage in tracePlan?.stages || []"
@@ -831,9 +903,7 @@ onBeforeUnmount(() => {
               <p v-if="stage.note">{{ stage.note }}</p>
               <pre>{{ stage.sql }}</pre>
               <p v-if="stage.error" class="ns-error">{{ stage.error }}</p>
-              <pre v-if="stage.rows.length">{{
-                JSON.stringify(stage.rows, null, 2)
-              }}</pre>
+              <pre v-if="stage.rows.length">{{ traceRowsText(stage) }}</pre>
             </details>
           </div>
           <template v-else
@@ -867,7 +937,9 @@ onBeforeUnmount(() => {
                 <div
                   ref="resultBody"
                   class="ns-result-body"
-                  @scroll.passive="resultScroll = ($event.target as HTMLElement).scrollTop"
+                  @scroll.passive="
+                    resultScroll = ($event.target as HTMLElement).scrollTop
+                  "
                 >
                   <div
                     v-if="visibleRows.before"
@@ -891,11 +963,17 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </div>
-            <p v-else class="ns-empty">
+            <p
+              v-else
+              class="ns-empty"
+              :role="outputReleased ? 'status' : undefined"
+            >
               {{
                 hasResult
                   ? "The query returned no rows."
-                  : "Run a query to see its results. Ctrl+Enter also runs it."
+                  : outputReleased
+                    ? "Previous results and trace were released to free memory. Run the query again. Ctrl+Enter also runs it."
+                    : "Run a query to see its results. Ctrl+Enter also runs it."
               }}
             </p></template
           >

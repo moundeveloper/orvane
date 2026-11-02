@@ -1,0 +1,93 @@
+{
+  "baselineCommit": "1c117c3",
+  "method": "Actual query component with mocked provider; proxy counts and estimated/serialized data sizes, not heap or timing measurements.",
+  "normalFixture": {
+    "tabs": 20,
+    "rowsPerQuery": 100,
+    "cellCharacters": 1024,
+    "baseline": {
+      "cachedTabs": 19,
+      "rows": 1900,
+      "reactiveRows": 1900,
+      "reactiveArrays": 19,
+      "serializedOutputBytes": 2111397,
+      "queryRequests": 20
+    },
+    "candidate": {
+      "cachedTabs": 19,
+      "rows": 1900,
+      "reactiveRows": 0,
+      "reactiveArrays": 0,
+      "serializedOutputBytes": 2111682,
+      "queryRequests": 20,
+      "accountedCacheBytes": 4347510,
+      "budgetBytes": 67108864
+    }
+  },
+  "traceFixture": {
+    "baseline": {
+      "cachedTabs": 1,
+      "rows": 0,
+      "reactiveArrays": 1,
+      "traceStages": 2,
+      "reactiveStages": 2,
+      "reactiveTraceRows": 125,
+      "serializedOutputBytes": 140258,
+      "queryRequests": 2
+    },
+    "candidate": {
+      "cachedTabs": 1,
+      "rows": 0,
+      "reactiveArrays": 0,
+      "traceStages": 2,
+      "reactiveStages": 0,
+      "reactiveTraceRows": 0,
+      "serializedOutputBytes": 140273,
+      "queryRequests": 2,
+      "accountedCacheBytes": 289284,
+      "budgetBytes": 67108864,
+      "formattedRowSerializations": 2
+    }
+  },
+  "wideCellRetention": {
+    "comparison": "Same candidate component, control versus default budget",
+    "tabs": 20,
+    "rowsPerQuery": 100,
+    "cellCharacters": 32768,
+    "control": {
+      "cachedTabs": 19,
+      "rows": 1900,
+      "reactiveRows": 0,
+      "reactiveArrays": 0,
+      "serializedOutputBytes": 62425200,
+      "queryRequests": 20,
+      "accountedCacheBytes": 124974508,
+      "budgetBytes": 1073741824
+    },
+    "default": {
+      "cachedTabs": 10,
+      "rows": 1000,
+      "reactiveRows": 0,
+      "reactiveArrays": 0,
+      "serializedOutputBytes": 32855799,
+      "queryRequests": 20,
+      "accountedCacheBytes": 65776918,
+      "budgetBytes": 67108864
+    },
+    "activeOutputPreserved": true,
+    "cacheBytesAfterUnmount": 0
+  },
+  "limits": [
+    "Estimated inactive output accounting per renderer, not a JavaScript heap or process-memory cap.",
+    "Active output, SQL/history, in-flight payloads and temporary display data are excluded.",
+    "Serialized output sizes are diagnostic-only; production accounting does not serialize rows.",
+    "Foreground heap calibration and 50-app soak remain pending."
+  ],
+  "validation": {
+    "unitChecks": 7,
+    "browserChecks": 23,
+    "targetedTraceRerunsPassed": true,
+    "buildPassed": true,
+    "designDetectorFindings": []
+  }
+}
