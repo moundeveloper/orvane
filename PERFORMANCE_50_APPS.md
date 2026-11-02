@@ -86,6 +86,8 @@ Validation: 14 distinct tests passed across `git-diff`, `git` and `large-lists`,
 
 ### Seventh pass: File Cabinet sidebar trees
 
+Committed as `9ecb673`.
+
 The folder sidebar now flattens the expanded hierarchy and mounts a window of rows against the existing sidebar scroll area. Actions, folder information and Bookmarks retain their positions in that area. Folder and hint measurements use layout pixels independently of canvas zoom; loading/empty hints are measured at their actual indentation so wrapped text contributes the right scroll extent. Observers and scroll/input listeners are removed on unmount.
 
 Filtering retains the existing matching and expanded-ancestor rules. Navigation keeps the full folder path, and selected folders, badges, expansion and loading states remain controlled by the File Cabinet. A focused row stays mounted when scrolled away. Tab and Shift+Tab traverse the complete logical folder sequence, reveal unmounted targets, and enter/leave through the surrounding sidebar controls.
@@ -93,6 +95,22 @@ Filtering retains the existing matching and expanded-ancestor rules. Navigation 
 Controlled 5,000-root-folder fixture at 1440×1000: total mounted viewer elements fell from 45,532 after table windowing to 870. The main table remains at 47 mounted data rows and 443 elements, with the same column widths and 140,030-pixel scroll extent. The default baseline and candidate screenshots are pixel-identical. These are DOM/layout diagnostics, not frame-rate, latency or heap measurements. Full folder data remains loaded; application filtering sees all records, while browser-native Find only sees mounted text. Raw counts are in `research/folder-tree-results.json`.
 
 Validation: `pnpm build` passes, as do 16 distinct Playwright checks across `folder-tree`, `file-cabinet-windowing`, `large-lists` and `netsuite`. The concurrent regression run hit Git-render/query/save/reload timeouts; all 13 checks in `folder-tree`, `large-lists` and `netsuite` passed when rerun serially. Coverage includes 5,000 roots, 500 expanded children, full navigation paths, selected state, badges, filtering, loading/empty hints, wrapped hint heights, forward/backward keyboard entry and traversal, focus retention, sidebar collapse, hidden hosts, resize, zoom, disposal, table selection/rename, split panes and draft restoration. The scoped design detector reported no findings. The serial query workflow logged a CodeMirror `Invalid position 15 in document of length 0` measurement error despite passing its assertions; editor measurement remains a separate follow-up from sidebar rendering.
+
+### Eighth pass: File Cabinet grids
+
+Grids above 100 records now render complete visible CSS grid rows with overscan and row spacers. The native auto-fill columns, tile styles, gap and padding remain. Column counts and tile heights come from layout measurements independently of canvas scale. A rename pins its whole row and accounts for the extra input height; stable item keys preserve focus and text selection when the column count changes. Resize preserves the logical scroll anchor, including staying at the bottom when columns change. Each split pane owns its window, observers and scroll listener, which are disposed on unmount. Small grids render all records.
+
+The 5,000-file fixture at 1440×1000 dropped from 5,000 to 99 mounted tiles and from 45,140 to 1,033 total viewer elements. Both versions use nine columns, 128.4375×91-pixel first tiles, 99-pixel row advance and a 55,056-pixel scroll extent. The visible grid crop has no pixel differences; whole-screenshot differences are confined to the view-toggle focus/hover state. Full records remain loaded, and application filtering, range/bulk selection, clipboard and opening files continue to use the complete dataset. Browser-native Find sees mounted text. These counts do not establish heap, frame-rate or input-latency improvements. Raw counts are in `research/file-cabinet-grid-results.json`.
+
+Validation: `pnpm build` passes, including Vue/TypeScript checking. All 18 distinct checks across `file-cabinet-grid`, `file-cabinet-windowing`, `folder-tree` and `netsuite` pass. Grid checks cover actual viewport visibility, the first/final records, 250 keyboard steps, complete 5,000-item and shift-range selection, clipboard, opening the final file, rename focus/text selection through scrolling and zoom/column changes, filtering, list/grid switches, split panes, hidden tabs, disposal, the 100/101-item threshold, middle scroll anchors and one-column layouts. Existing table, tree, query, draft/reload and NetSuite workflows also pass. The scoped design detector reports no findings. The previously recorded CodeMirror tooltip measurement error remains reproducible in the query workflow; this grid change does not resolve it. Inspection locates the failing coordinate lookup in the installed tooltip plugin's read-measure callback, but does not yet establish the state transition that invalidates its anchor.
+
+### Remaining work, in current order
+
+1. Isolate and fix the CodeMirror tooltip measurement error before further editor optimization, preserving completion, document switching and independent undo histories.
+2. Measure and bound NetSuite Scripts/deployment/log lists, then File Cabinet global-search results. Expansion, variable content heights, focus, filtering and data completeness are acceptance requirements.
+3. Measure Notes whole-document undo/snapshot and persistence costs. Changes to history format, canonical metadata caching and per-app commits need the profiling, consistency and migration gates already described below.
+4. Measure retained output for open SuiteQL tabs and choose an explicit byte-budget/eviction policy. Closed-tab eviction is complete; no new policy should discard editable text or undo history.
+5. Run foreground Electron/browser comparative traces, first-use latency checks, heap/open-close profiling and the 30-minute mixed 50-app soak. Use those results to decide whether camera/controller or filesystem-concurrency changes are warranted.
 
 ## Conclusion and limits
 

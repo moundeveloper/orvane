@@ -1,0 +1,43 @@
+{
+  "date": "2026-11-02",
+  "baselineCommit": "9ecb673",
+  "fixture": "tests/large-lists-harness.ts",
+  "method": "Playwright Chromium at 1440x1000; real File Cabinet, 5000 files in one folder, mocked read responses. ORVANE_GRID_BASELINE=1 enables the diagnostic test against the baseline checkout. Candidate uses the same fixture and viewport.",
+  "context": "DOM/layout diagnostics, not foreground timing, frame-rate or heap measurements",
+  "baseline": {
+    "viewerElements": 45140,
+    "contentElements": 45000,
+    "mountedTiles": 5000
+  },
+  "candidate": {
+    "viewerElements": 1033,
+    "contentElements": 893,
+    "mountedTiles": 99
+  },
+  "layoutBeforeAndAfter": {
+    "columns": 9,
+    "tileWidth": 128.4375,
+    "tileHeight": 91,
+    "rowAdvance": 99,
+    "viewportHeight": 855,
+    "scrollHeight": 55056,
+    "firstTileLeft": 210,
+    "firstTileTop": 125
+  },
+  "visualComparison": {
+    "visibleGridCrop": [
+      200,
+      115,
+      1440,
+      970
+    ],
+    "differentGridPixels": 0,
+    "note": "Whole screenshot differences are confined to the view toggle focus/hover state."
+  },
+  "limits": [
+    "Full file/folder records remain loaded.",
+    "Windowing applies above 100 records and renders complete CSS grid rows plus overscan and an active rename row.",
+    "Application filtering and selection cover the full dataset; browser-native Find sees mounted text.",
+    "Open query-result budgets, Notes snapshot/persistence work and foreground 50-app profiling remain pending."
+  ]
+}

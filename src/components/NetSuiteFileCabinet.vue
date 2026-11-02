@@ -5,6 +5,7 @@ import FileFolderTree from "./FileFolderTree.vue";
 import NetSuiteFileEditor from "./NetSuiteFileEditor.vue";
 import SplitTabs from "./SplitTabs.vue";
 import WindowedTableBody from "./WindowedTableBody.vue";
+import WindowedGrid from "./WindowedGrid.vue";
 import {
   addTab,
   closeTab,
@@ -2122,48 +2123,56 @@ onBeforeUnmount(() => {
               <Icon name="folder-open" :size="30" />
               <p>{{ p.filter ? "No matching items" : "This folder is empty" }}</p>
             </div>
-            <template v-else-if="view === 'grid'">
-              <div
-                v-for="item in list"
-                :key="item.key"
-                :data-key="item.key"
-                class="fc-item fc-tile"
-                role="row"
-                :aria-label="item.name"
-                :aria-selected="p.selected.includes(item.key)"
-                :class="{
-                  selected: p.selected.includes(item.key),
-                  'drop-target': dropFolder === item.key,
-                }"
-                :draggable="renaming !== item.key && Number(item.id) > 0"
-                @click="selectItem($event, item)"
-                @dblclick="openItem(item)"
-                @mousedown.middle.prevent="openInNewTab(item)"
-                @contextmenu.prevent.stop="itemMenu($event, item)"
-                @dragstart="itemDragStart($event, item)"
-                @dragover="folderDragOver($event, item)"
-                @dragleave="dropFolder = ''"
-                @drop.prevent.stop="dropOnFolder($event, item, p)"
-              >
-                <Icon :name="itemIcon(item)" :size="26" :class="iconTone(item)" />
-                <input
-                  v-if="renaming === item.key"
-                  v-model="renameValue"
-                  class="fc-rename"
-                  aria-label="New name"
-                  @keydown.enter.stop="commitRename(item)"
-                  @keydown.esc.stop="cancelRename"
-                  @blur="cancelRename"
-                  @click.stop
-                />
-                <span v-else :title="item.name">{{ item.name }}</span>
-                <small>{{
-                  item.type === "folder"
-                    ? `${item.numfolderfiles ?? 0} files`
-                    : fileSize(item.filesize)
-                }}</small>
-              </div>
-            </template>
+            <WindowedGrid
+              v-else-if="view === 'grid'"
+              :ref="body => setTableBody(p.id, body)"
+              :items="list"
+              :pinned-key="renaming"
+              :reset-key="JSON.stringify([p.path.map(part => part.id), p.filter, sortField, sortDir])"
+            >
+              <template #default="{ item, index }">
+                <div
+                  :data-grid-index="index"
+                  :key="item.key"
+                  :data-key="item.key"
+                  class="fc-item fc-tile"
+                  role="row"
+                  :aria-label="item.name"
+                  :aria-selected="p.selected.includes(item.key)"
+                  :class="{
+                    selected: p.selected.includes(item.key),
+                    'drop-target': dropFolder === item.key,
+                  }"
+                  :draggable="renaming !== item.key && Number(item.id) > 0"
+                  @click="selectItem($event, item)"
+                  @dblclick="openItem(item)"
+                  @mousedown.middle.prevent="openInNewTab(item)"
+                  @contextmenu.prevent.stop="itemMenu($event, item)"
+                  @dragstart="itemDragStart($event, item)"
+                  @dragover="folderDragOver($event, item)"
+                  @dragleave="dropFolder = ''"
+                  @drop.prevent.stop="dropOnFolder($event, item, p)"
+                >
+                  <Icon :name="itemIcon(item)" :size="26" :class="iconTone(item)" />
+                  <input
+                    v-if="renaming === item.key"
+                    v-model="renameValue"
+                    class="fc-rename"
+                    aria-label="New name"
+                    @keydown.enter.stop="commitRename(item)"
+                    @keydown.esc.stop="cancelRename"
+                    @blur="cancelRename"
+                    @click.stop
+                  />
+                  <span v-else :title="item.name">{{ item.name }}</span>
+                  <small>{{
+                    item.type === "folder"
+                      ? `${item.numfolderfiles ?? 0} files`
+                      : fileSize(item.filesize)
+                  }}</small>
+                </div>
+              </template>
+            </WindowedGrid>
             <table v-else class="fc-table" :aria-rowcount="list.length + 1">
               <thead>
                 <tr>
@@ -3043,6 +3052,7 @@ onBeforeUnmount(() => {
   background: #fff;
 }
 .fc-content.grid {
+  overflow-anchor: none;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
   gap: 8px;
