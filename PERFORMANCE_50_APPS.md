@@ -33,6 +33,8 @@ Validation: `pnpm exec playwright test tests/terminal-performance.spec.ts tests/
 
 ### Third pass: SuiteQL output ownership
 
+Committed as `bdb5e4d`.
+
 Closing a SuiteQL tab now evicts its recomputable results and execution trace. Open inactive tabs retain their output, and activation transfers the snapshot back to the displayed view rather than keeping a second cached reference. Membership checks prevent a closing/deleted tab's transition from putting output back into the cache. Emptying displayed results also refreshes the lazy derived row snapshots, and unmounting invalidates pending work and clears output references.
 
 The retention policy is no cached output for closed tabs. Reopening retains SQL text and editor undo/redo, displays the existing run/trace prompts and executes nothing automatically. Output for open tabs has no new byte cap; a measured budget for that workload remains future work. No history or editable SQL is evicted to meet a memory target.
@@ -40,6 +42,14 @@ The retention policy is no cached output for closed tabs. Reopening retains SQL 
 Editor identity and text changes now run through one transition so a new file's text cannot overwrite the outgoing undo state before it is saved. Deleted files are forgotten in both local and cross-view deletion paths, including a pending document switch. Late query/trace responses after deletion, environment change or unmount are ignored.
 
 Baseline browser reproduction on `4c9c7cf`: closing/reopening restored the old result without another query. Candidate tests require the result and trace to be absent until an explicit rerun. `node --import tsx --test research/query-outputs.test.ts` passes 3 ownership checks, including pruning 50 stored outputs to zero, rejecting late saves and transferring active output without cloning. All 16 distinct browser tests across `tests/query-performance.spec.ts` and `tests/netsuite.spec.ts` passed, including a rerun of the updated end-to-end undo check. Coverage includes open/closed results and traces, SQL undo/redo, local/remote deletion, late response ownership, query execution, pagination, CSV and editor behavior. `pnpm build` passes with existing warnings. These are correctness and ownership checks, not heap or frame-rate measurements.
+
+### Fourth pass: editor echo snapshots
+
+The general JavaScript/HTML editor and SuiteQL editor now reuse their last emitted string when Vue echoes the model value back. Previously both called CodeMirror's full-document `toString()` again during the echo check. Genuine external updates still take the existing reconciliation path, and SuiteQL resets echo tracking when document identity changes. Emission stays immediate: this pass adds no debounce and changes no parsing, selection, history or composition behavior. File Cabinet already used this pattern.
+
+The instrumented browser fixture patches the actual installed CodeMirror `Text.toString()` and applies ten separately flushed document edits. On baseline `bdb5e4d`, both editors made 20 full-document serialization calls, at both roughly 1 KB and 500 KB document sizes. The candidate makes 10 calls and still emits 10 model updates. For the roughly 500 KB code document, serialized characters fell from 10,000,490 to 5,000,245; for SuiteQL, from 10,000,370 to 5,000,185. Results and fixture details are in `research/editor-serialization-results.json`. These counts do not establish a corresponding typing-latency or frame-rate improvement; one complete string is still emitted per document change.
+
+Validation: all 35 selected Playwright tests passed using `pnpm exec playwright test tests/editor-performance.spec.ts tests/query-performance.spec.ts tests/netsuite.spec.ts tests/editors.spec.ts --grep "editor|SuiteQL|SQL and undo|NetSuite views browse"`. Coverage includes actual browser composition input through Chromium's IME API, external replacements, parent normalization, immediate model updates, selection-only changes, undo/redo, independent document histories and existing editor/NetSuite workflows. `pnpm build` passes with existing warnings. The next performance work remains measured list rendering, document-level persistence/snapshot costs, and foreground/heap/soak validation; this pass does not establish 50-app capacity.
 
 ## Conclusion and limits
 

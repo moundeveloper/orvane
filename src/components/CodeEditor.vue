@@ -30,6 +30,7 @@ const emit = defineEmits<{
 const host = ref<HTMLDivElement>(),
   cursor = ref("1:1");
 let view: EditorView | undefined;
+let lastEmitted = props.modelValue;
 const languageConfig = new Compartment();
 let escapeTab = false;
 function editorKeys(event: KeyboardEvent) {
@@ -137,8 +138,10 @@ onMounted(() => {
           spellcheck: "false",
         }),
         EditorView.updateListener.of((update) => {
-          if (update.docChanged)
-            emit("update:modelValue", update.state.doc.toString());
+          if (update.docChanged) {
+            lastEmitted = update.state.doc.toString();
+            emit("update:modelValue", lastEmitted);
+          }
           if (update.selectionSet || update.docChanged) {
             const pos = update.state.selection.main.head,
               line = update.state.doc.lineAt(pos);
@@ -152,6 +155,10 @@ onMounted(() => {
 watch(
   () => props.modelValue,
   (value) => {
+    // Vue echoes the value emitted by the editor. Reuse that snapshot instead
+    // of serializing the same immutable document a second time.
+    if (value === lastEmitted) return;
+    lastEmitted = value;
     if (view && view.state.doc.toString() !== value)
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: value },

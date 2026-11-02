@@ -1,0 +1,13 @@
+{
+  "date": "2026-11-02",
+  "baselineCommit": "bdb5e4d",
+  "fixture": "tests/editor-performance-harness.ts",
+  "method": "Instrument installed CodeMirror Text.toString; count calls on documents at least as long as the fixture body; ten edits, each followed by a Vue nextTick; reset counters after initialization",
+  "context": "Browser work counts, not typing-latency, heap or foreground Electron measurements",
+  "results": [
+    { "editor": "code", "bodyCharacters": 1000, "baseline": { "calls": 20, "serializedCharacters": 20490, "modelUpdates": 10 }, "candidate": { "calls": 10, "serializedCharacters": 10245, "modelUpdates": 10 } },
+    { "editor": "code", "bodyCharacters": 500000, "baseline": { "calls": 20, "serializedCharacters": 10000490, "modelUpdates": 10 }, "candidate": { "calls": 10, "serializedCharacters": 5000245, "modelUpdates": 10 } },
+    { "editor": "sql", "bodyCharacters": 1000, "baseline": { "calls": 20, "serializedCharacters": 20370, "modelUpdates": 10 }, "candidate": { "calls": 10, "serializedCharacters": 10185, "modelUpdates": 10 } },
+    { "editor": "sql", "bodyCharacters": 500000, "baseline": { "calls": 20, "serializedCharacters": 10000370, "modelUpdates": 10 }, "candidate": { "calls": 10, "serializedCharacters": 5000185, "modelUpdates": 10 } }
+  ]
+}

@@ -33,6 +33,7 @@ const accessFor = (readonly: boolean) => [
   EditorView.editable.of(!readonly),
 ];
 let editor: EditorView | undefined;
+let lastEmitted = props.modelValue;
 function createState(doc: string) {
   return EditorState.create({
     doc,
@@ -56,8 +57,10 @@ function createState(doc: string) {
         spellcheck: "false",
       }),
       EditorView.updateListener.of((update) => {
-        if (update.docChanged)
-          emit("update:modelValue", update.state.doc.toString());
+        if (update.docChanged) {
+          lastEmitted = update.state.doc.toString();
+          emit("update:modelValue", lastEmitted);
+        }
       }),
       EditorView.theme({
         "&": {
@@ -95,6 +98,9 @@ watch(
     // Process identity and text together: a text watcher must not replace the
     // outgoing document before its state (including undo) has been saved.
     if (id === previous) {
+      // Parent echoes already have a current document snapshot.
+      if (value === lastEmitted) return;
+      lastEmitted = value;
       if (editor.state.doc.toString() !== value)
         editor.dispatch({
           changes: { from: 0, to: editor.state.doc.length, insert: value },
@@ -102,6 +108,7 @@ watch(
         });
       return;
     }
+    lastEmitted = value;
     if (previous !== undefined && previous !== forgottenDoc)
       states.set(previous, {
         state: editor.state,
