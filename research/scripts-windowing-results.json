@@ -1,0 +1,53 @@
+{
+  "date": "2026-11-02",
+  "baselineCommit": "e3d19ef",
+  "fixture": "tests/scripts-windowing-harness.ts",
+  "method": "Playwright Chromium at 1440x1000, actual Scripts and File Cabinet components with mocked read responses. Scripts fixture inherits the 12px font used by NetSuiteView. ORVANE_SCRIPTS_BASELINE=1 enables the diagnostic on the baseline checkout.",
+  "context": "DOM/layout diagnostics, not foreground frame-rate, latency or heap measurements",
+  "collapsedScripts": {
+    "records": 5000,
+    "baseline": {
+      "viewerElements": 40021,
+      "mountedRecords": 5000
+    },
+    "candidate": {
+      "viewerElements": 270,
+      "mountedRecords": 31
+    },
+    "layoutBeforeAndAfter": {
+      "viewportHeight": 873,
+      "scrollHeight": 190000,
+      "rowHeight": 38,
+      "columnWidths": [
+        312.609,
+        128.719,
+        239.047,
+        183.891,
+        275.844,
+        183.891
+      ]
+    },
+    "defaultScreenshotBeforeAndAfterSha256": "E9E3B3010306D64037B7CAE5AA574CB20512D2067ECA056CE925D32ED6540C8C"
+  },
+  "oneExpandedScript": {
+    "deploymentRecords": 5,
+    "logRecords": 100,
+    "baselineViewerElements": 40451,
+    "candidateViewerElements": 596,
+    "policy": "Expanded records remain mounted, including inner log/preview scroll and native controls; only the surrounding collapsed list is windowed."
+  },
+  "desktopBridgeBoundedSearch": {
+    "folders": 100,
+    "files": 100,
+    "viewerElementsBeforeAndAfter": 2102,
+    "resultsElementsBeforeAndAfter": 2000,
+    "implementationChanged": false
+  },
+  "limits": [
+    "Full script/deployment/log data remains loaded.",
+    "Mounted expanded panels grow with the number of expanded scripts; this does not bound a many-expanded-panel workload.",
+    "Application filters and sorting use the full script set; browser-native Find sees mounted text.",
+    "The installed desktop bridge limits each log response to the first 100 records and global search to 100 folders plus 100 files; other request providers may differ.",
+    "Foreground 50-app timing, heap and soak validation remain pending."
+  ]
+}

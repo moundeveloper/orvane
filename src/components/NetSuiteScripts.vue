@@ -9,6 +9,7 @@ import {
   watch,
 } from "vue";
 import Icon from "./Icon.vue";
+import WindowedScriptsBody from "./WindowedScriptsBody.vue";
 import type { Block } from "../model";
 
 defineOptions({ name: "NetSuiteScripts" });
@@ -313,132 +314,139 @@ onBeforeUnmount(() => {
             }}
           </button>
         </div>
-        <div class="ns-script-body">
-          <div
-            v-for="row in filteredScripts"
-            :key="String(row.id)"
-            class="ns-record"
-          >
-            <button class="ns-table-row script-row" @click="toggleScript(row)">
-              <span
-                >{{ expandedScripts.includes(Number(row.id)) ? "−" : "+" }}
-                {{ row.name }}</span
-              ><span>{{ row.id }}</span
-              ><span>{{ row.scriptfile }}</span
-              ><span>{{ row.owner }}</span
-              ><span>{{ row.scriptid }}</span
-              ><span>{{ row.scripttype }}</span>
-            </button>
+        <WindowedScriptsBody
+          class="ns-script-body"
+          :rows="filteredScripts"
+          :expanded="expandedScripts"
+          :reset-key="JSON.stringify([environment, search, scriptTypesSelected, scriptOrder, scriptDescending])"
+        >
+          <template #default="{ row }">
             <div
-              v-if="expandedScripts.includes(Number(row.id))"
-              class="ns-deployments"
+              :data-script-key="String(row.id)"
+              :key="String(row.id)"
+              class="ns-record"
             >
-              <div class="ns-deployments-title">
-                <strong>Deployments</strong>
-                <div class="ns-script-actions">
-                  <button class="subtle-button" @click="copyScript(row.id)">
-                    Copy internal ID</button
-                  ><button
-                    class="subtle-button"
-                    @click="copyScript(row.scriptid)"
-                  >
-                    Copy script ID</button
-                  ><button
-                    class="subtle-button"
-                    :disabled="scriptLogsLoading.includes(Number(row.id))"
-                    @click="loadScriptLogs(row)"
-                  >
-                    Execution logs</button
-                  ><button
-                    v-if="row.fileid"
-                    class="subtle-button"
-                    @click="showScriptFile(row)"
-                  >
-                    View script file</button
-                  ><button
-                    v-if="row.fileid"
-                    class="subtle-button"
-                    @click="editScriptFile(row)"
-                  >
-                    Edit script file</button
-                  ><button
-                    class="subtle-button"
-                    @click="openRecord('script', row.id)"
-                  >
-                    Open in NetSuite
-                  </button>
-                </div>
-              </div>
-              <div v-if="scriptLogs[Number(row.id)]" class="ns-script-logs">
-                <div>
-                  <strong>Execution logs</strong
-                  ><span
-                    >{{ scriptLogCounts[Number(row.id)] }} total · showing first
-                    {{ scriptLogs[Number(row.id)]?.length }}</span
-                  ><button
-                    class="subtle-button"
-                    @click="delete scriptLogs[Number(row.id)]"
-                  >
-                    Close
-                  </button>
-                </div>
-                <p v-if="!scriptLogs[Number(row.id)]?.length">No logs found.</p>
-                <div
-                  v-for="log in scriptLogs[Number(row.id)]"
-                  :key="String(log.internalid)"
-                  class="ns-log-row"
-                >
-                  <span>{{ log.date }} {{ log.time }}</span
-                  ><strong>{{ log.type }} · {{ log.title }}</strong
-                  ><span>{{ log.detail }}</span>
-                </div>
-              </div>
-              <div
-                v-if="scriptFile && scriptFileOwner === Number(row.id)"
-                class="ns-script-preview"
-              >
-                <div>
-                  <strong>{{ scriptFile.name }}</strong
-                  ><button class="subtle-button" @click="scriptFile = null">
-                    Close
-                  </button>
-                </div>
-                <pre v-if="!scriptFile.binary">{{ scriptFile.content }}</pre>
-                <p v-else>Binary file cannot be previewed.</p>
-              </div>
-              <p v-if="scriptLoading.includes(Number(row.id))">
-                Loading deployments…
-              </p>
-              <p v-else-if="scriptErrors[Number(row.id)]" class="ns-error">
-                {{ scriptErrors[Number(row.id)] }}
-              </p>
-              <p v-else-if="!deployments[Number(row.id)]?.length">
-                No deployments found.
-              </p>
-              <div
-                v-for="d in deployments[Number(row.id)] || []"
-                :key="String(d.primarykey)"
-                class="ns-deployment"
-              >
-                <button
-                  class="ns-record-link"
-                  @click="openRecord('deployment', d.primarykey)"
-                >
-                  {{ d.scriptid }}
-                </button>
+              <button class="ns-table-row script-row" @click="toggleScript(row)">
                 <span
-                  >{{ d.status }} · {{ d.recordtype || "All records" }} ·
-                  {{
-                    d.isdeployed === "T" || d.isdeployed === true
-                      ? "Deployed"
-                      : "Not deployed"
-                  }}
-                  · {{ d.loglevel || "—" }}</span
+                  >{{ expandedScripts.includes(Number(row.id)) ? "−" : "+" }}
+                  {{ row.name }}</span
+                ><span>{{ row.id }}</span
+                ><span>{{ row.scriptfile }}</span
+                ><span>{{ row.owner }}</span
+                ><span>{{ row.scriptid }}</span
+                ><span>{{ row.scripttype }}</span>
+              </button>
+              <div
+                v-if="expandedScripts.includes(Number(row.id))"
+                class="ns-deployments"
+              >
+                <div class="ns-deployments-title">
+                  <strong>Deployments</strong>
+                  <div class="ns-script-actions">
+                    <button class="subtle-button" @click="copyScript(row.id)">
+                      Copy internal ID</button
+                    ><button
+                      class="subtle-button"
+                      @click="copyScript(row.scriptid)"
+                    >
+                      Copy script ID</button
+                    ><button
+                      class="subtle-button"
+                      :disabled="scriptLogsLoading.includes(Number(row.id))"
+                      @click="loadScriptLogs(row)"
+                    >
+                      Execution logs</button
+                    ><button
+                      v-if="row.fileid"
+                      class="subtle-button"
+                      @click="showScriptFile(row)"
+                    >
+                      View script file</button
+                    ><button
+                      v-if="row.fileid"
+                      class="subtle-button"
+                      @click="editScriptFile(row)"
+                    >
+                      Edit script file</button
+                    ><button
+                      class="subtle-button"
+                      @click="openRecord('script', row.id)"
+                    >
+                      Open in NetSuite
+                    </button>
+                  </div>
+                </div>
+                <div v-if="scriptLogs[Number(row.id)]" class="ns-script-logs">
+                  <div>
+                    <strong>Execution logs</strong
+                    ><span
+                      >{{ scriptLogCounts[Number(row.id)] }} total · showing first
+                      {{ scriptLogs[Number(row.id)]?.length }}</span
+                    ><button
+                      class="subtle-button"
+                      @click="delete scriptLogs[Number(row.id)]"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <p v-if="!scriptLogs[Number(row.id)]?.length">No logs found.</p>
+                  <div
+                    v-for="log in scriptLogs[Number(row.id)]"
+                    :key="String(log.internalid)"
+                    class="ns-log-row"
+                  >
+                    <span>{{ log.date }} {{ log.time }}</span
+                    ><strong>{{ log.type }} · {{ log.title }}</strong
+                    ><span>{{ log.detail }}</span>
+                  </div>
+                </div>
+                <div
+                  v-if="scriptFile && scriptFileOwner === Number(row.id)"
+                  class="ns-script-preview"
                 >
+                  <div>
+                    <strong>{{ scriptFile.name }}</strong
+                    ><button class="subtle-button" @click="scriptFile = null">
+                      Close
+                    </button>
+                  </div>
+                  <pre v-if="!scriptFile.binary">{{ scriptFile.content }}</pre>
+                  <p v-else>Binary file cannot be previewed.</p>
+                </div>
+                <p v-if="scriptLoading.includes(Number(row.id))">
+                  Loading deployments…
+                </p>
+                <p v-else-if="scriptErrors[Number(row.id)]" class="ns-error">
+                  {{ scriptErrors[Number(row.id)] }}
+                </p>
+                <p v-else-if="!deployments[Number(row.id)]?.length">
+                  No deployments found.
+                </p>
+                <div
+                  v-for="d in deployments[Number(row.id)] || []"
+                  :key="String(d.primarykey)"
+                  class="ns-deployment"
+                >
+                  <button
+                    class="ns-record-link"
+                    @click="openRecord('deployment', d.primarykey)"
+                  >
+                    {{ d.scriptid }}
+                  </button>
+                  <span
+                    >{{ d.status }} · {{ d.recordtype || "All records" }} ·
+                    {{
+                      d.isdeployed === "T" || d.isdeployed === true
+                        ? "Deployed"
+                        : "Not deployed"
+                    }}
+                    · {{ d.loglevel || "—" }}</span
+                  >
+                </div>
               </div>
             </div>
-          </div>
-        </div>
+          </template>
+        </WindowedScriptsBody>
       </div>
       <p v-if="!scripts.length" class="ns-empty">No scripts found.</p>
       <p v-else-if="!filteredScripts.length" class="ns-empty">
