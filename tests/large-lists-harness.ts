@@ -19,6 +19,7 @@ export function patchFixture(count = 10_000) {
 export function mountLargeListFixture(
   kind: "git" | "cabinet" | "cabinet-files",
   count = kind === "git" ? 10_000 : 5000,
+  patchOverride?: string,
 ) {
   const root = document.createElement("div");
   root.id = "large-list-fixture";
@@ -42,7 +43,7 @@ export function mountLargeListFixture(
     });
   const environment = ref("fixture");
   const original = window.fetch;
-  const text = patchFixture(count);
+  const text = patchOverride ?? patchFixture(count);
   if (kind === "git")
     window.fetch = async (input, init) => {
       const url = String(input);

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, nextTick, onBeforeUnmount } from "vue";
+import { computed, ref, watch, nextTick, onBeforeUnmount, defineAsyncComponent } from "vue";
 import type { Block } from "../model";
 import {
   gitRequest,
@@ -15,6 +15,7 @@ import CustomSelect from "./CustomSelect.vue";
 import { vMotion } from "../motion";
 import "../git.css";
 const props = defineProps<{ block: Block; editing: boolean }>();
+const GitDiff = defineAsyncComponent(() => import("./GitDiff.vue"));
 const tooltip = ref<{
   text: string;
   left: number;
@@ -181,6 +182,16 @@ const filteredMatches = computed(
     ) || [],
 );
 const patchLines = computed(() => patch.value.split("\n"));
+const largePatch = computed(() => {
+  if (patch.value.length > 300_000) return true;
+  let position = -1;
+  // Stop at the threshold rather than splitting a huge patch for a count.
+  for (let line = 0; line < 500; line++) {
+    position = patch.value.indexOf("\n", position + 1);
+    if (position < 0) return false;
+  }
+  return true;
+});
 const pathInput = ref(""),
   workspaceName = ref(""),
   folder = ref<GitFolder>(),
@@ -784,8 +795,9 @@ function curve(from: number, to: number, top = 0, bottom = 36) {
                   @change="selectFile(selectedFile)"
                 />
               </div>
+              <GitDiff v-if="patch && largePatch" :patch="patch" />
               <pre
-                v-if="patch"
+                v-else-if="patch"
                 class="git-patch"
                 aria-label="Git diff"
               ><span v-for="(line,index) in patchLines" :key="index" :class="{added:line.startsWith('+') && !line.startsWith('+++'),removed:line.startsWith('-') && !line.startsWith('---'),hunk:line.startsWith('@@')}">{{ line }}{{ '\n' }}</span></pre>

@@ -1,0 +1,13 @@
+{
+  "date": "2026-11-02",
+  "baselineCommit": "27ca652",
+  "fixture": "tests/large-lists-harness.ts: mountLargeListFixture('git')",
+  "viewport": { "width": 1440, "height": 1000 },
+  "dataLines": 10000,
+  "logicalPatchLines": 10004,
+  "baseline": { "renderedLineSpans": 10004, "viewerElements": 10087, "firstLineHeight": 19 },
+  "candidate": { "renderedLineElements": 36, "viewerElements": 127, "firstLineHeight": 19 },
+  "context": "Real Git viewer, mocked local read responses, initial viewport. DOM counts vary with viewport and interaction. Not foreground timing, heap or frame-rate measurements.",
+  "policy": "Use the read-only viewport above 500 logical lines or 300000 characters; keep native pre for smaller patches",
+  "limitations": ["Full patch data remains loaded", "Cold large-patch module loading latency is not measured", "Browser Find outside the diff sees mounted text; Ctrl+F inside the diff searches the full document"]
+}

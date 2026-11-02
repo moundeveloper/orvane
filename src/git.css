@@ -468,15 +468,18 @@
   padding: 0 12px;
   min-width: max-content;
 }
-.git-patch > span.added {
+.git-patch > span.added,
+.git-patch .cm-line.added {
   background: #e6f0e9;
   color: #38634a;
 }
-.git-patch > span.removed {
+.git-patch > span.removed,
+.git-patch .cm-line.removed {
   background: #f5e8e5;
   color: #885349;
 }
-.git-patch > span.hunk {
+.git-patch > span.hunk,
+.git-patch .cm-line.hunk {
   background: #e9f0f5;
   color: #4d708a;
 }

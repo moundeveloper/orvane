@@ -55,6 +55,8 @@ Validation: all 35 selected Playwright tests passed using `pnpm exec playwright 
 
 ### Fifth pass: large File Cabinet tables
 
+Committed as `27ca652`.
+
 Measured both requested candidates before choosing the change. A 10,000-line Git diff creates 10,004 patch spans and 10,087 elements in its viewer. A File Cabinet root containing 5,000 folders creates 90,101 elements, including its unwindowed sidebar tree. A folder containing 5,000 files creates 65,148 elements, almost all in the table. File Cabinet's default table was therefore the first target; Git diff rendering, the grid, search-result lists and large sidebar trees remain separate work.
 
 Tables above 100 records now render the visible rows with overscan, spacer rows and full logical row indices. Keyboard navigation explicitly reveals unmounted records, and an active rename stays mounted when scrolled away. Row measurements account for overlapping table borders and canvas scale. A collapsed sizing row preserves intrinsic column widths using the complete dataset, including IDs and metadata outside the window. Filtering/sorting reset the window; split panes retain separate scroll state. Small tables and the grid retain their existing rendering. Bulk-selection lookup now uses a set rather than repeatedly scanning the selected-key array.
@@ -69,6 +71,16 @@ Matching 1440×1000 browser fixtures on baseline `d22a220` versus this candidate
 The file-table subtree itself drops from 65,012 to 631 elements. Column widths match the baseline, and total scroll height differs by one pixel (140,031 versus 140,030). A very wide root still retains about 45,000 sidebar elements; it is not a fully bounded view yet. Full record data remains loaded. Folder filtering, application search, selection and copy still operate on the complete record set; browser-native Find only sees mounted row text. Counts and fixtures are recorded in `research/large-lists-results.json`; these are DOM/layout diagnostics, not foreground timings, frame-rate measurements or heap results.
 
 Validation: all 15 Playwright tests across `large-lists`, `file-cabinet-windowing`, `netsuite` and `performance` passed. Checks cover first/last records, off-window keyboard navigation, full 5,000-item selection, shift ranges, clipboard, filtering, sort order, active rename focus, grid/list switching, split-pane scroll independence, resize/zoom, drafts and existing NetSuite/Notes workflows. Baseline/candidate screenshots were visually compared, including actual filename visibility and column alignment. The scoped design detector reported no findings. `pnpm build` passes with existing warnings. No production NetSuite mutations were used for the diagnostics.
+
+### Sixth pass: large Git diffs
+
+Patches exceeding 500 logical lines or 300,000 characters now use a lazily loaded, read-only CodeMirror viewport. Smaller patches retain the native preformatted renderer. The large renderer adds no parsing or undo history; line decorations inspect only visible ranges and reuse the existing added/removed/hunk colors. The existing font, line spacing, inset, horizontal scrollbar and truncation notice remain. The search package already present through CodeMirror is now an explicit dependency at the installed version, 6.7.2.
+
+The document model retains the complete patch, so Ctrl+A/C copies all lines, Ctrl+Home/End navigates the document, and Ctrl+F within the diff searches unmounted content. Editing/pasting is disabled. Replacing a patch resets selection and scroll; disposal destroys the view and its pending measurements. The application still receives only the server's bounded/truncated patch, not an unlimited repository payload.
+
+In the matching 1440×1000, 10,000-data-line fixture, the baseline (`27ca652`) rendered 10,004 patch spans and 10,087 viewer elements. The candidate renders 36 line elements and 127 viewer elements at the initial viewport; counts vary with viewport and interaction. This removes about 98.7% of viewer elements in that fixture. Full-patch data and CodeMirror's document remain in memory; this is not a measured heap or typing/frame-rate improvement. Cold first use of a large patch now loads the viewer/editor chunks and still needs foreground latency profiling. Small diffs avoid that initialization.
+
+Validation: 14 distinct tests passed across `git-diff`, `git` and `large-lists`, including the isolated rerun of an existing repository-navigation test. Coverage includes full-document clipboard content, read-only behavior, search to the final unmounted line, keyboard navigation, colors, wide-line containment, hidden views, zoom/resize, patch replacement, disposal, native small patches, the 500/501-line boundary, a 310,000-character single line, real Git reads and MCP/workspace switching. `pnpm build` passes. Baseline/candidate screenshots match the existing unfocused appearance, and the scoped design detector reported no findings. Raw DOM counts are in `research/git-diff-results.json`.
 
 ## Conclusion and limits
 

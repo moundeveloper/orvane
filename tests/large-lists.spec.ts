@@ -12,16 +12,25 @@ for (const kind of ["git", "cabinet", "cabinet-files"] as const) {
     const root = page.locator("#large-list-fixture");
     if (kind === "git") {
       await root.locator(".git-commit-row").click();
-      await expect(root.locator(".git-patch > span")).toHaveCount(10004);
+      await expect
+        .poll(() => root.locator(".git-patch .cm-line").count())
+        .toBeGreaterThan(0);
+      await expect
+        .poll(() => root.locator(".git-patch .cm-line").count())
+        .toBeLessThan(200);
     } else
       await expect
         .poll(() => root.locator(".fc-item").count())
         .toBeLessThan(80);
     const metrics = await root.evaluate((root) => ({
       elements: root.querySelectorAll("*").length,
-      rows: root.querySelectorAll(".git-patch > span,.fc-item").length,
+      rows: root.querySelectorAll(
+        ".git-patch > span,.git-patch .cm-line,.fc-item",
+      ).length,
       firstRowHeight: (
-        root.querySelector(".git-patch > span,.fc-item") as HTMLElement
+        root.querySelector(
+          ".git-patch > span,.git-patch .cm-line,.fc-item",
+        ) as HTMLElement
       )?.offsetHeight,
       tableElements: root.querySelector(".fc-content")?.querySelectorAll("*")
         .length,
@@ -37,7 +46,13 @@ for (const kind of ["git", "cabinet", "cabinet-files"] as const) {
       body: JSON.stringify(metrics),
       contentType: "application/json",
     });
-    await root.screenshot({
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    await page.screenshot({
       path: `artifacts/performance/${kind}-candidate.png`,
     });
     await page.evaluate(() => (window as any).largeList.unmount());
