@@ -4,6 +4,7 @@ import { EditorView, basicSetup } from "codemirror";
 import { Compartment, EditorState, Transaction } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
 import { sql } from "@codemirror/lang-sql";
+import { closeCompletion } from "@codemirror/autocomplete";
 const props = defineProps<{
   modelValue: string;
   docId?: string;
@@ -17,7 +18,10 @@ const language = new Compartment(),
   access = new Compartment();
 // One state per query file keeps undo history, selection and scroll separate,
 // like Magic NetSuite's one-editor-per-tab layout.
-const states = new Map<string, { state: EditorState; scroll: number }>();
+const states = new Map<
+  string,
+  { state: EditorState; scroll: ReturnType<EditorView["scrollSnapshot"]> }
+>();
 let forgottenDoc: string | undefined;
 const languageFor = (schema?: Record<string, string[]>) =>
   sql({
@@ -108,11 +112,17 @@ watch(
         });
       return;
     }
+    // A document anchor survives layout remeasurement when restoring a state.
+    const scroll = editor.scrollSnapshot();
+    // Completion belongs to the outgoing view, not the saved document. Clear
+    // its anchors before setState so queued tooltip measurements cannot read
+    // an old position against the next (possibly empty) document.
+    closeCompletion(editor);
     lastEmitted = value;
     if (previous !== undefined && previous !== forgottenDoc)
       states.set(previous, {
         state: editor.state,
-        scroll: editor.scrollDOM.scrollTop,
+        scroll,
       });
     forgottenDoc = undefined;
     const saved = id === undefined ? undefined : states.get(id);
@@ -124,9 +134,9 @@ watch(
         effects: [
           language.reconfigure(languageFor(props.schema)),
           access.reconfigure(accessFor(!!props.readonly)),
+          saved.scroll,
         ],
       });
-      editor.scrollDOM.scrollTop = saved.scroll;
     } else editor.setState(createState(value));
   },
 );

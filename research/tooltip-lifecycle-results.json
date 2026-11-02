@@ -1,0 +1,27 @@
+{
+  "date": "2026-11-02",
+  "baselineCommit": "982d1d3",
+  "fixture": "tests/tooltip-lifecycle-harness.ts",
+  "method": "Playwright Chromium with the actual SuiteQL wrapper and installed CodeMirror. Five iterations explicitly open completion, queue its position measurement with public repositionTooltips(), switch to an empty document before the next animation frame, then restore the first document. Restored popups are counted and dismissed before the next iteration. EditorView.exceptionSink captures caught measurement failures; pageerror captures uncaught failures.",
+  "documentSwitches": 10,
+  "baseline": {
+    "caughtMeasurementErrors": 5,
+    "error": "RangeError: Invalid position 14 in document of length 0",
+    "restoredCompletionPopups": 5,
+    "uncaughtErrors": 0
+  },
+  "candidate": {
+    "caughtMeasurementErrors": 0,
+    "restoredCompletionPopups": 0,
+    "uncaughtErrors": 0
+  },
+  "changes": [
+    "Dismiss completion before caching the outgoing EditorState and changing document identity.",
+    "Use CodeMirror scrollSnapshot effects to restore document anchors after layout remeasurement, including horizontal scroll."
+  ],
+  "limits": [
+    "No foreground latency, frame-rate or heap measurements were made.",
+    "Full per-document EditorState and undo history remain cached according to the existing policy.",
+    "Underlying asynchronous completion sources may finish; tests verify their late results remain dismissed rather than claiming transport cancellation."
+  ]
+}

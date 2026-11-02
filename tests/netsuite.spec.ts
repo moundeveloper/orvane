@@ -2,6 +2,11 @@ import { test, expect } from "./fixtures";
 
 test("NetSuite views browse data and save queries", async ({ page }) => {
   test.setTimeout(60000);
+  const editorErrors: string[] = [];
+  page.on("pageerror", error => editorErrors.push(error.message));
+  page.on("console", message => {
+    if (message.type() === "error" && message.text().includes("Invalid position")) editorErrors.push(message.text());
+  });
   await page.addInitScript(() => {
     localStorage.setItem("orvane.examples.v1", "installed");
     (window as any).netSuiteCalls = [];
@@ -380,6 +385,7 @@ test("NetSuite views browse data and save queries", async ({ page }) => {
   await expect(
     restored.getByRole("textbox", { name: "SuiteQL editor" }),
   ).toHaveText("SELECT id FROM customer WHERE entit");
+  expect(editorErrors).toEqual([]);
 });
 
 test("Home and navigation menu share preferred apps and an environment trail", async ({
