@@ -74,6 +74,8 @@ Validation: all 15 Playwright tests across `large-lists`, `file-cabinet-windowin
 
 ### Sixth pass: large Git diffs
 
+Committed as `a2584f7`.
+
 Patches exceeding 500 logical lines or 300,000 characters now use a lazily loaded, read-only CodeMirror viewport. Smaller patches retain the native preformatted renderer. The large renderer adds no parsing or undo history; line decorations inspect only visible ranges and reuse the existing added/removed/hunk colors. The existing font, line spacing, inset, horizontal scrollbar and truncation notice remain. The search package already present through CodeMirror is now an explicit dependency at the installed version, 6.7.2.
 
 The document model retains the complete patch, so Ctrl+A/C copies all lines, Ctrl+Home/End navigates the document, and Ctrl+F within the diff searches unmounted content. Editing/pasting is disabled. Replacing a patch resets selection and scroll; disposal destroys the view and its pending measurements. The application still receives only the server's bounded/truncated patch, not an unlimited repository payload.
@@ -81,6 +83,16 @@ The document model retains the complete patch, so Ctrl+A/C copies all lines, Ctr
 In the matching 1440×1000, 10,000-data-line fixture, the baseline (`27ca652`) rendered 10,004 patch spans and 10,087 viewer elements. The candidate renders 36 line elements and 127 viewer elements at the initial viewport; counts vary with viewport and interaction. This removes about 98.7% of viewer elements in that fixture. Full-patch data and CodeMirror's document remain in memory; this is not a measured heap or typing/frame-rate improvement. Cold first use of a large patch now loads the viewer/editor chunks and still needs foreground latency profiling. Small diffs avoid that initialization.
 
 Validation: 14 distinct tests passed across `git-diff`, `git` and `large-lists`, including the isolated rerun of an existing repository-navigation test. Coverage includes full-document clipboard content, read-only behavior, search to the final unmounted line, keyboard navigation, colors, wide-line containment, hidden views, zoom/resize, patch replacement, disposal, native small patches, the 500/501-line boundary, a 310,000-character single line, real Git reads and MCP/workspace switching. `pnpm build` passes. Baseline/candidate screenshots match the existing unfocused appearance, and the scoped design detector reported no findings. Raw DOM counts are in `research/git-diff-results.json`.
+
+### Seventh pass: File Cabinet sidebar trees
+
+The folder sidebar now flattens the expanded hierarchy and mounts a window of rows against the existing sidebar scroll area. Actions, folder information and Bookmarks retain their positions in that area. Folder and hint measurements use layout pixels independently of canvas zoom; loading/empty hints are measured at their actual indentation so wrapped text contributes the right scroll extent. Observers and scroll/input listeners are removed on unmount.
+
+Filtering retains the existing matching and expanded-ancestor rules. Navigation keeps the full folder path, and selected folders, badges, expansion and loading states remain controlled by the File Cabinet. A focused row stays mounted when scrolled away. Tab and Shift+Tab traverse the complete logical folder sequence, reveal unmounted targets, and enter/leave through the surrounding sidebar controls.
+
+Controlled 5,000-root-folder fixture at 1440×1000: total mounted viewer elements fell from 45,532 after table windowing to 870. The main table remains at 47 mounted data rows and 443 elements, with the same column widths and 140,030-pixel scroll extent. The default baseline and candidate screenshots are pixel-identical. These are DOM/layout diagnostics, not frame-rate, latency or heap measurements. Full folder data remains loaded; application filtering sees all records, while browser-native Find only sees mounted text. Raw counts are in `research/folder-tree-results.json`.
+
+Validation: `pnpm build` passes, as do 16 distinct Playwright checks across `folder-tree`, `file-cabinet-windowing`, `large-lists` and `netsuite`. The concurrent regression run hit Git-render/query/save/reload timeouts; all 13 checks in `folder-tree`, `large-lists` and `netsuite` passed when rerun serially. Coverage includes 5,000 roots, 500 expanded children, full navigation paths, selected state, badges, filtering, loading/empty hints, wrapped hint heights, forward/backward keyboard entry and traversal, focus retention, sidebar collapse, hidden hosts, resize, zoom, disposal, table selection/rename, split panes and draft restoration. The scoped design detector reported no findings. The serial query workflow logged a CodeMirror `Invalid position 15 in document of length 0` measurement error despite passing its assertions; editor measurement remains a separate follow-up from sidebar rendering.
 
 ## Conclusion and limits
 

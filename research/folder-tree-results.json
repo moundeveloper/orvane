@@ -1,0 +1,48 @@
+{
+  "date": "2026-11-02",
+  "baselineCommit": "a2584f7",
+  "fixture": "tests/large-lists-harness.ts",
+  "method": "Playwright Chromium, 1440x1000 viewport, real File Cabinet with mocked read responses. Baseline viewer count comes from research/large-lists-results.json after table windowing; the intervening Git diff change does not alter File Cabinet. Candidate metrics are attached by tests/large-lists.spec.ts.",
+  "context": "DOM/layout counts, not foreground timing, frame-rate or heap measurements",
+  "rootFolders": {
+    "records": 5000,
+    "baseline": {
+      "viewerElements": 45532,
+      "tableElements": 443,
+      "renderedDataRows": 47
+    },
+    "candidate": {
+      "viewerElements": 870,
+      "treeElements": 338,
+      "renderedTreeRows": 37,
+      "treeHeight": 140000,
+      "sidebarScrollHeight": 140278,
+      "tableElements": 443,
+      "renderedDataRows": 47,
+      "tableViewportHeight": 855,
+      "tableScrollHeight": 140030
+    },
+    "columnWidthsBeforeAndAfter": [
+      558,
+      170.125,
+      136.59375,
+      218.765625,
+      156.515625
+    ],
+    "defaultScreenshotBeforeAndAfterSha256": "5083CCA97F82747CD69C99A9231ABB6387D0963B014685468D1F25ADF4159A91"
+  },
+  "filesInFolder": {
+    "records": 5000,
+    "viewerElements": 771,
+    "treeElements": 13,
+    "renderedTreeRows": 1,
+    "tableElements": 631,
+    "renderedDataRows": 47
+  },
+  "limits": [
+    "Full folder data and flattened expanded hierarchy remain in memory.",
+    "Browser-native Find sees mounted text; application folder filtering sees the full data.",
+    "Native forms, DOM focus, expansion and navigation remain in use; no canvas changes.",
+    "Foreground Electron/browser traces, heap profiling and the mixed 50-app soak remain pending."
+  ]
+}

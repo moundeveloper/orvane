@@ -32,6 +32,12 @@ for (const kind of ["git", "cabinet", "cabinet-files"] as const) {
           ".git-patch > span,.git-patch .cm-line,.fc-item",
         ) as HTMLElement
       )?.offsetHeight,
+      treeElements: root.querySelector(".folder-tree")?.querySelectorAll("*")
+        .length,
+      treeRows: root.querySelectorAll("[data-folder-key]").length,
+      treeHeight: root.querySelector<HTMLElement>(".folder-tree")?.offsetHeight,
+      sidebarScrollHeight:
+        root.querySelector<HTMLElement>(".fc-sidebar")?.scrollHeight,
       tableElements: root.querySelector(".fc-content")?.querySelectorAll("*")
         .length,
       height: root.querySelector<HTMLElement>(".fc-content")?.clientHeight,
