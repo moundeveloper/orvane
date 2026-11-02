@@ -1,0 +1,10 @@
+{
+  "date": "2026-11-02",
+  "baselineCommit": "cbcfea8",
+  "fixture": "tests/terminal-performance-harness.ts: 50 saved terminal tabs, first tab active, stable visible panel",
+  "context": "Playwright Chromium work/allocation counts; not timing, heap or foreground Electron measurements",
+  "baseline": { "initializedTerminals": 50, "fitCalls": 103, "stateChangeEvents": 2 },
+  "candidate": { "initializedTerminals": 1, "fitCalls": 2, "stateChangeEvents": 2 },
+  "closedPanelCandidate": { "initializedTerminals": 0, "fitCalls": 0 },
+  "fiveNewTabsInOneUpdateCandidate": { "additionalInitializedTerminals": 1, "fitCalls": 1 }
+}

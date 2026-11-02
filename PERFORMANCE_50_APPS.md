@@ -4,7 +4,7 @@ Date: 30 October 2026. Baseline: `a5143f4`. User priority: mostly NetSuite, Note
 
 ## Implementation update: 2 November 2026
 
-The first implementation pass is now in the working tree. The measurements below remain the original research baseline; they are not measurements of this implementation.
+The first implementation pass was committed as `cbcfea8`. The measurements below remain the original research baseline; they are not measurements of this implementation.
 
 - Notes views now own unique Pinia stores and remove their state on disposal. Concurrent startup shares metadata initialization, migration and welcome seeding. Identical in-flight reads share transport results, with detached editable records and independent navigation/undo state per view. Unrelated reads can run concurrently between write barriers; writes wait for earlier reads and later reads wait for writes. Document and metadata revisions reject stale responses, and a pending document save retains its original page identity.
 - Workspace tracking now uses individual deep app watchers plus a separate metadata watcher. Minimum-size watchers are also per app. Geometry transactions pause/resume app subscriptions without traversing untouched apps. Complete workspace persistence remains the format; pending ordinary saves coalesce before serialization, while checkpoints remain detached, ordered operations. Lease/revision checks, failure reporting and synchronous final-close capture remain in place.
@@ -17,7 +17,17 @@ Validation:
 - 37 distinct Playwright tests passed across `notes`, `netsuite`, `git`, `projects`, `recovery`, `storage-fallback`, `workspace`, `zoom-groups` and the new `performance` suite. Targeted checks cover both split halves, deferred hidden files, one persistence update for a 20-step drag, cancellation/blur, retained query editors, multi-view Notes edits, independent undo/redo, close/reopen and deletion from another view.
 - `pnpm build` passes, including Vue/TypeScript checking. Existing Vite configuration, mixed import and bundle-size warnings remain.
 
-Still pending: real foreground Electron/browser comparative traces, first-selection latency measurements, heap snapshots and the 30-minute mixed 50-app soak. The 100-cycle automated check counts Pinia entries; it does not measure heap stabilization. Whole-document undo changes, long-lived canonical metadata caches, per-app database commits, query-result eviction, additional list/editor changes, terminal startup changes and camera work remain subject to the profiling/policy/migration gates in this plan. No 50-app smoothness or memory guarantee is established by the functional checks.
+Still pending: real foreground Electron/browser comparative traces, first-selection latency measurements, heap snapshots and the 30-minute mixed 50-app soak. The 100-cycle automated check counts Pinia entries; it does not measure heap stabilization. Whole-document undo changes, long-lived canonical metadata caches, per-app database commits, query-result eviction, additional list/editor changes and camera work remain subject to the profiling/policy/migration gates in this plan. No 50-app smoothness or memory guarantee is established by the functional checks.
+
+### Second pass: lazy Projects terminals
+
+Projects now restores terminal tab metadata without constructing an xterm for each tab. Only the selected, open, measurable host initializes. Previously selected terminals retain their instances, input, history, buffers and pending command output across tab switches and hide/show. Restoring a closed panel keeps it closed and initializes no terminals until it is shown. Commands still execute exclusively through the existing callback.
+
+Fit requests share one animation-frame callback, resolve the latest selected tab after rendering, skip hidden hosts, and observe the terminal panel rather than the document body. Xterm and addon instances are excluded from Vue proxying. Closing/unmounting clears disposed instances; teardown also cancels queued frames, observers and resize gesture listeners.
+
+Controlled browser fixture: 50 saved terminal tabs, one selected, a stable visible panel. Before this pass (`cbcfea8`), restoration created 50 xterm instances and invoked fit 103 times. The candidate created 1 instance and invoked fit 2 times. A restored closed panel created 0 instances and made 0 fit calls; five new tabs added in one update initialized only the final selection and invoked fit once. These are work/allocation counts, not timing, heap or foreground Electron measurements. Recorded fixture results are in `research/terminal-startup-results.json`.
+
+Validation: `pnpm exec playwright test tests/terminal-performance.spec.ts tests/projects.spec.ts` passed all 6 tests, covering restoration, lazy selection, closing initialized/uninitialized tabs, hidden command output, unfinished input, history, hide/show, fit coalescing, teardown and existing Projects backend/MCP behavior. `pnpm build` passes with the existing warnings. First-use latency and retained memory after many terminals have actually been visited still need foreground/heap profiling.
 
 ## Conclusion and limits
 

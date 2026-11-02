@@ -12,6 +12,7 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import {
   computed,
+  markRaw,
   nextTick,
   onBeforeUnmount,
   onMounted,
@@ -61,6 +62,10 @@ const panelStyle = computed(() =>
 );
 let resizeObserver: ResizeObserver | null = null;
 let isRestoringState = false;
+const panel = ref<HTMLElement>();
+let fitFrame = 0;
+let disposed = false;
+let stopResize: (() => void) | undefined;
 
 const pathSeparator = (value: string) =>
   value.includes("/") && !/^[A-Za-z]:\\/.test(value) ? "/" : "\\";
@@ -115,8 +120,16 @@ const writePrompt = (tab: TerminalTab) => {
 };
 
 const fitActiveTerminal = () => {
-  const tab = activeTab();
-  window.setTimeout(() => {
+  if (disposed || fitFrame) return;
+  fitFrame = requestAnimationFrame(() => {
+    fitFrame = 0;
+    if (disposed || isRestoringState || !isOpen.value) return;
+    // Resolve the latest selection after rendering. Hidden restored tabs keep
+    // only metadata; initialized tabs keep their buffers and pending commands.
+    const tab = activeTab();
+    const host = tab && terminalHosts.get(tab.id);
+    if (!tab || !host || !host.clientWidth || !host.clientHeight) return;
+    initTerminal(tab);
     try {
       tab?.fitAddon?.fit();
     } catch {
@@ -227,19 +240,21 @@ const initTerminal = (tab: TerminalTab) => {
   const host = terminalHosts.get(tab.id);
   if (!host || tab.terminal) return;
 
-  const terminal = new Terminal({
-    cursorBlink: true,
-    convertEol: true,
-    fontFamily: 'Cascadia Mono, Consolas, "Liberation Mono", monospace',
-    fontSize: 12,
-    theme: {
-      background: "#f8fafc",
-      foreground: "#334155",
-      cursor: "#2563eb",
-      selectionBackground: "#dbeafe",
-    },
-  });
-  const fitAddon = new FitAddon();
+  const terminal = markRaw(
+    new Terminal({
+      cursorBlink: true,
+      convertEol: true,
+      fontFamily: 'Cascadia Mono, Consolas, "Liberation Mono", monospace',
+      fontSize: 12,
+      theme: {
+        background: "#f8fafc",
+        foreground: "#334155",
+        cursor: "#2563eb",
+        selectionBackground: "#dbeafe",
+      },
+    }),
+  );
+  const fitAddon = markRaw(new FitAddon());
 
   terminal.loadAddon(fitAddon);
   terminal.open(host);
@@ -247,33 +262,38 @@ const initTerminal = (tab: TerminalTab) => {
   tab.terminal = terminal;
   tab.fitAddon = fitAddon;
   terminal.write(prompt(tab.cwd));
-  fitActiveTerminal();
 };
 
+const createTab = (cwd: string, title = basename(cwd)): TerminalTab => ({
+  id: `terminal-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+  title,
+  cwd,
+  input: "",
+  history: [],
+  historyIndex: 0,
+});
+
 const addTab = async (cwd = props.initialCwd, title = basename(cwd)) => {
-  if (!cwd) return;
+  if (!cwd || disposed) return;
 
   isOpen.value = true;
-  const tab: TerminalTab = {
-    id: `terminal-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
-    title,
-    cwd,
-    input: "",
-    history: [],
-    historyIndex: 0,
-  };
+  const tab = createTab(cwd, title);
   tabs.value.push(tab);
   activeTabId.value = tab.id;
   saveState();
   await nextTick();
-  initTerminal(tab);
+  fitActiveTerminal();
 };
 
 const closeTab = (tabId: string) => {
   const index = tabs.value.findIndex((tab) => tab.id === tabId);
   if (index === -1) return;
 
-  tabs.value[index]?.terminal?.dispose();
+  const removed = tabs.value[index]!;
+  removed.terminal?.dispose();
+  removed.terminal = undefined;
+  removed.fitAddon = undefined;
+  terminalHosts.delete(tabId);
   tabs.value.splice(index, 1);
 
   if (activeTabId.value === tabId) {
@@ -291,14 +311,14 @@ const setTerminalHost = (
 ) => {
   if (element instanceof HTMLElement) {
     terminalHosts.set(tabId, element);
-    const tab = tabs.value.find((item) => item.id === tabId);
-    if (tab) initTerminal(tab);
+    if (tabId === activeTabId.value) fitActiveTerminal();
   } else {
     terminalHosts.delete(tabId);
   }
 };
 
 const startResize = (event: PointerEvent) => {
+  stopResize?.();
   isResizing.value = true;
   const startY = event.clientY;
   const startHeight = height.value;
@@ -319,10 +339,16 @@ const startResize = (event: PointerEvent) => {
     saveState();
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", up);
+    window.removeEventListener("pointercancel", up);
+    window.removeEventListener("blur", up);
+    stopResize = undefined;
   };
 
   window.addEventListener("pointermove", move);
   window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", up);
+  window.addEventListener("blur", up);
+  stopResize = up;
 };
 
 const toggleMaximize = () => {
@@ -347,6 +373,7 @@ watch(activeTabId, () => {
   saveState();
   fitActiveTerminal();
 });
+watch([isOpen, isMaximized, height], fitActiveTerminal, { flush: "post" });
 watch(
   () => props.initialCwd,
   (cwd) => {
@@ -369,26 +396,38 @@ onMounted(async () => {
 
   const restoredTabs = state?.tabs?.filter((tab) => tab.cwd) ?? [];
   if (restoredTabs.length > 0) {
-    for (const tab of restoredTabs) {
-      await addTab(tab.cwd, tab.title || basename(tab.cwd));
-    }
+    tabs.value = restoredTabs.map((tab) =>
+      createTab(tab.cwd, tab.title || basename(tab.cwd)),
+    );
 
     const active = tabs.value.find((tab) => tab.cwd === state?.activeCwd);
     activeTabId.value = active?.id ?? tabs.value.at(-1)?.id ?? "";
   } else if (!state && props.initialCwd) {
-    await addTab(props.initialCwd, basename(props.initialCwd));
+    const tab = createTab(props.initialCwd);
+    tabs.value = [tab];
+    activeTabId.value = tab.id;
   }
 
   isRestoringState = false;
   saveState();
+  await nextTick();
+  if (disposed) return;
   resizeObserver = new ResizeObserver(fitActiveTerminal);
-  resizeObserver.observe(document.body);
+  if (panel.value) resizeObserver.observe(panel.value);
   fitActiveTerminal();
 });
 
 onBeforeUnmount(() => {
+  disposed = true;
+  cancelAnimationFrame(fitFrame);
+  stopResize?.();
   resizeObserver?.disconnect();
-  tabs.value.forEach((tab) => tab.terminal?.dispose());
+  terminalHosts.clear();
+  tabs.value.forEach((tab) => {
+    tab.terminal?.dispose();
+    tab.terminal = undefined;
+    tab.fitAddon = undefined;
+  });
 });
 
 defineExpose({ addTab });
@@ -396,6 +435,7 @@ defineExpose({ addTab });
 
 <template>
   <section
+    ref="panel"
     v-show="isOpen"
     class="terminal-panel"
     :class="{ maximized: isMaximized }"
