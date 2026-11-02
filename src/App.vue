@@ -10,6 +10,7 @@ import {
   defineAsyncComponent,
 } from "vue";
 import { WorkspaceStorage, LEGACY_STORAGE } from "./storage";
+import { trackWorkspace } from "./workspaceTracking";
 import { connectMcpBridge, type BridgeRequest } from "./mcpBridge";
 import { applyCommands, duplicateApp } from "./automation";
 import { parseWorkspace, referenceIssues } from "./validation";
@@ -87,24 +88,41 @@ const statusIsProblem = computed(
     !/ (moved to trash|archived)\. Restore it/.test(status.value),
 );
 const workspace = reactive<Workspace>(emptyWorkspace());
+const minimumWatches = new Map<CanvasApp, () => void>();
 watch(
-  () =>
-    workspace.apps.map((app) => [
-      app.width,
-      app.height,
-      app.minWidth,
-      app.minHeight,
-      flatten(app.blocks)
-        .map((block) => block.kind)
-        .join(","),
-    ]),
-  () => {
-    for (const app of workspace.apps) {
-      const minimum = appMinimum(app);
-      app.width = Math.max(app.width, minimum.width);
-      app.height = Math.max(app.height, minimum.height);
+  () => [...workspace.apps],
+  (apps) => {
+    for (const [app, stop] of minimumWatches) {
+      if (!apps.includes(app)) {
+        stop();
+        minimumWatches.delete(app);
+      }
+    }
+    for (const app of apps) {
+      if (minimumWatches.has(app)) continue;
+      minimumWatches.set(
+        app,
+        watch(
+          () => [
+            app.width,
+            app.height,
+            app.minWidth,
+            app.minHeight,
+            flatten(app.blocks)
+              .map((block) => block.kind)
+              .join(","),
+          ],
+          () => {
+            const minimum = appMinimum(app);
+            app.width = Math.max(app.width, minimum.width);
+            app.height = Math.max(app.height, minimum.height);
+          },
+          { immediate: true },
+        ),
+      );
     }
   },
+  { immediate: true, flush: "sync" },
 );
 watch(
   () => (workspace.actions || []).map((a) => ({ id: a.id, name: a.name })),
@@ -395,17 +413,17 @@ async function persist() {
       "Saving is unavailable. Your changes are still here; export a backup from Workspace or retry saving.";
   }
 }
-const workspaceWatch = watch(
-  workspace,
-  () => {
-    if (!canEdit.value || applying) return;
-    unsavedChanges.value = true;
-    workspaceRevision.value++;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => void persist(), SAVE_DELAY);
-  },
-  { deep: true, flush: "sync" },
-);
+const workspaceWatch = trackWorkspace(workspace, () => {
+  if (!canEdit.value || applying) return;
+  unsavedChanges.value = true;
+  workspaceRevision.value++;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => void persist(), SAVE_DELAY);
+});
+onBeforeUnmount(() => {
+  workspaceWatch.stop();
+  for (const stop of minimumWatches.values()) stop();
+});
 // Geometry changes arrive many times per second during a drag. Vue's deep
 // watcher otherwise traverses the entire workspace for every coordinate.
 let trackingPaused = false;

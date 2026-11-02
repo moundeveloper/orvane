@@ -10,7 +10,7 @@ import {
 } from "vue";
 import type { Block as CanvasBlock } from "../../model";
 import {
-  createWorkspaceStore,
+  createOwnedWorkspaceStore,
   NOTES_WORKSPACE_CHANGED_EVENT,
   notesWorkspaceKey,
   type NotesWorkspaceChange,
@@ -35,7 +35,11 @@ const emit = defineEmits<{
 }>();
 
 const componentUid = getCurrentInstance()?.uid ?? crypto.randomUUID();
-const ws = createWorkspaceStore(props.tabId ?? `notes-${componentUid}`);
+const ownedWorkspace = createOwnedWorkspaceStore(
+  props.tabId ?? `notes-${componentUid}`,
+);
+const ws = ownedWorkspace.store;
+let disposed = false;
 provide(notesWorkspaceKey, ws);
 const savedState = (() => {
   try {
@@ -289,8 +293,12 @@ function stopResize() {
 function onWorkspaceChanged(event: Event) {
   const detail = (event as CustomEvent<NotesWorkspaceChange>).detail;
   if (!detail || detail.source === ws.$id) return;
-  if (detail.pages) void ws.refreshPages();
-  if (detail.blocksPageId) void ws.refreshBlocks(detail.blocksPageId);
+  if (detail.pages) void ws.refreshPages().catch(onRefreshError);
+  if (detail.blocksPageId)
+    void ws.refreshBlocks(detail.blocksPageId).catch(onRefreshError);
+}
+function onRefreshError(error: unknown) {
+  if (!disposed) storageError.value = String(error);
 }
 
 onMounted(async () => {
@@ -302,6 +310,7 @@ onMounted(async () => {
   window.addEventListener(NOTES_WORKSPACE_CHANGED_EVENT, onWorkspaceChanged);
   try {
     await ws.load();
+    if (disposed) return;
   } catch (error) {
     storageError.value = String(error);
     return;
@@ -351,7 +360,8 @@ onBeforeUnmount(() => {
   window.removeEventListener("mousemove", onMouseMove);
   window.removeEventListener("mouseup", stopResize);
   window.removeEventListener(NOTES_WORKSPACE_CHANGED_EVENT, onWorkspaceChanged);
-  ws.$dispose();
+  disposed = true;
+  ownedWorkspace.dispose();
 });
 </script>
 

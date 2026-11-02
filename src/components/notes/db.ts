@@ -1,7 +1,18 @@
 import type { Block, Page, Settings } from "./types";
 type Row = Block | Page | Settings;
 let pending: Promise<unknown> = Promise.resolve();
+let writeBarrier: Promise<unknown> = pending;
+const reads = new Map<string, Promise<unknown>>();
 async function request<T>(payload: Record<string, unknown>): Promise<T> {
+  const read = payload.action === "get" || payload.action === "list";
+  const key = JSON.stringify(payload);
+  if (read) {
+    const existing = reads.get(key);
+    if (existing) return structuredClone(await existing) as T;
+  } else {
+    // A read requested after a write must not join a pre-write response.
+    reads.clear();
+  }
   const run = async () => {
     const response = await fetch("/__orvane/notes/data", {
       method: "POST",
@@ -17,9 +28,22 @@ async function request<T>(payload: Record<string, unknown>): Promise<T> {
     }
     return data as T;
   };
-  const result = pending.then(run, run);
-  pending = result.catch(() => {});
-  return result;
+  const result = (read ? writeBarrier : pending).then(run, run);
+  if (!read) {
+    pending = result.catch(() => {});
+    writeBarrier = pending;
+    return result;
+  }
+  // Unrelated reads in the same write epoch can run together. The next write
+  // still waits for every earlier read, and later reads wait for that write.
+  pending = Promise.allSettled([pending, result]).then(() => undefined);
+  reads.set(key, result);
+  try {
+    // Each view owns its editable records and undo stack.
+    return structuredClone(await result);
+  } finally {
+    if (reads.get(key) === result) reads.delete(key);
+  }
 }
 class NotesTable<T extends Row> {
   constructor(private collection: "pages" | "blocks" | "settings") {}

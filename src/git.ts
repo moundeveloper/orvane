@@ -1,3 +1,5 @@
+import { invalidateReads, sharedRead } from "./sharedReads";
+
 export interface GitWorkspace {
   id: string;
   name: string;
@@ -49,6 +51,29 @@ export interface GitFolder {
 export async function gitRequest<T>(
   operation: string,
   args: object = {},
+  signal?: AbortSignal,
+): Promise<T> {
+  const read = [
+    "git_folders",
+    "git_workspace_list",
+    "git_history",
+    "git_commit",
+    "git_status",
+    "git_diff",
+  ].includes(operation);
+  if (read)
+    return sharedRead(
+      `git:${operation}:${JSON.stringify(args)}`,
+      () => sendGitRequest<T>(operation, args),
+      signal,
+    );
+  invalidateReads("git:");
+  return sendGitRequest<T>(operation, args, signal);
+}
+
+async function sendGitRequest<T>(
+  operation: string,
+  args: object,
   signal?: AbortSignal,
 ): Promise<T> {
   const response = await fetch(`/__orvane/git/${operation}`, {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import Icon from "./Icon.vue";
 import { uid } from "../model";
 import {
@@ -18,6 +18,7 @@ const props = defineProps<{
   label: string;
   canReopen?: boolean;
   accept?: string;
+  lazy?: boolean;
 }>();
 const emit = defineEmits<{
   add: [SplitSide | null];
@@ -27,6 +28,8 @@ const emit = defineEmits<{
   duplicate: [string];
   changed: [];
   external: [DragEvent, SplitSide | null];
+  resizeStart: [];
+  resizeEnd: [];
 }>();
 const owner = uid(),
   MIME = "application/x-orvane-tab";
@@ -38,6 +41,27 @@ const root = ref<HTMLElement>(),
   barZone = ref<SplitSide | "single" | null>(null),
   menu = ref<{ id: string; x: number; y: number } | null>(null);
 const split = computed(() => splitActive(props.layout));
+const initialized = ref(new Set<string>());
+watch(
+  () => [
+    props.layout.tabs,
+    props.layout.active,
+    props.layout.leftActive,
+    props.layout.rightActive,
+    split.value,
+  ],
+  () => {
+    const visible = split.value
+      ? [props.layout.leftActive, props.layout.rightActive]
+      : [props.layout.active];
+    initialized.value = new Set(
+      props.layout.tabs.filter(
+        (id) => initialized.value.has(id) || visible.includes(id),
+      ),
+    );
+  },
+  { immediate: true, deep: true, flush: "sync" },
+);
 const groups = computed(() =>
   split.value
     ? ([
@@ -139,9 +163,12 @@ function wheel(event: WheelEvent) {
     event.preventDefault();
   }
 }
+let stopResize: (() => void) | undefined;
 function startResize(event: PointerEvent) {
+  stopResize?.();
   const box = panes.value?.getBoundingClientRect();
   if (!box) return;
+  emit("resizeStart");
   const move = (e: PointerEvent) => {
     props.layout.ratio = Math.min(
       80,
@@ -151,10 +178,17 @@ function startResize(event: PointerEvent) {
   const up = () => {
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", up);
+    window.removeEventListener("pointercancel", up);
+    window.removeEventListener("blur", up);
+    stopResize = undefined;
+    emit("resizeEnd");
     changed();
   };
   window.addEventListener("pointermove", move);
   window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", up);
+  window.addEventListener("blur", up);
+  stopResize = up;
 }
 function resizeKey(event: KeyboardEvent) {
   const step = event.key === "ArrowLeft" ? -5 : event.key === "ArrowRight" ? 5 : 0;
@@ -170,8 +204,14 @@ function showMenu(event: MouseEvent, id: string) {
     scale = bounds.width / box.offsetWidth || 1;
   menu.value = {
     id,
-    x: Math.max(0, Math.min(box.offsetWidth - 220, (event.clientX - bounds.left) / scale)),
-    y: Math.max(0, Math.min(box.offsetHeight - 300, (event.clientY - bounds.top) / scale)),
+    x: Math.max(
+      0,
+      Math.min(box.offsetWidth - 220, (event.clientX - bounds.left) / scale),
+    ),
+    y: Math.max(
+      0,
+      Math.min(box.offsetHeight - 300, (event.clientY - bounds.top) / scale),
+    ),
   };
 }
 function closeMany(ids: string[]) {
@@ -205,7 +245,10 @@ function outside(event: PointerEvent) {
   if (!(event.target as Element)?.closest?.(".st-menu")) menu.value = null;
 }
 onMounted(() => document.addEventListener("pointerdown", outside, true));
-onBeforeUnmount(() => document.removeEventListener("pointerdown", outside, true));
+onBeforeUnmount(() => {
+  stopResize?.();
+  document.removeEventListener("pointerdown", outside, true);
+});
 </script>
 <template>
   <div ref="root" class="st-root" @keydown="keys">
@@ -320,6 +363,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", outside, true)
         @pointerdown.capture="split && layout.active !== id && select(id)"
       >
         <slot
+          v-if="!lazy || initialized.has(id)"
           name="pane"
           :id="id"
           :focused="id === layout.active"

@@ -19,6 +19,7 @@ import {
 } from "@lucide/vue";
 import { computed, onMounted, ref, watch, onBeforeUnmount } from "vue";
 import type { Block } from "../../model";
+import { invalidateReads, sharedRead } from "../../sharedReads";
 import "./projects.css";
 const props = defineProps<{ block: Block; editing: boolean }>();
 
@@ -301,6 +302,18 @@ const groupedSearchResults = computed(() => {
 const request = async <T,>(
   url: string,
   body: Record<string, unknown> = {},
+): Promise<T> => {
+  if (url === "/api/workspace" || url === "/api/suitecloud/inspect") {
+    return sharedRead(`projects:${url}:${JSON.stringify(body)}`, () =>
+      sendRequest<T>(url, body),
+    );
+  }
+  invalidateReads("projects:");
+  return sendRequest<T>(url, body);
+};
+const sendRequest = async <T,>(
+  url: string,
+  body: Record<string, unknown>,
 ): Promise<T> => {
   const response = await fetch(url.replace("/api/", "/__orvane/projects/"), {
     method: "POST",

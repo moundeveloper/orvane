@@ -62,6 +62,8 @@ type Pane = {
   searchSeq: number;
   dragOver: boolean;
   pdfUrl: string;
+  restoredFile?: Row;
+  initialized?: boolean;
 };
 type MenuAction = {
   label: string;
@@ -233,8 +235,12 @@ function paneOf(id: string) {
 function paneInfo(id: string) {
   const p = paneOf(id);
   return {
-    label: p.preview?.name || p.path.at(-1)?.name || "File Cabinet",
-    icon: p.preview ? "file" : "folder",
+    label:
+      p.preview?.name ||
+      p.restoredFile?.name ||
+      p.path.at(-1)?.name ||
+      "File Cabinet",
+    icon: p.preview || p.restoredFile ? "file" : "folder",
     title:
       [...p.path.map((c) => c.name), p.preview?.name]
         .filter(Boolean)
@@ -438,7 +444,9 @@ function expandTo(path: Crumb[]) {
     if (!treeChildren.value[id] && !treeLoading.value.includes(id))
       void loadTreeChildren(id);
 }
-async function navigate(path: Crumb[], target = current.value) {
+async function navigate(path: Crumb[], target = current.value, restoringFile = false) {
+  target.initialized = true;
+  if (!restoringFile) target.restoredFile = undefined;
   const environment = props.environment,
     requestEpoch = epoch,
     requestSeq = ++target.requestSeq;
@@ -480,13 +488,14 @@ async function navigate(path: Crumb[], target = current.value) {
   }
 }
 function refresh(target = current.value) {
-  return target.preview
-    ? openFile(target.preview, target)
+  const file = target.preview ?? target.restoredFile;
+  return file
+    ? openFile(file, target)
     : navigate([...target.path], target);
 }
 function refreshFolder(...ids: (number | undefined)[]) {
   for (const p of panes.value)
-    if (!p.preview && ids.includes(p.path.at(-1)?.id)) void navigate([...p.path], p);
+    if (p.initialized && !p.preview && ids.includes(p.path.at(-1)?.id)) void navigate([...p.path], p);
   for (const id of ids)
     if (id !== undefined && treeChildren.value[id]) void loadTreeChildren(id);
 }
@@ -523,6 +532,7 @@ function setPreview(p: Pane, file: Row | null) {
   if (p.pdfUrl) URL.revokeObjectURL(p.pdfUrl);
   p.pdfUrl = "";
   p.preview = file;
+  if (file) p.restoredFile = undefined;
   if (file?.base64 && isPdf(file)) {
     const raw = atob(String(file.base64));
     p.pdfUrl = URL.createObjectURL(
@@ -1249,12 +1259,13 @@ function addPane(focus = true, group?: SplitSide | null, after?: string) {
 }
 function duplicatePane(id: string) {
   const p = paneOf(id),
+    file = p.preview ?? p.restoredFile,
     next = pane();
   panes.value.push(next);
   addTab(layout.value, next.id, groupOf(layout.value, id), id);
   const mounted = paneOf(next.id);
   void navigate([...p.path], mounted).then(() => {
-    if (p.preview?.id && !mounted.error) void openFile(p.preview, mounted);
+    if (file?.id && !mounted.error) void openFile(file, mounted);
   });
 }
 function closePane(id: string) {
@@ -1300,7 +1311,7 @@ const storageId = computed(() =>
   props.storageKey ? `${props.environment}#${props.storageKey}` : props.environment,
 );
 function persistPanes() {
-  if (restoringPanes || !props.environment) return;
+  if (resizingSplit.value || restoringPanes || !props.environment) return;
   const state = readState();
   const all =
     state.filePanes &&
@@ -1323,11 +1334,18 @@ function persistPanes() {
       return {
         id: p.id,
         path: p.path,
-        file: p.preview?.id ? { id: p.preview.id, name: p.preview.name } : null,
+        file: p.preview?.id
+          ? { id: p.preview.id, name: p.preview.name }
+          : (p.restoredFile ?? null),
       };
     }),
   };
   props.block.value = JSON.stringify({ ...state, filePanes: all });
+}
+const resizingSplit = ref(false);
+function finishSplitResize() {
+  resizingSplit.value = false;
+  persistPanes();
 }
 async function restorePanes() {
   const requestEpoch = epoch;
@@ -1349,44 +1367,68 @@ async function restorePanes() {
   restoringPanes = true;
   for (const p of panes.value) if (p.pdfUrl) URL.revokeObjectURL(p.pdfUrl);
   panes.value = source.length
-    ? source.map((p: Row) => ({ ...pane(), id: p.id, path: p.path }))
+    ? source.map((p: Row) => ({
+        ...pane(),
+        id: p.id,
+        path: p.path,
+        restoredFile: p.file,
+      }))
     : [pane()];
   const ids = panes.value.map((p) => p.id);
   layout.value =
-    restoreLayout({ ...saved?.layout, tabs: ids, active: saved?.active }, ids) ??
-    splitLayout(ids);
+    restoreLayout(
+      { ...saved?.layout, tabs: ids, active: saved?.active },
+      ids,
+    ) ?? splitLayout(ids);
   closedPanes.value = [];
   roots.value = [];
   treeChildren.value = {};
   treeExpanded.value = [];
   treeLoading.value = [];
   previews.value = {};
-  const restored = panes.value;
   const loadRoots = props
     .request("folders")
     .then((data) => {
       if (requestEpoch === epoch) roots.value = data.rows || [];
     })
     .catch(() => {});
-  await Promise.all([
-    loadRoots,
-    ...restored.map(async (target, index) => {
-      const file = source[index]?.file;
-      await navigate([...target.path], target);
+  await Promise.all([loadRoots, initializeVisiblePanes()]);
+  if (requestEpoch === epoch) {
+    restoringPanes = false;
+    await initializeVisiblePanes();
+    persistPanes();
+  }
+}
+function visiblePanes() {
+  const l = layout.value;
+  return l.left.length && l.right.length
+    ? [l.leftActive, l.rightActive]
+    : [l.active];
+}
+async function initializeVisiblePanes() {
+  const requestEpoch = epoch;
+  await Promise.all(
+    visiblePanes().map(async (id) => {
+      const target = paneOf(id);
+      if (target.initialized) return;
+      const file = target.restoredFile;
+      const loading = navigate([...target.path], target, true);
+      const sequence = target.requestSeq;
+      await loading;
       if (
         requestEpoch === epoch &&
+        target.requestSeq === sequence &&
         file &&
         Number.isSafeInteger(Number(file.id)) &&
         !target.error
       )
         await openFile({ id: Number(file.id), name: file.name }, target);
     }),
-  ]);
-  if (requestEpoch === epoch) {
-    restoringPanes = false;
-    persistPanes();
-  }
+  );
 }
+watch(visiblePanes, () => {
+  if (!restoringPanes) void initializeVisiblePanes();
+});
 watch(
   () => [
     layout.value,
@@ -1707,6 +1749,9 @@ onBeforeUnmount(() => {
       @reload="refresh(paneOf($event))"
       @duplicate="duplicatePane"
       @external="externalDrop"
+      @resize-start="resizingSplit = true"
+      @resize-end="finishSplitResize"
+      lazy
     >
       <template #pane="{ id }"
         ><template v-for="p in [paneOf(id)]" :key="p.id"

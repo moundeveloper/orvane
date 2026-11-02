@@ -64,6 +64,7 @@ export class WorkspaceStorage {
   private ticking = false;
   private queue: Promise<unknown> = Promise.resolve();
   private closingData?: Workspace;
+  private ordinary?: { data: Workspace; promise: Promise<void> };
   private owned?: () => Promise<void>;
   private preferences = new Set<string>();
   constructor(private changed: () => void | Promise<void>) {}
@@ -175,13 +176,25 @@ export class WorkspaceStorage {
       );
   }
   write(data: Workspace, reason?: string, snapshotBase?: Workspace) {
-    // One serialization doubles as the detached copy and the size check.
-    const json = JSON.stringify(data);
-    const clean = parseWorkspace(JSON.parse(json), json.length);
-    this.closingData = reason ? undefined : clean;
+    this.assertWriter();
+    this.closingData = reason ? undefined : data;
+    if (!reason && !snapshotBase && this.ordinary) {
+      this.ordinary.data = data;
+      return this.ordinary.promise;
+    }
+    // Checkpoints must capture their exact input. Ordinary pending saves can
+    // be superseded before any serialization/validation work is performed.
+    const checkpoint =
+      reason || snapshotBase ? parseWorkspace(clone(data)) : undefined;
     const base = snapshotBase ? parseWorkspace(clone(snapshotBase)) : undefined;
+    const entry = { data, promise: undefined as unknown as Promise<void> };
+    this.ordinary = !reason && !snapshotBase ? entry : undefined;
     const operation = this.queue.then(async () => {
+      if (this.ordinary === entry) this.ordinary = undefined;
       this.assertWriter();
+      const json = checkpoint ? undefined : JSON.stringify(entry.data);
+      const clean =
+        checkpoint ?? parseWorkspace(JSON.parse(json!), json!.length);
       try {
         const result = await this.request<{ revision: number }>(
           "state",
@@ -206,6 +219,7 @@ export class WorkspaceStorage {
         throw error;
       }
     });
+    entry.promise = operation;
     this.queue = operation.catch(() => {});
     return operation;
   }
@@ -221,9 +235,18 @@ export class WorkspaceStorage {
     this.preferences.add(id);
   }
   private release() {
+    let data: Workspace | undefined;
+    if (!this.conflicted && this.closingData) {
+      try {
+        const json = JSON.stringify(this.closingData);
+        data = parseWorkspace(JSON.parse(json), json.length);
+      } catch {
+        // Invalid in-memory data must never replace the last valid commit.
+      }
+    }
     const payload = {
       client: this.client,
-      data: this.conflicted ? undefined : this.closingData,
+      data,
       expectedRevision: this.revision,
     };
     const body = new Blob([JSON.stringify(payload)], {

@@ -20,6 +20,7 @@ import {
 } from "../splitTabs";
 import type { Block } from "../model";
 import { uid } from "../model";
+import { invalidateReads, sharedRead } from "../sharedReads";
 
 const props = defineProps<{ block: Block }>();
 type Tab = { id: string; label: string; status: string; count: number };
@@ -117,13 +118,18 @@ const workspace = initialWorkspace();
 const viewTabs = ref<ViewTab[]>(workspace.list),
   tabLayout = ref<SplitLayout>(workspace.layout),
   closedViews = ref<
-    { tab: ViewTab; closed: { id: string; group: SplitSide | null; index: number } }[]
+    {
+      tab: ViewTab;
+      closed: { id: string; group: SplitSide | null; index: number };
+    }[]
   >([]);
 const focusedTab = computed(
   () =>
     viewTabs.value.find((t) => t.id === tabLayout.value.active) ??
     viewTabs.value[0]!,
 );
+const resizingSplit = ref(false);
+const splitRevision = ref(0);
 const view = computed(() => focusedTab.value.view);
 function tabOf(id: string) {
   return viewTabs.value.find((t) => t.id === id) ?? focusedTab.value;
@@ -146,7 +152,12 @@ function newViewTab(group: SplitSide | null = null, from?: ViewTab) {
     version: 0,
   };
   viewTabs.value.push(tab);
-  addTab(tabLayout.value, tab.id, group ?? (from ? groupOf(tabLayout.value, from.id) : null), from?.id);
+  addTab(
+    tabLayout.value,
+    tab.id,
+    group ?? (from ? groupOf(tabLayout.value, from.id) : null),
+    from?.id,
+  );
 }
 function closeViewTab(id: string) {
   const closed = closeTab(tabLayout.value, id);
@@ -162,8 +173,9 @@ function reopenViewTab() {
   reopenTab(tabLayout.value, restored.closed);
 }
 watch(
-  [viewTabs, tabLayout],
+  [viewTabs, tabLayout, splitRevision],
   () => {
+    if (resizingSplit.value) return;
     let state: Record<string, unknown> = {};
     try {
       state = JSON.parse(props.block.value) || {};
@@ -324,7 +336,7 @@ async function refreshTabs() {
   if (!api) return;
   const request = ++refreshSequence;
   try {
-    const found = await api.tabs();
+    const found = await sharedRead("netsuite:tabs", () => api.tabs());
     if (request !== refreshSequence) return;
     tabs.value = found;
     if (!tabs.value.some((t) => String(t.id) === selected.value))
@@ -375,6 +387,24 @@ function editScriptFile(file: { id: number; name: string }) {
 async function fileRequest(operation: string, args: Row = {}): Promise<Row> {
   if (!api || !selected.value) throw Error("Choose an environment.");
   try {
+    const prefix = `netsuite:${selected.value}:`;
+    if (
+      [
+        "folders",
+        "folder",
+        "file",
+        "scripts",
+        "deployments",
+        "script-logs",
+      ].includes(operation)
+    ) {
+      const environment = selected.value;
+      return await sharedRead(
+        `${prefix}${operation}:${JSON.stringify(args)}`,
+        () => api.run(environment, operation, args),
+      );
+    }
+    if (operation !== "query") invalidateReads(prefix);
     return await api.run(selected.value, operation, args);
   } catch (e) {
     throw Error(message(e));
@@ -422,7 +452,7 @@ onBeforeUnmount(() => {
       </button>
     </div>
     <p v-if="userInfo" class="ns-account">
-      {{ userInfo.name }} · {{ userInfo.account }} · Role {{ userInfo.role }}
+      {{ userInfo.name }} Â· {{ userInfo.account }} Â· Role {{ userInfo.role }}
     </p>
     <nav class="ns-nav" aria-label="NetSuite navigation">
       <button
@@ -481,6 +511,12 @@ onBeforeUnmount(() => {
       @reopen="reopenViewTab"
       @reload="tabOf($event).version++"
       @duplicate="newViewTab(null, tabOf($event))"
+      lazy
+      @resize-start="resizingSplit = true"
+      @resize-end="
+        resizingSplit = false;
+        splitRevision++;
+      "
     >
       <template #pane="{ id }"
         ><template v-for="tab in [tabOf(id)]" :key="`${tab.id}:${tab.version}`">

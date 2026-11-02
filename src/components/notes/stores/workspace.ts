@@ -1,6 +1,6 @@
 import DOMPurify from "dompurify";
 import { inject, type InjectionKey } from "vue";
-import { defineStore } from "pinia";
+import { defineStore, getActivePinia, type Pinia } from "pinia";
 import { db, uid, now } from "../db";
 import type { Block, BlockType, DbSchema, Page } from "../types";
 
@@ -34,6 +34,10 @@ interface State {
 function sortByPosition<T extends { position: number }>(arr: T[]): T[] {
   return [...arr].sort((a, b) => a.position - b.position);
 }
+
+// Migration and welcome seeding are writes. Concurrent view startup must not
+// run them once per subscriber after a shared empty metadata response.
+let loadingPages: Promise<Page[]> | undefined;
 
 const createWorkspaceDefinition = (id: string) =>
   defineStore(id, {
@@ -85,23 +89,51 @@ const createWorkspaceDefinition = (id: string) =>
 
     actions: {
       async load() {
-        this.pages = await db.pages.toArray();
-        await this.removeLegacyBranding();
+        if (!loadingPages) {
+          const loading = (async () => {
+            this.pages = await db.pages.toArray();
+            await this.removeLegacyBranding();
+            if (this.pages.length === 0) await this.seedWelcome();
+            return JSON.parse(JSON.stringify(this.pages)) as Page[];
+          })();
+          loadingPages = loading;
+          const cleanup = () => {
+            if (loadingPages === loading) loadingPages = undefined;
+          };
+          void loading.then(cleanup, cleanup);
+        }
+        this.pages = structuredClone(await loadingPages);
         const recent = await db.settings.get("recentIds");
         this.recentIds = (recent?.value as string[]) ?? [];
-        if (this.pages.length === 0) await this.seedWelcome();
         this.loaded = true;
       },
 
       async refreshPages() {
-        this.pages = await db.pages.toArray();
+        const version = nextMetadataRead(this);
+        const pages = await db.pages.toArray();
+        if (metadataReads.get(this) !== version) return;
+        this.pages = pages;
+        if (
+          this.currentPageId &&
+          !this.pages.some((p) => p.id === this.currentPageId && !p.trashedAt)
+        ) {
+          this.currentPageId = null;
+          this.blocks = [];
+          this.undoStack = [];
+          this.redoStack = [];
+        }
       },
 
       async refreshBlocks(pageId: string) {
         if (this.currentPageId !== pageId) return;
-        this.blocks = sortByPosition(
-          await db.blocks.where("pageId").equals(pageId).toArray(),
-        );
+        const version = nextDocumentRead(this);
+        const blocks = await db.blocks.where("pageId").equals(pageId).toArray();
+        if (
+          this.currentPageId !== pageId ||
+          documentReads.get(this) !== version
+        )
+          return;
+        this.blocks = sortByPosition(blocks);
         if (this.ensureTrailingParagraph()) await this.persistBlocks();
       },
 
@@ -181,6 +213,7 @@ const createWorkspaceDefinition = (id: string) =>
         title = "",
         type: "page" | "database" = "page",
       ): Promise<Page> {
+        nextMetadataRead(this);
         const siblings = this.pages.filter((p) => p.parentId === parentId);
         const page: Page = {
           id: uid(),
@@ -204,6 +237,7 @@ const createWorkspaceDefinition = (id: string) =>
       },
 
       async savePage(page: Page) {
+        nextMetadataRead(this);
         page.updatedAt = now();
         const idx = this.pages.findIndex((p) => p.id === page.id);
         if (idx >= 0) this.pages[idx] = page;
@@ -212,12 +246,15 @@ const createWorkspaceDefinition = (id: string) =>
       },
 
       async openPage(id: string) {
+        const version = nextDocumentRead(this);
         this.currentPageId = id;
         this.undoStack = [];
         this.redoStack = [];
-        this.blocks = sortByPosition(
-          await db.blocks.where("pageId").equals(id).toArray(),
-        );
+        this.blocks = [];
+        const blocks = await db.blocks.where("pageId").equals(id).toArray();
+        if (this.currentPageId !== id || documentReads.get(this) !== version)
+          return;
+        this.blocks = sortByPosition(blocks);
         if (this.ensureTrailingParagraph()) await this.persistBlocks();
         this.recentIds = [id, ...this.recentIds.filter((r) => r !== id)].slice(
           0,
@@ -230,6 +267,7 @@ const createWorkspaceDefinition = (id: string) =>
       },
 
       async trashPage(id: string) {
+        nextMetadataRead(this);
         const collect = (pid: string): string[] => [
           pid,
           ...this.pages
@@ -250,6 +288,7 @@ const createWorkspaceDefinition = (id: string) =>
       },
 
       async restorePage(id: string) {
+        nextMetadataRead(this);
         const p = this.pages.find((x) => x.id === id);
         if (!p) return;
         p.trashedAt = null;
@@ -261,6 +300,7 @@ const createWorkspaceDefinition = (id: string) =>
       },
 
       async deletePagePermanently(id: string) {
+        nextMetadataRead(this);
         const collect = (pid: string): string[] => [
           pid,
           ...this.pages
@@ -282,6 +322,7 @@ const createWorkspaceDefinition = (id: string) =>
       },
 
       async toggleFavorite(id: string) {
+        nextMetadataRead(this);
         const p = this.pages.find((x) => x.id === id);
         if (!p) return;
         p.isFavorite = !p.isFavorite;
@@ -290,6 +331,7 @@ const createWorkspaceDefinition = (id: string) =>
       },
 
       async movePage(id: string, newParentId: string | null, position: number) {
+        nextMetadataRead(this);
         const p = this.pages.find((x) => x.id === id);
         if (!p) return;
         // prevent cycles
@@ -337,19 +379,18 @@ const createWorkspaceDefinition = (id: string) =>
 
       async persistBlocks() {
         if (!this.currentPageId) return;
-        this.ensureTrailingParagraph();
-        await db.replaceBlocks(
-          this.currentPageId,
-          JSON.parse(JSON.stringify(this.blocks)),
-        );
+        const pageId = this.currentPageId;
         const p = this.currentPage;
+        nextDocumentRead(this);
+        this.ensureTrailingParagraph();
+        await db.replaceBlocks(pageId, JSON.parse(JSON.stringify(this.blocks)));
         if (p) {
           p.updatedAt = now();
           await db.pages.put(JSON.parse(JSON.stringify(p)));
         }
         notifyWorkspaceChanged({
           source: this.$id,
-          blocksPageId: this.currentPageId,
+          blocksPageId: pageId,
         });
       },
 
@@ -396,6 +437,7 @@ const createWorkspaceDefinition = (id: string) =>
       async updateBlock(id: string, patch: Partial<Block>) {
         const b = this.blocks.find((x) => x.id === id);
         if (!b) return;
+        nextDocumentRead(this);
         Object.assign(b, patch, { updatedAt: now() });
         if (this.ensureTrailingParagraph()) {
           await this.persistBlocks();
@@ -539,6 +581,40 @@ export const notesWorkspaceKey: InjectionKey<WorkspaceStore> =
 
 export function createWorkspaceStore(instanceId: string): WorkspaceStore {
   return createWorkspaceDefinition(`workspace:${instanceId}`)();
+}
+
+const documentReads = new WeakMap<object, number>();
+const metadataReads = new WeakMap<object, number>();
+function nextMetadataRead(store: object) {
+  const version = (metadataReads.get(store) ?? 0) + 1;
+  metadataReads.set(store, version);
+  return version;
+}
+function nextDocumentRead(store: object) {
+  const version = (documentReads.get(store) ?? 0) + 1;
+  documentReads.set(store, version);
+  return version;
+}
+
+// This factory owns a unique identity, so teardown cannot delete another
+// view's store. Durable note records live in SQLite, outside Pinia.
+export function createOwnedWorkspaceStore(
+  instanceId: string,
+  pinia: Pinia | undefined = getActivePinia(),
+) {
+  if (!pinia) throw Error("Notes requires an active Pinia instance.");
+  const store = createWorkspaceDefinition(`workspace:${instanceId}:${uid()}`)(
+    pinia,
+  );
+  return {
+    store,
+    dispose() {
+      nextDocumentRead(store);
+      nextMetadataRead(store);
+      store.$dispose();
+      delete pinia.state.value[store.$id];
+    },
+  };
 }
 
 export function useNotesWorkspace(): WorkspaceStore {
