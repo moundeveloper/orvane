@@ -186,6 +186,8 @@ Validation: all 17 unit/service checks pass across `notes-metadata`, `notes-snap
 
 ### Fifteenth pass: production-browser foreground comparison and Notes loading correctness
 
+Committed as `4defdfd`.
+
 Added `research/foreground.ts` and an isolated fixture for actual production components: 20 NetSuite apps (seven Scripts, seven File Cabinet, six SuiteQL), 12 Notes apps, 10 Git viewers and eight Projects apps. Notes share 500 persisted page records and two seeded 100-block documents; Scripts and folder fixtures contain 1,000 records, Git histories contain 150 commits and Projects roots contain 100 projects with 20 saved terminal tabs each. Eight selected xterm views initialize. Workspace and Notes use disposable SQLite databases under ignored artifacts; Git/Projects/NetSuite use fixed fixture responses, with terminal-layout acknowledgments and no command execution. No user workspace, live NetSuite account or repository is used.
 
 The first real document-selection smoke run exposed a correctness bug: `BlockEditor` mounted while `openPage()` was awaiting its read, interpreted the temporary empty blocks array as an empty document, and persisted a blank block over saved content. This was reproduced in the disposable fixture SQLite database. Stores now track the identity of successfully loaded block data, and PageView waits for that identity before mounting the editor. Real empty documents initialize only after their read completes; superseded responses cannot initialize a different document. Failed reads show an error with a retry action. Both comparison builds include this common correction, rather than timing a baseline that overwrites fixture data.
@@ -209,9 +211,36 @@ Limits: this is a browser run, not Electron. Other desktop activity, power and t
 
 ### Remaining work, in current order
 
-1. Test a focused change to pan cursor/style invalidation using the new foreground comparison and diagnostic trace. Preserve cursor feedback, text selection behavior, header blur and text sharpness.
-2. Repeat representative foreground and first-use checks in Electron, including overview and normal zoom, hidden inner views, query outputs, expanded deployment panels and larger diffs/documents.
-3. Capture heap/open-close behavior and run the 30-minute mixed 50-app soak. Use those results to prioritize further Notes caching/persistence, retained-panel, camera/controller or filesystem-concurrency work.
+Status after `4defdfd`: the first production-browser comparison is complete. The pan experiment, Electron comparisons, heap profiling and 30-minute soak below remain unfinished. Functional checks and reduced operation counts do not establish 50-app smoothness or stable memory.
+
+#### 1. Next: reduce pan cursor/style invalidation
+
+- [ ] Isolate the cost of `.is-panning *` and `.is-panning:active *` in `src/style.css`. The separate trace recorded 890.4 ms of style recalculation during pan, with one recalculation at 457.8 ms; treat these rules as a hypothesis to test.
+- [ ] Prototype a narrowly scoped cursor/selection change. Preserve middle-button and Space-drag pan, grab/grabbing feedback over controls and editors, pointer capture, cancellation/blur recovery, ordinary text selection, header blur and text sharpness.
+- [ ] Extend `research/foreground.ts` to compare the pre-change and candidate pan implementations. Its current baseline switch compares only Notes child lookup, so it must be updated before claiming a pan improvement.
+- [ ] Run at least five alternating production-build pairs with identical fixture data. Reject interrupted focus/visibility runs, keep diagnostic traces separate from timing samples, and report the spread. Check pan start, continuous motion and stop separately.
+- [ ] Keep the change only if the measurements support it and interaction/visual regressions pass; record raw results and the commit identity here.
+
+#### 2. Foreground Electron and first-use validation
+
+- [ ] Run the same controlled workload in the actual Electron shell using isolated app profiles and databases. Record Electron/Chromium versions, display scale, graphics stack, focus/visibility and power conditions.
+- [ ] Compare 5/10/20/35/50 apps at overview and normal zoom, keeping fixture data and inner-tab counts fixed within each comparison. Sample header blur and text appearance during and after motion.
+- [ ] Expand the initial 50-app fixture with retained query outputs, expanded Scripts/deployments, populated File Cabinet folders/files, large Git diffs, larger Notes documents/history and controlled terminal output. Keep live account mutations and user repositories out of benchmark runs.
+- [ ] Measure cold first selection and warm return for deferred NetSuite panes, File Cabinet editors and Projects terminals. Separate request completion, usable editor/list readiness and intentional fit-camera animation.
+- [ ] Capture diagnostic scripting, style/layout, paint/raster/composite, GC, request counts and long tasks. Report callback cadence separately from presented-frame evidence and avoid p99 claims from five repetitions.
+
+#### 3. Heap, lifecycle and 30-minute soak
+
+- [ ] Capture comparable heap snapshots and process memory for a fixed populated workload before/after visiting hidden tabs and editors. Account for the active-output exception to the estimated 64 MiB inactive query budget.
+- [ ] Run 100 open/close cycles with representative Notes histories, query results/traces, initialized terminals and file editors. Check retained stores, rows, editor states, subscriptions, observers and terminal instances; confirm surviving views keep their state.
+- [ ] Run a 30-minute mixed 50-app soak with repeated navigation, pan/zoom, edits, saves, tab churn and controlled requests/output. Record errors, request counts, long tasks, heap trends, renderer/main/guest process memory and first-use latency drift.
+- [ ] Verify content, independent undo, drafts, split state, failed-write recovery, lease/revision checks and final-close persistence afterward. Confirm memory stabilizes for the fixed workload before making capacity claims.
+
+#### 4. Further changes only when those measurements justify them
+
+- [ ] Rank any remaining stalls or retention by measured cost before selecting another implementation.
+- [ ] Consider canonical Notes metadata caching, more compact history or smaller persistence commits only with evidence and explicit ownership/consistency/migration tests.
+- [ ] Revisit many retained expanded panels, camera/controller changes or filesystem concurrency only if traces identify them as meaningful costs. Capped execution logs/search remain lower priority unless the measurements change that ranking.
 
 ## Conclusion and limits
 
