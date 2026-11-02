@@ -45,11 +45,30 @@ Baseline browser reproduction on `4c9c7cf`: closing/reopening restored the old r
 
 ### Fourth pass: editor echo snapshots
 
+Committed as `d22a220`.
+
 The general JavaScript/HTML editor and SuiteQL editor now reuse their last emitted string when Vue echoes the model value back. Previously both called CodeMirror's full-document `toString()` again during the echo check. Genuine external updates still take the existing reconciliation path, and SuiteQL resets echo tracking when document identity changes. Emission stays immediate: this pass adds no debounce and changes no parsing, selection, history or composition behavior. File Cabinet already used this pattern.
 
 The instrumented browser fixture patches the actual installed CodeMirror `Text.toString()` and applies ten separately flushed document edits. On baseline `bdb5e4d`, both editors made 20 full-document serialization calls, at both roughly 1 KB and 500 KB document sizes. The candidate makes 10 calls and still emits 10 model updates. For the roughly 500 KB code document, serialized characters fell from 10,000,490 to 5,000,245; for SuiteQL, from 10,000,370 to 5,000,185. Results and fixture details are in `research/editor-serialization-results.json`. These counts do not establish a corresponding typing-latency or frame-rate improvement; one complete string is still emitted per document change.
 
 Validation: all 35 selected Playwright tests passed using `pnpm exec playwright test tests/editor-performance.spec.ts tests/query-performance.spec.ts tests/netsuite.spec.ts tests/editors.spec.ts --grep "editor|SuiteQL|SQL and undo|NetSuite views browse"`. Coverage includes actual browser composition input through Chromium's IME API, external replacements, parent normalization, immediate model updates, selection-only changes, undo/redo, independent document histories and existing editor/NetSuite workflows. `pnpm build` passes with existing warnings. The next performance work remains measured list rendering, document-level persistence/snapshot costs, and foreground/heap/soak validation; this pass does not establish 50-app capacity.
+
+### Fifth pass: large File Cabinet tables
+
+Measured both requested candidates before choosing the change. A 10,000-line Git diff creates 10,004 patch spans and 10,087 elements in its viewer. A File Cabinet root containing 5,000 folders creates 90,101 elements, including its unwindowed sidebar tree. A folder containing 5,000 files creates 65,148 elements, almost all in the table. File Cabinet's default table was therefore the first target; Git diff rendering, the grid, search-result lists and large sidebar trees remain separate work.
+
+Tables above 100 records now render the visible rows with overscan, spacer rows and full logical row indices. Keyboard navigation explicitly reveals unmounted records, and an active rename stays mounted when scrolled away. Row measurements account for overlapping table borders and canvas scale. A collapsed sizing row preserves intrinsic column widths using the complete dataset, including IDs and metadata outside the window. Filtering/sorting reset the window; split panes retain separate scroll state. Small tables and the grid retain their existing rendering. Bulk-selection lookup now uses a set rather than repeatedly scanning the selected-key array.
+
+Matching 1440×1000 browser fixtures on baseline `d22a220` versus this candidate:
+
+| Fixture | Baseline data rows / elements | Candidate data rows / elements |
+|---|---:|---:|
+| 5,000 root folders, sidebar included | 5,000 / 90,101 | 47 / 45,532 |
+| 5,000 files inside one folder | 5,000 / 65,148 | 47 / 767 |
+
+The file-table subtree itself drops from 65,012 to 631 elements. Column widths match the baseline, and total scroll height differs by one pixel (140,031 versus 140,030). A very wide root still retains about 45,000 sidebar elements; it is not a fully bounded view yet. Full record data remains loaded. Folder filtering, application search, selection and copy still operate on the complete record set; browser-native Find only sees mounted row text. Counts and fixtures are recorded in `research/large-lists-results.json`; these are DOM/layout diagnostics, not foreground timings, frame-rate measurements or heap results.
+
+Validation: all 15 Playwright tests across `large-lists`, `file-cabinet-windowing`, `netsuite` and `performance` passed. Checks cover first/last records, off-window keyboard navigation, full 5,000-item selection, shift ranges, clipboard, filtering, sort order, active rename focus, grid/list switching, split-pane scroll independence, resize/zoom, drafts and existing NetSuite/Notes workflows. Baseline/candidate screenshots were visually compared, including actual filename visibility and column alignment. The scoped design detector reported no findings. `pnpm build` passes with existing warnings. No production NetSuite mutations were used for the diagnostics.
 
 ## Conclusion and limits
 

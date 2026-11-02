@@ -1,0 +1,21 @@
+{
+  "date": "2026-11-02",
+  "baselineCommit": "d22a220",
+  "fixture": "tests/large-lists-harness.ts",
+  "method": "Playwright Chromium, 1440x1000 viewport, mounted real components with mocked read responses; before/after DOM counts and layout geometry. Matching-viewport baseline used a temporary copy of the committed File Cabinet component, removed after measurement.",
+  "context": "DOM/layout counts, not foreground timing, heap or frame-rate measurements",
+  "gitDiff": { "dataLines": 10000, "patchSpans": 10004, "viewerElements": 10087, "implementationChanged": false },
+  "rootFolders": {
+    "records": 5000,
+    "baseline": { "renderedDataRows": 5000, "viewerElements": 90101, "tableElements": 45012, "viewportHeight": 855, "scrollHeight": 140031 },
+    "candidate": { "renderedDataRows": 47, "viewerElements": 45532, "tableElements": 443, "viewportHeight": 855, "scrollHeight": 140030 },
+    "columnWidthsBeforeAndAfter": [558, 170.125, 136.59375, 218.765625, 156.515625],
+    "limitation": "Sidebar tree remains unwindowed"
+  },
+  "filesInFolder": {
+    "records": 5000,
+    "baseline": { "renderedDataRows": 5000, "viewerElements": 65148, "tableElements": 65012, "viewportHeight": 855, "scrollHeight": 140031 },
+    "candidate": { "renderedDataRows": 47, "viewerElements": 767, "tableElements": 631, "viewportHeight": 855, "scrollHeight": 140030 },
+    "columnWidthsBeforeAndAfter": [558, 208.453125, 174.359375, 174.40625, 124.78125]
+  }
+}

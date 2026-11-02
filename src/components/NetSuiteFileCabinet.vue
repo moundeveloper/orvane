@@ -4,6 +4,7 @@ import Icon from "./Icon.vue";
 import FileFolderTree from "./FileFolderTree.vue";
 import NetSuiteFileEditor from "./NetSuiteFileEditor.vue";
 import SplitTabs from "./SplitTabs.vue";
+import WindowedTableBody from "./WindowedTableBody.vue";
 import {
   addTab,
   closeTab,
@@ -424,8 +425,52 @@ const paneItems = computed(
   () => new Map(panes.value.map((p) => [p.id, itemsOf(p)])),
 );
 const items = computed(() => paneItems.value.get(current.value.id) ?? []);
+// One collapsed sizing row preserves intrinsic column widths for records
+// outside the rendered window. Names already use an ellipsized fixed column.
+const tableSizes = computed(() => {
+  const canvas = document.createElement("canvas").getContext("2d");
+  if (canvas)
+    canvas.font = `12px ${getComputedStyle(root.value ?? document.body).fontFamily}`;
+  const widths = new Map<string, number>();
+  const width = (text: string) => {
+    if (!widths.has(text))
+      widths.set(text, canvas?.measureText(text).width ?? text.length);
+    return widths.get(text)!;
+  };
+  return new Map(
+    [...paneItems.value].map(([id, list]) => {
+      const cells = ["", "", "", "", ""];
+      const maximum = [-1, -1, -1, -1, -1];
+      for (const item of list) {
+        const values = [
+          String(item.name),
+          item.type === "folder" ? "Folder" : String(item.filetype || "—"),
+          item.type === "folder"
+            ? folderSize(item.foldersize)
+            : fileSize(item.filesize),
+          String(item.lastmodifieddate || "—"),
+          String(item.id),
+        ];
+        values.forEach((value, index) => {
+          const size = index === 0 || index === 4 ? value.length : width(value);
+          if (size > maximum[index]!) {
+            maximum[index] = size;
+            cells[index] = value;
+          }
+        });
+      }
+      return [id, cells];
+    }),
+  );
+});
 function selectedOf(p: Pane, list = itemsOf(p)) {
-  return list.filter((i) => p.selected.includes(i.key));
+  const selected = new Set(p.selected);
+  return list.filter((i) => selected.has(i.key));
+}
+const tableBodies = new Map<string, { reveal: (key: string) => void }>();
+function setTableBody(id: string, body: unknown) {
+  if (body) tableBodies.set(id, body as { reveal: (key: string) => void });
+  else tableBodies.delete(id);
 }
 const selectedItems = computed(() => selectedOf(current.value, items.value));
 function sortBy(field: typeof sortField.value) {
@@ -818,6 +863,7 @@ function listKeys(event: KeyboardEvent) {
       target.selected = [next.key];
       target.anchor = next.key;
       showDetail(next);
+      tableBodies.get(target.id)?.reveal(next.key);
       void nextTick(() =>
         root.value
           ?.querySelector(`[data-pane="${target.id}"] [data-key="${next.key}"]`)
@@ -2118,7 +2164,7 @@ onBeforeUnmount(() => {
                 }}</small>
               </div>
             </template>
-            <table v-else class="fc-table">
+            <table v-else class="fc-table" :aria-rowcount="list.length + 1">
               <thead>
                 <tr>
                   <th
@@ -2150,11 +2196,25 @@ onBeforeUnmount(() => {
                   <th class="fc-th-id">ID</th>
                 </tr>
               </thead>
-              <tbody>
+              <WindowedTableBody
+                :ref="body => setTableBody(p.id, body)"
+                :items="list"
+                :columns="5"
+                :pinned-key="renaming"
+                :reset-key="JSON.stringify([p.path.map(part => part.id), p.filter, sortField, sortDir])"
+              >
+                <template #sizing>
+                  <td />
+                  <td>{{ tableSizes.get(p.id)?.[1] }}</td>
+                  <td>{{ tableSizes.get(p.id)?.[2] }}</td>
+                  <td>{{ tableSizes.get(p.id)?.[3] }}</td>
+                  <td class="fc-td-id">{{ tableSizes.get(p.id)?.[4] }}</td>
+                </template>
+                <template #default="{ item, index }">
                 <tr
-                  v-for="item in list"
                   :key="item.key"
                   :data-key="item.key"
+                  :aria-rowindex="index + 2"
                   class="fc-item"
                   :aria-label="item.name"
                   :aria-selected="p.selected.includes(item.key)"
@@ -2198,7 +2258,8 @@ onBeforeUnmount(() => {
                   <td>{{ item.lastmodifieddate || "—" }}</td>
                   <td class="fc-td-id">{{ item.id }}</td>
                 </tr>
-              </tbody>
+                </template>
+              </WindowedTableBody>
             </table>
           </div>
           <div class="fc-status">
