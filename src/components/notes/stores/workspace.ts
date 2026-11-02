@@ -76,11 +76,27 @@ const createWorkspaceDefinition = (id: string) =>
       currentPage(state): Page | null {
         return state.pages.find((p) => p.id === state.currentPageId) ?? null;
       },
+      childrenByParent(): Map<string | null, Page[]> {
+        // Every visible tree item asks whether it has children. Group once
+        // per membership/parent/order change instead of scanning all pages
+        // for every item. Records remain editable and owned by this store.
+        const groups = new Map<string | null, Page[]>();
+        for (const page of this.activePages) {
+          const parentId = page.parentId;
+          let group = groups.get(parentId);
+          if (!group) groups.set(parentId, (group = []));
+          group.push(page);
+        }
+        for (const group of groups.values())
+          group.sort((a, b) => a.position - b.position);
+        return groups;
+      },
       childrenOf() {
-        return (parentId: string | null): Page[] =>
-          sortByPosition(
-            this.activePages.filter((p) => p.parentId === parentId),
-          );
+        // Keep the existing fresh-array contract for callers that rearrange
+        // their own list; changing that list must not corrupt the index.
+        return (parentId: string | null): Page[] => [
+          ...(this.childrenByParent.get(parentId) ?? []),
+        ];
       },
       breadcrumb(state): Page[] {
         const chain: Page[] = [];

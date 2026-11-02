@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-02",
+  "baselineCommit": "805bbc8",
+  "diagnostic": "node --import tsx research/notes-metadata.ts",
+  "method": "Actual owned Pinia Notes stores, instrumented parentId accessors; sidebar-style root and child-presence lookups over 12 stores with 500 root pages each, repeated twice, then once after renaming a page in each store.",
+  "baseline": {
+    "views": 12,
+    "pagesPerView": 500,
+    "lookups": 12024,
+    "children": 12000,
+    "initialParentReads": 6012000,
+    "parentReadsAfterRename": 3006000
+  },
+  "candidate": {
+    "views": 12,
+    "pagesPerView": 500,
+    "lookups": 12024,
+    "children": 12000,
+    "initialParentReads": 6000,
+    "parentReadsAfterRename": 0
+  },
+  "context": "Deterministic getter field-access counts, not UI timing, heap measurements or a measured 50-app workload.",
+  "limits": [
+    "Each store still owns separate editable page metadata and document state.",
+    "Indexing stores references to existing records, groups and sorted arrays; it does not bound metadata memory.",
+    "childrenOf still copies its matching result array, preserving the existing caller contract.",
+    "Membership, parent, ordering and trash changes can rebuild the index; sibling sorting still costs work.",
+    "Canonical shared metadata, persistence migrations and further caching are deferred pending representative foreground traces."
+  ]
+}

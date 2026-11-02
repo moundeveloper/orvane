@@ -160,6 +160,8 @@ Validation: seven unit checks and 23 browser checks pass across query ownership,
 
 ### Thirteenth pass: large deployment lists in expanded Scripts panels
 
+Committed as `805bbc8`.
+
 The actual Scripts component with mocked deployment reads was measured at 20 expanded scripts with 1,000 deployments each. Baseline `cd51d8c` mounted 20,000 deployment rows and 60,381 viewer elements. The candidate mounts 2,000 rows and 6,481 elements, with the same 20 deployment requests. These are synthetic DOM counts, not foreground timings, real account workload frequencies or heap measurements. Raw diagnostics are in `research/script-deployments-results.json`.
 
 Deployment responses remain complete in memory, but panels show at most 100 deployment rows at a time. Larger lists have Previous/Next controls and an announced visible range; lists of 100 or fewer keep every row and omit paging controls. Every fetched deployment remains reachable and opens its original record ID. Browser-native Find sees only the current deployment page. Paging is local and makes no additional requests; it does not change the bridge's response limits or promise that upstream responses include every account record.
@@ -170,11 +172,21 @@ Script and deployment row snapshots use shallow refs after auditing their read-o
 
 Validation: all 16 browser checks pass across `scripts-deployments`, `scripts-windowing` and `netsuite`, followed by all four deployment checks again after adjusting narrow paging layout. Coverage includes complete 210-row page traversal, last-page record actions, keyboard navigation and exit, empty/100/101-row boundaries, independent panel state, logs, sorting, reload, resize/zoom, existing preview/clipboard/edit actions, scroll anchoring, environment changes and request failures. `pnpm build` passes with the existing Vite warnings. The narrow paging layout was visually reviewed; the scoped design detector reports no findings.
 
+### Fourteenth pass: Notes page-tree metadata indexing
+
+Profiling the actual owned Notes stores identified repeated full-page scans in `childrenOf()`. The sidebar asks for root pages, then each visible tree item asks whether it has children, including collapsed items. With 12 stores and 500 root pages each, two sidebar-style lookup passes performed 12,024 lookups and read `parentId` 6,012,000 times on baseline `805bbc8`. Another pass after a title edit in each store read it 3,006,000 times. The candidate returns the same page counts with 6,000 initial parent-field reads and zero additional parent-field reads after those renames. These deterministic operation counts are not measured UI latency or heap savings. Reproduce with `node --import tsx research/notes-metadata.ts`; raw counts are in `research/notes-metadata-results.json`.
+
+A computed index groups active pages by parent and sorts each sibling group once, with invalidation driven by membership, parent, ordering and trash state. Title/icon/favorite/timestamp edits retain the index and expose their changed values through the existing reactive records. `childrenOf()` still returns a fresh array containing editable, store-owned Page records, preserving caller isolation when rearranging the returned list. Separate views retain independent metadata, navigation and undo state; no canonical shared editable cache or persistence protocol was introduced.
+
+Index construction and sibling sorting still cost work after structural changes. Matching children are still copied per lookup, and each store retains its own metadata and index references. Full shared metadata ownership, smaller persistence commits and schema migrations remain conditional on representative foreground traces, rather than implied by these field-access counts.
+
+Validation: all 17 unit/service checks pass across `notes-metadata`, `notes-snapshots` and `performance`, including cache reuse, equal-position stability, direct parent/order/trash edits, insertion/removal/replacement, detached child arrays, editable record identity, independent stores and disposal. All eight browser checks pass across `notes`, `notes-snapshots` and `performance`, covering existing Notes UI/MCP/database workflows, durable edits and undo/redo, multi-view synchronization, read/write barriers, failures/recovery, SQLite atomicity and existing lazy-view/splitter workflows. `pnpm build` passes, including Vue/TypeScript checking, with the existing Vite warnings. No UI markup or styles changed.
+
 ### Remaining work, in current order
 
-1. Profile remaining Notes metadata/cache and persistence costs with representative workloads. Apply further canonical caching or smaller persistence commits only if measurements warrant their consistency/migration costs.
-2. Run foreground Electron/browser comparative traces, first-use latency checks, heap/open-close profiling and the 30-minute mixed 50-app soak. These remain the main validation gap for the cumulative optimizations.
-3. Use those traces to decide whether many retained expanded panels, camera/controller work or filesystem concurrency need further changes. Capped execution logs/search remain lower priority unless representative evidence changes that ranking.
+1. Run foreground Electron/browser comparative traces and first-use latency checks. These remain the main evidence gap for the cumulative optimizations.
+2. Capture heap/open-close behavior and run the 30-minute mixed 50-app soak, including realistic page counts, documents, query outputs, deployment panels and terminal views.
+3. Use those traces to decide whether further Notes caching/persistence work, many retained expanded panels, camera/controller work or filesystem concurrency need changes. Capped execution logs/search remain lower priority unless representative evidence changes that ranking.
 
 ## Conclusion and limits
 
