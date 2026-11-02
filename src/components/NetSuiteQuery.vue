@@ -17,6 +17,7 @@ import type { SuiteQLTracePlan } from "../suiteqlTrace";
 import Icon from "./Icon.vue";
 import type { Block } from "../model";
 import { uid } from "../model";
+import { QueryOutputCache } from "../queryOutputs";
 
 defineOptions({ name: "NetSuiteQuery" });
 type Row = Record<string, any>;
@@ -83,8 +84,11 @@ watch(
 );
 watch(
   () => files.value.map((f) => f.id),
-  (ids) => {
+  (ids, previous) => {
     // Another view may have deleted a query this one has open.
+    for (const id of previous) {
+      if (!ids.includes(id)) suiteqlEditor.value?.forget(id);
+    }
     if (!ids.length) return;
     const open = openQueryTabs.value.filter((id) => ids.includes(id));
     if (open.length !== openQueryTabs.value.length)
@@ -111,18 +115,23 @@ const currentFile = computed(() =>
 const busy = ref(false),
   error = ref(""),
   active = ref(true);
-const savedResults = new Map<
-  string,
-  {
-    rows: Row[];
-    total: number;
-    offset: number;
-    sql: string;
-    hasResult: boolean;
-    limit: number | null;
-  }
->();
-const traceResults = new Map<string, SuiteQLTracePlan>();
+const outputs = new QueryOutputCache<{
+  rows: Row[];
+  total: number;
+  offset: number;
+  sql: string;
+  hasResult: boolean;
+  limit: number | null;
+  trace: SuiteQLTracePlan | null;
+}>();
+watch(
+  () => {
+    const ids = new Set(files.value.map((file) => file.id));
+    return openQueryTabs.value.filter((id) => ids.has(id));
+  },
+  (ids) => outputs.retain(ids),
+  { immediate: true, flush: "sync" },
+);
 const suiteqlEditor = ref<InstanceType<typeof SuiteQLEditor>>(),
   queryMain = ref<HTMLElement>(),
   queryEditorHeight = ref<number>();
@@ -260,6 +269,13 @@ const visibleRows = computed(() => {
     after: (all.length - end) * height,
   };
 });
+watch(results, (rows) => {
+  if (rows.length) return;
+  // Lazy computed values can otherwise retain their last row snapshot while
+  // the empty-state template stops reading them after a close or clear.
+  void filteredResults.value;
+  void visibleRows.value;
+}, { flush: "sync" });
 function sortResults(col: string) {
   if (sortColumn.value === col) sortDescending.value = !sortDescending.value;
   else {
@@ -371,12 +387,13 @@ function clearResults() {
   hasResult.value = false;
   results.value = [];
   total.value = 0;
-  savedResults.delete(activeFile.value);
+  outputs.delete(activeFile.value);
 }
 const columns = computed(() =>
   Array.from(new Set(results.value.flatMap((row) => Object.keys(row)))),
 );
 let generation = 0;
+let disposed = false;
 async function call(
   operation: string,
   args: Record<string, unknown> = {},
@@ -406,17 +423,18 @@ async function runTrace() {
   busy.value = true;
   error.value = "";
   bottomTab.value = "trace";
+  const ownsRequest = () =>
+    !disposed &&
+    generation === request &&
+    props.environment === environment &&
+    activeFile.value === file;
   try {
     const { createSuiteQLTracePlan } = await import("../suiteqlTrace");
+    if (!ownsRequest()) return;
     const plan = createSuiteQLTracePlan(sql);
     tracePlan.value = plan;
     for (const stage of plan.stages) {
-      if (
-        generation !== request ||
-        props.environment !== environment ||
-        activeFile.value !== file
-      )
-        return;
+      if (!ownsRequest()) return;
       if (!stage.executable) continue;
       stage.status = "running";
       try {
@@ -424,6 +442,7 @@ async function runTrace() {
           sql: stage.sql,
           offset: 0,
         });
+        if (!ownsRequest()) return;
         stage.rows = rows(data.rows).slice(
           0,
           stage.kind === "final" ? 100 : 25,
@@ -432,6 +451,7 @@ async function runTrace() {
         stage.rowCount = Number(data.totalCount ?? stage.rows.length);
         stage.status = "success";
       } catch (e) {
+        if (!ownsRequest()) return;
         stage.status = "error";
         stage.error = message(e);
       }
@@ -443,12 +463,21 @@ async function runTrace() {
   }
 }
 async function runQuery(page?: number) {
+  const request = generation,
+    file = activeFile.value,
+    environment = props.environment;
   bottomTab.value = "results";
   const query = page === undefined ? currentFile.value.sql : executedSql.value;
   const limit = page === undefined ? queryLimit.value : executedLimit.value;
   const requestedOffset = page ?? 0;
   const data = await call("query", { sql: query, offset: requestedOffset });
-  if (data) {
+  if (
+    data &&
+    !disposed &&
+    generation === request &&
+    activeFile.value === file &&
+    props.environment === environment
+  ) {
     executedSql.value = query;
     executedLimit.value = limit;
     results.value = rows(data.rows).slice(
@@ -474,8 +503,7 @@ function removeQuery() {
   openQueryTabs.value = openQueryTabs.value.filter((item) => item !== id);
   if (!openQueryTabs.value.length) openQueryTabs.value.push(files.value[0]!.id);
   activeFile.value = openQueryTabs.value[0]!;
-  savedResults.delete(id);
-  traceResults.delete(id);
+  outputs.delete(id);
 }
 function csvText() {
   const escape = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
@@ -501,8 +529,7 @@ watch(
   () => {
     generation++;
     error.value = "";
-    savedResults.clear();
-    traceResults.clear();
+    outputs.clear();
     tracePlan.value = null;
     bottomTab.value = "results";
     results.value = [];
@@ -518,24 +545,19 @@ watch(
   activeFile,
   (id, previous) => {
     generation++;
-    if (
-      previous &&
-      tracePlan.value &&
-      files.value.some((f) => f.id === previous)
-    )
-      traceResults.set(previous, tracePlan.value);
-    tracePlan.value = traceResults.get(id) || null;
-    bottomTab.value = "results";
-    if (previous && files.value.some((f) => f.id === previous))
-      savedResults.set(previous, {
+    if (previous && (hasResult.value || tracePlan.value))
+      outputs.save(previous, {
         rows: results.value,
         total: total.value,
         offset: offset.value,
         sql: executedSql.value,
         hasResult: hasResult.value,
         limit: executedLimit.value,
+        trace: tracePlan.value,
       });
-    const saved = savedResults.get(id);
+    const saved = outputs.take(id);
+    tracePlan.value = saved?.trace ?? null;
+    bottomTab.value = "results";
     results.value = saved?.rows || [];
     total.value = saved?.total || 0;
     offset.value = saved?.offset || 0;
@@ -549,6 +571,13 @@ watch(
 );
 onActivated(() => (active.value = true));
 onDeactivated(() => (active.value = false));
+onBeforeUnmount(() => {
+  disposed = true;
+  generation++;
+  outputs.clear();
+  tracePlan.value = null;
+  results.value = [];
+});
 </script>
 <template>
   <div class="ns-query-view">

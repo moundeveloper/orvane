@@ -347,6 +347,12 @@ test("NetSuite views browse data and save queries", async ({ page }) => {
   await expect(editor).toHaveText("SELECT id FROM customer");
   await editor.click();
   await page.keyboard.press("Control+z");
+  // Undo belongs to Customers even after switching files. Its original SQL
+  // predates the replacement above; the other tab's edit stays independent.
+  await expect(editor).toHaveText(
+    "SELECT id, entityid FROM customer WHERE ROWNUM <= 20",
+  );
+  await page.keyboard.press("Control+y");
   await expect(editor).toHaveText("SELECT id FROM customer");
   await page.keyboard.press("Control+End");
   await page.keyboard.type(" WHERE entit");

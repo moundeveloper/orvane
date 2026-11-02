@@ -18,6 +18,7 @@ const language = new Compartment(),
 // One state per query file keeps undo history, selection and scroll separate,
 // like Magic NetSuite's one-editor-per-tab layout.
 const states = new Map<string, { state: EditorState; scroll: number }>();
+let forgottenDoc: string | undefined;
 const languageFor = (schema?: Record<string, string[]>) =>
   sql({
     schema: schema || {},
@@ -88,16 +89,28 @@ onMounted(() => {
   });
 });
 watch(
-  () => props.docId,
-  (id, previous) => {
+  () => [props.docId, props.modelValue] as const,
+  ([id, value], [previous]) => {
     if (!editor) return;
-    if (previous !== undefined)
+    // Process identity and text together: a text watcher must not replace the
+    // outgoing document before its state (including undo) has been saved.
+    if (id === previous) {
+      if (editor.state.doc.toString() !== value)
+        editor.dispatch({
+          changes: { from: 0, to: editor.state.doc.length, insert: value },
+          annotations: Transaction.addToHistory.of(false),
+        });
+      return;
+    }
+    if (previous !== undefined && previous !== forgottenDoc)
       states.set(previous, {
         state: editor.state,
         scroll: editor.scrollDOM.scrollTop,
       });
+    forgottenDoc = undefined;
     const saved = id === undefined ? undefined : states.get(id);
-    if (saved && saved.state.doc.toString() === props.modelValue) {
+    if (id !== undefined) states.delete(id);
+    if (saved && saved.state.doc.toString() === value) {
       editor.setState(saved.state);
       // Settings may have changed while this file was in the background.
       editor.dispatch({
@@ -107,17 +120,7 @@ watch(
         ],
       });
       editor.scrollDOM.scrollTop = saved.scroll;
-    } else editor.setState(createState(props.modelValue));
-  },
-);
-watch(
-  () => props.modelValue,
-  (value) => {
-    if (editor && editor.state.doc.toString() !== value)
-      editor.dispatch({
-        changes: { from: 0, to: editor.state.doc.length, insert: value },
-        annotations: Transaction.addToHistory.of(false),
-      });
+    } else editor.setState(createState(value));
   },
 );
 watch(
@@ -130,7 +133,10 @@ watch(
   (readonly) =>
     editor?.dispatch({ effects: access.reconfigure(accessFor(!!readonly)) }),
 );
-onBeforeUnmount(() => editor?.destroy());
+onBeforeUnmount(() => {
+  states.clear();
+  editor?.destroy();
+});
 defineExpose({
   insert(text: string) {
     if (!editor) return;
@@ -146,6 +152,8 @@ defineExpose({
   },
   forget(id: string) {
     states.delete(id);
+    // A pending docId watcher must not save the deleted active document back.
+    if (id === props.docId) forgottenDoc = id;
   },
 });
 </script>

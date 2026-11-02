@@ -17,9 +17,11 @@ Validation:
 - 37 distinct Playwright tests passed across `notes`, `netsuite`, `git`, `projects`, `recovery`, `storage-fallback`, `workspace`, `zoom-groups` and the new `performance` suite. Targeted checks cover both split halves, deferred hidden files, one persistence update for a 20-step drag, cancellation/blur, retained query editors, multi-view Notes edits, independent undo/redo, close/reopen and deletion from another view.
 - `pnpm build` passes, including Vue/TypeScript checking. Existing Vite configuration, mixed import and bundle-size warnings remain.
 
-Still pending: real foreground Electron/browser comparative traces, first-selection latency measurements, heap snapshots and the 30-minute mixed 50-app soak. The 100-cycle automated check counts Pinia entries; it does not measure heap stabilization. Whole-document undo changes, long-lived canonical metadata caches, per-app database commits, query-result eviction, additional list/editor changes and camera work remain subject to the profiling/policy/migration gates in this plan. No 50-app smoothness or memory guarantee is established by the functional checks.
+Still pending: real foreground Electron/browser comparative traces, first-selection latency measurements, heap snapshots and the 30-minute mixed 50-app soak. The 100-cycle automated check counts Pinia entries; it does not measure heap stabilization. Whole-document undo changes, long-lived canonical metadata caches, per-app database commits, byte limits for open query results, additional list/editor changes and camera work remain subject to the profiling/policy/migration gates in this plan. No 50-app smoothness or memory guarantee is established by the functional checks.
 
 ### Second pass: lazy Projects terminals
+
+Committed as `4c9c7cf`. The user subsequently reported smoother interaction; this is qualitative feedback, not a comparative timing result.
 
 Projects now restores terminal tab metadata without constructing an xterm for each tab. Only the selected, open, measurable host initializes. Previously selected terminals retain their instances, input, history, buffers and pending command output across tab switches and hide/show. Restoring a closed panel keeps it closed and initializes no terminals until it is shown. Commands still execute exclusively through the existing callback.
 
@@ -28,6 +30,16 @@ Fit requests share one animation-frame callback, resolve the latest selected tab
 Controlled browser fixture: 50 saved terminal tabs, one selected, a stable visible panel. Before this pass (`cbcfea8`), restoration created 50 xterm instances and invoked fit 103 times. The candidate created 1 instance and invoked fit 2 times. A restored closed panel created 0 instances and made 0 fit calls; five new tabs added in one update initialized only the final selection and invoked fit once. These are work/allocation counts, not timing, heap or foreground Electron measurements. Recorded fixture results are in `research/terminal-startup-results.json`.
 
 Validation: `pnpm exec playwright test tests/terminal-performance.spec.ts tests/projects.spec.ts` passed all 6 tests, covering restoration, lazy selection, closing initialized/uninitialized tabs, hidden command output, unfinished input, history, hide/show, fit coalescing, teardown and existing Projects backend/MCP behavior. `pnpm build` passes with the existing warnings. First-use latency and retained memory after many terminals have actually been visited still need foreground/heap profiling.
+
+### Third pass: SuiteQL output ownership
+
+Closing a SuiteQL tab now evicts its recomputable results and execution trace. Open inactive tabs retain their output, and activation transfers the snapshot back to the displayed view rather than keeping a second cached reference. Membership checks prevent a closing/deleted tab's transition from putting output back into the cache. Emptying displayed results also refreshes the lazy derived row snapshots, and unmounting invalidates pending work and clears output references.
+
+The retention policy is no cached output for closed tabs. Reopening retains SQL text and editor undo/redo, displays the existing run/trace prompts and executes nothing automatically. Output for open tabs has no new byte cap; a measured budget for that workload remains future work. No history or editable SQL is evicted to meet a memory target.
+
+Editor identity and text changes now run through one transition so a new file's text cannot overwrite the outgoing undo state before it is saved. Deleted files are forgotten in both local and cross-view deletion paths, including a pending document switch. Late query/trace responses after deletion, environment change or unmount are ignored.
+
+Baseline browser reproduction on `4c9c7cf`: closing/reopening restored the old result without another query. Candidate tests require the result and trace to be absent until an explicit rerun. `node --import tsx --test research/query-outputs.test.ts` passes 3 ownership checks, including pruning 50 stored outputs to zero, rejecting late saves and transferring active output without cloning. All 16 distinct browser tests across `tests/query-performance.spec.ts` and `tests/netsuite.spec.ts` passed, including a rerun of the updated end-to-end undo check. Coverage includes open/closed results and traces, SQL undo/redo, local/remote deletion, late response ownership, query execution, pagination, CSV and editor behavior. `pnpm build` passes with existing warnings. These are correctness and ownership checks, not heap or frame-rate measurements.
 
 ## Conclusion and limits
 
