@@ -1,0 +1,56 @@
+diff --git a/src/App.vue b/src/App.vue
+index f11ae08..8157b21 100644
+--- a/src/App.vue
++++ b/src/App.vue
+@@ -216,6 +216,20 @@ const apps = computed(() =>
+ const active = ref(""),
+   camera = reactive({ x: 0, y: 0, zoom: 1 }),
+   movingCamera = ref(false);
++// Cache overview painting only at its settled scale; discard before zooming so
++// returning to an editor never stretches a low-resolution overview texture.
++const overviewPaintCache = ref(false);
++let overviewSettle: ReturnType<typeof setTimeout> | undefined;
++watch(
++  () => camera.zoom,
++  () => {
++    overviewPaintCache.value = false;
++    clearTimeout(overviewSettle);
++    if (camera.zoom <= 0.5)
++      overviewSettle = setTimeout(() => (overviewPaintCache.value = true), 180);
++  },
++  { flush: "sync" },
++);
+ // Front-to-back order: each app activated moves to the top of the stack;
+ // the rest keep their relative order.
+ const stack = ref<string[]>([]);
+@@ -288,6 +302,7 @@ watch(
+   },
+ );
+ onBeforeUnmount(() => {
++  clearTimeout(overviewSettle);
+   clearTimeout(cameraSettle);
+   cancelAnimationFrame(cameraFrame);
+ });
+@@ -2317,7 +2332,7 @@ onBeforeUnmount(() => {
+       class="canvas-plane"
+       v-show="ready"
+       :inert="!canEdit || importBusy"
+-      :class="{ 'camera-moving': movingCamera }"
++      :class="{ 'camera-moving': movingCamera, 'overview-paint-cache': overviewPaintCache }"
+       :style="{
+         transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})`,
+       }"
+diff --git a/src/style.css b/src/style.css
+index 5c9b12d..1a05fd8 100644
+--- a/src/style.css
++++ b/src/style.css
+@@ -238,6 +238,9 @@ button:hover {
+   height: 0;
+   transform-origin: 0 0;
+ }
++.canvas-plane.overview-paint-cache > .canvas-app {
++  transform: translateZ(0);
++}
+ .topbar {
+   position: absolute;
+   left: 22px;

@@ -363,6 +363,26 @@ async function run(
         .waitFor({ state: "detached" });
       await afterPaint(page);
     }
+    // Identical quiet period for both variants. Native process snapshots and
+    // diagnostic DOM mapping stay outside the comparative timing window.
+    await page.waitForTimeout(250);
+    const resourcesBefore = await desktop?.resources();
+    let paintNodes: any[] | undefined;
+    if (diagnostic) {
+      const { root } = await cdp.send("DOM.getDocument", { depth: -1 });
+      paintNodes = [];
+      const visit = (node: any) => {
+        const attrs = node.attributes ?? [];
+        const appIndex = attrs.indexOf("data-app-id");
+        if (appIndex >= 0)
+          paintNodes!.push({
+            backendNodeId: node.backendNodeId,
+            app: attrs[appIndex + 1],
+          });
+        for (const child of node.children ?? []) visit(child);
+      };
+      visit(root);
+    }
     const view = await page.evaluate(() => ({
       width: innerWidth,
       height: innerHeight,
@@ -544,6 +564,9 @@ async function run(
       runtime,
       appCount,
       cameraMode,
+      resourcesBefore,
+      resourcesAfter: await desktop?.resources(),
+      paintNodes,
       view,
       electron: desktop?.metadata,
       nativeIPC: desktop ? await desktop.validate() : undefined,

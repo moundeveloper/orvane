@@ -311,16 +311,37 @@ All four runs passed fixture counts, foreground/visibility checks and persisted 
 
 Evidence: `research/overview-cache-results.json`, committed original-resolution screenshots `research/overview-cache-baseline.png` / `research/overview-cache-candidate.png`, and the **unapplied, rejected** `research/overview-paint-cache.patch`. Raw run and traces: `artifacts/performance/foreground/2026-11-03T09-49-55-369Z`. To reproduce on a clean checkout: apply the research patch, set `ORVANE_FOREGROUND_RUNTIME=electron`, `ORVANE_FOREGROUND_EXPERIMENT=overview`, `ORVANE_FOREGROUND_MATRIX=0`, `ORVANE_FOREGROUND_MODES=overview`, `ORVANE_FOREGROUND_REPETITIONS=1`, and run `node node_modules/tsx/dist/cli.mjs research/foreground.ts`. Remove the experimental patch after inspection; it is not a recommended production setting.
 
+### Nineteenth pass: app-level paint and raster isolation
+
+Three controlled screening experiments used the same settled-overview activation as the rejected eighteenth-pass candidate: plane `will-change: opacity`, app-level `will-change: opacity`, and app-level `transform: translateZ(0)`. All three are **rejected and reverted**. Each has one untraced native pair and one separate diagnostic pair against production `18a3261`, at 20% zoom with 50 mounted / 42 intersecting apps. These are screening results, not five-pair acceptance or stable speedup estimates.
+
+| Candidate | Untraced continuous callback median, baseline → candidate | Diagnostic Paint events | Diagnostic RasterTask events |
+|---|---:|---:|---:|
+| Plane opacity hint | 50.0 → 66.6 ms | 2,259 → 2,261 | 4,324 → 4,408 |
+| App opacity hint | 50.1 → 50.2 ms | 2,261 → 2,259 | 4,345 → 4,446 |
+| App translate-only layer | 50.0 → 50.0 ms | 2,259 → 246 | 4,326 → 4,507 |
+
+The opacity hints did not avoid repeated painting. Translate-only app layers reduced Paint event aggregates from 2,734.3 to 668.6 ms, but raster aggregates were 772.2 → 855.7 ms and the untraced callback median did not improve. No Layout events occurred in these continuous-pan trace phases. Paint can nest and raster threads overlap; these sums are not exclusive CPU or wall time. Reducing Paint events alone is insufficient evidence to ship this change.
+
+The diagnostic harness now maps trace paint nodes to app IDs using CDP backend node IDs. In the translate trial's baseline, the largest individual attributed app events were a Projects surface and Git surfaces; Notes also contribute substantial aggregate work. Visible area and complexity differ, so this is not a per-app-type benchmark. Unmapped child paint nodes remain labeled by node name. The LayerTree probe returned no usable snapshots on this Electron path, so layer counts and actual raster scales remain unestablished.
+
+The app-translate screenshot preserves sharp overview text in visual review; Notes crop `[48,76,231,190]` and Git crop `[750,550,965,669]` are pixel-identical to their paired baseline. This is a limited visual check, not exhaustive interaction/zoom restoration validation. All 12 native runs passed foreground/visibility, fixture-count and persisted Notes assertions, with zero rejected focus attempts. Screening stopped before five-pair acceptance, normal-zoom restoration, interaction and soak validation. Production App.vue and style.css remain byte-for-byte unchanged, and `pnpm build` passes with existing warnings.
+
+Native before/after process-memory snapshots are now captured outside the timing window. They retain each process separately and distinguish working set, peak working set and private bytes. Electron reports these fields in [kilobytes](https://www.electronjs.org/docs/latest/api/structures/memory-info); working sets can share pages and should not be summed as physical RAM. These snapshots do not measure heap retention, GPU texture allocations or stabilization.
+
+Evidence: `research/overview-layer-results.json` contains source hashes, all screening/diagnostic samples, process snapshots and paint attribution. Original-resolution app-translate screenshots are `research/overview-app-layer-baseline.png` and `research/overview-app-layer-candidate.png`; `research/overview-app-layer.patch` is an **unapplied rejected experiment**. Reproduce it using the eighteenth-pass command with that patch. The report records the exact CSS substitutions for the two opacity trials. Raw artifacts are `artifacts/performance/foreground/2026-11-03T09-56-23-313Z`, `2026-11-03T09-58-32-048Z` and `2026-11-03T10-01-04-375Z`.
+
 ### Remaining work, in current order
 
-Status after the eighteenth pass: the native matrix and deferred-view checks are complete; the first overview cache candidate was rejected for softened text. Overview painting/rasterization remains the next measured performance priority. Heap/lifecycle profiling and the 30-minute soak remain unfinished; no general 50-app capacity guarantee is established.
+Status after the nineteenth pass: the native matrix and deferred-view checks are complete. Whole-plane transform caching softened text; opacity hints did not reduce painting; app translate-only layers reduced Paint events without improving the screening pan median. All overview candidates are reverted. Overview painting/rasterization remains the next measured performance priority. Heap/lifecycle profiling and the 30-minute soak remain unfinished; no general 50-app capacity guarantee is established.
 
 #### 1. Next: overview paint/raster cost and richer foreground workload
 
 - [ ] Isolate overview paint, raster and compositing work with the native traces. Compare visible-app count, document complexity and text/graphics content before choosing one candidate change; current evidence points beyond pan-boundary style invalidation.
 - [x] Add a post-cursor baseline: the `overview` experiment compares App.vue and style.css against `18a3261`, with source hashes. Extend its source overrides if a future candidate changes additional files; the older `pan` experiment still uses `c5d47d0`.
 - [x] Screen a settled overview canvas-plane compositor hint; reject and revert it because it softens text despite reducing paint/raster work. Preserve the patch and screenshots as rejected evidence.
-- [ ] Next, isolate layer raster scale and content-density costs (Notes text versus tables/editors) before choosing another paint candidate. Avoid repeating whole-plane promotion without demonstrating unchanged text sharpness.
+- [x] Map paint events to app owners and capture native process-memory snapshots outside timing. Screen plane/app opacity hints and app translate-only layers; reject them because no continuous-pan improvement was established.
+- [ ] Next, isolate raster invalidation/damage bounds and backdrop dependencies, then compare Notes text, Git views, tables and terminal content at controlled visible areas. Actual layer raster scales are still unknown; the native LayerTree probe returned no usable data. Avoid further promotion changes without evidence of reduced raster work, unchanged text and an untraced timing benefit.
 - [ ] Preserve header blur, text sharpness, pointer hit testing, selection, drafts and editor/terminal state. Run five alternating native pairs plus separate diagnostic/visual checks before keeping an overview candidate.
 - [ ] Add retained query outputs, many expanded Script/deployment panels, large file lists/diffs, larger Notes documents/history and sustained controlled terminal updates during comparative pan/zoom runs. Current first-use checks exercise only a subset of these states after the pan samples.
 - [ ] Validate representative live read-only NetSuite/processing-window behavior separately from the fixed-response frontend fixture. Keep account mutations and user repositories out of synthetic benchmark runs.

@@ -196,6 +196,13 @@ export async function launchElectronFixture(
           ),
         );
       },
+      async resources() {
+        // Electron MemoryInfo reports kilobytes. Keep processes separate:
+        // working sets can include shared pages and are not additive RAM use.
+        return application.evaluate(({ app }) =>
+          app.getAppMetrics().map(({ type, memory }) => ({ type, memory })),
+        );
+      },
       async validate() {
         const state = await application.evaluate(({ BrowserWindow }) => {
           const window = BrowserWindow.getAllWindows()[0]!;
