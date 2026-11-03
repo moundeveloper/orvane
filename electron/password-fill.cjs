@@ -1,8 +1,9 @@
 // Runs in every Browser page (sandboxed, in an isolated world that page
 // scripts can't see): finds login forms, offers saved logins when the user
 // clicks or tabs into one, and reports submitted logins so Orvane can offer
-// to save them. The main process decides which logins a page may get from
-// the page's real origin; nothing here is trusted for that.
+// to save them. On NetSuite login pages it also asks for an auto sign-in
+// and submits the form once. The main process decides which logins a page
+// may get from the page's real origin; nothing here is trusted for that.
 const { ipcRenderer } = require("electron");
 
 if (window.top === window) {
@@ -204,6 +205,8 @@ if (window.top === window) {
    * (a "show password" toggle changes its type but keeps it). */
   let submitted;
   function capture(scope) {
+    // Orvane's own auto sign-in: the login is saved already.
+    if (autoSubmitting) return;
     const passwords = passwordFields(scope || document).filter((el) => el.value);
     if (!passwords.length) {
       const fields = loginFields();
@@ -241,6 +244,46 @@ if (window.top === window) {
     true,
   );
 
+  // ---- NetSuite auto sign-in: asked once per page; the main process
+  // answers only on genuine NetSuite login pages it covers, and only once
+  // per tab until a sign-in works (a login page coming back stops it) ----
+  const netSuite =
+    location.protocol === "https:" && /(^|\.)netsuite\.com$/i.test(location.hostname);
+  const loginFlow = () => /^\/app\/login\//i.test(location.pathname);
+  let autoAsked = false,
+    autoSubmitting = false,
+    challengeSent = false;
+  async function autoLogin(fields) {
+    autoAsked = true;
+    const login = await ipcRenderer.invoke("orvane:pw-auto").catch(() => undefined);
+    if (!login || !fields.username.isConnected || !fields.password.isConnected) return;
+    setValue(fields.username, login.username);
+    setValue(fields.password, login.password);
+    filled = fields.password;
+    const form = fields.password.form;
+    const submit =
+      form && [...form.elements].find((el) => el.type === "submit" && !el.disabled);
+    autoSubmitting = true;
+    try {
+      if (form) form.requestSubmit(submit);
+    } finally {
+      autoSubmitting = false;
+    }
+  }
+  /** A verification code or security question step: left to the user. */
+  function challenge() {
+    if (document.querySelector('input[autocomplete="one-time-code"]')) return true;
+    const asks = /verification code|authentication code|security question|one-time code/i.test(
+      document.body?.innerText ?? "",
+    );
+    return (
+      asks &&
+      [...document.querySelectorAll("input")].some(
+        (el) => ["text", "tel", "number", "password"].includes(el.type) && visible(el),
+      )
+    );
+  }
+
   // ---- Watch the page for login forms appearing and disappearing ----
   let timer;
   function scan() {
@@ -248,6 +291,12 @@ if (window.top === window) {
     if (menu && !visible(menu.field)) hide();
     const fields = loginFields();
     if (fields && !logins) void query(!!fields.password);
+    if (netSuite && fields?.password && fields.username) {
+      if (!autoAsked) void autoLogin(fields);
+    } else if (netSuite && !challengeSent && loginFlow() && challenge()) {
+      challengeSent = true;
+      ipcRenderer.send("orvane:pw-auto-challenge");
+    }
     // Forms often disable their fields while signing in; only gone counts.
     if (submitted && !shown(submitted)) {
       submitted = undefined;

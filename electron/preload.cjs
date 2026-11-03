@@ -54,6 +54,8 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
     remove: (id) => ipcRenderer.invoke("orvane:passwords-remove", id),
     allow: (origin) => ipcRenderer.invoke("orvane:passwords-allow", origin),
     copy: (id) => ipcRenderer.invoke("orvane:passwords-copy", id),
+    /** Turn NetSuite auto sign-in on or off for one saved login. */
+    setAutoLogin: (id, on) => ipcRenderer.invoke("orvane:passwords-auto-login", id, on),
     /** Answer a save prompt: "save", "never" or "dismiss". */
     decide: (id, choice) => ipcRenderer.invoke("orvane:password-decide", id, choice),
     /** A sign-in in a Browser page that could be saved. */
@@ -61,6 +63,12 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
       const listener = (_event, prompt) => callback(prompt);
       ipcRenderer.on("orvane:password-prompt", listener);
       return () => ipcRenderer.removeListener("orvane:password-prompt", listener);
+    },
+    /** NetSuite auto sign-in progress in a Browser page. */
+    onAutoLogin(callback) {
+      const listener = (_event, update) => callback(update);
+      ipcRenderer.on("orvane:auto-login", listener);
+      return () => ipcRenderer.removeListener("orvane:auto-login", listener);
     },
   },
 });

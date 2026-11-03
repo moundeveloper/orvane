@@ -5,18 +5,29 @@
 // the user picks one, of the same site (another host under the same
 // registrable domain over https, like Chromium's public-suffix matches),
 // via a sandboxed preload (password-fill.cjs); Orvane's own window sees sites
-// and usernames, never a password.
+// and usernames, never a password. On genuine NetSuite login pages of the
+// accounts auto sign-in covers (netsuite-login.mjs), a saved login is also
+// filled and submitted by itself, once per tab until a sign-in works.
 import { clipboard, ipcMain, safeStorage, session, webContents } from "electron";
 import { randomUUID } from "node:crypto";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getDomain } from "tldts";
+import {
+  autoLoginAccount,
+  autoLoginCandidates,
+  isNetSuitePage,
+  netSuiteLogin,
+  netSuiteSignedIn,
+} from "./netsuite-login.mjs";
 
 const MAX_LOGINS = 5000;
 const CANDIDATE_LIFE = 3 * 60000;
 const USERNAME_LIFE = 10 * 60000;
 const PROMPT_LIFE = 5 * 60000;
 const CLIPBOARD_LIFE = 30000;
+/** An auto sign-in with no result by then (the user went elsewhere). */
+const ATTEMPT_LIFE = 5 * 60000;
 const LOCAL = ["localhost", "127.0.0.1", "[::1]"];
 
 const text = (value, max) =>
@@ -49,7 +60,7 @@ export function setupPasswords({ partition, isOrvane, folder }) {
     filePath: join(import.meta.dirname, "password-fill.cjs"),
   });
 
-  /** @type {{ logins: { id: string, origin: string, username: string, password: string, created: number, updated: number }[], never: string[] }} */
+  /** @type {{ logins: { id: string, origin: string, username: string, password: string, created: number, updated: number, used?: number, autoLogin?: boolean }[], never: string[] }} */
   let vault = { logins: [], never: [] };
   /** "ok", "unavailable" (no OS encryption) or "unreadable" (left untouched). */
   let state = "loading";
@@ -205,13 +216,85 @@ export function setupPasswords({ partition, isOrvane, folder }) {
     if (siteOf(event)) flush(event.sender.id);
   });
 
+  // ---- NetSuite auto sign-in ----
+  /** Auto sign-ins waiting for their result, by Browser tab. Another login
+   * page in the same tab before a signed-in page means it failed: the tab
+   * stops signing in by itself and the login is paused, so a wrong password
+   * can never loop (or lock the NetSuite user out). */
+  const attempts = new Map();
+  /** Logins whose last auto sign-in failed (until they sign in or change). */
+  const failing = new Set();
+  function notice(contents, kind, origin) {
+    const host = contents.hostWebContents;
+    if (host && !host.isDestroyed())
+      host.send("orvane:auto-login", { from: contents.id, kind, origin });
+  }
+  /** Only Browser tabs (webviews) the user can see, never hidden pages. */
+  const autoLoginTab = (event) =>
+    event.sender.getType() === "webview" && !!event.sender.hostWebContents;
+
+  ipcMain.handle("orvane:pw-auto", async (event) => {
+    const origin = siteOf(event);
+    const login = origin && autoLoginTab(event) && netSuiteLogin(event.senderFrame.url);
+    if (!login || login.origin !== origin || !autoLoginAccount(login.account)) return;
+    if (!(await ready())) return;
+    const contents = event.sender;
+    let pending = attempts.get(contents.id);
+    if (pending && !pending.stopped && !pending.challenge && Date.now() - pending.at > ATTEMPT_LIFE) {
+      attempts.delete(contents.id);
+      pending = undefined;
+    }
+    if (pending) {
+      // The login page came back: hand it to the user instead of retrying.
+      if (pending.stopped) return;
+      pending.stopped = true;
+      if (!pending.challenge) failing.add(pending.login);
+      notice(contents, "failed", origin);
+      return;
+    }
+    const candidates = autoLoginCandidates(vault.logins, login);
+    const chosen = candidates[0];
+    if (!chosen) return;
+    if (failing.has(chosen.id)) {
+      attempts.set(contents.id, { login: chosen.id, stopped: true });
+      notice(contents, "paused", origin);
+      return;
+    }
+    attempts.set(contents.id, { login: chosen.id, at: Date.now() });
+    notice(contents, "signing-in", origin);
+    return { username: chosen.username, password: chosen.password };
+  });
+  // A verification code or security question after an auto sign-in: the
+  // user answers it; nothing is filled.
+  ipcMain.on("orvane:pw-auto-challenge", (event) => {
+    const contents = event.sender;
+    const pending = attempts.get(contents.id);
+    const url = event.senderFrame?.url ?? "";
+    if (!pending || pending.challenge || !siteOf(event) || !isNetSuitePage(url)) return;
+    pending.challenge = true;
+    notice(contents, "challenge", new URL(url).origin);
+  });
+  function signedIn(contents, url) {
+    const pending = attempts.get(contents.id);
+    if (!pending || !netSuiteSignedIn(url)) return;
+    attempts.delete(contents.id);
+    failing.delete(pending.login);
+    notice(contents, "done", new URL(url).origin);
+    const login = vault.logins.find((l) => l.id === pending.login);
+    if (login && state === "ok") {
+      login.used = Date.now();
+      void save().catch(() => undefined);
+    }
+  }
+
   function track(contents) {
     contents.on("did-create-window", (window) => {
       owners.set(window.webContents.id, ownerOf(contents.id));
     });
     // A new page after submitting: offer to save unless the login form
     // comes back (see orvane:pw-logins).
-    contents.on("did-navigate", () => {
+    contents.on("did-navigate", (_event, url) => {
+      signedIn(contents, url);
       const candidate = candidates.get(contents.id);
       if (!candidate) return;
       candidate.navigated = true;
@@ -224,6 +307,7 @@ export function setupPasswords({ partition, isOrvane, folder }) {
       else dropCandidate(contents.id);
       owners.delete(contents.id);
       usernames.delete(contents.id);
+      attempts.delete(contents.id);
     });
   }
 
@@ -245,7 +329,14 @@ export function setupPasswords({ partition, isOrvane, folder }) {
     logins:
       state === "ok"
         ? vault.logins
-            .map(({ id, origin, username, updated }) => ({ id, origin, username, updated }))
+            .map(({ id, origin, username, updated, autoLogin }) => ({
+              id,
+              origin,
+              username,
+              updated,
+              // Auto sign-in applies to NetSuite logins, on unless turned off.
+              ...(isNetSuitePage(origin) ? { autoLogin: autoLogin !== false } : {}),
+            }))
             .sort((a, b) => a.origin.localeCompare(b.origin) || a.username.localeCompare(b.username))
         : [],
     never: state === "ok" ? [...vault.never].sort() : [],
@@ -255,6 +346,14 @@ export function setupPasswords({ partition, isOrvane, folder }) {
     const before = vault.logins.length;
     vault.logins = vault.logins.filter((l) => l.id !== id);
     if (vault.logins.length !== before) await save();
+    return true;
+  });
+  handle("orvane:passwords-auto-login", async (id, on) => {
+    const login = state === "ok" && typeof on === "boolean" && vault.logins.find((l) => l.id === id);
+    if (!login || !isNetSuitePage(login.origin)) return false;
+    login.autoLogin = on;
+    failing.delete(login.id);
+    await save();
     return true;
   });
   handle("orvane:passwords-allow", async (origin) => {
@@ -284,7 +383,10 @@ export function setupPasswords({ partition, isOrvane, folder }) {
     } else if (choice === "save") {
       const now = Date.now();
       const existing = vault.logins.find((l) => l.id === prompt.existing);
-      if (existing) Object.assign(existing, { password: prompt.password, updated: now });
+      if (existing) {
+        Object.assign(existing, { password: prompt.password, updated: now });
+        failing.delete(existing.id);
+      }
       else if (vault.logins.length < MAX_LOGINS)
         vault.logins.push({
           id: randomUUID(),

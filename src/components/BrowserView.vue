@@ -83,7 +83,12 @@ import {
   watch,
 } from "vue";
 import { uid, type Block } from "../model";
-import { siteName, type PasswordPrompt, type PasswordsApi } from "../passwords";
+import {
+  siteName,
+  type AutoLoginUpdate,
+  type PasswordPrompt,
+  type PasswordsApi,
+} from "../passwords";
 import Icon from "./Icon.vue";
 import PasswordsPanel from "./PasswordsPanel.vue";
 
@@ -430,6 +435,7 @@ function closeTab(id: string) {
   dropLivePage(id);
   delete discarded[id];
   dismissPrompt(id);
+  delete autoLogins[id];
   delete started[id];
   delete webviewNav[id];
   if (tabs.length === 1) {
@@ -553,15 +559,36 @@ async function decide(choice: "save" | "never") {
   await passwords?.decide(open.id, choice).catch(() => undefined);
   passwordsRevision.value++;
 }
-let stopPrompt: (() => void) | undefined;
+/** NetSuite auto sign-in that needs the user: it stopped, or NetSuite asks
+ * for a verification code. The page stays as NetSuite shows it. */
+const autoLogins = reactive<Record<string, AutoLoginUpdate>>({});
+const autoLogin = computed(() => autoLogins[state.value.active]);
+const autoLoginText: Record<string, string> = {
+  failed: "Auto sign-in stopped: NetSuite showed the login page again. Sign in here yourself.",
+  paused: "Auto sign-in is paused after a failed attempt. Sign in here yourself, or save the new password.",
+  challenge: "Enter the verification code (or answer) in NetSuite to finish signing in.",
+};
+let stopPrompt: (() => void) | undefined, stopAutoLogin: (() => void) | undefined;
 onMounted(() => {
+  const tabFor = (from: number) => {
+    const view = webviewFor(from);
+    return view && state.value.tabs.find((t) => webviews.get(t.id) === view);
+  };
   stopPrompt = passwords?.onPrompt((request) => {
-    const view = webviewFor(request.from);
-    const tab = view && state.value.tabs.find((t) => webviews.get(t.id) === view);
+    const tab = tabFor(request.from);
     if (tab) prompts[tab.id] = request;
   });
+  stopAutoLogin = passwords?.onAutoLogin((update) => {
+    const tab = tabFor(update.from);
+    if (!tab) return;
+    if (autoLoginText[update.kind]) autoLogins[tab.id] = update;
+    else delete autoLogins[tab.id];
+  });
 });
-onBeforeUnmount(() => stopPrompt?.());
+onBeforeUnmount(() => {
+  stopPrompt?.();
+  stopAutoLogin?.();
+});
 
 let stopOpenTab: (() => void) | undefined, stopGuestInput: (() => void) | undefined;
 onMounted(() => {
@@ -1053,6 +1080,25 @@ function browserWheel(event: WheelEvent) {
         <Icon name="close" :size="12" />
       </button>
     </div>
+    <div
+      v-if="autoLogin"
+      class="browser-password-prompt browser-auto-login"
+      :class="{ warn: autoLogin.kind !== 'challenge' }"
+      role="status"
+      aria-label="NetSuite sign-in"
+      @keydown.stop
+    >
+      <Icon :name="autoLogin.kind === 'challenge' ? 'key' : 'alert'" :size="13" />
+      <p>{{ autoLoginText[autoLogin.kind] }}</p>
+      <button
+        type="button"
+        class="icon-button"
+        aria-label="Dismiss"
+        @click="delete autoLogins[state.active]"
+      >
+        <Icon name="close" :size="12" />
+      </button>
+    </div>
     <div ref="pageBox" class="browser-page">
       <PasswordsPanel
         v-if="passwords && showPasswords"
@@ -1251,6 +1297,10 @@ function browserWheel(event: WheelEvent) {
   border-color: #4f7a68;
   background: #4f7a68;
   color: #fff;
+}
+.browser-auto-login.warn {
+  background: #f6eeec;
+  color: #7d3f39;
 }
 .browser-star.on {
   color: #b5874a;
