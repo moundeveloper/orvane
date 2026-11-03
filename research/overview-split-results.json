@@ -1,0 +1,264 @@
+{
+  "decision": "Rejected: text visibly softens at fractional pan positions; production and test files restored unchanged.",
+  "candidatePatch": "research/overview-split-transform.patch",
+  "baselineProductionCommit": "18a3261",
+  "candidateBaseCommit": "841fa8b9efa9f1ab3e1749f947b3fd4f6d696d4a",
+  "screeningArtifacts": "artifacts/performance/foreground/2026-11-03T11-06-39-416Z",
+  "screeningSources": {
+    "baselineAppSha256": "b86ea8684f247c45330aaaa6c48ea0752bcdcbfacf5f41ab1156b7c44f9e8160",
+    "candidateAppSha256": "2ea4efb1beb6a09751f4859c3198ed3ddfb4f7bdbd75821f2d663d48a2fe21c3",
+    "baselineStyleSha256": "df7ba9f66a5b8f15a73cde069820c72ffa0918ce842da6bfaf866447727c75bc",
+    "candidateStyleSha256": "f83ef531a444dcf6b3bc2808b4be511cdfe8eb0e2a2358c67da49a5cd312fdcc",
+    "commonFixedBaselineStoreSha256": "f4bfc88a07fc6a1a7b92a8f2508f8dca3f37143679e7f2bfd974dcf3420bac42",
+    "candidateStoreSha256": "f4bfc88a07fc6a1a7b92a8f2508f8dca3f37143679e7f2bfd974dcf3420bac42",
+    "commonPageViewSha256": "70c52a07d422564703bfe3c49ceebc06e2af7a65571b4d0865eb862a6aaa1aad"
+  },
+  "screeningRuns": [
+    {
+      "variant": "baseline",
+      "diagnostic": false,
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "transform": "matrix(0.2, 0, 0, 0.2, -288, -136)",
+        "visibleApps": 42
+      },
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 67.20000000000073,
+          "medianInterval": 16.700000000000728
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 150,
+          "medianInterval": 66.59999999999854
+        },
+        "stop": {
+          "samples": 2,
+          "maxInterval": 50,
+          "medianInterval": 16.700000000000728
+        }
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 69
+      }
+    },
+    {
+      "variant": "candidate",
+      "diagnostic": false,
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "transform": "matrix(1, 0, 0, 1, -288, -136)",
+        "visibleApps": 42
+      },
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 50.099999999998545,
+          "medianInterval": 16.599999999998545
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 83.30000000000291,
+          "medianInterval": 33.400000000001455
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 33.400000000001455,
+          "medianInterval": 16.700000000000728
+        }
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 70
+      }
+    },
+    {
+      "variant": "candidate",
+      "diagnostic": true,
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "transform": "matrix(1, 0, 0, 1, -288, -136)",
+        "visibleApps": 42
+      },
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 66.5,
+          "medianInterval": 16.700000000000728
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 50.39999999999782,
+          "medianInterval": 33.400000000001455
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 33.5,
+          "medianInterval": 16.69999999999709
+        }
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 70
+      }
+    },
+    {
+      "variant": "baseline",
+      "diagnostic": true,
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "transform": "matrix(0.2, 0, 0, 0.2, -288, -136)",
+        "visibleApps": 42
+      },
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 66.70000000000073,
+          "medianInterval": 16.599999999998545
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 316.5,
+          "medianInterval": 66.40000000000146
+        },
+        "stop": {
+          "samples": 4,
+          "maxInterval": 33.20000000000073,
+          "medianInterval": 16.799999999999272
+        }
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 71
+      }
+    }
+  ],
+  "visualArtifacts": "artifacts/performance/foreground/2026-11-03T11-09-48-394Z",
+  "visualSources": {
+    "baselineAppSha256": "b86ea8684f247c45330aaaa6c48ea0752bcdcbfacf5f41ab1156b7c44f9e8160",
+    "candidateAppSha256": "daaa29d35b3e5aa96e88db201ec38383f2075a9a8da8ab35f40a4dfb034180ec",
+    "baselineStyleSha256": "df7ba9f66a5b8f15a73cde069820c72ffa0918ce842da6bfaf866447727c75bc",
+    "candidateStyleSha256": "f83ef531a444dcf6b3bc2808b4be511cdfe8eb0e2a2358c67da49a5cd312fdcc",
+    "commonFixedBaselineStoreSha256": "f4bfc88a07fc6a1a7b92a8f2508f8dca3f37143679e7f2bfd974dcf3420bac42",
+    "candidateStoreSha256": "f4bfc88a07fc6a1a7b92a8f2508f8dca3f37143679e7f2bfd974dcf3420bac42",
+    "commonPageViewSha256": "70c52a07d422564703bfe3c49ceebc06e2af7a65571b4d0865eb862a6aaa1aad"
+  },
+  "visualRuns": [
+    {
+      "variant": "candidate",
+      "overviewAppearance": {
+        "pan": {
+          "before": {
+            "x": -288,
+            "y": -136,
+            "scale": 0.2,
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "during": {
+            "cursor": "grabbing",
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "after": {
+            "x": -288,
+            "y": -136,
+            "scale": 0.2,
+            "blur": "blur(8px) saturate(1.2)",
+            "pointerEvents": "none"
+          },
+          "note": "Active-gesture and restored snapshots, not evidence of physical frame presentation."
+        },
+        "returned": {
+          "scale": 1.0307977294921875,
+          "willChange": "auto",
+          "blur": "blur(8px) saturate(1.2)"
+        }
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 71
+      }
+    },
+    {
+      "variant": "baseline",
+      "overviewAppearance": {
+        "pan": {
+          "before": {
+            "x": -288,
+            "y": -136,
+            "scale": 0.2,
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "during": {
+            "cursor": "grabbing",
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "after": {
+            "x": -288,
+            "y": -136,
+            "scale": 0.2,
+            "blur": "blur(8px) saturate(1.2)",
+            "pointerEvents": "none"
+          },
+          "note": "Active-gesture and restored snapshots, not evidence of physical frame presentation."
+        },
+        "returned": {
+          "scale": 1.0307977294921875,
+          "willChange": "auto",
+          "blur": "blur(8px) saturate(1.2)"
+        }
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 71
+      }
+    }
+  ],
+  "visualOffsetCommand": {
+    "x": 37.35,
+    "y": -22.65
+  },
+  "visualOutcome": "Restored Notes/Git crops match paired baseline; fractional-motion screenshots visibly soften text in candidate. Returning to fitted Notes clears will-change and retains blur in both variants.",
+  "limits": [
+    "One untraced screening pair and separate diagnostic/visual runs; not five-pair acceptance or a stable speedup.",
+    "Visual failure stops candidate before acceptance, interaction, native memory stabilization or soak validation.",
+    "Translation and scale were split into nested wrappers; the translation wrapper received a settled-overview transform hint. Actual compositor raster scale remains unknown."
+  ],
+  "screenshots": {
+    "baseline": {
+      "path": "research/overview-split-baseline-pan.png",
+      "sha256": "43efd5a82ad9ba386bb0b6d05e640da0d2945169b3a56ddd9317528061294c57"
+    },
+    "candidate": {
+      "path": "research/overview-split-candidate-pan.png",
+      "sha256": "6c7c16a48c1a31a9cfe301b8c734231b85fcf539cebc5a8f9be781a5dda3464e"
+    }
+  }
+}

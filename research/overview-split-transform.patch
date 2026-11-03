@@ -1,0 +1,274 @@
+diff --git a/src/App.vue b/src/App.vue
+index f11ae08..da688b1 100644
+--- a/src/App.vue
++++ b/src/App.vue
+@@ -216,6 +216,20 @@ const apps = computed(() =>
+ const active = ref(""),
+   camera = reactive({ x: 0, y: 0, zoom: 1 }),
+   movingCamera = ref(false);
++// Cache overview painting only at its settled scale; discard before zooming so
++// returning to an editor never stretches a low-resolution overview texture.
++const overviewPaintCache = ref(false);
++let overviewSettle: ReturnType<typeof setTimeout> | undefined;
++watch(
++  () => camera.zoom,
++  () => {
++    overviewPaintCache.value = false;
++    clearTimeout(overviewSettle);
++    if (camera.zoom <= 0.5)
++      overviewSettle = setTimeout(() => (overviewPaintCache.value = true), 180);
++  },
++  { flush: "sync" },
++);
+ // Front-to-back order: each app activated moves to the top of the stack;
+ // the rest keep their relative order.
+ const stack = ref<string[]>([]);
+@@ -288,6 +302,7 @@ watch(
+   },
+ );
+ onBeforeUnmount(() => {
++  clearTimeout(overviewSettle);
+   clearTimeout(cameraSettle);
+   cancelAnimationFrame(cameraFrame);
+ });
+@@ -2317,112 +2332,118 @@ onBeforeUnmount(() => {
+       class="canvas-plane"
+       v-show="ready"
+       :inert="!canEdit || importBusy"
+-      :class="{ 'camera-moving': movingCamera }"
++      :class="{
++        'camera-moving': movingCamera,
++        'overview-paint-cache': overviewPaintCache,
++      }"
+       :style="{
+-        transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})`,
++        transform: `translate(${camera.x}px, ${camera.y}px)`,
++        '--camera-zoom': camera.zoom,
+       }"
+     >
+-      <template v-for="group in spatialGroups" :key="group.id"
+-        ><div
+-          v-if="group.bounds"
+-          class="spatial-group"
+-          :data-group-id="group.id"
++      <div class="canvas-zoom-plane">
++        <template v-for="group in spatialGroups" :key="group.id"
++          ><div
++            v-if="group.bounds"
++            class="spatial-group"
++            :data-group-id="group.id"
++            :style="{
++              left: group.bounds.x + 'px',
++              top: group.bounds.y + 'px',
++              width: group.bounds.width + 'px',
++              height: group.bounds.height + 'px',
++            }"
++          >
++            <button
++              class="spatial-group-label"
++              :aria-label="`Edit group ${group.name || 'Untitled group'}`"
++              @pointerdown.stop="groupPointerDown($event, group.id)"
++              @click="groupClick($event, group.id)"
++            >
++              <Icon name="layers" :size="12" /><span>{{
++                group.name || "Untitled group"
++              }}</span
++              ><small>{{ group.members.length }}</small
++              ><Icon name="edit" :size="11" />
++            </button>
++            <div
++              v-for="edge in ['n', 'e', 's', 'w']"
++              :key="edge"
++              class="group-drag-edge"
++              :class="`group-edge-${edge}`"
++              @pointerdown.stop="groupPointerDown($event, group.id)"
++            ></div></div
++        ></template>
++        <div
++          v-for="app in apps"
++          :key="`${renderGeneration}:${app.id}`"
++          class="canvas-app"
++          :data-app-id="app.id"
+           :style="{
+-            left: group.bounds.x + 'px',
+-            top: group.bounds.y + 'px',
+-            width: group.bounds.width + 'px',
+-            height: group.bounds.height + 'px',
++            left: app.x + 'px',
++            top: app.y + 'px',
++            width: app.width + 'px',
++            height: app.height + 'px',
++            zIndex: stackLevel(app.id),
+           }"
++          @pointerdown.stop="pointerDown($event, app)"
++          @focusin="focusIn($event, app)"
+         >
+-          <button
+-            class="spatial-group-label"
+-            :aria-label="`Edit group ${group.name || 'Untitled group'}`"
+-            @pointerdown.stop="groupPointerDown($event, group.id)"
+-            @click="groupClick($event, group.id)"
++          <div
++            v-if="locatedAppId === app.id"
++            :key="locatorSequence"
++            class="app-locator"
++            aria-hidden="true"
++            :style="{ '--locator-radius': app.radius + 'px' }"
++          ></div>
++          <AppSurface
++            :ref="
++              (el) => {
++                if (el)
++                  appViews[app.id] = el as unknown as {
++                    openView: (
++                      view: 'settings' | 'graph',
++                      target: string,
++                    ) => void;
++                  };
++                else delete appViews[app.id];
++              }
++            "
++            :app="app"
++            :workspace="workspace"
++            :enter-motion="createdAppId === app.id"
++            @run="run"
++            @archive="archive"
++            @duplicate="duplicate"
++            @geometry="
++              geometryApp = $event;
++              panel = 'geometry';
++            "
++            @error="runtimeErrors[app.id] = $event"
++          />
++          <div
++            v-if="runtimeErrors[app.id]"
++            class="app-error"
++            role="alert"
++            v-motion="{ kind: 'fade', state: runtimeErrors[app.id] }"
+           >
+-            <Icon name="layers" :size="12" /><span>{{
+-              group.name || "Untitled group"
+-            }}</span
+-            ><small>{{ group.members.length }}</small
+-            ><Icon name="edit" :size="11" />
+-          </button>
++            <span>{{ runtimeErrors[app.id] }}</span
++            ><button
++              class="icon-button"
++              aria-label="Dismiss error"
++              @click="runtimeErrors[app.id] = ''"
++            >
++              <Icon name="close" :size="13" />
++            </button>
++          </div>
+           <div
+-            v-for="edge in ['n', 'e', 's', 'w']"
++            v-for="edge in ['n', 'e', 's', 'w', 'ne', 'se', 'sw', 'nw']"
+             :key="edge"
+-            class="group-drag-edge"
+-            :class="`group-edge-${edge}`"
+-            @pointerdown.stop="groupPointerDown($event, group.id)"
+-          ></div></div
+-      ></template>
+-      <div
+-        v-for="app in apps"
+-        :key="`${renderGeneration}:${app.id}`"
+-        class="canvas-app"
+-        :data-app-id="app.id"
+-        :style="{
+-          left: app.x + 'px',
+-          top: app.y + 'px',
+-          width: app.width + 'px',
+-          height: app.height + 'px',
+-          zIndex: stackLevel(app.id),
+-        }"
+-        @pointerdown.stop="pointerDown($event, app)"
+-        @focusin="focusIn($event, app)"
+-      >
+-        <div
+-          v-if="locatedAppId === app.id"
+-          :key="locatorSequence"
+-          class="app-locator"
+-          aria-hidden="true"
+-          :style="{ '--locator-radius': app.radius + 'px' }"
+-        ></div>
+-        <AppSurface
+-          :ref="
+-            (el) => {
+-              if (el)
+-                appViews[app.id] = el as unknown as {
+-                  openView: (
+-                    view: 'settings' | 'graph',
+-                    target: string,
+-                  ) => void;
+-                };
+-              else delete appViews[app.id];
+-            }
+-          "
+-          :app="app"
+-          :workspace="workspace"
+-          :enter-motion="createdAppId === app.id"
+-          @run="run"
+-          @archive="archive"
+-          @duplicate="duplicate"
+-          @geometry="
+-            geometryApp = $event;
+-            panel = 'geometry';
+-          "
+-          @error="runtimeErrors[app.id] = $event"
+-        />
+-        <div
+-          v-if="runtimeErrors[app.id]"
+-          class="app-error"
+-          role="alert"
+-          v-motion="{ kind: 'fade', state: runtimeErrors[app.id] }"
+-        >
+-          <span>{{ runtimeErrors[app.id] }}</span
+-          ><button
+-            class="icon-button"
+-            aria-label="Dismiss error"
+-            @click="runtimeErrors[app.id] = ''"
+-          >
+-            <Icon name="close" :size="13" />
+-          </button>
++            class="resize-edge"
++            :class="`edge-${edge}`"
++            @pointerdown.stop="pointerDown($event, app, edge)"
++          ></div>
+         </div>
+-        <div
+-          v-for="edge in ['n', 'e', 's', 'w', 'ne', 'se', 'sw', 'nw']"
+-          :key="edge"
+-          class="resize-edge"
+-          :class="`edge-${edge}`"
+-          @pointerdown.stop="pointerDown($event, app, edge)"
+-        ></div>
+       </div>
+     </div>
+     <div
+diff --git a/src/style.css b/src/style.css
+index 5c9b12d..7714689 100644
+--- a/src/style.css
++++ b/src/style.css
+@@ -231,13 +231,20 @@ button:hover {
+   pointer-events: none;
+   opacity: 0.6;
+ }
+-.canvas-plane {
++.canvas-plane,
++.canvas-zoom-plane {
+   position: absolute;
+   inset: 0 auto auto 0;
+   width: 0;
+   height: 0;
+   transform-origin: 0 0;
+ }
++.canvas-zoom-plane {
++  transform: scale(var(--camera-zoom, 1));
++}
++.canvas-plane.overview-paint-cache {
++  will-change: transform;
++}
+ .topbar {
+   position: absolute;
+   left: 22px;

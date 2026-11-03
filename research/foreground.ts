@@ -7,6 +7,7 @@ import { launchElectronFixture } from "./electron-foreground.ts";
 import {
   measureElectronFirstUse,
   captureElectronPanAppearance,
+  captureOverviewAppearance,
 } from "./electron-first-use.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -32,9 +33,35 @@ const cameraModes = (
     : "normal")
 ).split(",");
 const visualOnly = process.env.ORVANE_FOREGROUND_VISUAL_ONLY === "1";
+const diagnosticOnly = process.env.ORVANE_FOREGROUND_DIAGNOSTIC_ONLY === "1";
+if (visualOnly && diagnosticOnly)
+  throw Error("Choose visual-only or diagnostic-only, not both.");
 if (cameraModes.some((mode) => !["normal", "overview"].includes(mode)))
   throw Error("Unknown camera mode.");
 const experiment = process.env.ORVANE_FOREGROUND_EXPERIMENT || "pan";
+// Counterfactual diagnostics only: these deliberately change appearance and
+// must never be interpreted as production optimization candidates.
+const ablation = process.env.ORVANE_FOREGROUND_ABLATION || "none";
+if (!["none", "backdrop", "dots"].includes(ablation))
+  throw Error("Unknown foreground ablation.");
+if (
+  ablation !== "none" &&
+  (experiment !== "overview" ||
+    cameraModes.some((mode) => mode !== "overview") ||
+    visualOnly)
+)
+  throw Error("Ablations require the overview experiment and overview mode.");
+const candidateStyleAppend =
+  ablation === "backdrop"
+    ? "\n.topbar-frost { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }\n"
+    : ablation === "dots"
+      ? "\n.canvas-dots { visibility: hidden !important; }\n"
+      : "";
+const traceCategories =
+  "devtools.timeline,v8,blink.user_timing,disabled-by-default-devtools.timeline" +
+  (process.env.ORVANE_FOREGROUND_RASTER_TRACE === "1"
+    ? ",cc,disabled-by-default-cc.debug"
+    : "");
 if (!["pan", "notes", "overview"].includes(experiment))
   throw Error("Unknown foreground experiment.");
 const baselineCommit =
@@ -104,6 +131,12 @@ for (const variant of ["baseline", "candidate"]) {
         name: "foreground-baseline",
         enforce: "pre",
         transform(_code, id) {
+          if (
+            variant === "candidate" &&
+            candidateStyleAppend &&
+            id.replaceAll("\\", "/").endsWith("/src/style.css")
+          )
+            return _code + candidateStyleAppend;
           if (variant === "baseline" && experiment !== "notes") {
             for (const [path, source] of baselinePanSources)
               if (id.replaceAll("\\", "/").endsWith(`/${path}`)) return source;
@@ -289,8 +322,7 @@ async function run(
     const cdp = await context.newCDPSession(page);
     if (diagnostic)
       await cdp.send("Tracing.start", {
-        categories:
-          "devtools.timeline,v8,blink.user_timing,disabled-by-default-devtools.timeline",
+        categories: traceCategories,
         transferMode: "ReturnAsStream",
       });
     await page.goto(
@@ -325,6 +357,8 @@ async function run(
       elements: document.querySelectorAll("*").length,
       blur: getComputedStyle(document.querySelector(".topbar-frost")!)
         .backdropFilter,
+      dotsVisibility: getComputedStyle(document.querySelector(".canvas-dots")!)
+        .visibility,
     }));
     for (const key of [
       "apps",
@@ -340,7 +374,19 @@ async function run(
         throw Error(
           `Fixture incomplete: ${JSON.stringify({ counts, expected, errors })}`,
         );
-    if (!counts.blur.includes("blur")) throw Error("Header blur is missing.");
+    if (variant === "candidate" && ablation === "backdrop") {
+      if (counts.blur !== "none")
+        throw Error("Backdrop ablation did not apply.");
+    } else if (!counts.blur.includes("blur"))
+      throw Error("Header blur is missing.");
+    if (
+      variant === "candidate" &&
+      ablation === "dots" &&
+      (await page
+        .locator(".canvas-dots")
+        .evaluate((el) => getComputedStyle(el).visibility)) !== "hidden"
+    )
+      throw Error("Dots ablation did not apply.");
     if (cameraMode === "overview") {
       await page.mouse.move(400, 300);
       await page.keyboard.down("Control");
@@ -349,10 +395,11 @@ async function run(
       await page.waitForFunction(
         () =>
           Math.abs(
-            new DOMMatrix(
-              getComputedStyle(document.querySelector(".canvas-plane")!)
-                .transform,
-            ).a - 0.2,
+            document
+              .querySelector<HTMLElement>(".canvas-app")!
+              .getBoundingClientRect().width /
+              document.querySelector<HTMLElement>(".canvas-app")!.offsetWidth -
+              0.2,
           ) < 0.001,
       );
       await page
@@ -386,9 +433,13 @@ async function run(
     const view = await page.evaluate(() => ({
       width: innerWidth,
       height: innerHeight,
-      scale: new DOMMatrix(
-        getComputedStyle(document.querySelector(".canvas-plane")!).transform,
-      ).a,
+      scale:
+        document
+          .querySelector<HTMLElement>(".canvas-app")!
+          .getBoundingClientRect().width /
+        document.querySelector<HTMLElement>(".canvas-app")!.offsetWidth,
+      transform: getComputedStyle(document.querySelector(".canvas-plane")!)
+        .transform,
       visibleApps: [...document.querySelectorAll(".canvas-app")].filter(
         (el) => {
           const r = el.getBoundingClientRect();
@@ -557,6 +608,8 @@ async function run(
         ),
       });
     const result = {
+      overviewAppearance: undefined as
+        Awaited<ReturnType<typeof captureOverviewAppearance>> | undefined,
       appearance: undefined as
         Awaited<ReturnType<typeof captureElectronPanAppearance>> | undefined,
       firstUse: undefined as
@@ -611,6 +664,20 @@ async function run(
         cdp,
         join(destination, `${variant}-${appCount}-${cameraMode}-trace.json`),
       );
+    if (
+      desktop &&
+      diagnostic &&
+      cameraMode === "overview" &&
+      ablation === "none"
+    ) {
+      result.overviewAppearance = await captureOverviewAppearance(
+        page,
+        destination,
+        variant,
+      );
+      await desktop.validate();
+      assertForegroundDocuments(directory);
+    }
     if (desktop && appCount === 50 && cameraMode === "normal") {
       if (diagnostic)
         await cdp.send("Tracing.start", {
@@ -650,6 +717,7 @@ async function run(
     console.log(
       JSON.stringify({
         variant,
+        ablation,
         index,
         appCount,
         cameraMode,
@@ -710,13 +778,17 @@ try {
     await acceptedRun("candidate", 0, true, 50, "normal");
   } else {
     const modes = cameraModes;
-    if (runtime === "electron" && process.env.ORVANE_FOREGROUND_MATRIX !== "0")
+    if (
+      !diagnosticOnly &&
+      runtime === "electron" &&
+      process.env.ORVANE_FOREGROUND_MATRIX !== "0"
+    )
       for (const count of [5, 10, 20, 35])
         for (const mode of modes)
           for (const variant of ["baseline", "candidate"])
             await acceptedRun(variant, 0, false, count, mode);
     for (const mode of modes) {
-      for (let index = 0; index < repetitions; index++)
+      for (let index = 0; !diagnosticOnly && index < repetitions; index++)
         for (const variant of index % 2
           ? ["candidate", "baseline"]
           : ["baseline", "candidate"])
@@ -733,7 +805,11 @@ try {
       {
         runtime,
         visualOnly,
+        diagnosticOnly,
         experiment,
+        ablation,
+        candidateStyleAppend,
+        traceCategories,
         baselineCommit,
         candidateBaseCommit: execFileSync("git", ["rev-parse", "HEAD"], {
           encoding: "utf8",
@@ -759,6 +835,7 @@ try {
             .digest("hex"),
           candidateStyleSha256: createHash("sha256")
             .update(readFileSync("src/style.css"))
+            .update(candidateStyleAppend)
             .digest("hex"),
           commonFixedBaselineStoreSha256: createHash("sha256")
             .update(commonFixedBaseline)
@@ -781,6 +858,9 @@ try {
         results,
         rejectedAttempts,
         limits: [
+          ablation !== "none"
+            ? "Counterfactual ablation deliberately changes appearance; not a production optimization candidate."
+            : "Production appearance is an acceptance requirement.",
           runtime === "electron"
             ? "Actual Electron shell and preload with isolated userData; native NetSuite IPC is mocked."
             : "Production Chromium browser, not Electron.",

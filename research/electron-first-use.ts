@@ -4,6 +4,7 @@ import { join } from "node:path";
 export async function captureElectronPanAppearance(
   page: Page,
   directory: string,
+  options = { name: "electron", deltaX: 0, deltaY: -75 },
 ) {
   const before = await page.evaluate(() => {
     const matrix = new DOMMatrix(
@@ -12,7 +13,11 @@ export async function captureElectronPanAppearance(
     return {
       x: matrix.e,
       y: matrix.f,
-      scale: matrix.a,
+      scale:
+        document
+          .querySelector<HTMLElement>(".canvas-app")!
+          .getBoundingClientRect().width /
+        document.querySelector<HTMLElement>(".canvas-app")!.offsetWidth,
       blur: getComputedStyle(document.querySelector(".topbar-frost")!)
         .backdropFilter,
     };
@@ -33,7 +38,9 @@ export async function captureElectronPanAppearance(
   });
   await page.mouse.move(anchor.x, anchor.y);
   await page.mouse.down({ button: "middle" });
-  await page.mouse.move(anchor.x, anchor.y - 75, { steps: 8 });
+  await page.mouse.move(anchor.x + options.deltaX, anchor.y + options.deltaY, {
+    steps: 8,
+  });
   await page.evaluate(
     () =>
       new Promise<void>((resolve) =>
@@ -46,7 +53,9 @@ export async function captureElectronPanAppearance(
     blur: getComputedStyle(document.querySelector(".topbar-frost")!)
       .backdropFilter,
   }));
-  await page.screenshot({ path: join(directory, "electron-active-pan.png") });
+  await page.screenshot({
+    path: join(directory, `${options.name}-active-pan.png`),
+  });
   await page.mouse.move(anchor.x, anchor.y, { steps: 8 });
   await page.mouse.up({ button: "middle" });
   await page.evaluate(
@@ -62,7 +71,11 @@ export async function captureElectronPanAppearance(
     return {
       x: matrix.e,
       y: matrix.f,
-      scale: matrix.a,
+      scale:
+        document
+          .querySelector<HTMLElement>(".canvas-app")!
+          .getBoundingClientRect().width /
+        document.querySelector<HTMLElement>(".canvas-app")!.offsetWidth,
       blur: getComputedStyle(document.querySelector(".topbar-frost")!)
         .backdropFilter,
       pointerEvents: getComputedStyle(
@@ -70,7 +83,9 @@ export async function captureElectronPanAppearance(
       ).pointerEvents,
     };
   });
-  await page.screenshot({ path: join(directory, "electron-restored-pan.png") });
+  await page.screenshot({
+    path: join(directory, `${options.name}-restored-pan.png`),
+  });
   if (
     during.cursor !== "grabbing" ||
     during.blur !== before.blur ||
@@ -87,6 +102,50 @@ export async function captureElectronPanAppearance(
     after,
     note: "Active-gesture and restored snapshots, not evidence of physical frame presentation.",
   };
+}
+
+export async function captureOverviewAppearance(
+  page: Page,
+  directory: string,
+  variant: string,
+) {
+  const pan = await captureElectronPanAppearance(page, directory, {
+    name: `${variant}-overview`,
+    deltaX: 37.35,
+    deltaY: -22.65,
+  });
+  await page
+    .locator(".dock-tab")
+    .filter({ hasText: /^notes 0$/ })
+    .click();
+  await page.waitForFunction(() => {
+    const app = document.querySelector<HTMLElement>('[data-app-id="app-0"]')!;
+    return (
+      app.getBoundingClientRect().width / app.offsetWidth > 0.5 &&
+      !document.querySelector(".canvas-plane.camera-moving")
+    );
+  });
+  await page.waitForTimeout(300);
+  const returned = await page.evaluate(() => {
+    const app = document.querySelector<HTMLElement>('[data-app-id="app-0"]')!;
+    return {
+      scale: app.getBoundingClientRect().width / app.offsetWidth,
+      willChange: getComputedStyle(document.querySelector(".canvas-plane")!)
+        .willChange,
+      blur: getComputedStyle(document.querySelector(".topbar-frost")!)
+        .backdropFilter,
+    };
+  });
+  if (
+    returned.scale <= 0.5 ||
+    returned.willChange !== "auto" ||
+    returned.blur !== pan.before.blur
+  )
+    throw Error("Overview cache did not clear on return to Notes.");
+  await page.screenshot({
+    path: join(directory, `${variant}-overview-return-notes.png`),
+  });
+  return { pan, returned };
 }
 
 export async function measureElectronFirstUse(page: Page, screenshot: string) {

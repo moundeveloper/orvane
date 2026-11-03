@@ -1,0 +1,792 @@
+{
+  "limits": [
+    "Counterfactual ablations intentionally alter appearance and are not production candidates.",
+    "Single untraced screening pairs; not stable speedup estimates, physical FPS or input latency.",
+    "Rich compositor tracing adds substantial overhead; do not compare traced callback intervals to untraced timings.",
+    "Nested paint and parallel raster work overlap; aggregate durations are not exclusive CPU or wall time.",
+    "Recorded Paint clips are not raster damage bounds. Layer IDs are local to each trace; tile IDs may be reused.",
+    "rasterLayerCount counts IDs referenced by RasterTask, not all layers in a compositor layer tree."
+  ],
+  "summaries": [
+    {
+      "directory": "artifacts/performance/foreground/2026-11-03T10-57-22-481Z",
+      "ablation": "backdrop",
+      "baselineCommit": "18a3261",
+      "candidateBaseCommit": "841fa8b9efa9f1ab3e1749f947b3fd4f6d696d4a",
+      "candidateStyleAppend": "\n.topbar-frost { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }\n",
+      "sources": {
+        "baselineAppSha256": "b86ea8684f247c45330aaaa6c48ea0752bcdcbfacf5f41ab1156b7c44f9e8160",
+        "candidateAppSha256": "b86ea8684f247c45330aaaa6c48ea0752bcdcbfacf5f41ab1156b7c44f9e8160",
+        "baselineStyleSha256": "df7ba9f66a5b8f15a73cde069820c72ffa0918ce842da6bfaf866447727c75bc",
+        "candidateStyleSha256": "3bfbfb495580744d884d017ba631fa31a3b317c5848fcdf2fb2317d69b79b0bd",
+        "commonFixedBaselineStoreSha256": "f4bfc88a07fc6a1a7b92a8f2508f8dca3f37143679e7f2bfd974dcf3420bac42",
+        "candidateStoreSha256": "f4bfc88a07fc6a1a7b92a8f2508f8dca3f37143679e7f2bfd974dcf3420bac42",
+        "commonPageViewSha256": "70c52a07d422564703bfe3c49ceebc06e2af7a65571b4d0865eb862a6aaa1aad"
+      },
+      "traceCategories": "devtools.timeline,v8,blink.user_timing,disabled-by-default-devtools.timeline,cc,disabled-by-default-cc.debug",
+      "rejectedAttempts": [],
+      "primary": [
+        {
+          "variant": "baseline",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 0.2,
+            "visibleApps": 42
+          },
+          "counts": {
+            "apps": 50,
+            "notes": 12,
+            "projects": 8,
+            "git": 10,
+            "scripts": 7,
+            "cabinets": 7,
+            "queryViews": 6,
+            "terminals": 8,
+            "elements": 94567,
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 66.69999999999709,
+              "medianInterval": 16.700000000000728
+            },
+            "continuous": {
+              "samples": 63,
+              "maxInterval": 100,
+              "medianInterval": 66.60000000000218
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 50.20000000000073,
+              "medianInterval": 16.799999999999272
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 71
+          }
+        },
+        {
+          "variant": "candidate",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 0.2,
+            "visibleApps": 42
+          },
+          "counts": {
+            "apps": 50,
+            "notes": 12,
+            "projects": 8,
+            "git": 10,
+            "scripts": 7,
+            "cabinets": 7,
+            "queryViews": 6,
+            "terminals": 8,
+            "elements": 94567,
+            "blur": "none"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 66.79999999999927,
+              "medianInterval": 16.5
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 133.29999999999927,
+              "medianInterval": 66.59999999999854
+            },
+            "stop": {
+              "samples": 4,
+              "maxInterval": 66.70000000000073,
+              "medianInterval": 16.599999999998545
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 71
+          }
+        }
+      ],
+      "diagnostic": [
+        {
+          "variant": "candidate",
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 71
+          },
+          "markedDurationMs": 7363.248,
+          "work": {
+            "Paint": {
+              "count": 2259,
+              "aggregateMs": 9582.985,
+              "maxMs": 119.194
+            },
+            "RasterTask": {
+              "count": 4328,
+              "aggregateMs": 732.52,
+              "maxMs": 2.284
+            },
+            "GpuRasterBuffer::Playback": {
+              "count": 4328,
+              "aggregateMs": 709.349,
+              "maxMs": 2.28
+            },
+            "Layout": {
+              "count": 0,
+              "aggregateMs": 0,
+              "maxMs": 0
+            },
+            "UpdateLayoutTree": {
+              "count": 59,
+              "aggregateMs": 4.585,
+              "maxMs": 0.226
+            }
+          },
+          "rasterLayerCount": 75,
+          "rasterLayersTop10": [
+            {
+              "layerId": 76,
+              "count": 57,
+              "aggregateMs": 24.554,
+              "maxMs": 0.749,
+              "sourceFrames": 57,
+              "recordedTileIds": 53
+            },
+            {
+              "layerId": 94,
+              "count": 57,
+              "aggregateMs": 23.591,
+              "maxMs": 0.828,
+              "sourceFrames": 57,
+              "recordedTileIds": 44
+            },
+            {
+              "layerId": 97,
+              "count": 58,
+              "aggregateMs": 21.509,
+              "maxMs": 0.604,
+              "sourceFrames": 58,
+              "recordedTileIds": 44
+            },
+            {
+              "layerId": 112,
+              "count": 58,
+              "aggregateMs": 20.905,
+              "maxMs": 0.809,
+              "sourceFrames": 58,
+              "recordedTileIds": 49
+            },
+            {
+              "layerId": 30,
+              "count": 58,
+              "aggregateMs": 20.85,
+              "maxMs": 0.99,
+              "sourceFrames": 58,
+              "recordedTileIds": 49
+            },
+            {
+              "layerId": 67,
+              "count": 58,
+              "aggregateMs": 20.579,
+              "maxMs": 0.686,
+              "sourceFrames": 58,
+              "recordedTileIds": 49
+            },
+            {
+              "layerId": 106,
+              "count": 57,
+              "aggregateMs": 20.087,
+              "maxMs": 0.826,
+              "sourceFrames": 57,
+              "recordedTileIds": 54
+            },
+            {
+              "layerId": 120,
+              "count": 58,
+              "aggregateMs": 20.012,
+              "maxMs": 0.879,
+              "sourceFrames": 58,
+              "recordedTileIds": 51
+            },
+            {
+              "layerId": 86,
+              "count": 58,
+              "aggregateMs": 19.78,
+              "maxMs": 0.667,
+              "sourceFrames": 58,
+              "recordedTileIds": 38
+            },
+            {
+              "layerId": 32,
+              "count": 58,
+              "aggregateMs": 19.698,
+              "maxMs": 2.284,
+              "sourceFrames": 58,
+              "recordedTileIds": 54
+            }
+          ],
+          "gpuPlaybackArgsSample": [
+            {},
+            {}
+          ],
+          "recordedPaintClipCount": 1083,
+          "recordedPaintClipsSample": [
+            "[0,0,1440,0,1440,952,0,952]",
+            "[37,590,7238,590,7238,5350,37,5350]",
+            "[-1203,590,5998,590,5998,5350,-1203,5350]"
+          ],
+          "invalidationAndDamageEvents": {
+            "ProxyImpl::ScheduledActionPerformImplSideInvalidation": 8,
+            "CheckerImageTracker::TakeImagesToInvalidateOnSyncTree": 67,
+            "LayerTreeImpl::InvalidateRegionForImages": 67,
+            "LayerTreeHostImpl::CalculateRenderPasses::EmptyDamageRect": 6,
+            "EarlyOut_NoDamage": 6
+          }
+        },
+        {
+          "variant": "baseline",
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 71
+          },
+          "markedDurationMs": 8492.636,
+          "work": {
+            "Paint": {
+              "count": 2259,
+              "aggregateMs": 11013.596,
+              "maxMs": 131.608
+            },
+            "RasterTask": {
+              "count": 4318,
+              "aggregateMs": 776.706,
+              "maxMs": 1.867
+            },
+            "GpuRasterBuffer::Playback": {
+              "count": 4318,
+              "aggregateMs": 752.605,
+              "maxMs": 1.862
+            },
+            "Layout": {
+              "count": 0,
+              "aggregateMs": 0,
+              "maxMs": 0
+            },
+            "UpdateLayoutTree": {
+              "count": 59,
+              "aggregateMs": 4.46,
+              "maxMs": 0.137
+            }
+          },
+          "rasterLayerCount": 75,
+          "rasterLayersTop10": [
+            {
+              "layerId": 81,
+              "count": 57,
+              "aggregateMs": 22.733,
+              "maxMs": 1.199,
+              "sourceFrames": 57,
+              "recordedTileIds": 50
+            },
+            {
+              "layerId": 36,
+              "count": 58,
+              "aggregateMs": 22.479,
+              "maxMs": 0.896,
+              "sourceFrames": 58,
+              "recordedTileIds": 51
+            },
+            {
+              "layerId": 50,
+              "count": 58,
+              "aggregateMs": 22.272,
+              "maxMs": 0.984,
+              "sourceFrames": 58,
+              "recordedTileIds": 48
+            },
+            {
+              "layerId": 99,
+              "count": 57,
+              "aggregateMs": 21.851,
+              "maxMs": 1.507,
+              "sourceFrames": 57,
+              "recordedTileIds": 41
+            },
+            {
+              "layerId": 72,
+              "count": 57,
+              "aggregateMs": 21.663,
+              "maxMs": 0.785,
+              "sourceFrames": 57,
+              "recordedTileIds": 47
+            },
+            {
+              "layerId": 44,
+              "count": 58,
+              "aggregateMs": 21.502,
+              "maxMs": 0.801,
+              "sourceFrames": 58,
+              "recordedTileIds": 50
+            },
+            {
+              "layerId": 102,
+              "count": 57,
+              "aggregateMs": 21.304,
+              "maxMs": 0.865,
+              "sourceFrames": 57,
+              "recordedTileIds": 44
+            },
+            {
+              "layerId": 42,
+              "count": 58,
+              "aggregateMs": 20.677,
+              "maxMs": 0.745,
+              "sourceFrames": 58,
+              "recordedTileIds": 55
+            },
+            {
+              "layerId": 88,
+              "count": 58,
+              "aggregateMs": 20.659,
+              "maxMs": 0.676,
+              "sourceFrames": 58,
+              "recordedTileIds": 45
+            },
+            {
+              "layerId": 38,
+              "count": 58,
+              "aggregateMs": 20.553,
+              "maxMs": 1.867,
+              "sourceFrames": 58,
+              "recordedTileIds": 52
+            }
+          ],
+          "gpuPlaybackArgsSample": [
+            {},
+            {}
+          ],
+          "recordedPaintClipCount": 1083,
+          "recordedPaintClipsSample": [
+            "[0,0,1440,0,1440,952,0,952]",
+            "[37,590,7238,590,7238,5350,37,5350]",
+            "[-1203,590,5998,590,5998,5350,-1203,5350]"
+          ],
+          "invalidationAndDamageEvents": {
+            "ProxyImpl::ScheduledActionPerformImplSideInvalidation": 19,
+            "CheckerImageTracker::TakeImagesToInvalidateOnSyncTree": 78,
+            "LayerTreeImpl::InvalidateRegionForImages": 78,
+            "LayerTreeHostImpl::CalculateRenderPasses::EmptyDamageRect": 15,
+            "EarlyOut_NoDamage": 15
+          }
+        }
+      ]
+    },
+    {
+      "directory": "artifacts/performance/foreground/2026-11-03T11-00-44-266Z",
+      "ablation": "dots",
+      "baselineCommit": "18a3261",
+      "candidateBaseCommit": "841fa8b9efa9f1ab3e1749f947b3fd4f6d696d4a",
+      "candidateStyleAppend": "\n.canvas-dots { visibility: hidden !important; }\n",
+      "sources": {
+        "baselineAppSha256": "b86ea8684f247c45330aaaa6c48ea0752bcdcbfacf5f41ab1156b7c44f9e8160",
+        "candidateAppSha256": "b86ea8684f247c45330aaaa6c48ea0752bcdcbfacf5f41ab1156b7c44f9e8160",
+        "baselineStyleSha256": "df7ba9f66a5b8f15a73cde069820c72ffa0918ce842da6bfaf866447727c75bc",
+        "candidateStyleSha256": "de3697006484fcaccdfe4e62ddfd48ea1872b5c2c765dd87321cfde0e244c7a9",
+        "commonFixedBaselineStoreSha256": "f4bfc88a07fc6a1a7b92a8f2508f8dca3f37143679e7f2bfd974dcf3420bac42",
+        "candidateStoreSha256": "f4bfc88a07fc6a1a7b92a8f2508f8dca3f37143679e7f2bfd974dcf3420bac42",
+        "commonPageViewSha256": "70c52a07d422564703bfe3c49ceebc06e2af7a65571b4d0865eb862a6aaa1aad"
+      },
+      "traceCategories": "devtools.timeline,v8,blink.user_timing,disabled-by-default-devtools.timeline,cc,disabled-by-default-cc.debug",
+      "rejectedAttempts": [],
+      "primary": [
+        {
+          "variant": "baseline",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 0.2,
+            "transform": "matrix(0.2, 0, 0, 0.2, -288, -136)",
+            "visibleApps": 42
+          },
+          "counts": {
+            "apps": 50,
+            "notes": 12,
+            "projects": 8,
+            "git": 10,
+            "scripts": 7,
+            "cabinets": 7,
+            "queryViews": 6,
+            "terminals": 8,
+            "elements": 94567,
+            "blur": "blur(8px) saturate(1.2)",
+            "dotsVisibility": "visible"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 66.90000000000146,
+              "medianInterval": 16.5
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 83.20000000000073,
+              "medianInterval": 50
+            },
+            "stop": {
+              "samples": 4,
+              "maxInterval": 33.20000000000073,
+              "medianInterval": 16.600000000002183
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 71
+          }
+        },
+        {
+          "variant": "candidate",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 0.2,
+            "transform": "matrix(0.2, 0, 0, 0.2, -288, -136)",
+            "visibleApps": 42
+          },
+          "counts": {
+            "apps": 50,
+            "notes": 12,
+            "projects": 8,
+            "git": 10,
+            "scripts": 7,
+            "cabinets": 7,
+            "queryViews": 6,
+            "terminals": 8,
+            "elements": 94567,
+            "blur": "blur(8px) saturate(1.2)",
+            "dotsVisibility": "hidden"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 67,
+              "medianInterval": 16.5
+            },
+            "continuous": {
+              "samples": 63,
+              "maxInterval": 83.5,
+              "medianInterval": 66.59999999999854
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 33.39999999999782,
+              "medianInterval": 16.600000000002183
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 71
+          }
+        }
+      ],
+      "diagnostic": [
+        {
+          "variant": "candidate",
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 71
+          },
+          "markedDurationMs": 8164.62,
+          "work": {
+            "Paint": {
+              "count": 2201,
+              "aggregateMs": 10590.903,
+              "maxMs": 140.522
+            },
+            "RasterTask": {
+              "count": 4129,
+              "aggregateMs": 739.302,
+              "maxMs": 1.122
+            },
+            "GpuRasterBuffer::Playback": {
+              "count": 4129,
+              "aggregateMs": 717.868,
+              "maxMs": 1.115
+            },
+            "Layout": {
+              "count": 0,
+              "aggregateMs": 0,
+              "maxMs": 0
+            },
+            "UpdateLayoutTree": {
+              "count": 59,
+              "aggregateMs": 4.44,
+              "maxMs": 0.163
+            }
+          },
+          "rasterLayerCount": 75,
+          "rasterLayersTop10": [
+            {
+              "layerId": 61,
+              "count": 58,
+              "aggregateMs": 23.415,
+              "maxMs": 1.122,
+              "sourceFrames": 58,
+              "recordedTileIds": 48
+            },
+            {
+              "layerId": 70,
+              "count": 57,
+              "aggregateMs": 22.116,
+              "maxMs": 0.768,
+              "sourceFrames": 57,
+              "recordedTileIds": 46
+            },
+            {
+              "layerId": 99,
+              "count": 57,
+              "aggregateMs": 20.649,
+              "maxMs": 0.649,
+              "sourceFrames": 57,
+              "recordedTileIds": 41
+            },
+            {
+              "layerId": 44,
+              "count": 58,
+              "aggregateMs": 20.527,
+              "maxMs": 0.58,
+              "sourceFrames": 58,
+              "recordedTileIds": 52
+            },
+            {
+              "layerId": 51,
+              "count": 57,
+              "aggregateMs": 20.173,
+              "maxMs": 0.701,
+              "sourceFrames": 57,
+              "recordedTileIds": 51
+            },
+            {
+              "layerId": 54,
+              "count": 57,
+              "aggregateMs": 20.158,
+              "maxMs": 0.805,
+              "sourceFrames": 57,
+              "recordedTileIds": 51
+            },
+            {
+              "layerId": 88,
+              "count": 58,
+              "aggregateMs": 20.113,
+              "maxMs": 0.612,
+              "sourceFrames": 58,
+              "recordedTileIds": 41
+            },
+            {
+              "layerId": 96,
+              "count": 57,
+              "aggregateMs": 20.065,
+              "maxMs": 0.93,
+              "sourceFrames": 57,
+              "recordedTileIds": 41
+            },
+            {
+              "layerId": 73,
+              "count": 58,
+              "aggregateMs": 20.005,
+              "maxMs": 0.605,
+              "sourceFrames": 58,
+              "recordedTileIds": 53
+            },
+            {
+              "layerId": 38,
+              "count": 58,
+              "aggregateMs": 19.017,
+              "maxMs": 0.684,
+              "sourceFrames": 58,
+              "recordedTileIds": 50
+            }
+          ],
+          "gpuPlaybackArgsSample": [
+            {},
+            {}
+          ],
+          "recordedPaintClipCount": 1083,
+          "recordedPaintClipsSample": [
+            "[0,0,1440,0,1440,952,0,952]",
+            "[37,590,7238,590,7238,5350,37,5350]",
+            "[-1203,590,5998,590,5998,5350,-1203,5350]"
+          ],
+          "invalidationAndDamageEvents": {
+            "ProxyImpl::ScheduledActionPerformImplSideInvalidation": 19,
+            "CheckerImageTracker::TakeImagesToInvalidateOnSyncTree": 78,
+            "LayerTreeImpl::InvalidateRegionForImages": 78,
+            "LayerTreeHostImpl::CalculateRenderPasses::EmptyDamageRect": 15,
+            "EarlyOut_NoDamage": 15
+          }
+        },
+        {
+          "variant": "baseline",
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 72
+          },
+          "markedDurationMs": 6194.216,
+          "work": {
+            "Paint": {
+              "count": 2261,
+              "aggregateMs": 8007.58,
+              "maxMs": 84.797
+            },
+            "RasterTask": {
+              "count": 4298,
+              "aggregateMs": 652.54,
+              "maxMs": 2.607
+            },
+            "GpuRasterBuffer::Playback": {
+              "count": 4298,
+              "aggregateMs": 632.373,
+              "maxMs": 2.601
+            },
+            "Layout": {
+              "count": 0,
+              "aggregateMs": 0,
+              "maxMs": 0
+            },
+            "UpdateLayoutTree": {
+              "count": 59,
+              "aggregateMs": 3.651,
+              "maxMs": 0.151
+            }
+          },
+          "rasterLayerCount": 75,
+          "rasterLayersTop10": [
+            {
+              "layerId": 138,
+              "count": 58,
+              "aggregateMs": 23.165,
+              "maxMs": 0.897,
+              "sourceFrames": 58,
+              "recordedTileIds": 56
+            },
+            {
+              "layerId": 113,
+              "count": 57,
+              "aggregateMs": 23.014,
+              "maxMs": 1.453,
+              "sourceFrames": 57,
+              "recordedTileIds": 51
+            },
+            {
+              "layerId": 36,
+              "count": 57,
+              "aggregateMs": 23.006,
+              "maxMs": 1.625,
+              "sourceFrames": 57,
+              "recordedTileIds": 49
+            },
+            {
+              "layerId": 79,
+              "count": 57,
+              "aggregateMs": 22.4,
+              "maxMs": 1.882,
+              "sourceFrames": 57,
+              "recordedTileIds": 47
+            },
+            {
+              "layerId": 72,
+              "count": 57,
+              "aggregateMs": 18.86,
+              "maxMs": 0.878,
+              "sourceFrames": 57,
+              "recordedTileIds": 48
+            },
+            {
+              "layerId": 109,
+              "count": 57,
+              "aggregateMs": 18.856,
+              "maxMs": 0.712,
+              "sourceFrames": 57,
+              "recordedTileIds": 47
+            },
+            {
+              "layerId": 68,
+              "count": 57,
+              "aggregateMs": 18.426,
+              "maxMs": 1.17,
+              "sourceFrames": 57,
+              "recordedTileIds": 50
+            },
+            {
+              "layerId": 105,
+              "count": 57,
+              "aggregateMs": 18.409,
+              "maxMs": 1.516,
+              "sourceFrames": 57,
+              "recordedTileIds": 49
+            },
+            {
+              "layerId": 132,
+              "count": 57,
+              "aggregateMs": 17.858,
+              "maxMs": 1.014,
+              "sourceFrames": 57,
+              "recordedTileIds": 51
+            },
+            {
+              "layerId": 77,
+              "count": 57,
+              "aggregateMs": 17.389,
+              "maxMs": 1.104,
+              "sourceFrames": 57,
+              "recordedTileIds": 49
+            }
+          ],
+          "gpuPlaybackArgsSample": [
+            {},
+            {}
+          ],
+          "recordedPaintClipCount": 1085,
+          "recordedPaintClipsSample": [
+            "[0,0,1440,0,1440,952,0,952]",
+            "[37,590,7238,590,7238,5350,37,5350]",
+            "[-1203,590,5998,590,5998,5350,-1203,5350]"
+          ],
+          "invalidationAndDamageEvents": {
+            "ProxyImpl::ScheduledActionPerformImplSideInvalidation": 14,
+            "CheckerImageTracker::TakeImagesToInvalidateOnSyncTree": 72,
+            "LayerTreeImpl::InvalidateRegionForImages": 72,
+            "LayerTreeHostImpl::CalculateRenderPasses::EmptyDamageRect": 9,
+            "EarlyOut_NoDamage": 9
+          }
+        }
+      ]
+    }
+  ]
+}
