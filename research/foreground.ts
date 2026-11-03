@@ -48,7 +48,7 @@ if (!["mixed", "notes", "scripts", "git", "projects"].includes(contentProfile))
 if (contentProfile !== "mixed") {
   if (
     runtime !== "electron" ||
-    experiment !== "overview" ||
+    !["overview", "projects-rows"].includes(experiment) ||
     cameraModes.some((mode) => mode !== "overview") ||
     visualOnly ||
     diagnosticOnly ||
@@ -58,7 +58,23 @@ if (contentProfile !== "mixed") {
       "Content profiles require native overview comparisons without ablations.",
     );
   try {
-    execFileSync("git", ["diff", "--quiet", "HEAD", "--", "src"]);
+    const changed = execFileSync(
+      "git",
+      ["diff", "--name-only", "HEAD", "--", "src"],
+      { encoding: "utf8" },
+    )
+      .trim()
+      .split(/\r?\n/)
+      .filter(Boolean);
+    const allowed =
+      experiment === "projects-rows"
+        ? [
+            "src/components/projects/ProjectsHub.vue",
+            "src/components/projects/projects.css",
+          ]
+        : [];
+    if (changed.some((path) => !allowed.includes(path)))
+      throw Error("Unmatched production changes");
   } catch {
     throw Error(
       "Content-density comparisons require clean production sources under src.",
@@ -89,16 +105,18 @@ const traceCategories =
   (process.env.ORVANE_FOREGROUND_RASTER_TRACE === "1"
     ? ",cc,disabled-by-default-cc.debug"
     : "");
-if (!["pan", "notes", "overview"].includes(experiment))
+if (!["pan", "notes", "overview", "projects-rows"].includes(experiment))
   throw Error("Unknown foreground experiment.");
 const baselineCommit =
-  contentProfile !== "mixed"
-    ? execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim()
-    : experiment === "overview"
-      ? "18a3261"
-      : experiment === "pan"
-        ? "c5d47d0"
-        : "805bbc8";
+  experiment === "projects-rows"
+    ? "c7c638e"
+    : contentProfile !== "mixed"
+      ? execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim()
+      : experiment === "overview"
+        ? "18a3261"
+        : experiment === "pan"
+          ? "c5d47d0"
+          : "805bbc8";
 const root = resolve(".");
 const destination = resolve(
   "artifacts/performance/foreground",
@@ -136,15 +154,24 @@ const commonFixedBaseline =
       ) +
       currentSource.slice(currentSource.indexOf("      breadcrumb(state)"));
 const baselinePanSources = new Map(
-  ["src/App.vue", "src/style.css"].map((path) => [
+  [
+    "src/App.vue",
+    "src/style.css",
+    ...(experiment === "projects-rows"
+      ? [
+          "src/components/projects/ProjectsHub.vue",
+          "src/components/projects/projects.css",
+        ]
+      : []),
+  ].map((path) => [
     path,
-    contentProfile !== "mixed"
+    contentProfile !== "mixed" && experiment !== "projects-rows"
       ? readFileSync(path, "utf8")
       : execFileSync(
           "git",
           [
             "show",
-            `${experiment === "overview" ? baselineCommit : "c5d47d0"}:${path}`,
+            `${["overview", "projects-rows"].includes(experiment) ? baselineCommit : "c5d47d0"}:${path}`,
           ],
           { encoding: "utf8" },
         ),
@@ -230,11 +257,13 @@ async function run(
   attempt = 0,
 ) {
   const density =
-    contentProfile === "mixed"
-      ? "standard"
-      : variant === "baseline"
-        ? "low"
-        : "high";
+    experiment === "projects-rows"
+      ? "high"
+      : contentProfile === "mixed"
+        ? "standard"
+        : variant === "baseline"
+          ? "low"
+          : "high";
   const settings = contentWorkload(density);
   const directory = join(
     destination,
@@ -412,6 +441,69 @@ async function run(
           ).length === n,
         appCount,
       );
+    async function populateTerminal(id: string) {
+      const hub = page.locator(`[data-app-id="${id}"]`);
+      await hub
+        .locator(".terminal-host:visible textarea")
+        .evaluate((el) => (el as HTMLElement).focus({ preventScroll: true }));
+      await page.keyboard.insertText("fixture-output");
+      await page.keyboard.press("Enter");
+      await hub
+        .locator(".terminal-host")
+        .filter({
+          hasText: `Controlled fixture output ${settings.terminalLines - 1}`,
+        })
+        .first()
+        .waitFor();
+    }
+    if (experiment === "projects-rows" && contentProfile === "mixed") {
+      const ids = await page
+        .locator(".canvas-app")
+        .evaluateAll((apps) =>
+          apps
+            .filter((app) => app.querySelector(".projects-hub"))
+            .map((app) => app.getAttribute("data-app-id")!),
+        );
+      for (const id of ids) {
+        const index = id.slice(4);
+        await page
+          .locator(".dock-tab")
+          .filter({ hasText: new RegExp(`^projects ${index}$`) })
+          .click();
+        await page.waitForFunction((id) => {
+          const r = document
+            .querySelector(`[data-app-id="${id}"]`)!
+            .getBoundingClientRect();
+          return (
+            !document.querySelector(".canvas-plane.camera-moving") &&
+            r.left >= 0 &&
+            r.right <= innerWidth &&
+            r.top >= 0 &&
+            r.bottom <= innerHeight
+          );
+        }, id);
+        await populateTerminal(id);
+      }
+      if (requests["/__orvane/projects/terminal/run"] !== ids.length)
+        throw Error("Mixed fixture command count changed.");
+      await page
+        .locator(".dock-tab")
+        .filter({ hasText: /^notes 0$/ })
+        .click();
+      await page.waitForFunction(() => {
+        const r = document
+          .querySelector('[data-app-id="app-0"]')!
+          .getBoundingClientRect();
+        return (
+          !document.querySelector(".canvas-plane.camera-moving") &&
+          r.left >= 0 &&
+          r.right <= innerWidth &&
+          r.top >= 0 &&
+          r.bottom <= innerHeight
+        );
+      });
+      await afterPaint(page);
+    }
     await desktop?.renderedMetadata();
     const app = page.locator('[data-app-id="app-0"]');
     const counts = await page.evaluate(() => ({
@@ -428,6 +520,11 @@ async function run(
         .length,
       gitCommits: document.querySelectorAll(".git-commit-row").length,
       scriptRows: document.querySelectorAll(".script-row").length,
+      projectRows: document.querySelectorAll(".projects-hub .project-row")
+        .length,
+      windowedProjectLists: document.querySelectorAll(
+        '.projects-hub .project-rows[data-windowed="true"]',
+      ).length,
       blur: getComputedStyle(document.querySelector(".topbar-frost")!)
         .backdropFilter,
       dotsVisibility: getComputedStyle(document.querySelector(".canvas-dots")!)
@@ -484,25 +581,9 @@ async function run(
       await afterPaint(page);
     }
     if (contentProfile === "projects") {
-      for (let i = 0; i < appCount; i++) {
-        const hub = page.locator(`[data-app-id="app-${i}"]`);
-        await hub
-          .locator(".terminal-host:visible textarea")
-          .evaluate((el) => (el as HTMLElement).focus({ preventScroll: true }));
-        await page.keyboard.type("fixture-output");
-        await page.keyboard.press("Enter");
-        await hub
-          .locator(".terminal-host")
-          .filter({
-            hasText: `Controlled fixture output ${settings.terminalLines - 1}`,
-          })
-          .first()
-          .waitFor();
-      }
+      for (let i = 0; i < appCount; i++) await populateTerminal(`app-${i}`);
       if (requests["/__orvane/projects/terminal/run"] !== appCount)
-        throw Error(
-          "Terminal fixture did not execute exactly one mock command per app.",
-        );
+        throw Error("Unexpected mock terminal command count.");
     }
     if (contentProfile === "projects")
       counts.elements = await page.locator("*").count();
@@ -778,18 +859,24 @@ async function run(
       desktop &&
       diagnostic &&
       cameraMode === "overview" &&
-      contentProfile === "mixed" &&
+      (contentProfile === "mixed" || experiment === "projects-rows") &&
       ablation === "none"
     ) {
       result.overviewAppearance = await captureOverviewAppearance(
         page,
         destination,
         variant,
+        contentProfile === "projects" ? "projects 0" : "notes 0",
       );
       await desktop.validate();
       assertForegroundDocuments(directory, settings.blocksPerDocument);
     }
-    if (desktop && appCount === 50 && cameraMode === "normal") {
+    if (
+      desktop &&
+      appCount === 50 &&
+      cameraMode === "normal" &&
+      experiment !== "projects-rows"
+    ) {
       if (diagnostic)
         await cdp.send("Tracing.start", {
           categories:
@@ -927,7 +1014,9 @@ try {
         experiment,
         contentProfile,
         comparisonKind:
-          contentProfile === "mixed" ? "implementation" : "content-density",
+          contentProfile === "mixed" || experiment === "projects-rows"
+            ? "implementation"
+            : "content-density",
         ablation,
         candidateStyleAppend,
         traceCategories,
@@ -936,17 +1025,50 @@ try {
           encoding: "utf8",
         }).trim(),
         workload:
-          contentProfile === "mixed"
-            ? workload
-            : {
+          experiment === "projects-rows"
+            ? {
                 apps: primaryAppCount,
-                columns: 5,
-                width: 1200,
-                height: 760,
-                low: contentWorkload("low"),
-                high: contentWorkload("high"),
-              },
+                contentProfile,
+                heldPayload: contentWorkload("high"),
+              }
+            : contentProfile === "mixed"
+              ? workload
+              : {
+                  apps: primaryAppCount,
+                  columns: 5,
+                  width: 1200,
+                  height: 760,
+                  low: contentWorkload("low"),
+                  high: contentWorkload("high"),
+                },
         sources: {
+          baselineOverrides: Object.fromEntries(
+            [...baselinePanSources].map(([path, source]) => [
+              path,
+              {
+                baselineSha256: createHash("sha256")
+                  .update(source)
+                  .digest("hex"),
+                candidateSha256: createHash("sha256")
+                  .update(readFileSync(path))
+                  .digest("hex"),
+              },
+            ]),
+          ),
+          candidateNewModules:
+            experiment === "projects-rows"
+              ? {
+                  "src/components/projects/WindowedProjectRows.vue": createHash(
+                    "sha256",
+                  )
+                    .update(
+                      readFileSync(
+                        "src/components/projects/WindowedProjectRows.vue",
+                      ),
+                    )
+                    .digest("hex"),
+                }
+              : undefined,
           baselineAppSha256: createHash("sha256")
             .update(
               experiment !== "notes"
@@ -996,20 +1118,26 @@ try {
           runtime === "electron"
             ? "Actual Electron shell and preload with isolated userData; native NetSuite IPC is mocked."
             : "Production Chromium browser, not Electron.",
-          contentProfile === "mixed"
-            ? "App counts below 50 are single screening pairs, not repeated timing evidence."
-            : "Content-density comparison uses identical production code, twenty equal app rectangles and low/high payloads; not an implementation speedup.",
+          experiment === "projects-rows"
+            ? "Implementation comparison holds the populated high payload fixed in both variants."
+            : contentProfile === "mixed"
+              ? "App counts below 50 are single screening pairs, not repeated timing evidence."
+              : "Content-density comparison uses identical production code, twenty equal app rectangles and low/high payloads; not an implementation speedup.",
           "Overview uses the actual UI minimum zoom of 0.2; large fixtures may not all fit on screen.",
           "Focused/visible document checks; screenshots support visual review but do not establish presented frame rate.",
-          experiment !== "notes"
-            ? "Only App.vue and style.css differ from the selected baseline; Notes loading fix and child index are common."
-            : "Only child lookup implementation differs; the document-loading correctness fix and pan implementation are common.",
+          experiment === "projects-rows"
+            ? "Baseline overrides App.vue, style.css, ProjectsHub.vue and projects.css; the new WindowedProjectRows.vue is candidate-only. See source hashes."
+            : experiment !== "notes"
+              ? "Only App.vue and style.css differ from the selected baseline; Notes loading fix and child index are common."
+              : "Only child lookup implementation differs; the document-loading correctness fix and pan implementation are common.",
           "Mock external reads; real isolated SQLite workspace and Notes storage.",
-          contentProfile !== "mixed"
-            ? "Projects preloads one mock command per app before pan; output stays static during timing. No live backend or sustained terminal updates."
-            : runtime === "electron"
-              ? "Pan samples use the restored initial workload; the separate first-use phase adds a retained query result, expanded deployments and controlled terminal output. Large Git diffs are not included."
-              : "No query outputs, expanded deployment panels, Git diff or active terminal commands in this initial fixture.",
+          experiment === "projects-rows"
+            ? "One mock command per Projects app populates retained output before timing; output is static during pan. No deferred first-use measurement in this experiment."
+            : contentProfile !== "mixed"
+              ? "Projects preloads one mock command per app before pan; output stays static during timing. No live backend or sustained terminal updates."
+              : runtime === "electron"
+                ? "Pan samples use the restored initial workload; the separate first-use phase adds a retained query result, expanded deployments and controlled terminal output. Large Git diffs are not included."
+                : "No query outputs, expanded deployment panels, Git diff or active terminal commands in this initial fixture.",
           "Frame intervals cover selection and scripted pan together; first/warm readiness ends after two animation callbacks, not a measured physical display presentation.",
           "No heap snapshots, 30-minute soak or 50-app capacity guarantee.",
         ],

@@ -1,0 +1,24 @@
+{
+  "baseline": "a5143f4",
+  "context": "Real Notes store/request functions; mocked transport, no UI and no live database",
+  "results": [
+    {
+      "notesApps": 5,
+      "requestsForOnePagesEvent": 4,
+      "maxConcurrent": 1,
+      "elapsedWithArtificial2msService": 50.4
+    },
+    {
+      "notesApps": 20,
+      "requestsForOnePagesEvent": 19,
+      "maxConcurrent": 1,
+      "elapsedWithArtificial2msService": 241.2
+    },
+    {
+      "notesApps": 50,
+      "requestsForOnePagesEvent": 49,
+      "maxConcurrent": 1,
+      "elapsedWithArtificial2msService": 712.77
+    }
+  ]
+}

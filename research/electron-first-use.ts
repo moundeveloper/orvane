@@ -48,6 +48,27 @@ export async function captureElectronPanAppearance(
       ),
   );
   const during = await page.evaluate(() => ({
+    projectRows: [
+      ...document.querySelectorAll<HTMLElement>(".projects-hub .project-rows"),
+    ].map((el) => {
+      const r = el.getBoundingClientRect();
+      return {
+        app: el.closest("[data-app-id]")?.getAttribute("data-app-id"),
+        x: r.x,
+        y: r.y,
+        width: r.width,
+        height: r.height,
+        scrollTop: el.scrollTop,
+        scrollHeight: el.scrollHeight,
+        clientHeight: el.clientHeight,
+      };
+    }),
+    x: new DOMMatrix(
+      getComputedStyle(document.querySelector(".canvas-plane")!).transform,
+    ).e,
+    y: new DOMMatrix(
+      getComputedStyle(document.querySelector(".canvas-plane")!).transform,
+    ).f,
     cursor: getComputedStyle(document.querySelector(".pan-cursor-surface")!)
       .cursor,
     blur: getComputedStyle(document.querySelector(".topbar-frost")!)
@@ -108,6 +129,7 @@ export async function captureOverviewAppearance(
   page: Page,
   directory: string,
   variant: string,
+  returnLabel = "notes 0",
 ) {
   const pan = await captureElectronPanAppearance(page, directory, {
     name: `${variant}-overview`,
@@ -116,7 +138,7 @@ export async function captureOverviewAppearance(
   });
   await page
     .locator(".dock-tab")
-    .filter({ hasText: /^notes 0$/ })
+    .filter({ hasText: new RegExp(`^${returnLabel}$`) })
     .click();
   await page.waitForFunction(() => {
     const app = document.querySelector<HTMLElement>('[data-app-id="app-0"]')!;
@@ -143,7 +165,10 @@ export async function captureOverviewAppearance(
   )
     throw Error("Overview cache did not clear on return to Notes.");
   await page.screenshot({
-    path: join(directory, `${variant}-overview-return-notes.png`),
+    path: join(
+      directory,
+      `${variant}-overview-return-${returnLabel.startsWith("notes") ? "notes" : "projects"}.png`,
+    ),
   });
   return { pan, returned };
 }

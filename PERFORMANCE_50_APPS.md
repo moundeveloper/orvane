@@ -379,11 +379,21 @@ Evidence: `research/content-profile-results.json` records all samples, payloads,
 
 To reproduce, use the eighteenth-pass native overview command with `ORVANE_FOREGROUND_CONTENT_PROFILE=notes`, `scripts`, `git` or `projects`, repetitions `1`, ablation `none`, and raster tracing disabled. Profiles require clean production sources, use 20 apps regardless of the smaller-app matrix, and compare low/high data on the same current source revision. Default `mixed` preserves the prior fixture. **Do not use the low/high density pair to claim an implementation improvement:** the next code candidate must hold data fixed and override every changed production source in its baseline.
 
+### Twenty-second pass: bounded Projects rows
+
+Projects lists above 50 entries now mount visible rows with overscan and preserve a focused row. The existing scroll container and row markup remain. Grouping, filtering, full-data selection and shift ranges, context actions and commands continue to use the complete dataset. Tab and Shift+Tab reveal logical records beyond the mounted window; refresh keeps the scroll anchor or nearest surviving row. Measurements use layout pixels independently of canvas zoom. Pending scroll restoration retains its target across subsequent measurements, and teardown removes observers/listeners.
+
+Potentially wrapping names and horizontally overflowing narrow layouts deliberately retain the original full list. This preserves row heights, intrinsic widths and native horizontal focus scrolling. Small lists also remain native. Full project data stays loaded; browser-native Find sees only mounted row text in a windowed list. Terminal instances, buffers and commands are unchanged. No compositor promotion, blur or text-rendering change was introduced.
+
+Validation: all 15 checks across `projects-windowing`, `terminal-performance` and `projects` pass serially, and `pnpm build` passes with existing warnings. Coverage includes 1,000 records, selection/filter/group/context/open actions, keyboard traversal and entry from both directions, focus pinning, the 50/51 boundary, removal of a scroll anchor, wrapped refresh, narrow horizontal keyboard scrolling, resize/zoom, hidden/show hosts, terminal output retention and observer teardown.
+
+MEASUREMENT_PENDING
+
 ### Remaining work, in current order
 
-Status after the twenty-first pass: controlled equal-area content profiling is complete. The next implementation candidate is bounded Projects row rendering, targeting its measured main-thread Layerize cost with fixed data. Git history windowing follows; Notes sidebar/heap attribution remains separate. Earlier compositor cache candidates remain reverted. Heap/lifecycle profiling, richer active mixed workloads and the 30-minute soak are unfinished; no general 50-app capacity guarantee is established.
+Status after the twenty-second pass: bounded Projects row rendering is implemented and validated against fixed populated data. Git history windowing is next; Notes sidebar/heap attribution remains separate. Earlier compositor cache candidates remain reverted. Heap/lifecycle profiling, richer active mixed workloads and the 30-minute soak are unfinished; no general 50-app capacity guarantee is established.
 
-#### 1. Next: Projects layerization, bounded content and richer foreground workload
+#### 1. Next: Git history, Notes attribution and richer foreground workload
 
 - [x] Complete the initial equal-area content comparison and include main-thread Layerize events alongside paint/raster work. Further attribution inside Projects and Notes remains pending.
 - [x] Add a post-cursor baseline: the `overview` experiment compares App.vue and style.css against `18a3261`, with source hashes. Extend its source overrides if a future candidate changes additional files; the older `pan` experiment still uses `c5d47d0`.
@@ -392,11 +402,11 @@ Status after the twenty-first pass: controlled equal-area content profiling is c
 - [x] Screen backdrop and dot dependencies without changing production: neither removal established a timing benefit. Record recurring RasterTask layer IDs and the limits of the available bounds/scale data.
 - [x] Test a split translation/zoom cache and reject it at fractional-motion visual review. Include fractional offsets and return-to-editing checks in future overview diagnostic captures.
 - [x] Compare four content types and low/high payloads at equal visible rectangles; preserve the controls and raw samples.
-- [ ] Next: prototype bounded Projects rows against the actual `project-rows` scroll area, including the measured 100-entry case. Verify whether Layerize cost falls with unchanged visible pixels. Preserve grouping/filtering, full-data selection and shift ranges, bulk/context actions, keyboard focus/traversal, responsive row heights, scroll anchors and terminal buffers. If it does not reduce the measured cost, isolate project-list/terminal contributions before another candidate.
-- [ ] Benchmark that implementation with identical populated data in both variants, at 20 controlled apps and in the mixed 50-app fixture. Include ProjectsHub.vue and any changed styles/helpers in baseline overrides; the current content-profile mode intentionally compares low/high payloads and is insufficient to attribute a code speedup.
+- [x] Implement bounded Projects rows against the actual `project-rows` scroll area, including the measured 100-entry case. Verify whether Layerize cost falls with unchanged visible pixels. Preserve grouping/filtering, full-data selection and shift ranges, bulk/context actions, keyboard focus/traversal, responsive row heights, scroll anchors and terminal buffers. If it does not reduce the measured cost, isolate project-list/terminal contributions before another candidate.
+- [x] Benchmark that implementation with identical populated data in both variants, at 20 controlled apps and in the mixed 50-app fixture. Include ProjectsHub.vue and any changed styles/helpers in baseline overrides; the current content-profile mode intentionally compares low/high payloads and is insufficient to attribute a code speedup.
 - [ ] Prototype Git history row windowing after Projects. Keep full graph topology, SVG continuity, search/selection, detail state, pagination, tooltips and keyboard access to unmounted commits.
 - [ ] Attribute Notes sidebar/document DOM and retained memory separately before hierarchical windowing or ownership changes. Its metadata count is fixed in the current low/high document comparison. Actual layer raster scales and invalidation bounds still require another capture method before further compositor promotion experiments.
-- [ ] Preserve header blur, text sharpness, pointer hit testing, selection, drafts and editor/terminal state. Run five alternating native pairs plus separate diagnostic/visual checks before keeping an overview candidate.
+- [x] Preserve header blur, text sharpness, pointer hit testing, selection and editor/terminal state for Projects rows. Complete five alternating native pairs per workload/mode plus separate diagnostic/visual checks. Repeat this acceptance gate for future candidates.
 - [ ] Add retained query outputs, many expanded Script/deployment panels, large file lists/diffs, larger Notes documents/history and sustained controlled terminal updates during comparative pan/zoom runs. Current first-use checks exercise only a subset after pan; the new Projects profile adds static retained terminal output, not sustained updates during timing.
 - [ ] Validate representative live read-only NetSuite/processing-window behavior separately from the fixed-response frontend fixture. Keep account mutations and user repositories out of synthetic benchmark runs.
 
