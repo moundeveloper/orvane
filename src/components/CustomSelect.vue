@@ -7,6 +7,7 @@ import {
   ref,
   useAttrs,
   useSlots,
+  watch,
   type VNode,
 } from "vue";
 import Icon from "./Icon.vue";
@@ -73,13 +74,19 @@ const id = `select-${crypto.randomUUID()}`;
 function place() {
   if (!trigger.value) return;
   const r = trigger.value.getBoundingClientRect();
+  placed = r;
   // The list lives outside the canvas: zoom it by the trigger's on-screen
   // scale so it matches the app at any canvas zoom. CSS zoom also scales
   // left/top, so those are given in unzoomed pixels.
   const scale = r.width / (trigger.value.offsetWidth || r.width) || 1;
   const height = Math.min(248, options.value.length * 32 + 10) * scale;
   const below = innerHeight - r.bottom;
-  const left = Math.max(8, Math.min(innerWidth - r.width - 8, r.left));
+  // Under the trigger, as wide as it, but only its part inside the window
+  // (a wide trigger can run past the edge when zoomed in).
+  const minWidth = 150 * scale;
+  const start = Math.max(8, r.left);
+  const width = Math.max(minWidth, Math.min(r.right, innerWidth - 8) - start);
+  const left = Math.max(8, Math.min(start, innerWidth - 8 - width));
   const top =
     below < height && r.top > below
       ? Math.max(8, r.top - height - 5 * scale)
@@ -87,13 +94,31 @@ function place() {
   position.value = {
     left: left / scale + "px",
     top: top / scale + "px",
-    width: Math.max(150, trigger.value.offsetWidth) + "px",
+    width: width / scale + "px",
     maxHeight:
       Math.max(80, Math.min(248, (Math.max(below, r.top) - 16) / scale)) + "px",
     fontSize: "11px",
     zoom: String(scale),
   };
 }
+// Follow the trigger while open: the canvas can pan or zoom under it.
+let placed: DOMRect | undefined, follow = 0;
+function track() {
+  follow = 0;
+  if (!open.value || !trigger.value) return;
+  const r = trigger.value.getBoundingClientRect();
+  if (!r.width || r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) {
+    open.value = false;
+    return;
+  }
+  if (!placed || r.left !== placed.left || r.top !== placed.top || r.width !== placed.width)
+    place();
+  follow = requestAnimationFrame(track);
+}
+watch(open, (now) => {
+  cancelAnimationFrame(follow);
+  if (now) follow = requestAnimationFrame(track);
+});
 function show() {
   if (open.value) {
     open.value = false;
@@ -157,6 +182,8 @@ function key(e: KeyboardEvent) {
   }
 }
 function outside(e: PointerEvent) {
+  // Middle-drag pans the canvas: the list follows instead of closing.
+  if (e.button === 1) return;
   if (
     !trigger.value?.contains(e.target as Node) &&
     !menu.value?.contains(e.target as Node)
@@ -169,12 +196,11 @@ function dismiss() {
 onMounted(() => {
   document.addEventListener("pointerdown", outside, true);
   window.addEventListener("resize", dismiss);
-  window.addEventListener("wheel", dismiss, { passive: true });
 });
 onBeforeUnmount(() => {
   document.removeEventListener("pointerdown", outside, true);
   window.removeEventListener("resize", dismiss);
-  window.removeEventListener("wheel", dismiss);
+  cancelAnimationFrame(follow);
 });
 </script>
 <template>

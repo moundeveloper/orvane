@@ -436,6 +436,65 @@ test("dropdown lists scale with the canvas zoom like the app around them", async
   expect(sizes.listWidth / sizes.listCss).toBeCloseTo(zoom, 1);
   // And still opens right under its trigger.
   expect(Math.abs(sizes.listTop - sizes.triggerBottom)).toBeLessThan(10);
+  const placement = () =>
+    page.evaluate(() => {
+      const list = document.querySelector(".select-popover")!.getBoundingClientRect();
+      const trigger = document
+        .querySelector('[role=combobox][aria-label="Git history order"]')!
+        .getBoundingClientRect();
+      return {
+        dx: Math.round(list.left - trigger.left),
+        dy: Math.round(list.top - trigger.bottom),
+        right: list.right,
+        width: innerWidth,
+      };
+    });
+  const at = await placement();
+  expect(Math.abs(at.dx)).toBeLessThan(2);
+  // Panning the canvas while it is open: the list moves with its trigger.
+  const middle = await trigger.boundingBox();
+  await page.mouse.move(middle!.x - 40, middle!.y + 80);
+  await page.mouse.down({ button: "middle" });
+  await page.mouse.move(middle!.x + 60, middle!.y + 140, { steps: 5 });
+  await page.mouse.up({ button: "middle" });
+  await expect(list).toBeVisible();
+  await expect.poll(async () => (await trigger.boundingBox())!.x).not.toBeCloseTo(middle!.x, 0);
+  await expect.poll(async () => {
+    const now = await placement();
+    return Math.abs(now.dx) < 2 && Math.abs(now.dy - at.dy) < 2;
+  }).toBe(true);
+  await page.keyboard.press("Escape");
+  // Zoomed in so far that the trigger runs past the window's right edge:
+  // the list starts under it and stays inside the window.
+  const near = await trigger.boundingBox();
+  await page.mouse.move(near!.x + near!.width / 2, near!.y + near!.height / 2);
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, -1500);
+  await page.keyboard.up("Control");
+  await expect.poll(scale).toBeGreaterThan(2);
+  await page.waitForTimeout(400);
+  const wide = await trigger.boundingBox();
+  const width = page.viewportSize()!.width;
+  if (wide!.x + wide!.width <= width) {
+    // Push it past the edge.
+    await page.mouse.move(wide!.x + 5, wide!.y + 60);
+    await page.mouse.down({ button: "middle" });
+    await page.mouse.move(wide!.x + 5 + (width - wide!.x - wide!.width / 2), wide!.y + 60, { steps: 5 });
+    await page.mouse.up({ button: "middle" });
+  }
+  await expect.poll(async () => {
+    const b = (await trigger.boundingBox())!;
+    return b.x > 0 && b.x < width - 40 && b.x + b.width > width;
+  }).toBe(true);
+  await trigger.click({ position: { x: 4, y: 4 } });
+  await expect(list).toBeVisible();
+  const edge = await placement();
+  const visible = width - (await trigger.boundingBox())!.x;
+  // Under the trigger when its visible part fits the list's minimum width
+  // (150px at this zoom); otherwise flush with the window's right edge.
+  if (visible - 8 >= 150 * (await scale())) expect(Math.abs(edge.dx)).toBeLessThan(2);
+  else expect(Math.round(edge.width - 8 - edge.right)).toBe(0);
+  expect(edge.right).toBeLessThanOrEqual(edge.width);
 });
 test("folder picker saves a local Git workspace and preserves selection across reloads", async ({
   page,
