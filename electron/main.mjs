@@ -140,6 +140,7 @@ function secure() {
   const trackPasswords = setupPasswords({
     partition: BROWSER_PARTITION,
     isOrvane,
+    isProcessing: processing.owns,
     folder: app.getPath("userData"),
   });
 

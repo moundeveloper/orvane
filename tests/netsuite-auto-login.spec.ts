@@ -14,6 +14,8 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
   test.setTimeout(180000);
   const posts: string[] = [];
   let reject = false;
+  // Hosts with a NetSuite session; the others go to the login page.
+  const sessions = new Set<string>();
   const fixture = join(import.meta.dirname, "fixtures", "netsuite-login");
   // Like NetSuite's own: system.netsuite.com posts to enterpriselogin.nl, and
   // the Log In button turns on a moment after both fields are filled.
@@ -42,6 +44,7 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
         request.on("end", () => {
           // The verification code step.
           if (path === "/app/center/card.nl") {
+            sessions.add(host);
             response.writeHead(303, { location: path });
             return response.end();
           }
@@ -59,6 +62,7 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
               : host.startsWith("1964539-sb2.")
                 ? "/app/login/secure/twofactor.nl"
                 : "/app/center/card.nl";
+          if (!next.includes("twofactor")) sessions.add(next.startsWith("https://") ? new URL(next).hostname : host);
           response.writeHead(303, { location: next });
           response.end();
         });
@@ -83,8 +87,17 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
         });
         return response.end();
       }
-      if (path === "/app/center/card.nl")
-        return response.end("<!doctype html><title>NetSuite Home</title><h1>Home</h1>");
+      if (path === "/app/center/card.nl") {
+        if (!sessions.has(host)) {
+          response.writeHead(302, { location: "/pages/customerlogin.jsp?country=US" });
+          return response.end();
+        }
+        // Like the dashboard: portlets keep loading after the page itself.
+        return response.end(
+          "<!doctype html><title>NetSuite Home</title><h1>Home</h1><iframe src=/portlet></iframe>",
+        );
+      }
+      if (path === "/portlet") return response.end("<!doctype html><p>Portlet</p>");
       if (path === "/app/login/secure/twofactor.nl")
         return response.end(
           "<!doctype html><title>Verification</title><form method=post action=/app/center/card.nl>" +
@@ -297,6 +310,44 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
     await page.keyboard.press("Enter");
     await expect(tabs.nth(1)).toContainText("NetSuite Home", { timeout: 20000 });
     expect(posts).toEqual(["system.netsuite.com"]);
+    posts.length = 0;
+
+    // Processing tabs sign in by themselves too, and say "ready" once done
+    // (not "loading" while the dashboard's iframes load).
+    await browser.getByRole("button", { name: "Use current tab" }).click();
+    const processing = browser.locator(".processing-list");
+    const row = processing.locator(".processing-row", { hasText: "1964539-sb1.app.netsuite.com" });
+    await expect(row).toContainText("ready", { timeout: 20000 });
+    sessions.delete("1964539-sb1.app.netsuite.com");
+    await row.getByRole("button", { name: "Refresh" }).click();
+    await expect.poll(() => posts.slice(), { timeout: 20000 }).toEqual(["1964539-sb1.app.netsuite.com"]);
+    await expect(row).toContainText("ready", { timeout: 20000 });
+    await page.waitForTimeout(1500);
+    await expect(row).toContainText("ready");
+    posts.length = 0;
+    // A visible tab signed in to another account: the processing tab never
+    // signs in over it (NetSuite could sign that tab out).
+    sessions.add("1964539.app.netsuite.com");
+    const newest = () =>
+      app.evaluate(({ webContents }) =>
+        webContents
+          .getAllWebContents()
+          .filter((c) => c.getType() === "webview")
+          .sort((a, b) => b.id - a.id)[0]!
+          .executeJavaScript("location.href = 'https://1964539.app.netsuite.com/app/center/card.nl'; 1"),
+      );
+    await newest();
+    await expect(tabs.nth(1)).toContainText("NetSuite Home", { timeout: 15000 });
+    await expect.poll(() =>
+      app.evaluate(({ webContents }) =>
+        webContents.getAllWebContents().some((c) => c.getType() === "webview" && c.getURL().startsWith("https://1964539.app.netsuite.com/app/center")),
+      ),
+    ).toBe(true);
+    sessions.delete("1964539-sb1.app.netsuite.com");
+    if (!(await processing.isVisible())) await browser.getByRole("button", { name: /Processing tabs/ }).click();
+    await row.getByRole("button", { name: "Refresh" }).click();
+    await expect(row).toContainText("sign-in required", { timeout: 25000 });
+    expect(posts).toEqual([]);
   } finally {
     await app.close();
     await new Promise((done) => site.close(done));
