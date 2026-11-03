@@ -196,6 +196,13 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
     );
     expect(posts).toEqual(["system.netsuite.com"]);
     posts.length = 0;
+    // The same generic page on the account's own host.
+    await visit("https://1964539-sb1.app.netsuite.com/pages/customerlogin.jsp?country=US");
+    await expect.poll(where, { timeout: 15000 }).toContain(
+      "https://1964539-sb1.app.netsuite.com/app/center/card.nl",
+    );
+    expect(posts).toEqual(["1964539-sb1.app.netsuite.com"]);
+    posts.length = 0;
 
     // Origin rejection: lookalike hosts, a redirect away from NetSuite, an
     // account auto sign-in doesn't cover, and system.netsuite.com without

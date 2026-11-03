@@ -16,6 +16,10 @@ test("NetSuite auto sign-in matches genuine login pages only", () => {
     origin: "https://system.netsuite.com",
     account: "1964539-sb2",
   });
+  assert.deepEqual(netSuiteLogin("https://4027610-sb1.app.netsuite.com/pages/customerlogin.jsp?country=US"), {
+    origin: "https://4027610-sb1.app.netsuite.com",
+    account: "4027610-sb1",
+  });
   for (const url of [
     "http://1964539-sb1.app.netsuite.com/app/login/secure/enterpriselogin.nl",
     "https://1964539-sb1.app.netsuite.com:8443/app/login/secure/enterpriselogin.nl",

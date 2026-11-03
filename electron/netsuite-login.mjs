@@ -46,9 +46,9 @@ export function netSuiteLogin(url) {
   const page = netSuiteUrl(url);
   if (!page) return;
   const path = page.url.pathname.toLowerCase();
-  const login =
-    path.startsWith("/app/login/") ||
-    (page.url.hostname === SYSTEM_HOST && path === "/pages/customerlogin.jsp");
+  // The generic login page is served on account hosts too
+  // (4027610-sb1.app.netsuite.com/pages/customerlogin.jsp).
+  const login = path.startsWith("/app/login/") || path === "/pages/customerlogin.jsp";
   if (login) return { origin: page.url.origin, account: page.account };
 }
 
