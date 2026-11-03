@@ -203,25 +203,37 @@ The comparison changes only the child-lookup implementation: the baseline getter
 
 Selection measures click capture until matching document content is present followed by two animation callbacks. It excludes app startup, fit-camera animation and physical screen presentation. The small first-selection difference and overlapping warm results do not establish a broad responsiveness gain. Callback intervals are cadence diagnostics, not presented FPS or a p99 estimate. This compares the Notes indexing pass in one loaded workload, not all cumulative optimizations against the original application.
 
-A separate candidate trace, excluded from those ten timing samples, records approximately 890.4 ms in style recalculation during the pan interval, with a single recalculation reaching 457.8 ms. The global `.is-panning *` / `.is-panning:active *` cursor and user-selection rules are a strong candidate for the next controlled experiment; the trace does not prove they are the exclusive cause. No camera rewrite or speculative CSS change was included here. Raw accepted run summaries, source hashes and trace location are in `research/foreground-results.json`; rerun with `node --import tsx research/foreground.ts` (opens dedicated foreground browser windows). The default is five pairs plus a separate diagnostic trace; `ORVANE_FOREGROUND_REPETITIONS=1` is only a smoke run.
+A separate candidate trace, excluded from those ten timing samples, records approximately 890.4 ms in style recalculation during the pan interval, with a single recalculation reaching 457.8 ms. The global `.is-panning *` / `.is-panning:active *` cursor and user-selection rules are a strong candidate for the next controlled experiment; the trace does not prove they are the exclusive cause. No camera rewrite or speculative CSS change was included here. Raw accepted run summaries, source hashes and trace location are in `research/foreground-results.json`; rerun the Notes experiment with `ORVANE_FOREGROUND_EXPERIMENT=notes` and `node --import tsx research/foreground.ts` (opens dedicated foreground browser windows). The default is five pairs plus a separate diagnostic trace; `ORVANE_FOREGROUND_REPETITIONS=1` is only a smoke run.
 
 Validation: all 17 unit/service checks and all 10 browser checks pass, including a new delayed-read regression covering initial load, page switching, stale responses, genuine empty pages, saved-content preservation and failed-read retry. Both saved fixture documents were checked directly in all 11 completed SQLite databases and remained intact. `pnpm build` passes with existing Vite warnings. Loading and populated Notes views were visually reviewed; the scoped design detector reports no findings.
 
 Limits: this is a browser run, not Electron. Other desktop activity, power and thermal state were not controlled. The fixture omits active terminal commands, retained query outputs, expanded deployments and large Git diffs; it is not a complete 50-app soak or capacity guarantee. Heap behavior and first initialization of every hidden inner view remain unmeasured.
 
+### Sixteenth pass: pan cursor/style invalidation
+
+Replaced the universal `.is-panning *` / `.is-panning:active *` style changes with a single transparent cursor surface above the canvas and below the toolbar, dock and floating controls. Space, middle-button and empty-space left-button pans capture on that surface; its own grab/grabbing state changes without restyling every app descendant. Pointer-down prevention suppresses new text selection during a gesture. App move/resize and group-label gestures retain their original capture/click targets and use a scoped cursor class on that target. Cancellation, lost capture, hidden-document cleanup and window blur release gesture state/capture. No compositor promotion, camera math, blur or text-rendering change was introduced.
+
+`research/foreground.ts` now defaults to the `pan` experiment, comparing `src/App.vue` and `src/style.css` from `c5d47d0` with the candidate while keeping Notes loading/indexing and all fixture data common. `ORVANE_FOREGROUND_EXPERIMENT=notes` retains the previous child-index experiment. The benchmark records pan start, continuous motion and stop separately, and captures one diagnostic trace per variant outside the ten comparative samples. Source hashes identify the measured candidate worktree; the base commit is not presented as the final candidate commit.
+
+Five alternating production-browser pairs at 50 apps completed with zero focus/visibility interruptions. The table reports the median of each run's largest animation-callback interval within that phase, with the range of those five maxima. These are callback-cadence diagnostics, not physical frame presentation, input latency or p99 estimates; boundary phases contain only a few callbacks.
+
+| Pan phase | Baseline median worst interval (range), ms | Candidate median worst interval (range), ms |
+|---|---:|---:|
+| Start | 466.3 (433.0–482.9) | 16.8 (16.8–17.0) |
+| Continuous motion | 33.3 (33.2–33.5) | 33.1 (17.0–50.0) |
+| Stop | 433.0 (400.1–433.1) | 16.8 (16.7–16.8) |
+
+The separate traces record total style recalculation at start falling from 429.13 to 0.19 ms and at stop from 419.97 to 0.07 ms. Continuous-motion style recalculation falls from 6.47 to 4.96 ms, with similar callback cadence in the comparative samples. The evidence supports removing the boundary-wide style invalidations; it does not establish a general FPS improvement or justify a camera-controller rewrite. Fixture app/data counts remain identical, with one extra transparent DOM element in the candidate. Both saved Notes documents remain intact in all 12 SQLite databases. Raw measurements, traces and source hashes are recorded in `research/pan-cursor-results.json`.
+
+Validation: 20 distinct browser checks pass across `pan-cursor`, `workspace`, `wheel` and `zoom-groups`, including native pointer capture, Space/middle/left pan, ordinary input and keyboard/mouse text selection, toolbar access, pointer cancellation, blur recovery, two-finger zoom, app movement/resizing, group-label click/drag and existing zoom/iframe/text-scale behavior. Targeted ownership checks were rerun after routing empty-space left dragging through the new surface. `pnpm build` passes with existing Vite warnings. Populated baseline/candidate screenshots were visually reviewed, and computed header blur remains unchanged. The design detector reports two unchanged pre-existing warnings (Inter and an existing side accent border), with no findings in the pan additions.
+
+The result remains specific to the isolated production Chromium fixture on this machine. Electron, overview zoom, active commands, retained outputs/expanded panels, heap stabilization and the mixed 30-minute soak remain outstanding.
+
 ### Remaining work, in current order
 
-Status after `4defdfd`: the first production-browser comparison is complete. The pan experiment, Electron comparisons, heap profiling and 30-minute soak below remain unfinished. Functional checks and reduced operation counts do not establish 50-app smoothness or stable memory.
+Status after the sixteenth pass: the controlled browser pan experiment is complete. Next is foreground Electron and first-use validation, followed by heap/lifecycle profiling and the 30-minute soak. Functional checks and this browser comparison do not establish a general 50-app capacity guarantee.
 
-#### 1. Next: reduce pan cursor/style invalidation
-
-- [ ] Isolate the cost of `.is-panning *` and `.is-panning:active *` in `src/style.css`. The separate trace recorded 890.4 ms of style recalculation during pan, with one recalculation at 457.8 ms; treat these rules as a hypothesis to test.
-- [ ] Prototype a narrowly scoped cursor/selection change. Preserve middle-button and Space-drag pan, grab/grabbing feedback over controls and editors, pointer capture, cancellation/blur recovery, ordinary text selection, header blur and text sharpness.
-- [ ] Extend `research/foreground.ts` to compare the pre-change and candidate pan implementations. Its current baseline switch compares only Notes child lookup, so it must be updated before claiming a pan improvement.
-- [ ] Run at least five alternating production-build pairs with identical fixture data. Reject interrupted focus/visibility runs, keep diagnostic traces separate from timing samples, and report the spread. Check pan start, continuous motion and stop separately.
-- [ ] Keep the change only if the measurements support it and interaction/visual regressions pass; record raw results and the commit identity here.
-
-#### 2. Foreground Electron and first-use validation
+#### 1. Next: foreground Electron and first-use validation
 
 - [ ] Run the same controlled workload in the actual Electron shell using isolated app profiles and databases. Record Electron/Chromium versions, display scale, graphics stack, focus/visibility and power conditions.
 - [ ] Compare 5/10/20/35/50 apps at overview and normal zoom, keeping fixture data and inner-tab counts fixed within each comparison. Sample header blur and text appearance during and after motion.
@@ -229,14 +241,14 @@ Status after `4defdfd`: the first production-browser comparison is complete. The
 - [ ] Measure cold first selection and warm return for deferred NetSuite panes, File Cabinet editors and Projects terminals. Separate request completion, usable editor/list readiness and intentional fit-camera animation.
 - [ ] Capture diagnostic scripting, style/layout, paint/raster/composite, GC, request counts and long tasks. Report callback cadence separately from presented-frame evidence and avoid p99 claims from five repetitions.
 
-#### 3. Heap, lifecycle and 30-minute soak
+#### 2. Heap, lifecycle and 30-minute soak
 
 - [ ] Capture comparable heap snapshots and process memory for a fixed populated workload before/after visiting hidden tabs and editors. Account for the active-output exception to the estimated 64 MiB inactive query budget.
 - [ ] Run 100 open/close cycles with representative Notes histories, query results/traces, initialized terminals and file editors. Check retained stores, rows, editor states, subscriptions, observers and terminal instances; confirm surviving views keep their state.
 - [ ] Run a 30-minute mixed 50-app soak with repeated navigation, pan/zoom, edits, saves, tab churn and controlled requests/output. Record errors, request counts, long tasks, heap trends, renderer/main/guest process memory and first-use latency drift.
 - [ ] Verify content, independent undo, drafts, split state, failed-write recovery, lease/revision checks and final-close persistence afterward. Confirm memory stabilizes for the fixed workload before making capacity claims.
 
-#### 4. Further changes only when those measurements justify them
+#### 3. Further changes only when those measurements justify them
 
 - [ ] Rank any remaining stalls or retention by measured cost before selecting another implementation.
 - [ ] Consider canonical Notes metadata caching, more compact history or smaller persistence commits only with evidence and explicit ownership/consistency/migration tests.

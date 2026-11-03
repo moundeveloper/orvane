@@ -15,9 +15,12 @@ import {
   workload,
 } from "./foreground-fixture.ts";
 
-// Production browser comparison of the Notes metadata pass only. No live
+// Production browser comparison of pan styles or Notes metadata. No live
 // NetSuite, filesystem, Git or command calls are permitted by this fixture.
-const baselineCommit = "805bbc8";
+const experiment = process.env.ORVANE_FOREGROUND_EXPERIMENT || "pan";
+if (!["pan", "notes"].includes(experiment))
+  throw Error("Unknown foreground experiment.");
+const baselineCommit = experiment === "pan" ? "c5d47d0" : "805bbc8";
 const root = resolve(".");
 const destination = resolve(
   "artifacts/performance/foreground",
@@ -43,12 +46,23 @@ const currentSource = readFileSync(
   "utf8",
 );
 const commonFixedBaseline =
-  currentSource.slice(0, currentSource.indexOf("      childrenByParent()")) +
-  baselineSource.slice(
-    baselineSource.indexOf("      childrenOf()"),
-    baselineSource.indexOf("      breadcrumb(state)"),
-  ) +
-  currentSource.slice(currentSource.indexOf("      breadcrumb(state)"));
+  experiment === "pan"
+    ? currentSource
+    : currentSource.slice(
+        0,
+        currentSource.indexOf("      childrenByParent()"),
+      ) +
+      baselineSource.slice(
+        baselineSource.indexOf("      childrenOf()"),
+        baselineSource.indexOf("      breadcrumb(state)"),
+      ) +
+      currentSource.slice(currentSource.indexOf("      breadcrumb(state)"));
+const baselinePanSources = new Map(
+  ["src/App.vue", "src/style.css"].map((path) => [
+    path,
+    execFileSync("git", ["show", `c5d47d0:${path}`], { encoding: "utf8" }),
+  ]),
+);
 for (const variant of ["baseline", "candidate"]) {
   await build({
     configFile: false,
@@ -64,7 +78,12 @@ for (const variant of ["baseline", "candidate"]) {
         name: "foreground-baseline",
         enforce: "pre",
         transform(_code, id) {
+          if (variant === "baseline" && experiment === "pan") {
+            for (const [path, source] of baselinePanSources)
+              if (id.replaceAll("\\", "/").endsWith(`/${path}`)) return source;
+          }
           if (
+            experiment === "notes" &&
             variant === "baseline" &&
             id
               .replaceAll("\\", "/")
@@ -259,6 +278,8 @@ async function run(variant: string, index: number, diagnostic = false) {
         invalid: false,
         longTasks: [],
         frames: [],
+        phaseFrames: { start: [], continuous: [], stop: [] },
+        phase: "selection",
       });
       performance.mark("foreground:start");
       let previous: number | undefined;
@@ -266,6 +287,8 @@ async function run(variant: string, index: number, diagnostic = false) {
         f.samples++;
         if (!document.hasFocus() || document.hidden) f.invalid = true;
         if (previous !== undefined) f.frames.push(time - previous);
+        if (previous !== undefined && f.phaseFrames[f.phase])
+          f.phaseFrames[f.phase].push(time - previous);
         previous = time;
         if (!f.stop) requestAnimationFrame(w.foregroundFrame);
       };
@@ -327,13 +350,26 @@ async function run(variant: string, index: number, diagnostic = false) {
     };
     const firstSelectionMs = await select(1);
     const warmSelectionMs = await select(0);
-    await page.evaluate(() => performance.mark("foreground:pan:start"));
+    await page.evaluate(() => {
+      (window as any).foreground.phase = "start";
+      performance.mark("foreground:pan:start");
+    });
     // Exercise real canvas middle-drag events. Frame callback intervals are
     // cadence diagnostics, never proof that every frame was presented.
     await page.mouse.move(1260, 870);
     await page.mouse.down({ button: "middle" });
+    await afterPaint(page);
+    await page.evaluate(() => {
+      (window as any).foreground.phase = "continuous";
+      performance.mark("foreground:pan:continuous");
+    });
     for (let i = 0; i < 60; i++)
       await page.mouse.move(1260 - 160 * Math.sin((i / 59) * Math.PI * 2), 870);
+    await afterPaint(page);
+    await page.evaluate(() => {
+      (window as any).foreground.phase = "stop";
+      performance.mark("foreground:pan:stop");
+    });
     await page.mouse.up({ button: "middle" });
     await afterPaint(page);
     await page.evaluate(() => performance.mark("foreground:pan:end"));
@@ -372,6 +408,18 @@ async function run(variant: string, index: number, diagnostic = false) {
       frameIntervalP95: percentile(sample.frames, 0.95),
       maxFrameInterval: Math.max(...sample.frames),
       frameSamples: sample.frames.length,
+      panPhases: Object.fromEntries(
+        Object.entries(sample.phaseFrames as Record<string, number[]>).map(
+          ([phase, intervals]) => [
+            phase,
+            {
+              samples: intervals.length,
+              maxInterval: Math.max(...intervals),
+              medianInterval: percentile(intervals, 0.5),
+            },
+          ],
+        ),
+      ),
       longTasks: sample.longTasks,
       requests,
       validity: {
@@ -399,7 +447,7 @@ async function run(variant: string, index: number, diagnostic = false) {
         if (chunk.eof) break;
       }
       await cdp.send("IO.close", { handle: stream });
-      await writeFile(join(destination, "candidate-trace.json"), trace);
+      await writeFile(join(destination, `${variant}-trace.json`), trace);
     }
     console.log(JSON.stringify(result));
   } finally {
@@ -417,17 +465,39 @@ try {
       await run(variant, index);
   }
   await run("candidate", repetitions, true);
+  if (experiment === "pan") await run("baseline", repetitions, true);
 } finally {
   await writeFile(
     join(destination, "results.json"),
     JSON.stringify(
       {
+        experiment,
         baselineCommit,
-        candidateCommit: execFileSync("git", ["rev-parse", "HEAD"], {
+        candidateBaseCommit: execFileSync("git", ["rev-parse", "HEAD"], {
           encoding: "utf8",
         }).trim(),
         workload,
         sources: {
+          baselineAppSha256: createHash("sha256")
+            .update(
+              experiment === "pan"
+                ? baselinePanSources.get("src/App.vue")!
+                : readFileSync("src/App.vue"),
+            )
+            .digest("hex"),
+          candidateAppSha256: createHash("sha256")
+            .update(readFileSync("src/App.vue"))
+            .digest("hex"),
+          baselineStyleSha256: createHash("sha256")
+            .update(
+              experiment === "pan"
+                ? baselinePanSources.get("src/style.css")!
+                : readFileSync("src/style.css"),
+            )
+            .digest("hex"),
+          candidateStyleSha256: createHash("sha256")
+            .update(readFileSync("src/style.css"))
+            .digest("hex"),
           commonFixedBaselineStoreSha256: createHash("sha256")
             .update(commonFixedBaseline)
             .digest("hex"),
@@ -448,7 +518,9 @@ try {
         limits: [
           "Production Chromium browser, not Electron.",
           "Focused/visible document checks; screenshots support visual review but do not establish presented frame rate.",
-          "Only child lookup implementation differs; both variants include the common document-loading correctness fix discovered during setup.",
+          experiment === "pan"
+            ? "Only App.vue and style.css differ from the pre-pan-change baseline; Notes loading fix and child index are common."
+            : "Only child lookup implementation differs; the document-loading correctness fix and pan implementation are common.",
           "Mock external reads; real isolated SQLite workspace and Notes storage.",
           "No query outputs, expanded deployment panels, Git diff or active terminal commands in this initial fixture.",
           "Frame intervals cover selection and scripted pan together; first/warm readiness ends after two animation callbacks, not a measured physical display presentation.",

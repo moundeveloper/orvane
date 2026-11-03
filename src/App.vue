@@ -651,6 +651,7 @@ function dismissOutside(event: PointerEvent) {
 }
 function dismissOnBlur() {
   space.value = false;
+  if (gesture || dragging.value) pointerUp();
   wheelOpen.value = false;
   wheelTabHeld = false;
 }
@@ -744,6 +745,8 @@ function touchEnd(e: PointerEvent) {
     pinch = null;
   }
 }
+const panCursorSurface = ref<HTMLElement>();
+let gestureCapture: HTMLElement | undefined;
 function pointerDown(e: PointerEvent, app?: CanvasApp, edge = "") {
   if (
     !app &&
@@ -785,7 +788,14 @@ function pointerDown(e: PointerEvent, app?: CanvasApp, edge = "") {
   e.preventDefault();
   stopZoom();
   stopPan();
-  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  // Capture on the one cursor surface rather than restyling every descendant
+  // of the workspace when a gesture starts or ends.
+  const cameraPan = !edge && !moveApp;
+  gestureCapture = cameraPan
+    ? (panCursorSurface.value ?? (e.currentTarget as HTMLElement))
+    : (e.currentTarget as HTMLElement);
+  gestureCapture.setPointerCapture(e.pointerId);
+  if (!cameraPan) gestureCapture.classList.add("gesture-cursor-target");
   dragging.value = true;
   gesture = {
     pointerId: e.pointerId,
@@ -822,7 +832,9 @@ function groupPointerDown(event: PointerEvent, groupId: string) {
   stopZoom();
   stopPan();
   groupMoved = false;
-  (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  // Preserve the label's native click target when opening group settings.
+  gestureCapture = event.currentTarget as HTMLElement;
+  gestureCapture.setPointerCapture(event.pointerId);
   gesture = {
     type: "group",
     pointerId: event.pointerId,
@@ -864,6 +876,7 @@ function pointerMove(e: PointerEvent) {
     if (!groupMoved && Math.hypot(e.clientX - g.px, e.clientY - g.py) < 4)
       return;
     groupMoved = true;
+    gestureCapture?.classList.add("gesture-cursor-target");
     dragging.value = true;
     pauseWorkspaceTracking();
     g.members?.forEach(({ app, x, y }) => {
@@ -901,8 +914,14 @@ function pointerUp(event?: Event) {
     event.pointerId !== gesture.pointerId
   )
     return;
+  const pointerId = gesture?.pointerId;
+  const captured = gestureCapture;
+  gestureCapture = undefined;
+  captured?.classList.remove("gesture-cursor-target");
   gesture = null;
   dragging.value = false;
+  if (pointerId !== undefined && captured?.hasPointerCapture(pointerId))
+    captured.releasePointerCapture(pointerId);
   resumeWorkspaceTracking();
   persist();
 }
@@ -1974,7 +1993,6 @@ onBeforeUnmount(() => {
     :data-ready="ready"
     :data-saved="!unsavedChanges"
     :data-editable="canEdit && ready"
-    :class="{ 'is-panning': space || dragging }"
     @pointerdown.capture="touchStart"
     @pointermove.capture="touchMove"
     @pointerup.capture="touchEnd"
@@ -1992,6 +2010,12 @@ onBeforeUnmount(() => {
     "
   >
     <div class="canvas-background"></div>
+    <div
+      ref="panCursorSurface"
+      class="pan-cursor-surface"
+      :class="{ active: space || dragging, dragging }"
+      aria-hidden="true"
+    ></div>
     <ActionStudio
       v-if="actionStudio"
       :workspace="workspace"
@@ -2625,7 +2649,11 @@ onBeforeUnmount(() => {
       >
         <Icon name="globe" :size="14" />Create Browser
       </button>
-      <button class="subtle-button" :disabled="!canEdit || importBusy" @click="createGitViewer('netsuite')">
+      <button
+        class="subtle-button"
+        :disabled="!canEdit || importBusy"
+        @click="createGitViewer('netsuite')"
+      >
         <Icon name="globe" :size="14" />Create NetSuite app
       </button>
       <button

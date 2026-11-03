@@ -301,13 +301,21 @@ button:hover {
 .workspace-options {
   color: #556c7a;
 }
-.is-panning,
-.is-panning * {
-  cursor: grab !important;
-  user-select: none !important;
+.pan-cursor-surface {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  cursor: grab;
+  user-select: none;
 }
-.is-panning:active,
-.is-panning:active * {
+.pan-cursor-surface.active {
+  pointer-events: auto;
+}
+.pan-cursor-surface.dragging {
+  cursor: grabbing;
+}
+.gesture-cursor-target {
   cursor: grabbing !important;
 }
 .canvas-app {
