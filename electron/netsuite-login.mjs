@@ -37,6 +37,9 @@ function netSuiteUrl(url) {
 /** Any page on a genuine NetSuite host (login, verification or app). */
 export const isNetSuitePage = (url) => !!netSuiteUrl(url);
 
+/** The account a genuine NetSuite URL names (host or `c` parameter). */
+export const netSuiteAccount = (url) => netSuiteUrl(url)?.account;
+
 /** A genuine NetSuite login page: `{ origin, account }` (account may be
  * unknown on system.netsuite.com without a `c` parameter). */
 export function netSuiteLogin(url) {

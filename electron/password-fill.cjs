@@ -261,11 +261,17 @@ if (window.top === window) {
     setValue(fields.password, login.password);
     filled = fields.password;
     const form = fields.password.form;
-    const submit =
-      form && [...form.elements].find((el) => el.type === "submit" && !el.disabled);
+    if (!form) return;
+    // NetSuite enables its Log In button a moment after the fields change.
+    const button = () =>
+      [...form.elements].find((el) => el.type === "submit" && visible(el) && !el.disabled);
+    for (let i = 0; i < 30 && !button() && form.isConnected; i++)
+      await new Promise((done) => setTimeout(done, 100));
+    if (!form.isConnected) return;
+    const submit = button();
     autoSubmitting = true;
     try {
-      if (form) form.requestSubmit(submit);
+      form.requestSubmit(submit);
     } finally {
       autoSubmitting = false;
     }

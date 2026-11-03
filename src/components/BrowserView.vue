@@ -567,6 +567,7 @@ const autoLoginText: Record<string, string> = {
   failed: "Auto sign-in stopped: NetSuite showed the login page again. Sign in here yourself.",
   paused: "Auto sign-in is paused after a failed attempt. Sign in here yourself, or save the new password.",
   challenge: "Enter the verification code (or answer) in NetSuite to finish signing in.",
+  unknown: "Auto sign-in skipped: this login page doesn't say which NetSuite account it is for. Open the account's address (e.g. 1234567-sb1.app.netsuite.com) instead.",
 };
 let stopPrompt: (() => void) | undefined, stopAutoLogin: (() => void) | undefined;
 onMounted(() => {

@@ -15,12 +15,19 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
   const posts: string[] = [];
   let reject = false;
   const fixture = join(import.meta.dirname, "fixtures", "netsuite-login");
-  const login = (note = "") =>
-    `<!doctype html><title>NetSuite Login</title>` +
-    `<form id="login-form" method="post">${note && `<p class="error">${note}</p>`}` +
-    `<label for="email">Email</label><input id="email" name="email" type="email" autocomplete="username">` +
-    `<label for="password">Password</label><input id="password" name="password" type="password">` +
-    `<input id="login-submit" type="submit" value="Log In"></form>`;
+  // Like NetSuite's own: system.netsuite.com posts to enterpriselogin.nl, and
+  // the Log In button turns on a moment after both fields are filled.
+  const login = (note = "", action = "") =>
+    `<!doctype html><title>NetSuite Login</title><script src="/login.js"></script>` +
+    `<form id="login-form" method="post"${action && ` action="${action}"`}>` +
+    `${note && `<p class="error">${note}</p>`}` +
+    `<label for="email">Email</label><input id="email" name="email" type="email">` +
+    `<label for="password">Password</label><input id="password" name="password" type="password" autocomplete="off">` +
+    `<button id="login-submit" name="submitButton" type="submit" disabled>Log In</button></form>`;
+  const loginScript =
+    "addEventListener('input', () => setTimeout(() => {" +
+    " const f = document.getElementById('login-form');" +
+    " f.submitButton.disabled = !(f.email.value && f.password.value); }, 150));";
   const site = createServer(
     { key: readFileSync(join(fixture, "key.pem")), cert: readFileSync(join(fixture, "cert.pem")) },
     (request, response) => {
@@ -44,9 +51,10 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
             return response.end(login("You have entered an invalid email address or password."));
           // system.netsuite.com hands over to the account's own host; the
           // second sandbox asks for a code from an authenticator app.
-          const account = new URL(request.url || "/", "https://x").searchParams.get("c");
+          // (Without an account, the user's default one: here 1964539-sb1.)
+          const account = new URL(request.url || "/", "https://x").searchParams.get("c") || "1964539_SB1";
           const next =
-            host === "system.netsuite.com" && account
+            host === "system.netsuite.com"
               ? `https://${account.toLowerCase().replace("_", "-")}.app.netsuite.com/app/center/card.nl`
               : host.startsWith("1964539-sb2.")
                 ? "/app/login/secure/twofactor.nl"
@@ -56,6 +64,19 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
         });
         return;
       }
+      if (path === "/login.js") {
+        response.setHeader("content-type", "text/javascript");
+        return response.end(loginScript);
+      }
+      // Signed out: NetSuite drops the account and shows its generic page.
+      if (path === "/signed-out") {
+        response.writeHead(302, {
+          location: "https://system.netsuite.com/pages/customerlogin.jsp?country=US",
+        });
+        return response.end();
+      }
+      if (path === "/pages/customerlogin.jsp")
+        return response.end(login("", "/app/login/secure/enterpriselogin.nl"));
       if (path === "/redirect") {
         response.writeHead(302, {
           location: `https://system.netsuite.com.evil.test/app/login/secure/enterpriselogin.nl`,
@@ -164,6 +185,17 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
     expect(posts).toHaveLength(3);
     await expect(status).toHaveCount(0);
     posts.length = 0;
+    // Signed out, NetSuite shows system.netsuite.com without the account:
+    // the account the tab was heading to counts.
+    await visit(
+      "https://1964539-sb1.app.netsuite.com/signed-out",
+      "https://system.netsuite.com/pages/customerlogin.jsp?country=US",
+    );
+    await expect.poll(where, { timeout: 15000 }).toContain(
+      "https://1964539-sb1.app.netsuite.com/app/center/card.nl",
+    );
+    expect(posts).toEqual(["system.netsuite.com"]);
+    posts.length = 0;
 
     // Origin rejection: lookalike hosts, a redirect away from NetSuite, an
     // account auto sign-in doesn't cover, and system.netsuite.com without
@@ -173,7 +205,8 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
       [loginUrl("1964539-sb1.app.netsuite.co")],
       ["https://1964539-sb1.app.netsuite.com/redirect", loginUrl("system.netsuite.com.evil.test")],
       [loginUrl("7654321.app.netsuite.com")],
-      [loginUrl("system.netsuite.com")],
+      // Right after an account auto sign-in doesn't cover.
+      ["https://system.netsuite.com/pages/customerlogin.jsp?country=US"],
     ]) {
       await visit(url!, landing);
       await expect.poll(() => guest<boolean>("!!document.querySelector('#password')")).toBe(true);

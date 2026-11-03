@@ -26,10 +26,11 @@ export interface PasswordPrompt {
 }
 /** NetSuite auto sign-in in a Browser page: started, done, stopped because
  * the login page came back ("failed") or an earlier one failed ("paused"),
- * or waiting for the user's verification code ("challenge"). */
+ * waiting for the user's verification code ("challenge"), or skipped
+ * because the page names no account ("unknown"). */
 export interface AutoLoginUpdate {
   from: number;
-  kind: "signing-in" | "done" | "failed" | "paused" | "challenge";
+  kind: "signing-in" | "done" | "failed" | "paused" | "challenge" | "unknown";
   origin: string;
 }
 export interface PasswordsApi {

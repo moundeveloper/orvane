@@ -17,6 +17,7 @@ import {
   autoLoginAccount,
   autoLoginCandidates,
   isNetSuitePage,
+  netSuiteAccount,
   netSuiteLogin,
   netSuiteSignedIn,
 } from "./netsuite-login.mjs";
@@ -224,6 +225,9 @@ export function setupPasswords({ partition, isOrvane, folder }) {
   const attempts = new Map();
   /** Logins whose last auto sign-in failed (until they sign in or change). */
   const failing = new Set();
+  /** The NetSuite account each tab last headed to: signed out, NetSuite
+   * redirects to system.netsuite.com without naming the account. */
+  const headedTo = new Map();
   function notice(contents, kind, origin) {
     const host = contents.hostWebContents;
     if (host && !host.isDestroyed())
@@ -235,8 +239,14 @@ export function setupPasswords({ partition, isOrvane, folder }) {
 
   ipcMain.handle("orvane:pw-auto", async (event) => {
     const origin = siteOf(event);
-    const login = origin && autoLoginTab(event) && netSuiteLogin(event.senderFrame.url);
-    if (!login || login.origin !== origin || !autoLoginAccount(login.account)) return;
+    const page = origin && autoLoginTab(event) && netSuiteLogin(event.senderFrame.url);
+    if (!page || page.origin !== origin) return;
+    const login = { ...page, account: page.account ?? headedTo.get(event.sender.id) };
+    if (!login.account) {
+      notice(event.sender, "unknown", origin);
+      return;
+    }
+    if (!autoLoginAccount(login.account)) return;
     if (!(await ready())) return;
     const contents = event.sender;
     let pending = attempts.get(contents.id);
@@ -288,6 +298,15 @@ export function setupPasswords({ partition, isOrvane, folder }) {
   }
 
   function track(contents) {
+    // Includes the first URL of a redirect chain (the account's own host).
+    const headed = (event, legacyUrl, _inPlace, legacyMain) => {
+      const url = event?.url ?? legacyUrl;
+      const main = event?.isMainFrame ?? legacyMain;
+      const account = main && typeof url === "string" && netSuiteAccount(url);
+      if (account) headedTo.set(contents.id, account);
+    };
+    contents.on("did-start-navigation", headed);
+    contents.on("did-redirect-navigation", headed);
     contents.on("did-create-window", (window) => {
       owners.set(window.webContents.id, ownerOf(contents.id));
     });
@@ -308,6 +327,7 @@ export function setupPasswords({ partition, isOrvane, folder }) {
       owners.delete(contents.id);
       usernames.delete(contents.id);
       attempts.delete(contents.id);
+      headedTo.delete(contents.id);
     });
   }
 
