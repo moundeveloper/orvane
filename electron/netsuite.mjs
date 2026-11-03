@@ -155,7 +155,10 @@ export function setupNetSuite(isOrvane, partition, processing) {
       },
       origin: id,
     }).replace(/</g, "\\u003c");
-    const code = `(async () => {
+    // The result comes back as JSON text: NetSuite values that structured
+    // clone can't copy (functions, host objects) would otherwise fail the
+    // whole call with "An object could not be cloned".
+    const code = `(async () => JSON.stringify(await (async () => {
       const input = ${input};
       if (location.origin !== input.origin || !/^[a-z0-9-]+\\.app\\.netsuite\\.com$/i.test(location.hostname)) throw Error('NetSuite tab changed.');
       if (input.operation === 'tables' || input.operation === 'table-detail') {
@@ -388,13 +391,14 @@ export function setupNetSuite(isOrvane, partition, processing) {
         return { rows: data.records || [], totalCount: data.totalCount ?? (data.records || []).length, offset, pageSize };
       }
 
-    })()`;
+    })() ?? null))()`;
     const processingTab = await processing.acquire(event.sender, id);
     let timer;
     // A timeout does not mean execution has stopped; keep the tab busy until
     // Chromium actually settles so refresh cannot interrupt an in-flight call.
     const execution = processingTab.contents
       .executeJavaScript(code)
+      .then((text) => JSON.parse(text))
       .finally(processingTab.release);
     try {
       return await Promise.race([
