@@ -292,14 +292,35 @@ node --import tsx research/foreground.ts
 
 `ORVANE_FOREGROUND_MATRIX=0` skips the smaller-size screening cases; `ORVANE_FOREGROUND_REPETITIONS=1` is a smoke check. `ORVANE_FOREGROUND_VISUAL_ONLY=1` runs a separate candidate visual probe. Every trial starts a new process/profile/database, so this matrix is not a continuous soak or a heap-stability test. The timed pan workload is the restored initial state; retained query output, expanded deployments and controlled terminal output are exercised afterward. Comparative pans with those richer states, larger Git diffs, live read-only account behavior and sustained command loads remain unmeasured.
 
+### Eighteenth pass: overview compositor-cache experiment (rejected)
+
+The comparison harness now supports `ORVANE_FOREGROUND_EXPERIMENT=overview`, using post-cursor production baseline `18a3261` for both App.vue and style.css. The existing `pan` and `notes` experiments keep their earlier baselines. Source hashes record both variants.
+
+Tested a narrow candidate: enable `will-change: transform` on the canvas plane only after overview zoom (at or below 50%) settles for 180 ms, clear it synchronously on every zoom change, and cancel the timer on unmount. The goal was to reuse overview painting without permanently promoting editor-scale content. **Rejected:** native screenshots visibly soften overview Notes and table text. The production App.vue and style.css are restored byte-for-byte; this pass ships no rendering change.
+
+One native untraced screening pair at 20% zoom, 1440×952, 50 mounted apps / 42 intersecting the viewport:
+
+| Continuous pan | Baseline | Rejected candidate |
+|---|---:|---:|
+| Median frame callback interval | 66.6 ms | 50.0 ms |
+| Largest frame callback interval | 133.4 ms | 149.7 ms |
+
+A separate diagnostic pair recorded 2,259 → 240 Paint events and 4,302 → 241 RasterTask events during continuous motion. Paint event aggregates were 2,926.2 → 708.0 ms; raster aggregates were 708.8 → 12.4 ms. Neither trace had Layout events in this phase. Event aggregates can overlap across threads/categories and are not wall-time totals. This supports investigating repeated overview painting, but does not establish an acceptable optimization. One screening pair is not a repeatable speedup estimate, and callback intervals are not presented FPS.
+
+All four runs passed fixture counts, foreground/visibility checks and persisted Notes assertions, with no rejected focus attempts. The production builds for both variants succeeded. Visual failure stopped this candidate before five-pair acceptance, normal-zoom restoration, interaction, memory and soak validation. No memory benefit or resource bound is claimed. `pnpm build` also passes on the restored production sources with existing warnings.
+
+Evidence: `research/overview-cache-results.json`, committed original-resolution screenshots `research/overview-cache-baseline.png` / `research/overview-cache-candidate.png`, and the **unapplied, rejected** `research/overview-paint-cache.patch`. Raw run and traces: `artifacts/performance/foreground/2026-11-03T09-49-55-369Z`. To reproduce on a clean checkout: apply the research patch, set `ORVANE_FOREGROUND_RUNTIME=electron`, `ORVANE_FOREGROUND_EXPERIMENT=overview`, `ORVANE_FOREGROUND_MATRIX=0`, `ORVANE_FOREGROUND_MODES=overview`, `ORVANE_FOREGROUND_REPETITIONS=1`, and run `node node_modules/tsx/dist/cli.mjs research/foreground.ts`. Remove the experimental patch after inspection; it is not a recommended production setting.
+
 ### Remaining work, in current order
 
-Status after the seventeenth pass: the first Electron matrix and deferred-view checks are complete. Overview painting/rasterization is the next measured performance priority. Heap/lifecycle profiling and the 30-minute soak remain unfinished; no general 50-app capacity guarantee is established.
+Status after the eighteenth pass: the native matrix and deferred-view checks are complete; the first overview cache candidate was rejected for softened text. Overview painting/rasterization remains the next measured performance priority. Heap/lifecycle profiling and the 30-minute soak remain unfinished; no general 50-app capacity guarantee is established.
 
 #### 1. Next: overview paint/raster cost and richer foreground workload
 
 - [ ] Isolate overview paint, raster and compositing work with the native traces. Compare visible-app count, document complexity and text/graphics content before choosing one candidate change; current evidence points beyond pan-boundary style invalidation.
-- [ ] Update the comparison baseline to the post-cursor implementation `18a3261` and include every changed source file before attributing an overview improvement. The current `pan` switch compares against `c5d47d0` and cannot isolate a subsequent optimization by itself.
+- [x] Add a post-cursor baseline: the `overview` experiment compares App.vue and style.css against `18a3261`, with source hashes. Extend its source overrides if a future candidate changes additional files; the older `pan` experiment still uses `c5d47d0`.
+- [x] Screen a settled overview canvas-plane compositor hint; reject and revert it because it softens text despite reducing paint/raster work. Preserve the patch and screenshots as rejected evidence.
+- [ ] Next, isolate layer raster scale and content-density costs (Notes text versus tables/editors) before choosing another paint candidate. Avoid repeating whole-plane promotion without demonstrating unchanged text sharpness.
 - [ ] Preserve header blur, text sharpness, pointer hit testing, selection, drafts and editor/terminal state. Run five alternating native pairs plus separate diagnostic/visual checks before keeping an overview candidate.
 - [ ] Add retained query outputs, many expanded Script/deployment panels, large file lists/diffs, larger Notes documents/history and sustained controlled terminal updates during comparative pan/zoom runs. Current first-use checks exercise only a subset of these states after the pan samples.
 - [ ] Validate representative live read-only NetSuite/processing-window behavior separately from the fixed-response frontend fixture. Keep account mutations and user repositories out of synthetic benchmark runs.

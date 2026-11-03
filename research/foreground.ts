@@ -35,9 +35,14 @@ const visualOnly = process.env.ORVANE_FOREGROUND_VISUAL_ONLY === "1";
 if (cameraModes.some((mode) => !["normal", "overview"].includes(mode)))
   throw Error("Unknown camera mode.");
 const experiment = process.env.ORVANE_FOREGROUND_EXPERIMENT || "pan";
-if (!["pan", "notes"].includes(experiment))
+if (!["pan", "notes", "overview"].includes(experiment))
   throw Error("Unknown foreground experiment.");
-const baselineCommit = experiment === "pan" ? "c5d47d0" : "805bbc8";
+const baselineCommit =
+  experiment === "overview"
+    ? "18a3261"
+    : experiment === "pan"
+      ? "c5d47d0"
+      : "805bbc8";
 const root = resolve(".");
 const destination = resolve(
   "artifacts/performance/foreground",
@@ -63,7 +68,7 @@ const currentSource = readFileSync(
   "utf8",
 );
 const commonFixedBaseline =
-  experiment === "pan"
+  experiment !== "notes"
     ? currentSource
     : currentSource.slice(
         0,
@@ -77,7 +82,11 @@ const commonFixedBaseline =
 const baselinePanSources = new Map(
   ["src/App.vue", "src/style.css"].map((path) => [
     path,
-    execFileSync("git", ["show", `c5d47d0:${path}`], { encoding: "utf8" }),
+    execFileSync(
+      "git",
+      ["show", `${experiment === "overview" ? "18a3261" : "c5d47d0"}:${path}`],
+      { encoding: "utf8" },
+    ),
   ]),
 );
 for (const variant of ["baseline", "candidate"]) {
@@ -95,7 +104,7 @@ for (const variant of ["baseline", "candidate"]) {
         name: "foreground-baseline",
         enforce: "pre",
         transform(_code, id) {
-          if (variant === "baseline" && experiment === "pan") {
+          if (variant === "baseline" && experiment !== "notes") {
             for (const [path, source] of baselinePanSources)
               if (id.replaceAll("\\", "/").endsWith(`/${path}`)) return source;
           }
@@ -690,7 +699,7 @@ try {
           : ["baseline", "candidate"])
           await acceptedRun(variant, index, false, 50, mode);
       await acceptedRun("candidate", repetitions, true, 50, mode);
-      if (experiment === "pan")
+      if (experiment !== "notes")
         await acceptedRun("baseline", repetitions, true, 50, mode);
     }
   }
@@ -710,7 +719,7 @@ try {
         sources: {
           baselineAppSha256: createHash("sha256")
             .update(
-              experiment === "pan"
+              experiment !== "notes"
                 ? baselinePanSources.get("src/App.vue")!
                 : readFileSync("src/App.vue"),
             )
@@ -720,7 +729,7 @@ try {
             .digest("hex"),
           baselineStyleSha256: createHash("sha256")
             .update(
-              experiment === "pan"
+              experiment !== "notes"
                 ? baselinePanSources.get("src/style.css")!
                 : readFileSync("src/style.css"),
             )
@@ -755,8 +764,8 @@ try {
           "App counts below 50 are single screening pairs, not repeated timing evidence.",
           "Overview uses the actual UI minimum zoom of 0.2; large fixtures may not all fit on screen.",
           "Focused/visible document checks; screenshots support visual review but do not establish presented frame rate.",
-          experiment === "pan"
-            ? "Only App.vue and style.css differ from the pre-pan-change baseline; Notes loading fix and child index are common."
+          experiment !== "notes"
+            ? "Only App.vue and style.css differ from the selected baseline; Notes loading fix and child index are common."
             : "Only child lookup implementation differs; the document-loading correctness fix and pan implementation are common.",
           "Mock external reads; real isolated SQLite workspace and Notes storage.",
           runtime === "electron"
