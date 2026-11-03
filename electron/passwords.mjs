@@ -29,8 +29,6 @@ const PROMPT_LIFE = 5 * 60000;
 const CLIPBOARD_LIFE = 30000;
 /** An auto sign-in with no result by then (the user went elsewhere). */
 const ATTEMPT_LIFE = 5 * 60000;
-/** A processing page signs in at most this often. */
-const PROCESSING_GAP = 2 * 60000;
 const LOCAL = ["localhost", "127.0.0.1", "[::1]"];
 
 const text = (value, max) =>
@@ -239,24 +237,6 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
   const autoLoginTab = (event) =>
     (event.sender.getType() === "webview" && !!event.sender.hostWebContents) ||
     isProcessing(event.sender);
-  /** When each processing page last signed in by itself. */
-  const processingSignIns = new Map();
-  /** A processing page must never sign in over a Browser tab that is signed
-   * in to another account (NetSuite may keep one session per user, so it
-   * would sign that tab out), nor sign in again right after doing so. */
-  function processingMayLogIn(contents, account) {
-    if (Date.now() - (processingSignIns.get(contents.id) ?? 0) < PROCESSING_GAP) return false;
-    return !webContents
-      .getAllWebContents()
-      .some(
-        (other) =>
-          !other.isDestroyed() &&
-          other.getType() === "webview" &&
-          other.session === sites &&
-          netSuiteSignedIn(other.getURL()) &&
-          netSuiteAccount(other.getURL()) !== account,
-      );
-  }
 
   ipcMain.handle("orvane:pw-auto", async (event) => {
     const origin = siteOf(event);
@@ -268,7 +248,6 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
     // be one auto sign-in covers.
     if (login.account ? !autoLoginAccount(login.account) : origin !== "https://system.netsuite.com")
       return;
-    if (isProcessing(event.sender) && !processingMayLogIn(event.sender, login.account)) return;
     if (!(await ready())) return;
     const contents = event.sender;
     let pending = attempts.get(contents.id);
@@ -293,7 +272,6 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
       return;
     }
     attempts.set(contents.id, { login: chosen.id, at: Date.now() });
-    if (isProcessing(contents)) processingSignIns.set(contents.id, Date.now());
     notice(contents, "signing-in", origin);
     return { username: chosen.username, password: chosen.password };
   });
@@ -351,7 +329,6 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
       usernames.delete(contents.id);
       attempts.delete(contents.id);
       headedTo.delete(contents.id);
-      processingSignIns.delete(contents.id);
     });
   }
 

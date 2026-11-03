@@ -325,8 +325,8 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
     await page.waitForTimeout(1500);
     await expect(row).toContainText("ready");
     posts.length = 0;
-    // A visible tab signed in to another account: the processing tab never
-    // signs in over it (NetSuite could sign that tab out).
+    // Signed out again while a visible tab is on another account: the
+    // processing tab signs in again by itself.
     sessions.add("1964539.app.netsuite.com");
     const newest = () =>
       app.evaluate(({ webContents }) =>
@@ -346,8 +346,8 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
     sessions.delete("1964539-sb1.app.netsuite.com");
     if (!(await processing.isVisible())) await browser.getByRole("button", { name: /Processing tabs/ }).click();
     await row.getByRole("button", { name: "Refresh" }).click();
-    await expect(row).toContainText("sign-in required", { timeout: 25000 });
-    expect(posts).toEqual([]);
+    await expect.poll(() => posts.slice(), { timeout: 20000 }).toEqual(["1964539-sb1.app.netsuite.com"]);
+    await expect(row).toContainText("ready", { timeout: 20000 });
   } finally {
     await app.close();
     await new Promise((done) => site.close(done));
