@@ -37,6 +37,7 @@ export const gitSchemas = {
       order: z.enum(["date", "topo"]).default("date"),
       limit: z.number().int().min(1).max(500).default(150),
       offset: z.number().int().min(0).max(100000).default(0),
+      search: z.string().trim().min(1).max(200).optional(),
     })
     .strict(),
   git_commit: z.object({ workspaceId: id, hash }).strict(),
@@ -63,7 +64,7 @@ export const gitDescriptions: Record<GitOperation, string> = {
   git_workspace_remove:
     "Forget a saved Git workspace. Does not delete any folder or change the repository.",
   git_history:
-    "Read paginated local Git history and branch/tag refs for a saved workspace. Date order is the default; order=topo groups branch topology. Omit ref for all refs. No fetch or repository changes.",
+    "Read paginated local Git history and branch/tag refs for a saved workspace. Date order is the default; order=topo groups branch topology. Omit ref for all refs. search keeps only commits whose subject, author or hash contains the text (case-insensitive), across the whole history. No fetch or repository changes.",
   git_commit:
     "Read a commit message, its parents and changed files. Merge commits compare against their first parent.",
   git_status:
@@ -324,8 +325,10 @@ export class GitService {
                 "log",
                 p.order === "topo" ? "--topo-order" : "--date-order",
                 "--no-show-signature",
-                `--max-count=${p.limit + 1}`,
-                `--skip=${p.offset}`,
+                // A search reads the whole history and pages over the matches.
+                ...(p.search
+                  ? []
+                  : [`--max-count=${p.limit + 1}`, `--skip=${p.offset}`]),
                 "-z",
                 "--format=%H%x00%P%x00%an%x00%aI%x00%s",
                 revision,
@@ -333,7 +336,7 @@ export class GitService {
               ])
             : "";
         const fields = log.split("\0");
-        const commits: GitCommit[] = [];
+        let commits: GitCommit[] = [];
         for (let i = 0; i + 4 < fields.length; i += 5)
           commits.push({
             hash: fields[i]!.trim(),
@@ -342,6 +345,14 @@ export class GitService {
             date: fields[i + 3]!,
             subject: fields[i + 4]!,
           });
+        if (p.search) {
+          const text = p.search.toLowerCase();
+          commits = commits
+            .filter((c) =>
+              `${c.subject} ${c.author} ${c.hash}`.toLowerCase().includes(text),
+            )
+            .slice(p.offset, p.offset + p.limit + 1);
+        }
         return {
           commits: commits.slice(0, p.limit),
           refs,

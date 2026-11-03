@@ -253,12 +253,6 @@
   background: #e0ebf1;
   color: #304e60;
 }
-.git-commit-row.search-dim {
-  opacity: 0.55;
-}
-.git-commit-row.search-match:not(.selected) {
-  background: #eef2e6;
-}
 .git-subject {
   display: flex;
   gap: 6px;

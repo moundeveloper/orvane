@@ -1,7 +1,7 @@
 import { test, expect } from "./fixtures";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { createServer } from "vite";
 import vue from "@vitejs/plugin-vue";
@@ -328,6 +328,58 @@ test("opening a commit with very long lines keeps the viewer width; the patch sc
   expect(
     await patch.evaluate((el) => el.scrollWidth > el.clientWidth + 100),
   ).toBe(true);
+});
+test("commit search finds older commits across the whole history and lists only matches", async ({
+  page,
+}, info) => {
+  const repo = await repository(info.outputPath("Search"));
+  await repo.git("commit", "--allow-empty", "-m", "Needle in an old haystack");
+  // More commits than the first page (150) on top, written in one go.
+  const branch = (await repo.git("symbolic-ref", "--short", "HEAD")).trim();
+  let stream = "";
+  for (let i = 0; i < 170; i++) {
+    const message = `Filler change ${i}\n`;
+    stream +=
+      `commit refs/heads/${branch}\ncommitter Orvane tests <orvane@example.test> ${1700000000 + i} +0000\n` +
+      `data ${Buffer.byteLength(message)}\n${message}` +
+      (i === 0 ? `from refs/heads/${branch}^0\n` : "") +
+      "\n";
+  }
+  execFileSync("git", ["fast-import", "--quiet"], { cwd: repo.path, input: stream, windowsHide: true });
+  await page.addInitScript(() =>
+    localStorage.setItem("orvane.examples.v1", "installed"),
+  );
+  await page.goto("/");
+  await page.getByRole("button", { name: "Workspace options" }).click();
+  await page
+    .getByRole("button", { name: "Create Git viewer", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Choose a folder", exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Local folder path" })
+    .fill(repo.path);
+  await page.getByRole("button", { name: "Go", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Use this folder", exact: true })
+    .click();
+  const rows = page.locator(".git-commit-row");
+  await expect(rows).toHaveCount(150);
+  await expect(rows.filter({ hasText: "haystack" })).toHaveCount(0);
+  // Contains, case-insensitive, beyond the loaded page; only matches shown.
+  const search = page.getByRole("textbox", { name: "Search commits" });
+  await search.fill("HAYSTACK");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("Needle in an old haystack");
+  await expect(page.getByRole("button", { name: "1 matches" })).toBeVisible();
+  await search.fill("change 16");
+  await expect(rows).toHaveCount(11);
+  await search.fill("no such commit");
+  await expect(rows).toHaveCount(0);
+  await expect(page.locator(".git-viewer")).toContainText("No commit matches");
+  await search.fill("");
+  await expect(rows).toHaveCount(150);
 });
 test("folder picker saves a local Git workspace and preserves selection across reloads", async ({
   page,

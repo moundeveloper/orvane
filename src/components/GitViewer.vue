@@ -156,12 +156,22 @@ function viewerWheel(event: WheelEvent) {
 const current = computed(() =>
   workspaces.value.find((w) => w.id === props.block.gitWorkspaceId),
 );
-const rows = computed(() =>
-  gitLanes(
-    history.value?.commits || [],
-    new Set(history.value?.mainline || []),
-  ),
+/** Commits matching the search, across the whole history (server-side). */
+const searchResults = ref<GitHistory>();
+const searchText = computed(() => query.value.trim());
+const shown = computed(() =>
+  searchText.value ? searchResults.value : history.value,
 );
+const rows = computed(() => {
+  const lanes = gitLanes(
+    shown.value?.commits || [],
+    new Set(history.value?.mainline || []),
+  );
+  // Matches are not neighbours in the history: no branch lines between them.
+  return searchText.value
+    ? lanes.map((row) => ({ ...row, lines: [], continued: false }))
+    : lanes;
+});
 const graphWidth = computed(() =>
   Math.max(60, ...rows.value.map((r) => Math.max(r.before, r.after) * 14 + 18)),
 );
@@ -173,14 +183,43 @@ const colors = [
   "#9a6574",
   "#677f4b",
 ];
-const filteredMatches = computed(
-  () =>
-    history.value?.commits.filter((c) =>
-      `${c.subject} ${c.author} ${c.hash}`
-        .toLowerCase()
-        .includes(query.value.toLowerCase()),
-    ) || [],
+const filteredMatches = computed(() =>
+  searchText.value ? searchResults.value?.commits || [] : [],
 );
+let searchRequest = 0,
+  searchTimer: ReturnType<typeof setTimeout> | undefined;
+async function search() {
+  const sequence = ++searchRequest;
+  const text = searchText.value;
+  if (!text || !props.block.gitWorkspaceId) {
+    searchResults.value = undefined;
+    return;
+  }
+  try {
+    const found = await api<GitHistory>("git_history", {
+      workspaceId: props.block.gitWorkspaceId,
+      ...(branch.value ? { ref: branch.value } : {}),
+      order: order.value,
+      search: text,
+      limit: 500,
+    });
+    if (sequence === searchRequest) searchResults.value = found;
+  } catch (e) {
+    if (sequence === searchRequest)
+      error.value =
+        e instanceof Error ? e.message : "The repository could not be read.";
+  }
+}
+watch([searchText, branch, order], () => {
+  clearTimeout(searchTimer);
+  if (!searchText.value) {
+    searchRequest++;
+    searchResults.value = undefined;
+    return;
+  }
+  searchTimer = setTimeout(() => void search(), 250);
+});
+onBeforeUnmount(() => clearTimeout(searchTimer));
 const patchLines = computed(() => patch.value.split("\n"));
 const largePatch = computed(() => {
   if (patch.value.length > 300_000) return true;
@@ -559,7 +598,8 @@ function curve(from: number, to: number, top = 0, bottom = 36) {
           class="subtle-button"
           @click="nextMatch"
         >
-          {{ filteredMatches.length }} matches
+          {{ filteredMatches.length
+          }}{{ searchResults?.hasMore ? "+" : "" }} matches
         </button>
       </div>
       <div
@@ -581,16 +621,12 @@ function curve(from: number, to: number, top = 0, bottom = 36) {
           </div>
           <div class="git-history-rows">
             <button
-              v-for="(commit, index) in history?.commits || []"
+              v-for="(commit, index) in shown?.commits || []"
               :key="commit.hash"
               :data-git-commit="commit.hash"
               class="git-commit-row"
               :class="{
                 selected: selectedHash === commit.hash,
-                'search-match':
-                  query && filteredMatches.some((c) => c.hash === commit.hash),
-                'search-dim':
-                  query && !filteredMatches.some((c) => c.hash === commit.hash),
                 'main-branch-commit': rows[index]!.main,
               }"
               :style="{ '--git-graph-width': `${graphWidth}px` }"
@@ -670,7 +706,13 @@ function curve(from: number, to: number, top = 0, bottom = 36) {
               ><code>{{ commit.hash.slice(0, 7) }}</code>
             </button>
             <p
-              v-if="!busy && history && !history.commits.length"
+              v-if="searchText && searchResults && !searchResults.commits.length"
+              class="git-inline-message"
+            >
+              No commit matches “{{ searchText }}”.
+            </p>
+            <p
+              v-else-if="!searchText && !busy && history && !history.commits.length"
               class="git-inline-message"
             >
               No commits yet{{ branch ? " on this reference" : "" }}.
@@ -679,7 +721,7 @@ function curve(from: number, to: number, top = 0, bottom = 36) {
               Reading repository…
             </p>
             <button
-              v-if="history?.hasMore"
+              v-if="history?.hasMore && !searchText"
               class="subtle-button git-load-more"
               :disabled="busy"
               @click="load(true)"
