@@ -21,13 +21,40 @@ export const workload = {
   projectsPerRoot: 100,
   savedTerminals: 20,
 };
-export function seedForegroundFixture(directory: string) {
+export function seedForegroundFixture(
+  directory: string,
+  options: { appCount?: number; innerTabs?: boolean } = {},
+) {
+  const count = options.appCount ?? 50;
+  if (![5, 10, 20, 35, 50].includes(count))
+    throw Error("Unsupported fixture app count.");
+  const weights = [
+    workload.notes,
+    workload.netsuite,
+    workload.git,
+    workload.projects,
+  ];
+  const allocated = weights.map((weight) => Math.floor((count * weight) / 50));
+  const order = weights
+    .map((weight, i) => ({
+      i,
+      remainder: (count * weight) / 50 - allocated[i]!,
+    }))
+    .sort((a, b) => b.remainder - a.remainder);
+  const remaining = count - allocated.reduce((sum, n) => sum + n, 0);
+  for (let i = 0; i < remaining; i++) allocated[order[i]!.i]!++;
+  const [notesCount, netsuiteCount, gitCount, projectsCount] = allocated as [
+    number,
+    number,
+    number,
+    number,
+  ];
   const workspace = emptyWorkspace();
   const kinds: Kind[] = [
-    ...Array<Kind>(workload.notes).fill("notes"),
-    ...Array<Kind>(workload.netsuite).fill("netsuite"),
-    ...Array<Kind>(workload.git).fill("git"),
-    ...Array<Kind>(workload.projects).fill("projects"),
+    ...Array<Kind>(notesCount).fill("notes"),
+    ...Array<Kind>(netsuiteCount).fill("netsuite"),
+    ...Array<Kind>(gitCount).fill("git"),
+    ...Array<Kind>(projectsCount).fill("projects"),
   ];
   workspace.apps = kinds.map((kind, i): CanvasApp => {
     const block = makeBlock(kind);
@@ -36,11 +63,35 @@ export function seedForegroundFixture(directory: string) {
       block.value = JSON.stringify({ active: "page-0", tabs: ["page-0"] });
     if (kind === "netsuite") {
       const view = i % 3 === 0 ? "scripts" : i % 3 === 1 ? "files" : "query";
+      const extra = options.innerTabs && i === notesCount;
+      const tabs = extra
+        ? [
+            { id: "main", view: "scripts" },
+            { id: "files", view: "files" },
+            { id: "query", view: "query" },
+          ]
+        : [{ id: "main", view }];
       block.value = JSON.stringify({
+        ...(extra
+          ? {
+              filePanes: {
+                "fixture#files": {
+                  active: "cold",
+                  panes: [
+                    {
+                      id: "cold",
+                      path: [{ id: 1, name: "Folder 1" }],
+                      file: { id: 42, name: "fixture.js" },
+                    },
+                  ],
+                },
+              },
+            }
+          : {}),
         viewTabs: {
-          tabs: [{ id: "main", view }],
+          tabs,
           layout: {
-            tabs: ["main"],
+            tabs: tabs.map((tab) => tab.id),
             active: "main",
             left: [],
             right: [],
@@ -76,6 +127,7 @@ export function seedForegroundFixture(directory: string) {
   try {
     database.acquire(owner);
     database.write(owner, 0, workspace);
+    if (options.innerTabs) database.learn(owner, "orvane.examples.v1");
     database.release(owner);
   } finally {
     database.close();
@@ -120,6 +172,20 @@ export function seedForegroundFixture(directory: string) {
   } finally {
     notes.close();
   }
+  const views = workspace.apps
+    .filter((app) => app.blocks[0]?.kind === "netsuite")
+    .map((app) => JSON.parse(app.blocks[0]!.value).viewTabs.tabs[0].view);
+  return {
+    apps: count,
+    notes: notesCount,
+    netsuite: netsuiteCount,
+    git: gitCount,
+    projects: projectsCount,
+    scripts: views.filter((view) => view === "scripts").length,
+    cabinets: views.filter((view) => view === "files").length,
+    queryViews: views.filter((view) => view === "query").length,
+    terminals: projectsCount,
+  };
 }
 
 export function assertForegroundDocuments(directory: string) {
@@ -146,9 +212,11 @@ export function assertForegroundDocuments(directory: string) {
   }
 }
 
-// Only fixed read fixtures are supported; unexpected operations fail instead
+// Only fixed fixture responses are supported; unexpected operations fail instead
 // of reaching a user's repository, filesystem or command execution endpoint.
 export function externalRead(path: string): unknown {
+  if (path === "/__orvane/projects/terminal/run")
+    return { stdOut: "Controlled fixture output\n", stdErr: "", exitCode: 0 };
   // Terminal layout persistence is acknowledged only in this disposable
   // fixture; no terminal command or filesystem operation is implemented.
   if (path === "/__orvane/projects/terminal/state") return { saved: true };

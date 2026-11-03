@@ -1,0 +1,6001 @@
+{
+  "date": "2026-11-03",
+  "baselineProductionCommit": "c5d47d0",
+  "candidateProductionCommit": "18a3261",
+  "artifacts": "artifacts/performance/foreground/2026-11-03T08-48-14-828Z",
+  "sources": {
+    "baselineAppSha256": "6d8eb6a2656b2a050dfcb5b07d89a897759eb05160bbb49cf67725994557b06e",
+    "candidateAppSha256": "b86ea8684f247c45330aaaa6c48ea0752bcdcbfacf5f41ab1156b7c44f9e8160",
+    "baselineStyleSha256": "5cf15ccf4dbb74c5bf0669357dea2a2cf10db3e984ee04253cbf86e9f43a6348",
+    "candidateStyleSha256": "df7ba9f66a5b8f15a73cde069820c72ffa0918ce842da6bfaf866447727c75bc",
+    "commonFixedBaselineStoreSha256": "f4bfc88a07fc6a1a7b92a8f2508f8dca3f37143679e7f2bfd974dcf3420bac42",
+    "candidateStoreSha256": "f4bfc88a07fc6a1a7b92a8f2508f8dca3f37143679e7f2bfd974dcf3420bac42",
+    "commonPageViewSha256": "70c52a07d422564703bfe3c49ceebc06e2af7a65571b4d0865eb862a6aaa1aad"
+  },
+  "acceptedRunCount": 40,
+  "rejectedAttempts": [
+    {
+      "variant": "candidate",
+      "index": 0,
+      "diagnostic": false,
+      "appCount": 20,
+      "cameraMode": "normal",
+      "attempt": 0,
+      "reason": "Error: Electron window is not foreground and visible: {\"focused\":false,\"visible\":true,\"minimized\":false}"
+    },
+    {
+      "variant": "candidate",
+      "index": 0,
+      "diagnostic": false,
+      "appCount": 20,
+      "cameraMode": "normal",
+      "attempt": 1,
+      "reason": "Error: Electron window is not foreground and visible: {\"focused\":false,\"visible\":true,\"minimized\":false}"
+    },
+    {
+      "variant": "candidate",
+      "index": 3,
+      "diagnostic": false,
+      "appCount": 50,
+      "cameraMode": "overview",
+      "attempt": 0,
+      "reason": "Error: Electron window is not foreground and visible: {\"focused\":false,\"visible\":true,\"minimized\":false}"
+    }
+  ],
+  "environment": {
+    "versions": {
+      "electron": "45.1.0",
+      "chrome": "156.0.8078.49",
+      "node": "24.22.1"
+    },
+    "display": {
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 1920,
+        "height": 1080
+      },
+      "workArea": {
+        "x": 0,
+        "y": 0,
+        "width": 1920,
+        "height": 1032
+      },
+      "scaleFactor": 1,
+      "refreshRate": 60
+    },
+    "contentSize": {
+      "width": 1440,
+      "height": 952
+    },
+    "gpuRenderer": "ANGLE (Intel, Intel(R) UHD Graphics (0x0000A721) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.101.7088)",
+    "gpuDevices": [
+      {
+        "active": false,
+        "deviceId": 42785,
+        "deviceString": "Intel(R) UHD Graphics",
+        "driverVersion": "32.0.101.7088",
+        "gpuPreference": 0,
+        "revision": 4,
+        "subSysId": -1954803652,
+        "vendorId": 32902
+      },
+      {
+        "active": false,
+        "deviceId": 140,
+        "deviceString": "Microsoft Basic Render Driver",
+        "driverVersion": "10.0.22621.5415",
+        "gpuPreference": 0,
+        "revision": 0,
+        "subSysId": 0,
+        "vendorId": 5140
+      }
+    ],
+    "gpuFeatures": {
+      "2d_canvas": "enabled",
+      "direct_rendering_display_compositor": "disabled_off_ok",
+      "gpu_compositing": "enabled",
+      "multiple_raster_threads": "enabled_on",
+      "opengl": "enabled_on",
+      "rasterization": "enabled",
+      "raw_draw": "disabled_off_ok",
+      "skia_graphite": "disabled_off",
+      "trees_in_viz": "disabled_off",
+      "video_decode": "enabled",
+      "video_encode": "enabled",
+      "webgl": "enabled",
+      "webgpu": "enabled",
+      "webnn": "disabled_off"
+    },
+    "hardwareAccelerationEnabled": true,
+    "commandSwitches": {
+      "disableGpu": false,
+      "disableGpuCompositing": false
+    },
+    "allRunsOnAC": true,
+    "webPreferences": {
+      "contextIsolation": true,
+      "nodeIntegration": false,
+      "sandbox": true,
+      "webviewTag": true
+    }
+  },
+  "templateAt50Apps": {
+    "notes": 12,
+    "netsuite": 20,
+    "git": 10,
+    "projects": 8,
+    "pages": 500,
+    "blocksPerDocument": 100,
+    "scripts": 1000,
+    "folders": 1000,
+    "projectsPerRoot": 100,
+    "savedTerminals": 20
+  },
+  "screening": [
+    {
+      "apps": 5,
+      "mode": "normal",
+      "screeningOnly": true,
+      "runs": [
+        {
+          "variant": "baseline",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 1,
+            "visibleApps": 2
+          },
+          "counts": {
+            "apps": 5,
+            "notes": 1,
+            "projects": 1,
+            "git": 1,
+            "scripts": 1,
+            "cabinets": 0,
+            "queryViews": 1,
+            "terminals": 1,
+            "elements": 8952,
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 5,
+              "maxInterval": 33.40000000000009,
+              "medianInterval": 16.59999999999991
+            },
+            "continuous": {
+              "samples": 64,
+              "maxInterval": 50,
+              "medianInterval": 16.699999999999818
+            },
+            "stop": {
+              "samples": 2,
+              "maxInterval": 16.699999999999818,
+              "medianInterval": 16.59999999999991
+            }
+          }
+        },
+        {
+          "variant": "candidate",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 1,
+            "visibleApps": 2
+          },
+          "counts": {
+            "apps": 5,
+            "notes": 1,
+            "projects": 1,
+            "git": 1,
+            "scripts": 1,
+            "cabinets": 0,
+            "queryViews": 1,
+            "terminals": 1,
+            "elements": 8953,
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 3,
+              "maxInterval": 16.700000000000273,
+              "medianInterval": 16.699999999999818
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 33.19999999999982,
+              "medianInterval": 16.600000000000364
+            },
+            "stop": {
+              "samples": 2,
+              "maxInterval": 16.699999999999818,
+              "medianInterval": 16.59999999999991
+            }
+          }
+        }
+      ]
+    },
+    {
+      "apps": 5,
+      "mode": "overview",
+      "screeningOnly": true,
+      "runs": [
+        {
+          "variant": "baseline",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 0.2,
+            "visibleApps": 5
+          },
+          "counts": {
+            "apps": 5,
+            "notes": 1,
+            "projects": 1,
+            "git": 1,
+            "scripts": 1,
+            "cabinets": 0,
+            "queryViews": 1,
+            "terminals": 1,
+            "elements": 8952,
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 3,
+              "maxInterval": 50,
+              "medianInterval": 16.600000000000364
+            },
+            "continuous": {
+              "samples": 64,
+              "maxInterval": 16.800000000000182,
+              "medianInterval": 16.699999999999818
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 33.5,
+              "medianInterval": 16.59999999999991
+            }
+          }
+        },
+        {
+          "variant": "candidate",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 0.2,
+            "visibleApps": 5
+          },
+          "counts": {
+            "apps": 5,
+            "notes": 1,
+            "projects": 1,
+            "git": 1,
+            "scripts": 1,
+            "cabinets": 0,
+            "queryViews": 1,
+            "terminals": 1,
+            "elements": 8953,
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 3,
+              "maxInterval": 16.800000000000182,
+              "medianInterval": 16.699999999999818
+            },
+            "continuous": {
+              "samples": 63,
+              "maxInterval": 33.600000000000364,
+              "medianInterval": 16.699999999999818
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 16.699999999999818,
+              "medianInterval": 16.600000000000364
+            }
+          }
+        }
+      ]
+    },
+    {
+      "apps": 10,
+      "mode": "normal",
+      "screeningOnly": true,
+      "runs": [
+        {
+          "variant": "baseline",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 1,
+            "visibleApps": 3
+          },
+          "counts": {
+            "apps": 10,
+            "notes": 2,
+            "projects": 2,
+            "git": 2,
+            "scripts": 2,
+            "cabinets": 1,
+            "queryViews": 1,
+            "terminals": 2,
+            "elements": 18327,
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 149.9000000000001,
+              "medianInterval": 16.59999999999991
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 16.800000000000182,
+              "medianInterval": 16.699999999999818
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 83.20000000000027,
+              "medianInterval": 16.699999999999818
+            }
+          }
+        },
+        {
+          "variant": "candidate",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 1,
+            "visibleApps": 3
+          },
+          "counts": {
+            "apps": 10,
+            "notes": 2,
+            "projects": 2,
+            "git": 2,
+            "scripts": 2,
+            "cabinets": 1,
+            "queryViews": 1,
+            "terminals": 2,
+            "elements": 18327,
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 16.799999999999727,
+              "medianInterval": 16.600000000000364
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 33.30000000000018,
+              "medianInterval": 16.699999999999818
+            },
+            "stop": {
+              "samples": 2,
+              "maxInterval": 16.800000000000182,
+              "medianInterval": 16.5
+            }
+          }
+        }
+      ]
+    },
+    {
+      "apps": 10,
+      "mode": "overview",
+      "screeningOnly": true,
+      "runs": [
+        {
+          "variant": "baseline",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 0.2,
+            "visibleApps": 8
+          },
+          "counts": {
+            "apps": 10,
+            "notes": 2,
+            "projects": 2,
+            "git": 2,
+            "scripts": 2,
+            "cabinets": 1,
+            "queryViews": 1,
+            "terminals": 2,
+            "elements": 18327,
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 3,
+              "maxInterval": 116.70000000000027,
+              "medianInterval": 16.733999999999924
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 33.40000000000009,
+              "medianInterval": 16.699999999999818
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 99.90000000000055,
+              "medianInterval": 16.699999999999818
+            }
+          }
+        },
+        {
+          "variant": "candidate",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 0.2,
+            "visibleApps": 8
+          },
+          "counts": {
+            "apps": 10,
+            "notes": 2,
+            "projects": 2,
+            "git": 2,
+            "scripts": 2,
+            "cabinets": 1,
+            "queryViews": 1,
+            "terminals": 2,
+            "elements": 18328,
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 2,
+              "maxInterval": 16.600000000000364,
+              "medianInterval": 16.59999999999991
+            },
+            "continuous": {
+              "samples": 63,
+              "maxInterval": 33.59999999999991,
+              "medianInterval": 16.699999999999818
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 16.699999999999818,
+              "medianInterval": 16.699999999999818
+            }
+          }
+        }
+      ]
+    },
+    {
+      "apps": 20,
+      "mode": "normal",
+      "screeningOnly": true,
+      "runs": [
+        {
+          "variant": "baseline",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 1,
+            "visibleApps": 3
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 5,
+            "projects": 3,
+            "git": 4,
+            "scripts": 4,
+            "cabinets": 2,
+            "queryViews": 2,
+            "terminals": 3,
+            "elements": 37854,
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 333,
+              "medianInterval": 16.699999999999818
+            },
+            "continuous": {
+              "samples": 63,
+              "maxInterval": 33.30000000000018,
+              "medianInterval": 16.699999999999818
+            },
+            "stop": {
+              "samples": 4,
+              "maxInterval": 216.5,
+              "medianInterval": 16.699999999999818
+            }
+          }
+        },
+        {
+          "variant": "candidate",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 1,
+            "visibleApps": 3
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 5,
+            "projects": 3,
+            "git": 4,
+            "scripts": 4,
+            "cabinets": 2,
+            "queryViews": 2,
+            "terminals": 3,
+            "elements": 37855,
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 3,
+              "maxInterval": 16.59999999999991,
+              "medianInterval": 16.59999999999991
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 17,
+              "medianInterval": 16.699999999999818
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 16.699999999999818,
+              "medianInterval": 16.59999999999991
+            }
+          }
+        }
+      ]
+    },
+    {
+      "apps": 20,
+      "mode": "overview",
+      "screeningOnly": true,
+      "runs": [
+        {
+          "variant": "baseline",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 0.2,
+            "visibleApps": 17
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 5,
+            "projects": 3,
+            "git": 4,
+            "scripts": 4,
+            "cabinets": 2,
+            "queryViews": 2,
+            "terminals": 3,
+            "elements": 37854,
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 3,
+              "maxInterval": 233.09999999999945,
+              "medianInterval": 16.700000000000728
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 33.5,
+              "medianInterval": 16.700000000000728
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 199.89999999999964,
+              "medianInterval": 17
+            }
+          }
+        },
+        {
+          "variant": "candidate",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 0.2,
+            "visibleApps": 17
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 5,
+            "projects": 3,
+            "git": 4,
+            "scripts": 4,
+            "cabinets": 2,
+            "queryViews": 2,
+            "terminals": 3,
+            "elements": 37855,
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 16.700000000000728,
+              "medianInterval": 16.599999999999454
+            },
+            "continuous": {
+              "samples": 64,
+              "maxInterval": 33.5,
+              "medianInterval": 16.800000000000182
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 16.799999999999272,
+              "medianInterval": 16.600000000000364
+            }
+          }
+        }
+      ]
+    },
+    {
+      "apps": 35,
+      "mode": "normal",
+      "screeningOnly": true,
+      "runs": [
+        {
+          "variant": "baseline",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 1,
+            "visibleApps": 3
+          },
+          "counts": {
+            "apps": 35,
+            "notes": 8,
+            "projects": 6,
+            "git": 7,
+            "scripts": 6,
+            "cabinets": 4,
+            "queryViews": 4,
+            "terminals": 6,
+            "elements": 65344,
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 366.39999999999964,
+              "medianInterval": 16.800000000000182
+            },
+            "continuous": {
+              "samples": 63,
+              "maxInterval": 17.600000000000364,
+              "medianInterval": 16.699999999999818
+            },
+            "stop": {
+              "samples": 4,
+              "maxInterval": 283.10000000000036,
+              "medianInterval": 16.699999999999818
+            }
+          }
+        },
+        {
+          "variant": "candidate",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 1,
+            "visibleApps": 3
+          },
+          "counts": {
+            "apps": 35,
+            "notes": 8,
+            "projects": 6,
+            "git": 7,
+            "scripts": 6,
+            "cabinets": 4,
+            "queryViews": 4,
+            "terminals": 6,
+            "elements": 65345,
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 16.800000000000182,
+              "medianInterval": 16.599999999999454
+            },
+            "continuous": {
+              "samples": 63,
+              "maxInterval": 16.800000000000182,
+              "medianInterval": 16.699999999999818
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 16.800000000000182,
+              "medianInterval": 16.599999999999454
+            }
+          }
+        }
+      ]
+    },
+    {
+      "apps": 35,
+      "mode": "overview",
+      "screeningOnly": true,
+      "runs": [
+        {
+          "variant": "baseline",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 0.2,
+            "visibleApps": 30
+          },
+          "counts": {
+            "apps": 35,
+            "notes": 8,
+            "projects": 6,
+            "git": 7,
+            "scripts": 6,
+            "cabinets": 4,
+            "queryViews": 4,
+            "terminals": 6,
+            "elements": 65344,
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 399.7999999999993,
+              "medianInterval": 16.600000000000364
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 83.10000000000036,
+              "medianInterval": 33.5
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 349.7999999999993,
+              "medianInterval": 16.80000000000109
+            }
+          }
+        },
+        {
+          "variant": "candidate",
+          "view": {
+            "width": 1440,
+            "height": 952,
+            "scale": 0.2,
+            "visibleApps": 30
+          },
+          "counts": {
+            "apps": 35,
+            "notes": 8,
+            "projects": 6,
+            "git": 7,
+            "scripts": 6,
+            "cabinets": 4,
+            "queryViews": 4,
+            "terminals": 6,
+            "elements": 65345,
+            "blur": "blur(8px) saturate(1.2)"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 33.29999999999927,
+              "medianInterval": 16.700000000000728
+            },
+            "continuous": {
+              "samples": 63,
+              "maxInterval": 50.100000000000364,
+              "medianInterval": 33.399999999999636
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 16.799999999999272,
+              "medianInterval": 16.600000000000364
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "repeated50Apps": {
+    "normal": {
+      "baseline": {
+        "visibleAppIntersections": 3,
+        "phases": {
+          "start": {
+            "worstCallbackIntervalMs": {
+              "n": 5,
+              "median": 516.4,
+              "min": 483,
+              "max": 533
+            },
+            "withinRunMedianIntervalMs": {
+              "n": 5,
+              "median": 16.6,
+              "min": 16.6,
+              "max": 16.7
+            }
+          },
+          "continuous": {
+            "worstCallbackIntervalMs": {
+              "n": 5,
+              "median": 17,
+              "min": 16.8,
+              "max": 17.1
+            },
+            "withinRunMedianIntervalMs": {
+              "n": 5,
+              "median": 16.7,
+              "min": 16.7,
+              "max": 16.7
+            }
+          },
+          "stop": {
+            "worstCallbackIntervalMs": {
+              "n": 5,
+              "median": 416.4,
+              "min": 416.3,
+              "max": 416.5
+            },
+            "withinRunMedianIntervalMs": {
+              "n": 5,
+              "median": 16.7,
+              "min": 16.6,
+              "max": 33.5
+            }
+          }
+        },
+        "firstUseMs": {
+          "fileColdMs": {
+            "n": 5,
+            "median": 479.8,
+            "min": 469.7,
+            "max": 482.1
+          },
+          "fileWarmMs": {
+            "n": 5,
+            "median": 400.1,
+            "min": 384.8,
+            "max": 409.5
+          },
+          "queryColdMs": {
+            "n": 5,
+            "median": 432.2,
+            "min": 427.1,
+            "max": 445.4
+          },
+          "queryWarmMs": {
+            "n": 5,
+            "median": 405.5,
+            "min": 388.5,
+            "max": 448.5
+          },
+          "terminalColdMs": {
+            "n": 5,
+            "median": 458.7,
+            "min": 444.8,
+            "max": 489.7
+          },
+          "terminalWarmMs": {
+            "n": 5,
+            "median": 407.1,
+            "min": 383.8,
+            "max": 424.2
+          },
+          "netFitMs": {
+            "n": 5,
+            "median": 419.1,
+            "min": 415.4,
+            "max": 480.3
+          },
+          "projectsFitMs": {
+            "n": 5,
+            "median": 495.8,
+            "min": 425.7,
+            "max": 499.7
+          }
+        }
+      },
+      "candidate": {
+        "visibleAppIntersections": 3,
+        "phases": {
+          "start": {
+            "worstCallbackIntervalMs": {
+              "n": 5,
+              "median": 16.7,
+              "min": 16.7,
+              "max": 33.2
+            },
+            "withinRunMedianIntervalMs": {
+              "n": 5,
+              "median": 16.6,
+              "min": 16.5,
+              "max": 16.7
+            }
+          },
+          "continuous": {
+            "worstCallbackIntervalMs": {
+              "n": 5,
+              "median": 16.9,
+              "min": 16.8,
+              "max": 33.3
+            },
+            "withinRunMedianIntervalMs": {
+              "n": 5,
+              "median": 16.7,
+              "min": 16.7,
+              "max": 16.7
+            }
+          },
+          "stop": {
+            "worstCallbackIntervalMs": {
+              "n": 5,
+              "median": 16.7,
+              "min": 16.7,
+              "max": 17
+            },
+            "withinRunMedianIntervalMs": {
+              "n": 5,
+              "median": 16.6,
+              "min": 16.5,
+              "max": 16.7
+            }
+          }
+        },
+        "firstUseMs": {
+          "fileColdMs": {
+            "n": 5,
+            "median": 81.9,
+            "min": 79.9,
+            "max": 92.9
+          },
+          "fileWarmMs": {
+            "n": 5,
+            "median": 20.4,
+            "min": 19.2,
+            "max": 21.4
+          },
+          "queryColdMs": {
+            "n": 5,
+            "median": 42.6,
+            "min": 41.7,
+            "max": 43.4
+          },
+          "queryWarmMs": {
+            "n": 5,
+            "median": 15.5,
+            "min": 13.8,
+            "max": 20.3
+          },
+          "terminalColdMs": {
+            "n": 5,
+            "median": 83.6,
+            "min": 78.8,
+            "max": 86
+          },
+          "terminalWarmMs": {
+            "n": 5,
+            "median": 24.6,
+            "min": 23,
+            "max": 25.8
+          },
+          "netFitMs": {
+            "n": 5,
+            "median": 316,
+            "min": 310.6,
+            "max": 325.4
+          },
+          "projectsFitMs": {
+            "n": 5,
+            "median": 311.6,
+            "min": 308.8,
+            "max": 321.2
+          }
+        }
+      }
+    },
+    "overview": {
+      "baseline": {
+        "visibleAppIntersections": 42,
+        "phases": {
+          "start": {
+            "worstCallbackIntervalMs": {
+              "n": 5,
+              "median": 649.6,
+              "min": 566.2,
+              "max": 849.3
+            },
+            "withinRunMedianIntervalMs": {
+              "n": 5,
+              "median": 16.7,
+              "min": 16.7,
+              "max": 17
+            }
+          },
+          "continuous": {
+            "worstCallbackIntervalMs": {
+              "n": 5,
+              "median": 83.3,
+              "min": 67.1,
+              "max": 366.5
+            },
+            "withinRunMedianIntervalMs": {
+              "n": 5,
+              "median": 66.5,
+              "min": 50,
+              "max": 99.9
+            }
+          },
+          "stop": {
+            "worstCallbackIntervalMs": {
+              "n": 5,
+              "median": 583,
+              "min": 516.2,
+              "max": 1482.3
+            },
+            "withinRunMedianIntervalMs": {
+              "n": 5,
+              "median": 16.7,
+              "min": 16.6,
+              "max": 16.7
+            }
+          }
+        }
+      },
+      "candidate": {
+        "visibleAppIntersections": 42,
+        "phases": {
+          "start": {
+            "worstCallbackIntervalMs": {
+              "n": 5,
+              "median": 50.1,
+              "min": 50,
+              "max": 66.8
+            },
+            "withinRunMedianIntervalMs": {
+              "n": 5,
+              "median": 16.6,
+              "min": 16.5,
+              "max": 16.7
+            }
+          },
+          "continuous": {
+            "worstCallbackIntervalMs": {
+              "n": 5,
+              "median": 83.5,
+              "min": 66.9,
+              "max": 199.7
+            },
+            "withinRunMedianIntervalMs": {
+              "n": 5,
+              "median": 66.6,
+              "min": 49.9,
+              "max": 83.3
+            }
+          },
+          "stop": {
+            "worstCallbackIntervalMs": {
+              "n": 5,
+              "median": 33.6,
+              "min": 16.7,
+              "max": 150
+            },
+            "withinRunMedianIntervalMs": {
+              "n": 5,
+              "median": 16.6,
+              "min": 16.6,
+              "max": 16.7
+            }
+          }
+        }
+      }
+    }
+  },
+  "separateTraces": {
+    "baseline": {
+      "normal": {
+        "start": {
+          "UpdateLayoutTree": {
+            "events": 2,
+            "aggregateEventMs": 473.99,
+            "maxEventMs": 473.83
+          },
+          "Layout": {
+            "events": 0,
+            "aggregateEventMs": 0,
+            "maxEventMs": 0
+          },
+          "Paint": {
+            "events": 5,
+            "aggregateEventMs": 9.26,
+            "maxEventMs": 3.3
+          },
+          "RasterTask": {
+            "events": 8,
+            "aggregateEventMs": 0.79,
+            "maxEventMs": 0.28
+          },
+          "FunctionCall": {
+            "events": 226,
+            "aggregateEventMs": 1.74,
+            "maxEventMs": 0.34
+          }
+        },
+        "continuous": {
+          "UpdateLayoutTree": {
+            "events": 58,
+            "aggregateEventMs": 5.15,
+            "maxEventMs": 0.25
+          },
+          "Layout": {
+            "events": 0,
+            "aggregateEventMs": 0,
+            "maxEventMs": 0
+          },
+          "Paint": {
+            "events": 241,
+            "aggregateEventMs": 270.97,
+            "maxEventMs": 6.25
+          },
+          "RasterTask": {
+            "events": 232,
+            "aggregateEventMs": 34.82,
+            "maxEventMs": 2.65
+          },
+          "FunctionCall": {
+            "events": 307,
+            "aggregateEventMs": 25.13,
+            "maxEventMs": 0.7
+          }
+        },
+        "stop": {
+          "UpdateLayoutTree": {
+            "events": 1,
+            "aggregateEventMs": 404.68,
+            "maxEventMs": 404.68
+          },
+          "Layout": {
+            "events": 0,
+            "aggregateEventMs": 0,
+            "maxEventMs": 0
+          },
+          "Paint": {
+            "events": 3,
+            "aggregateEventMs": 7.74,
+            "maxEventMs": 3.87
+          },
+          "RasterTask": {
+            "events": 7,
+            "aggregateEventMs": 0.47,
+            "maxEventMs": 0.11
+          },
+          "FunctionCall": {
+            "events": 14,
+            "aggregateEventMs": 0.38,
+            "maxEventMs": 0.1
+          }
+        }
+      },
+      "overview": {
+        "start": {
+          "UpdateLayoutTree": {
+            "events": 4,
+            "aggregateEventMs": 485.03,
+            "maxEventMs": 484.61
+          },
+          "Layout": {
+            "events": 1,
+            "aggregateEventMs": 16.73,
+            "maxEventMs": 16.73
+          },
+          "Paint": {
+            "events": 22,
+            "aggregateEventMs": 143.41,
+            "maxEventMs": 64.58
+          },
+          "RasterTask": {
+            "events": 94,
+            "aggregateEventMs": 14.77,
+            "maxEventMs": 0.89
+          },
+          "FunctionCall": {
+            "events": 230,
+            "aggregateEventMs": 2.15,
+            "maxEventMs": 0.45
+          }
+        },
+        "continuous": {
+          "UpdateLayoutTree": {
+            "events": 58,
+            "aggregateEventMs": 4.83,
+            "maxEventMs": 0.43
+          },
+          "Layout": {
+            "events": 0,
+            "aggregateEventMs": 0,
+            "maxEventMs": 0
+          },
+          "Paint": {
+            "events": 2260,
+            "aggregateEventMs": 3035.35,
+            "maxEventMs": 44.0
+          },
+          "RasterTask": {
+            "events": 4340,
+            "aggregateEventMs": 836.79,
+            "maxEventMs": 2.37
+          },
+          "FunctionCall": {
+            "events": 340,
+            "aggregateEventMs": 12.93,
+            "maxEventMs": 0.51
+          }
+        },
+        "stop": {
+          "UpdateLayoutTree": {
+            "events": 1,
+            "aggregateEventMs": 456.07,
+            "maxEventMs": 456.07
+          },
+          "Layout": {
+            "events": 0,
+            "aggregateEventMs": 0,
+            "maxEventMs": 0
+          },
+          "Paint": {
+            "events": 18,
+            "aggregateEventMs": 129.26,
+            "maxEventMs": 63.77
+          },
+          "RasterTask": {
+            "events": 82,
+            "aggregateEventMs": 10.59,
+            "maxEventMs": 0.49
+          },
+          "FunctionCall": {
+            "events": 15,
+            "aggregateEventMs": 0.87,
+            "maxEventMs": 0.28
+          }
+        }
+      },
+      "firstUseStyle": {
+        "events": 201,
+        "eventsOver100ms": 24,
+        "maxEventMs": 450.4
+      }
+    },
+    "candidate": {
+      "normal": {
+        "start": {
+          "UpdateLayoutTree": {
+            "events": 2,
+            "aggregateEventMs": 0.26,
+            "maxEventMs": 0.17
+          },
+          "Layout": {
+            "events": 0,
+            "aggregateEventMs": 0,
+            "maxEventMs": 0
+          },
+          "Paint": {
+            "events": 4,
+            "aggregateEventMs": 5.16,
+            "maxEventMs": 2.58
+          },
+          "RasterTask": {
+            "events": 1,
+            "aggregateEventMs": 0.23,
+            "maxEventMs": 0.23
+          },
+          "FunctionCall": {
+            "events": 224,
+            "aggregateEventMs": 1.53,
+            "maxEventMs": 0.16
+          }
+        },
+        "continuous": {
+          "UpdateLayoutTree": {
+            "events": 58,
+            "aggregateEventMs": 4.86,
+            "maxEventMs": 0.21
+          },
+          "Layout": {
+            "events": 0,
+            "aggregateEventMs": 0,
+            "maxEventMs": 0
+          },
+          "Paint": {
+            "events": 241,
+            "aggregateEventMs": 233.09,
+            "maxEventMs": 4.63
+          },
+          "RasterTask": {
+            "events": 232,
+            "aggregateEventMs": 28.52,
+            "maxEventMs": 2.37
+          },
+          "FunctionCall": {
+            "events": 304,
+            "aggregateEventMs": 21.79,
+            "maxEventMs": 0.47
+          }
+        },
+        "stop": {
+          "UpdateLayoutTree": {
+            "events": 1,
+            "aggregateEventMs": 0.07,
+            "maxEventMs": 0.07
+          },
+          "Layout": {
+            "events": 0,
+            "aggregateEventMs": 0,
+            "maxEventMs": 0
+          },
+          "Paint": {
+            "events": 2,
+            "aggregateEventMs": 1.73,
+            "maxEventMs": 1.72
+          },
+          "RasterTask": {
+            "events": 0,
+            "aggregateEventMs": 0,
+            "maxEventMs": 0
+          },
+          "FunctionCall": {
+            "events": 12,
+            "aggregateEventMs": 0.34,
+            "maxEventMs": 0.08
+          }
+        }
+      },
+      "overview": {
+        "start": {
+          "UpdateLayoutTree": {
+            "events": 5,
+            "aggregateEventMs": 0.51,
+            "maxEventMs": 0.16
+          },
+          "Layout": {
+            "events": 0,
+            "aggregateEventMs": 0,
+            "maxEventMs": 0
+          },
+          "Paint": {
+            "events": 4,
+            "aggregateEventMs": 13.25,
+            "maxEventMs": 6.98
+          },
+          "RasterTask": {
+            "events": 6,
+            "aggregateEventMs": 2.47,
+            "maxEventMs": 0.79
+          },
+          "FunctionCall": {
+            "events": 225,
+            "aggregateEventMs": 1.88,
+            "maxEventMs": 0.54
+          }
+        },
+        "continuous": {
+          "UpdateLayoutTree": {
+            "events": 59,
+            "aggregateEventMs": 6.9,
+            "maxEventMs": 0.57
+          },
+          "Layout": {
+            "events": 0,
+            "aggregateEventMs": 0,
+            "maxEventMs": 0
+          },
+          "Paint": {
+            "events": 2259,
+            "aggregateEventMs": 3803.03,
+            "maxEventMs": 130.15
+          },
+          "RasterTask": {
+            "events": 4299,
+            "aggregateEventMs": 949.61,
+            "maxEventMs": 3.49
+          },
+          "FunctionCall": {
+            "events": 349,
+            "aggregateEventMs": 18.53,
+            "maxEventMs": 0.75
+          }
+        },
+        "stop": {
+          "UpdateLayoutTree": {
+            "events": 1,
+            "aggregateEventMs": 0.1,
+            "maxEventMs": 0.1
+          },
+          "Layout": {
+            "events": 0,
+            "aggregateEventMs": 0,
+            "maxEventMs": 0
+          },
+          "Paint": {
+            "events": 2,
+            "aggregateEventMs": 7.78,
+            "maxEventMs": 7.74
+          },
+          "RasterTask": {
+            "events": 46,
+            "aggregateEventMs": 9.29,
+            "maxEventMs": 0.56
+          },
+          "FunctionCall": {
+            "events": 14,
+            "aggregateEventMs": 0.63,
+            "maxEventMs": 0.13
+          }
+        }
+      },
+      "firstUseStyle": {
+        "events": 252,
+        "eventsOver100ms": 0,
+        "maxEventMs": 37.1
+      }
+    }
+  },
+  "traceInterpretation": "Event totals can overlap across categories and threads and are not unique wall time. Traced runs are excluded from comparative summaries.",
+  "visualProbe": {
+    "artifacts": "artifacts/performance/foreground/2026-11-03T09-03-22-820Z",
+    "appearance": {
+      "before": {
+        "x": -9010.73,
+        "y": -4140.37,
+        "scale": 1.0308,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "during": {
+        "cursor": "grabbing",
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "after": {
+        "x": -9010.73,
+        "y": -4140.37,
+        "scale": 1.0308,
+        "blur": "blur(8px) saturate(1.2)",
+        "pointerEvents": "none"
+      },
+      "note": "Active-gesture and restored snapshots, not evidence of physical frame presentation."
+    }
+  },
+  "acceptedRuns": [
+    {
+      "runtime": "electron",
+      "appCount": 5,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 2
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "scripts": 2,
+          "table-detail": 2,
+          "tables": 2
+        }
+      },
+      "variant": "baseline",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 5,
+        "notes": 1,
+        "projects": 1,
+        "git": 1,
+        "scripts": 1,
+        "cabinets": 0,
+        "queryViews": 1,
+        "terminals": 1,
+        "elements": 8952,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 144.79999999981374,
+      "warmSelectionMs": 103,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 33.299999999999955,
+      "maxFrameInterval": 100,
+      "frameSamples": 84,
+      "panPhases": {
+        "start": {
+          "samples": 5,
+          "maxInterval": 33.40000000000009,
+          "medianInterval": 16.59999999999991
+        },
+        "continuous": {
+          "samples": 64,
+          "maxInterval": 50,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 2,
+          "maxInterval": 16.699999999999818,
+          "medianInterval": 16.59999999999991
+        }
+      },
+      "longTasks": [
+        85,
+        64,
+        56
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 5,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 9,
+        "/__orvane/notes/data": 12,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/terminal/state": 4,
+        "/__orvane/storage/release": 2,
+        "/__orvane/mcp": 1
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 85
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 5,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 2
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "scripts": 2,
+          "table-detail": 2,
+          "tables": 2
+        }
+      },
+      "variant": "candidate",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 5,
+        "notes": 1,
+        "projects": 1,
+        "git": 1,
+        "scripts": 1,
+        "cabinets": 0,
+        "queryViews": 1,
+        "terminals": 1,
+        "elements": 8953,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 179.29999999981374,
+      "warmSelectionMs": 253.40000000037253,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 33.19999999999982,
+      "maxFrameInterval": 199.80000000000018,
+      "frameSamples": 82,
+      "panPhases": {
+        "start": {
+          "samples": 3,
+          "maxInterval": 16.700000000000273,
+          "medianInterval": 16.699999999999818
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 33.19999999999982,
+          "medianInterval": 16.600000000000364
+        },
+        "stop": {
+          "samples": 2,
+          "maxInterval": 16.699999999999818,
+          "medianInterval": 16.59999999999991
+        }
+      },
+      "longTasks": [
+        91,
+        177
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 5,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 9,
+        "/__orvane/notes/data": 12,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/projects/terminal/state": 4,
+        "/__orvane/storage/release": 2,
+        "/__orvane/mcp": 1
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 83
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 5,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 5
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "scripts": 2,
+          "table-detail": 2,
+          "tables": 2
+        }
+      },
+      "variant": "baseline",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 5,
+        "notes": 1,
+        "projects": 1,
+        "git": 1,
+        "scripts": 1,
+        "cabinets": 0,
+        "queryViews": 1,
+        "terminals": 1,
+        "elements": 8952,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 16.800000000000182,
+      "maxFrameInterval": 50,
+      "frameSamples": 70,
+      "panPhases": {
+        "start": {
+          "samples": 3,
+          "maxInterval": 50,
+          "medianInterval": 16.600000000000364
+        },
+        "continuous": {
+          "samples": 64,
+          "maxInterval": 16.800000000000182,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 33.5,
+          "medianInterval": 16.59999999999991
+        }
+      },
+      "longTasks": [
+        52
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 5,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 7,
+        "/__orvane/notes/data": 8,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/projects/terminal/state": 4,
+        "/__orvane/storage/release": 2,
+        "/__orvane/mcp": 1
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 71
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 5,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 5
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "scripts": 2,
+          "table-detail": 2,
+          "tables": 2
+        }
+      },
+      "variant": "candidate",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 5,
+        "notes": 1,
+        "projects": 1,
+        "git": 1,
+        "scripts": 1,
+        "cabinets": 0,
+        "queryViews": 1,
+        "terminals": 1,
+        "elements": 8953,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 33.29999999999973,
+      "maxFrameInterval": 33.600000000000364,
+      "frameSamples": 69,
+      "panPhases": {
+        "start": {
+          "samples": 3,
+          "maxInterval": 16.800000000000182,
+          "medianInterval": 16.699999999999818
+        },
+        "continuous": {
+          "samples": 63,
+          "maxInterval": 33.600000000000364,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 16.699999999999818,
+          "medianInterval": 16.600000000000364
+        }
+      },
+      "longTasks": [],
+      "requests": {
+        "/__orvane/storage/lease": 5,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 7,
+        "/__orvane/notes/data": 8,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/projects/terminal/state": 4,
+        "/__orvane/storage/release": 2,
+        "/__orvane/mcp": 1
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 70
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 10,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 3
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 3,
+          "table-detail": 2,
+          "tables": 2
+        }
+      },
+      "variant": "baseline",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 10,
+        "notes": 2,
+        "projects": 2,
+        "git": 2,
+        "scripts": 2,
+        "cabinets": 1,
+        "queryViews": 1,
+        "terminals": 2,
+        "elements": 18327,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 265.20000000018626,
+      "warmSelectionMs": 149.5,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 50,
+      "maxFrameInterval": 216.5,
+      "frameSamples": 85,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 149.9000000000001,
+          "medianInterval": 16.59999999999991
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 16.800000000000182,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 83.20000000000027,
+          "medianInterval": 16.699999999999818
+        }
+      },
+      "longTasks": [
+        50,
+        185,
+        87,
+        162,
+        91
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 6,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 10,
+        "/__orvane/notes/data": 14,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/projects/terminal/state": 8,
+        "/__orvane/storage/release": 2,
+        "/__orvane/mcp": 1
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 86
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 10,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 3
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 2,
+          "table-detail": 2,
+          "tables": 2
+        }
+      },
+      "variant": "candidate",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 10,
+        "notes": 2,
+        "projects": 2,
+        "git": 2,
+        "scripts": 2,
+        "cabinets": 1,
+        "queryViews": 1,
+        "terminals": 2,
+        "elements": 18327,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 246.19999999925494,
+      "warmSelectionMs": 159.8999999994412,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 17,
+      "maxFrameInterval": 199.89999999999986,
+      "frameSamples": 89,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 16.799999999999727,
+          "medianInterval": 16.600000000000364
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 33.30000000000018,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 2,
+          "maxInterval": 16.800000000000182,
+          "medianInterval": 16.5
+        }
+      },
+      "longTasks": [
+        164,
+        88
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 6,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 10,
+        "/__orvane/notes/data": 14,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/terminal/state": 8,
+        "/__orvane/storage/release": 2,
+        "/__orvane/mcp": 1
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 90
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 10,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 8
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 3,
+          "table-detail": 2,
+          "tables": 2
+        }
+      },
+      "variant": "baseline",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 10,
+        "notes": 2,
+        "projects": 2,
+        "git": 2,
+        "scripts": 2,
+        "cabinets": 1,
+        "queryViews": 1,
+        "terminals": 2,
+        "elements": 18327,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 33.30000000000018,
+      "maxFrameInterval": 116.70000000000027,
+      "frameSamples": 68,
+      "panPhases": {
+        "start": {
+          "samples": 3,
+          "maxInterval": 116.70000000000027,
+          "medianInterval": 16.733999999999924
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 33.40000000000009,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 99.90000000000055,
+          "medianInterval": 16.699999999999818
+        }
+      },
+      "longTasks": [
+        105,
+        99
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 7,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 8,
+        "/__orvane/notes/data": 10,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/projects/terminal/state": 8,
+        "/__orvane/storage/release": 2,
+        "/__orvane/mcp": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 69
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 10,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 8
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 2,
+          "table-detail": 2,
+          "tables": 2
+        }
+      },
+      "variant": "candidate",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 10,
+        "notes": 2,
+        "projects": 2,
+        "git": 2,
+        "scripts": 2,
+        "cabinets": 1,
+        "queryViews": 1,
+        "terminals": 2,
+        "elements": 18328,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 33.30000000000018,
+      "maxFrameInterval": 33.59999999999991,
+      "frameSamples": 68,
+      "panPhases": {
+        "start": {
+          "samples": 2,
+          "maxInterval": 16.600000000000364,
+          "medianInterval": 16.59999999999991
+        },
+        "continuous": {
+          "samples": 63,
+          "maxInterval": 33.59999999999991,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 16.699999999999818,
+          "medianInterval": 16.699999999999818
+        }
+      },
+      "longTasks": [],
+      "requests": {
+        "/__orvane/storage/lease": 7,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 8,
+        "/__orvane/notes/data": 10,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/terminal/state": 8,
+        "/__orvane/mcp": 2,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 69
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 20,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 3
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 5,
+          "table-detail": 4,
+          "tables": 4
+        }
+      },
+      "variant": "baseline",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 20,
+        "notes": 5,
+        "projects": 3,
+        "git": 4,
+        "scripts": 4,
+        "cabinets": 2,
+        "queryViews": 2,
+        "terminals": 3,
+        "elements": 37854,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 329,
+      "warmSelectionMs": 246.29999999981374,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 83,
+      "maxFrameInterval": 333,
+      "frameSamples": 90,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 333,
+          "medianInterval": 16.699999999999818
+        },
+        "continuous": {
+          "samples": 63,
+          "maxInterval": 33.30000000000018,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 4,
+          "maxInterval": 216.5,
+          "medianInterval": 16.699999999999818
+        }
+      },
+      "longTasks": [
+        77,
+        214,
+        57,
+        152,
+        51,
+        344,
+        226
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 7,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 10,
+        "/__orvane/notes/data": 20,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/terminal/state": 12,
+        "/__orvane/mcp": 3,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 91
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 20,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 3
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 5,
+          "table-detail": 4,
+          "tables": 4
+        }
+      },
+      "variant": "candidate",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 20,
+        "notes": 5,
+        "projects": 3,
+        "git": 4,
+        "scripts": 4,
+        "cabinets": 2,
+        "queryViews": 2,
+        "terminals": 3,
+        "elements": 37855,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 170.6000000005588,
+      "warmSelectionMs": 113.09999999962747,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 33.29999999999973,
+      "maxFrameInterval": 133.19999999999982,
+      "frameSamples": 83,
+      "panPhases": {
+        "start": {
+          "samples": 3,
+          "maxInterval": 16.59999999999991,
+          "medianInterval": 16.59999999999991
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 17,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 16.699999999999818,
+          "medianInterval": 16.59999999999991
+        }
+      },
+      "longTasks": [
+        108,
+        65
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 6,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 10,
+        "/__orvane/notes/data": 20,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/projects/terminal/state": 12,
+        "/__orvane/storage/release": 2,
+        "/__orvane/mcp": 1
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 84
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 20,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 17
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 3,
+          "table-detail": 4,
+          "tables": 4
+        }
+      },
+      "variant": "baseline",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 20,
+        "notes": 5,
+        "projects": 3,
+        "git": 4,
+        "scripts": 4,
+        "cabinets": 2,
+        "queryViews": 2,
+        "terminals": 3,
+        "elements": 37854,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 16.700000000000728,
+      "frameIntervalP95": 33.5,
+      "maxFrameInterval": 233.09999999999945,
+      "frameSamples": 68,
+      "panPhases": {
+        "start": {
+          "samples": 3,
+          "maxInterval": 233.09999999999945,
+          "medianInterval": 16.700000000000728
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 33.5,
+          "medianInterval": 16.700000000000728
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 199.89999999999964,
+          "medianInterval": 17
+        }
+      },
+      "longTasks": [
+        192,
+        182
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 9,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 8,
+        "/__orvane/notes/data": 16,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/terminal/state": 12,
+        "/__orvane/mcp": 4,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 69
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 20,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 17
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 3,
+          "table-detail": 4,
+          "tables": 4
+        }
+      },
+      "variant": "candidate",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 20,
+        "notes": 5,
+        "projects": 3,
+        "git": 4,
+        "scripts": 4,
+        "cabinets": 2,
+        "queryViews": 2,
+        "terminals": 3,
+        "elements": 37855,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 16.700000000000728,
+      "frameIntervalP95": 33.400000000000546,
+      "maxFrameInterval": 33.5,
+      "frameSamples": 71,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 16.700000000000728,
+          "medianInterval": 16.599999999999454
+        },
+        "continuous": {
+          "samples": 64,
+          "maxInterval": 33.5,
+          "medianInterval": 16.800000000000182
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 16.799999999999272,
+          "medianInterval": 16.600000000000364
+        }
+      },
+      "longTasks": [],
+      "requests": {
+        "/__orvane/storage/lease": 9,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 8,
+        "/__orvane/notes/data": 16,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/terminal/state": 12,
+        "/__orvane/mcp": 4,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 72
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 35,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 3
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 10,
+          "table-detail": 8,
+          "tables": 8
+        }
+      },
+      "variant": "baseline",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 35,
+        "notes": 8,
+        "projects": 6,
+        "git": 7,
+        "scripts": 6,
+        "cabinets": 4,
+        "queryViews": 4,
+        "terminals": 6,
+        "elements": 65344,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 162.59999999962747,
+      "warmSelectionMs": 120.59999999962747,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 33.600000000000364,
+      "maxFrameInterval": 366.39999999999964,
+      "frameSamples": 89,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 366.39999999999964,
+          "medianInterval": 16.800000000000182
+        },
+        "continuous": {
+          "samples": 63,
+          "maxInterval": 17.600000000000364,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 4,
+          "maxInterval": 283.10000000000036,
+          "medianInterval": 16.699999999999818
+        }
+      },
+      "longTasks": [
+        63,
+        65,
+        370,
+        289
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 8,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 10,
+        "/__orvane/notes/data": 26,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/terminal/state": 24,
+        "/__orvane/mcp": 3,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 90
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 35,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 3
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 10,
+          "table-detail": 8,
+          "tables": 8
+        }
+      },
+      "variant": "candidate",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 35,
+        "notes": 8,
+        "projects": 6,
+        "git": 7,
+        "scripts": 6,
+        "cabinets": 4,
+        "queryViews": 4,
+        "terminals": 6,
+        "elements": 65345,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 153,
+      "warmSelectionMs": 130.79999999981374,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 33.19999999999982,
+      "maxFrameInterval": 99.69999999999982,
+      "frameSamples": 84,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 16.800000000000182,
+          "medianInterval": 16.599999999999454
+        },
+        "continuous": {
+          "samples": 63,
+          "maxInterval": 16.800000000000182,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 16.800000000000182,
+          "medianInterval": 16.599999999999454
+        }
+      },
+      "longTasks": [
+        60,
+        68
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 7,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 10,
+        "/__orvane/notes/data": 26,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/terminal/state": 24,
+        "/__orvane/mcp": 3,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 85
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 35,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 30
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 10,
+          "table-detail": 8,
+          "tables": 8
+        }
+      },
+      "variant": "baseline",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 35,
+        "notes": 8,
+        "projects": 6,
+        "git": 7,
+        "scripts": 6,
+        "cabinets": 4,
+        "queryViews": 4,
+        "terminals": 6,
+        "elements": 65344,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 33.5,
+      "frameIntervalP95": 66.89999999999964,
+      "maxFrameInterval": 399.7999999999993,
+      "frameSamples": 69,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 399.7999999999993,
+          "medianInterval": 16.600000000000364
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 83.10000000000036,
+          "medianInterval": 33.5
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 349.7999999999993,
+          "medianInterval": 16.80000000000109
+        }
+      },
+      "longTasks": [
+        318,
+        62,
+        50,
+        65,
+        52,
+        72,
+        55,
+        53,
+        312,
+        58
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 11,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 8,
+        "/__orvane/notes/data": 22,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/terminal/state": 24,
+        "/__orvane/mcp": 5,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 70
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 35,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 30
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 10,
+          "table-detail": 8,
+          "tables": 8
+        }
+      },
+      "variant": "candidate",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 35,
+        "notes": 8,
+        "projects": 6,
+        "git": 7,
+        "scripts": 6,
+        "cabinets": 4,
+        "queryViews": 4,
+        "terminals": 6,
+        "elements": 65345,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 33.399999999999636,
+      "frameIntervalP95": 50,
+      "maxFrameInterval": 50.100000000000364,
+      "frameSamples": 70,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 33.29999999999927,
+          "medianInterval": 16.700000000000728
+        },
+        "continuous": {
+          "samples": 63,
+          "maxInterval": 50.100000000000364,
+          "medianInterval": 33.399999999999636
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 16.799999999999272,
+          "medianInterval": 16.600000000000364
+        }
+      },
+      "longTasks": [
+        50
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 9,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 8,
+        "/__orvane/notes/data": 22,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/terminal/state": 24,
+        "/__orvane/mcp": 4,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 71
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "firstUse": {
+        "netFitMs": 433.1000000005588,
+        "projectsFitMs": 499.70000000018626,
+        "fileColdMs": 479.79999999981374,
+        "fileWarmMs": 400.09999999962747,
+        "queryColdMs": 445.3999999994412,
+        "queryWarmMs": 405.5,
+        "terminalColdMs": 489.69999999925494,
+        "terminalWarmMs": 415.79999999981374,
+        "hiddenBefore": {
+          "files": 0,
+          "query": 0
+        },
+        "terminalsBefore": 1,
+        "terminalsAfterCold": 2,
+        "terminalsAfterWarm": 2,
+        "retainedQueryOutput": true,
+        "expandedDeploymentRows": 100,
+        "controlledTerminalOutput": true,
+        "validity": {
+          "stop": true,
+          "invalid": false,
+          "frames": 122,
+          "blur": 0
+        }
+      },
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 3
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "deployments": 1,
+          "file": 1,
+          "folder": 1,
+          "folders": 3,
+          "query": 1,
+          "scripts": 14,
+          "table-detail": 13,
+          "tables": 13
+        }
+      },
+      "variant": "baseline",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94566,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 163.59999999962747,
+      "warmSelectionMs": 132.79999999981374,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 66.69999999999982,
+      "maxFrameInterval": 533,
+      "frameSamples": 90,
+      "panPhases": {
+        "start": {
+          "samples": 5,
+          "maxInterval": 533,
+          "medianInterval": 16.600000000000364
+        },
+        "continuous": {
+          "samples": 64,
+          "maxInterval": 17.099999999999454,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 416.5,
+          "medianInterval": 16.699999999999818
+        }
+      },
+      "longTasks": [
+        85,
+        73,
+        528,
+        430
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 20,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 25,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/notes/data": 34,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/terminal/state": 34,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/mcp": 8,
+        "/__orvane/storage/release": 2,
+        "/__orvane/projects/terminal/run": 1
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 91
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "firstUse": {
+        "netFitMs": 324.79999999981374,
+        "projectsFitMs": 321.20000000018626,
+        "fileColdMs": 80.19999999925494,
+        "fileWarmMs": 19.40000000037253,
+        "queryColdMs": 41.69999999925494,
+        "queryWarmMs": 15,
+        "terminalColdMs": 82.70000000018626,
+        "terminalWarmMs": 24.600000000558794,
+        "hiddenBefore": {
+          "files": 0,
+          "query": 0
+        },
+        "terminalsBefore": 1,
+        "terminalsAfterCold": 2,
+        "terminalsAfterWarm": 2,
+        "retainedQueryOutput": true,
+        "expandedDeploymentRows": 100,
+        "controlledTerminalOutput": true,
+        "validity": {
+          "stop": true,
+          "invalid": false,
+          "frames": 154,
+          "blur": 0
+        }
+      },
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 3
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "deployments": 1,
+          "file": 1,
+          "folder": 1,
+          "folders": 3,
+          "query": 1,
+          "scripts": 14,
+          "table-detail": 13,
+          "tables": 13
+        }
+      },
+      "variant": "candidate",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94567,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 126.30000000074506,
+      "warmSelectionMs": 119.29999999981374,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 16.800000000000182,
+      "maxFrameInterval": 83.30000000000018,
+      "frameSamples": 92,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 16.700000000000728,
+          "medianInterval": 16.600000000000364
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 16.800000000000182,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 16.700000000000728,
+          "medianInterval": 16.599999999999454
+        }
+      },
+      "longTasks": [
+        54,
+        61
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 9,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 23,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/notes/data": 34,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/terminal/state": 34,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/mcp": 4,
+        "/__orvane/storage/release": 2,
+        "/__orvane/projects/terminal/run": 1
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 93
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "firstUse": {
+        "netFitMs": 310.59999999962747,
+        "projectsFitMs": 308.79999999981374,
+        "fileColdMs": 82.79999999981374,
+        "fileWarmMs": 19.200000000186265,
+        "queryColdMs": 42.59999999962747,
+        "queryWarmMs": 15.5,
+        "terminalColdMs": 85.59999999962747,
+        "terminalWarmMs": 24.700000000186265,
+        "hiddenBefore": {
+          "files": 0,
+          "query": 0
+        },
+        "terminalsBefore": 1,
+        "terminalsAfterCold": 2,
+        "terminalsAfterWarm": 2,
+        "retainedQueryOutput": true,
+        "expandedDeploymentRows": 100,
+        "controlledTerminalOutput": true,
+        "validity": {
+          "stop": true,
+          "invalid": false,
+          "frames": 152,
+          "blur": 0
+        }
+      },
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 3
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "deployments": 1,
+          "file": 1,
+          "folder": 1,
+          "folders": 3,
+          "query": 1,
+          "scripts": 14,
+          "table-detail": 13,
+          "tables": 13
+        }
+      },
+      "variant": "candidate",
+      "index": 1,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94567,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 151.79999999981374,
+      "warmSelectionMs": 122.1000000005588,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 33.399999999999636,
+      "maxFrameInterval": 100,
+      "frameSamples": 86,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 16.799999999999272,
+          "medianInterval": 16.5
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 16.800000000000182,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 16.699999999999818,
+          "medianInterval": 16.600000000000364
+        }
+      },
+      "longTasks": [
+        56,
+        65,
+        67
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 10,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 23,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/notes/data": 34,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/terminal/state": 34,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/mcp": 4,
+        "/__orvane/storage/release": 2,
+        "/__orvane/projects/terminal/run": 1
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 87
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "firstUse": {
+        "netFitMs": 419.09999999962747,
+        "projectsFitMs": 498.70000000018626,
+        "fileColdMs": 480.30000000074506,
+        "fileWarmMs": 403.59999999962747,
+        "queryColdMs": 431.1000000005588,
+        "queryWarmMs": 448.5,
+        "terminalColdMs": 464.20000000018626,
+        "terminalWarmMs": 406.79999999981374,
+        "hiddenBefore": {
+          "files": 0,
+          "query": 0
+        },
+        "terminalsBefore": 1,
+        "terminalsAfterCold": 2,
+        "terminalsAfterWarm": 2,
+        "retainedQueryOutput": true,
+        "expandedDeploymentRows": 100,
+        "controlledTerminalOutput": true,
+        "validity": {
+          "stop": true,
+          "invalid": false,
+          "frames": 122,
+          "blur": 0
+        }
+      },
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 3
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "deployments": 1,
+          "file": 1,
+          "folder": 1,
+          "folders": 3,
+          "query": 1,
+          "scripts": 14,
+          "table-detail": 13,
+          "tables": 13
+        }
+      },
+      "variant": "baseline",
+      "index": 1,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94566,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 171.90000000037253,
+      "warmSelectionMs": 137.3999999994412,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 50.100000000000364,
+      "maxFrameInterval": 516.4000000000005,
+      "frameSamples": 87,
+      "panPhases": {
+        "start": {
+          "samples": 5,
+          "maxInterval": 516.4000000000005,
+          "medianInterval": 16.600000000000364
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 17,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 4,
+          "maxInterval": 416.2999999999993,
+          "medianInterval": 16.700000000000728
+        }
+      },
+      "longTasks": [
+        52,
+        86,
+        76,
+        515,
+        428
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 19,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 25,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/notes/data": 34,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/terminal/state": 34,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/mcp": 9,
+        "/__orvane/storage/release": 2,
+        "/__orvane/projects/terminal/run": 1
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 88
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "firstUse": {
+        "netFitMs": 480.29999999981374,
+        "projectsFitMs": 425.70000000018626,
+        "fileColdMs": 482.09999999962747,
+        "fileWarmMs": 409.5,
+        "queryColdMs": 427.1000000005588,
+        "queryWarmMs": 413.40000000037253,
+        "terminalColdMs": 444.79999999981374,
+        "terminalWarmMs": 424.20000000018626,
+        "hiddenBefore": {
+          "files": 0,
+          "query": 0
+        },
+        "terminalsBefore": 1,
+        "terminalsAfterCold": 2,
+        "terminalsAfterWarm": 2,
+        "retainedQueryOutput": true,
+        "expandedDeploymentRows": 100,
+        "controlledTerminalOutput": true,
+        "validity": {
+          "stop": true,
+          "invalid": false,
+          "frames": 121,
+          "blur": 0
+        }
+      },
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 3
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "deployments": 1,
+          "file": 1,
+          "folder": 1,
+          "folders": 3,
+          "query": 1,
+          "scripts": 14,
+          "table-detail": 13,
+          "tables": 13
+        }
+      },
+      "variant": "baseline",
+      "index": 2,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94566,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 153,
+      "warmSelectionMs": 132.29999999981374,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 49.900000000000546,
+      "maxFrameInterval": 516.4000000000005,
+      "frameSamples": 88,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 516.4000000000005,
+          "medianInterval": 16.600000000000364
+        },
+        "continuous": {
+          "samples": 63,
+          "maxInterval": 16.899999999999636,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 416.3000000000002,
+          "medianInterval": 33.5
+        }
+      },
+      "longTasks": [
+        54,
+        72,
+        525,
+        436
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 20,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 25,
+        "/__orvane/notes/data": 34,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/terminal/state": 34,
+        "/__orvane/mcp": 8,
+        "/__orvane/storage/release": 2,
+        "/__orvane/projects/terminal/run": 1
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 89
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "firstUse": {
+        "netFitMs": 316,
+        "projectsFitMs": 309.6000000005588,
+        "fileColdMs": 81.90000000037253,
+        "fileWarmMs": 21.399999999441206,
+        "queryColdMs": 43.09999999962747,
+        "queryWarmMs": 20.299999999813735,
+        "terminalColdMs": 83.6000000005588,
+        "terminalWarmMs": 25.799999999813735,
+        "hiddenBefore": {
+          "files": 0,
+          "query": 0
+        },
+        "terminalsBefore": 1,
+        "terminalsAfterCold": 2,
+        "terminalsAfterWarm": 2,
+        "retainedQueryOutput": true,
+        "expandedDeploymentRows": 100,
+        "controlledTerminalOutput": true,
+        "validity": {
+          "stop": true,
+          "invalid": false,
+          "frames": 154,
+          "blur": 0
+        }
+      },
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 3
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "deployments": 1,
+          "file": 1,
+          "folder": 1,
+          "folders": 3,
+          "query": 1,
+          "scripts": 14,
+          "table-detail": 13,
+          "tables": 13
+        }
+      },
+      "variant": "candidate",
+      "index": 2,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94567,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 166.79999999981374,
+      "warmSelectionMs": 126.80000000074506,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 33.400000000000546,
+      "maxFrameInterval": 116.39999999999964,
+      "frameSamples": 85,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 33.19999999999982,
+          "medianInterval": 16.699999999999818
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 33.30000000000018,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 16.699999999999818,
+          "medianInterval": 16.5
+        }
+      },
+      "longTasks": [
+        70,
+        67
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 9,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 23,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/notes/data": 34,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/terminal/state": 34,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/mcp": 4,
+        "/__orvane/storage/release": 2,
+        "/__orvane/projects/terminal/run": 1
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 86
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "firstUse": {
+        "netFitMs": 310.70000000018626,
+        "projectsFitMs": 314.90000000037253,
+        "fileColdMs": 79.8999999994412,
+        "fileWarmMs": 20.40000000037253,
+        "queryColdMs": 41.700000000186265,
+        "queryWarmMs": 16.199999999254942,
+        "terminalColdMs": 78.79999999981374,
+        "terminalWarmMs": 24,
+        "hiddenBefore": {
+          "files": 0,
+          "query": 0
+        },
+        "terminalsBefore": 1,
+        "terminalsAfterCold": 2,
+        "terminalsAfterWarm": 2,
+        "retainedQueryOutput": true,
+        "expandedDeploymentRows": 100,
+        "controlledTerminalOutput": true,
+        "validity": {
+          "stop": true,
+          "invalid": false,
+          "frames": 153,
+          "blur": 0
+        }
+      },
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 3
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "deployments": 1,
+          "file": 1,
+          "folder": 1,
+          "folders": 3,
+          "query": 1,
+          "scripts": 14,
+          "table-detail": 13,
+          "tables": 13
+        }
+      },
+      "variant": "candidate",
+      "index": 3,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94567,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 162.79999999981374,
+      "warmSelectionMs": 121.1000000005588,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 33.399999999999636,
+      "maxFrameInterval": 116.60000000000036,
+      "frameSamples": 88,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 16.700000000000728,
+          "medianInterval": 16.600000000000364
+        },
+        "continuous": {
+          "samples": 63,
+          "maxInterval": 17,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 16.699999999999818,
+          "medianInterval": 16.699999999999818
+        }
+      },
+      "longTasks": [
+        77,
+        67
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 10,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 23,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/notes/data": 34,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/terminal/state": 34,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/mcp": 4,
+        "/__orvane/storage/release": 2,
+        "/__orvane/projects/terminal/run": 1
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 89
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "firstUse": {
+        "netFitMs": 417.3999999994412,
+        "projectsFitMs": 495.79999999981374,
+        "fileColdMs": 470.59999999962747,
+        "fileWarmMs": 384.79999999981374,
+        "queryColdMs": 432.19999999925494,
+        "queryWarmMs": 388.5,
+        "terminalColdMs": 454.59999999962747,
+        "terminalWarmMs": 383.79999999981374,
+        "hiddenBefore": {
+          "files": 0,
+          "query": 0
+        },
+        "terminalsBefore": 1,
+        "terminalsAfterCold": 2,
+        "terminalsAfterWarm": 2,
+        "retainedQueryOutput": true,
+        "expandedDeploymentRows": 100,
+        "controlledTerminalOutput": true,
+        "validity": {
+          "stop": true,
+          "invalid": false,
+          "frames": 124,
+          "blur": 0
+        }
+      },
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 3
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "deployments": 1,
+          "file": 1,
+          "folder": 1,
+          "folders": 3,
+          "query": 1,
+          "scripts": 14,
+          "table-detail": 13,
+          "tables": 13
+        }
+      },
+      "variant": "baseline",
+      "index": 3,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94566,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 151.59999999962747,
+      "warmSelectionMs": 149.5,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 50,
+      "maxFrameInterval": 483,
+      "frameSamples": 86,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 483,
+          "medianInterval": 16.699999999999818
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 17,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 416.40000000000055,
+          "medianInterval": 16.599999999999454
+        }
+      },
+      "longTasks": [
+        63,
+        69,
+        492,
+        423
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 20,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 25,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/notes/data": 34,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/terminal/state": 34,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/mcp": 8,
+        "/__orvane/storage/release": 2,
+        "/__orvane/projects/terminal/run": 1
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 87
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "firstUse": {
+        "netFitMs": 415.40000000037253,
+        "projectsFitMs": 455.8999999994412,
+        "fileColdMs": 469.70000000018626,
+        "fileWarmMs": 398.79999999981374,
+        "queryColdMs": 432.20000000018626,
+        "queryWarmMs": 398.69999999925494,
+        "terminalColdMs": 458.70000000018626,
+        "terminalWarmMs": 407.09999999962747,
+        "hiddenBefore": {
+          "files": 0,
+          "query": 0
+        },
+        "terminalsBefore": 1,
+        "terminalsAfterCold": 2,
+        "terminalsAfterWarm": 2,
+        "retainedQueryOutput": true,
+        "expandedDeploymentRows": 100,
+        "controlledTerminalOutput": true,
+        "validity": {
+          "stop": true,
+          "invalid": false,
+          "frames": 136,
+          "blur": 0
+        }
+      },
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 3
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "deployments": 1,
+          "file": 1,
+          "folder": 1,
+          "folders": 3,
+          "query": 1,
+          "scripts": 14,
+          "table-detail": 13,
+          "tables": 13
+        }
+      },
+      "variant": "baseline",
+      "index": 4,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94566,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 177.20000000018626,
+      "warmSelectionMs": 136.1000000005588,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 50,
+      "maxFrameInterval": 499.6999999999998,
+      "frameSamples": 85,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 499.6999999999998,
+          "medianInterval": 16.600000000000364
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 16.800000000000182,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 416.39999999999964,
+          "medianInterval": 16.600000000000364
+        }
+      },
+      "longTasks": [
+        94,
+        73,
+        503,
+        428
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 20,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 25,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/notes/data": 34,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/terminal/state": 34,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/mcp": 9,
+        "/__orvane/storage/release": 2,
+        "/__orvane/projects/terminal/run": 1
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 86
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "firstUse": {
+        "netFitMs": 325.40000000037253,
+        "projectsFitMs": 311.59999999962747,
+        "fileColdMs": 92.90000000037253,
+        "fileWarmMs": 20.700000000186265,
+        "queryColdMs": 43.39999999944121,
+        "queryWarmMs": 13.799999999813735,
+        "terminalColdMs": 86,
+        "terminalWarmMs": 23,
+        "hiddenBefore": {
+          "files": 0,
+          "query": 0
+        },
+        "terminalsBefore": 1,
+        "terminalsAfterCold": 2,
+        "terminalsAfterWarm": 2,
+        "retainedQueryOutput": true,
+        "expandedDeploymentRows": 100,
+        "controlledTerminalOutput": true,
+        "validity": {
+          "stop": true,
+          "invalid": false,
+          "frames": 155,
+          "blur": 0
+        }
+      },
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 3
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "deployments": 1,
+          "file": 1,
+          "folder": 1,
+          "folders": 3,
+          "query": 1,
+          "scripts": 14,
+          "table-detail": 13,
+          "tables": 13
+        }
+      },
+      "variant": "candidate",
+      "index": 4,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94567,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 158.40000000037253,
+      "warmSelectionMs": 146.79999999981374,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 33.400000000000546,
+      "maxFrameInterval": 100,
+      "frameSamples": 92,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 16.699999999999818,
+          "medianInterval": 16.699999999999818
+        },
+        "continuous": {
+          "samples": 63,
+          "maxInterval": 16.900000000000546,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 17,
+          "medianInterval": 16.5
+        }
+      },
+      "longTasks": [
+        57,
+        71
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 10,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 23,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/notes/data": 34,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/terminal/state": 34,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/mcp": 4,
+        "/__orvane/storage/release": 2,
+        "/__orvane/projects/terminal/run": 1
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 93
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "firstUse": {
+        "netFitMs": 311.59999999962747,
+        "projectsFitMs": 309.80000000074506,
+        "fileColdMs": 133.20000000018626,
+        "fileWarmMs": 32.60000000055879,
+        "queryColdMs": 62.200000000186265,
+        "queryWarmMs": 22.59999999962747,
+        "terminalColdMs": 117,
+        "terminalWarmMs": 28.200000000186265,
+        "hiddenBefore": {
+          "files": 0,
+          "query": 0
+        },
+        "terminalsBefore": 1,
+        "terminalsAfterCold": 2,
+        "terminalsAfterWarm": 2,
+        "retainedQueryOutput": true,
+        "expandedDeploymentRows": 100,
+        "controlledTerminalOutput": true,
+        "validity": {
+          "stop": true,
+          "invalid": false,
+          "frames": 166,
+          "blur": 0
+        }
+      },
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 3
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "deployments": 1,
+          "file": 1,
+          "folder": 1,
+          "folders": 3,
+          "query": 1,
+          "scripts": 14,
+          "table-detail": 13,
+          "tables": 13
+        }
+      },
+      "variant": "candidate",
+      "index": 5,
+      "diagnostic": true,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94567,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 222.79999999981374,
+      "warmSelectionMs": 172.20000000018626,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 33.30000000000018,
+      "maxFrameInterval": 149.89999999999964,
+      "frameSamples": 91,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 33.30000000000018,
+          "medianInterval": 16.699999999999818
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 16.800000000000182,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 16.699999999999818,
+          "medianInterval": 16.699999999999818
+        }
+      },
+      "longTasks": [
+        89,
+        55,
+        87
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 13,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 23,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/notes/data": 34,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/terminal/state": 34,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/mcp": 5,
+        "/__orvane/storage/release": 2,
+        "/__orvane/projects/terminal/run": 1
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 92
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "firstUse": {
+        "netFitMs": 468.69999999925494,
+        "projectsFitMs": 486.59999999962747,
+        "fileColdMs": 520.7999999998137,
+        "fileWarmMs": 422.19999999925494,
+        "queryColdMs": 452.6000000005588,
+        "queryWarmMs": 431.79999999981374,
+        "terminalColdMs": 588.9000000003725,
+        "terminalWarmMs": 415,
+        "hiddenBefore": {
+          "files": 0,
+          "query": 0
+        },
+        "terminalsBefore": 1,
+        "terminalsAfterCold": 2,
+        "terminalsAfterWarm": 2,
+        "retainedQueryOutput": true,
+        "expandedDeploymentRows": 100,
+        "controlledTerminalOutput": true,
+        "validity": {
+          "stop": true,
+          "invalid": false,
+          "frames": 132,
+          "blur": 0
+        }
+      },
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "normal",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1,
+        "visibleApps": 3
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "deployments": 1,
+          "file": 1,
+          "folder": 1,
+          "folders": 3,
+          "query": 1,
+          "scripts": 14,
+          "table-detail": 13,
+          "tables": 13
+        }
+      },
+      "variant": "baseline",
+      "index": 5,
+      "diagnostic": true,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94566,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": 185.90000000037253,
+      "warmSelectionMs": 175.19999999925494,
+      "frameIntervalP50": 16.699999999999818,
+      "frameIntervalP95": 66.60000000000036,
+      "maxFrameInterval": 499.5,
+      "frameSamples": 90,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 499.5,
+          "medianInterval": 16.699999999999818
+        },
+        "continuous": {
+          "samples": 64,
+          "maxInterval": 17,
+          "medianInterval": 16.699999999999818
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 433.1999999999998,
+          "medianInterval": 16.800000000000182
+        }
+      },
+      "longTasks": [
+        55,
+        87,
+        83,
+        508,
+        440
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 23,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 26,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/notes/data": 34,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/terminal/state": 34,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/mcp": 9,
+        "/__orvane/storage/release": 2,
+        "/__orvane/projects/terminal/run": 1
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 91
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 42
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 14,
+          "table-detail": 12,
+          "tables": 12
+        }
+      },
+      "variant": "baseline",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94566,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 50,
+      "frameIntervalP95": 66.90000000000146,
+      "maxFrameInterval": 566.1999999999971,
+      "frameSamples": 69,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 566.1999999999971,
+          "medianInterval": 16.700000000000728
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 67.10000000000218,
+          "medianInterval": 50
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 516.2000000000007,
+          "medianInterval": 16.69999999999709
+        }
+      },
+      "longTasks": [
+        464,
+        78,
+        54,
+        56,
+        52,
+        56,
+        52,
+        58,
+        67,
+        52,
+        51,
+        52,
+        50,
+        54,
+        55,
+        57,
+        60,
+        60,
+        55,
+        54,
+        54,
+        57,
+        63,
+        67,
+        63,
+        60,
+        69,
+        60,
+        57,
+        55,
+        57,
+        64,
+        55,
+        59,
+        57,
+        52,
+        56,
+        61,
+        59,
+        56,
+        55,
+        457,
+        73
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 10,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 8,
+        "/__orvane/notes/data": 30,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/terminal/state": 32,
+        "/__orvane/mcp": 5,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 70
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 42
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 14,
+          "table-detail": 12,
+          "tables": 12
+        }
+      },
+      "variant": "candidate",
+      "index": 0,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94567,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 49.900000000001455,
+      "frameIntervalP95": 66.70000000000073,
+      "maxFrameInterval": 66.90000000000146,
+      "frameSamples": 70,
+      "panPhases": {
+        "start": {
+          "samples": 3,
+          "maxInterval": 50,
+          "medianInterval": 16.60200000000259
+        },
+        "continuous": {
+          "samples": 63,
+          "maxInterval": 66.90000000000146,
+          "medianInterval": 50
+        },
+        "stop": {
+          "samples": 4,
+          "maxInterval": 16.700000000000728,
+          "medianInterval": 16.600000000002183
+        }
+      },
+      "longTasks": [
+        55,
+        66,
+        58,
+        55,
+        59,
+        50,
+        59,
+        50,
+        51,
+        53,
+        51,
+        50,
+        56,
+        54,
+        54,
+        54,
+        50,
+        52,
+        52,
+        58,
+        51,
+        59,
+        52,
+        50,
+        50,
+        51,
+        51,
+        51,
+        52,
+        56,
+        54,
+        53
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 10,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 8,
+        "/__orvane/notes/data": 30,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/terminal/state": 32,
+        "/__orvane/mcp": 5,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 71
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 42
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 14,
+          "table-detail": 12,
+          "tables": 12
+        }
+      },
+      "variant": "candidate",
+      "index": 1,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94561,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 49.900000000001455,
+      "frameIntervalP95": 66.79999999999927,
+      "maxFrameInterval": 66.90000000000146,
+      "frameSamples": 69,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 50.099999999998545,
+          "medianInterval": 16.5
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 66.90000000000146,
+          "medianInterval": 49.900000000001455
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 33.599999999998545,
+          "medianInterval": 16.599999999998545
+        }
+      },
+      "longTasks": [
+        60,
+        60,
+        53,
+        51,
+        59,
+        54,
+        59,
+        51,
+        51,
+        50,
+        50,
+        55,
+        52,
+        58,
+        51,
+        52,
+        52,
+        55,
+        60,
+        57,
+        56,
+        61,
+        53,
+        52,
+        54,
+        55,
+        54,
+        52,
+        54,
+        53,
+        55,
+        51,
+        52,
+        63,
+        51,
+        57,
+        54,
+        60,
+        54,
+        55,
+        53,
+        50
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 9,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 8,
+        "/__orvane/notes/data": 30,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/terminal/state": 32,
+        "/__orvane/mcp": 4,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 70
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 42
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 14,
+          "table-detail": 12,
+          "tables": 12
+        }
+      },
+      "variant": "baseline",
+      "index": 1,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94566,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 50.099999999998545,
+      "frameIntervalP95": 83.29999999999927,
+      "maxFrameInterval": 599.5999999999985,
+      "frameSamples": 70,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 599.5999999999985,
+          "medianInterval": 16.700000000000728
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 83.30000000000291,
+          "medianInterval": 50.20000000000073
+        },
+        "stop": {
+          "samples": 4,
+          "maxInterval": 516.3000000000029,
+          "medianInterval": 16.600000000002183
+        }
+      },
+      "longTasks": [
+        495,
+        82,
+        60,
+        69,
+        56,
+        59,
+        51,
+        60,
+        54,
+        78,
+        60,
+        72,
+        50,
+        55,
+        53,
+        54,
+        57,
+        55,
+        57,
+        62,
+        56,
+        56,
+        61,
+        61,
+        53,
+        54,
+        54,
+        56,
+        51,
+        51,
+        69,
+        65,
+        59,
+        67,
+        62,
+        60,
+        54,
+        53,
+        62,
+        59,
+        61,
+        58,
+        57,
+        66,
+        59,
+        51,
+        68,
+        67,
+        74,
+        57,
+        65,
+        58,
+        51,
+        57,
+        66,
+        59,
+        54,
+        63,
+        449,
+        90
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 14,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 9,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/notes/data": 30,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/terminal/state": 32,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/mcp": 5,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 71
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 42
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 14,
+          "table-detail": 12,
+          "tables": 12
+        }
+      },
+      "variant": "baseline",
+      "index": 2,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94566,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 83.20000000000073,
+      "frameIntervalP95": 233.20000000000073,
+      "maxFrameInterval": 832.7000000000007,
+      "frameSamples": 70,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 832.7000000000007,
+          "medianInterval": 16.700000000000728
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 333.2000000000007,
+          "medianInterval": 83.29999999999927
+        },
+        "stop": {
+          "samples": 4,
+          "maxInterval": 766.2000000000007,
+          "medianInterval": 16.599999999998545
+        }
+      },
+      "longTasks": [
+        705,
+        109,
+        64,
+        83,
+        89,
+        93,
+        88,
+        81,
+        74,
+        72,
+        102,
+        97,
+        133,
+        81,
+        83,
+        77,
+        62,
+        84,
+        65,
+        74,
+        64,
+        67,
+        124,
+        108,
+        121,
+        77,
+        87,
+        74,
+        93,
+        106,
+        95,
+        199,
+        333,
+        120,
+        82,
+        71,
+        94,
+        70,
+        72,
+        69,
+        75,
+        74,
+        72,
+        85,
+        62,
+        88,
+        90,
+        79,
+        97,
+        93,
+        73,
+        62,
+        72,
+        71,
+        70,
+        94,
+        85,
+        92,
+        85,
+        64,
+        691,
+        89
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 14,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 9,
+        "/__orvane/notes/data": 30,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/terminal/state": 32,
+        "/__orvane/mcp": 6,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 71
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 42
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 14,
+          "table-detail": 12,
+          "tables": 12
+        }
+      },
+      "variant": "candidate",
+      "index": 2,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94567,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 83.29999999999927,
+      "frameIntervalP95": 116.70000000000073,
+      "maxFrameInterval": 199.70000000000073,
+      "frameSamples": 71,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 66.79999999999927,
+          "medianInterval": 16.700000000000728
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 199.70000000000073,
+          "medianInterval": 83.29999999999927
+        },
+        "stop": {
+          "samples": 4,
+          "maxInterval": 66.59999999999854,
+          "medianInterval": 16.700000000000728
+        }
+      },
+      "longTasks": [
+        51,
+        64,
+        86,
+        91,
+        75,
+        74,
+        63,
+        55,
+        65,
+        85,
+        75,
+        78,
+        54,
+        53,
+        56,
+        69,
+        79,
+        90,
+        83,
+        86,
+        97,
+        90,
+        85,
+        94,
+        80,
+        68,
+        78,
+        89,
+        84,
+        89,
+        72,
+        89,
+        104,
+        72,
+        91,
+        80,
+        78,
+        76,
+        83,
+        94,
+        95,
+        86,
+        78,
+        80,
+        86,
+        81,
+        63,
+        69,
+        68,
+        86,
+        75,
+        106,
+        166,
+        120,
+        122,
+        126,
+        103,
+        82,
+        111,
+        55
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 12,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 8,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/notes/data": 30,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/terminal/state": 32,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/mcp": 6,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 72
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 42
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 14,
+          "table-detail": 12,
+          "tables": 12
+        }
+      },
+      "variant": "candidate",
+      "index": 3,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94567,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 66.60000000000218,
+      "frameIntervalP95": 83.70000000000073,
+      "maxFrameInterval": 100.09999999999854,
+      "frameSamples": 69,
+      "panPhases": {
+        "start": {
+          "samples": 3,
+          "maxInterval": 66.70000000000073,
+          "medianInterval": 16.700000000000728
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 100.09999999999854,
+          "medianInterval": 66.60000000000218
+        },
+        "stop": {
+          "samples": 4,
+          "maxInterval": 33.400000000001455,
+          "medianInterval": 16.599999999998545
+        }
+      },
+      "longTasks": [
+        68,
+        67,
+        77,
+        69,
+        66,
+        53,
+        63,
+        65,
+        69,
+        69,
+        75,
+        57,
+        66,
+        61,
+        60,
+        63,
+        61,
+        61,
+        62,
+        59,
+        61,
+        64,
+        63,
+        57,
+        68,
+        58,
+        67,
+        70,
+        62,
+        74,
+        82,
+        75,
+        72,
+        69,
+        80,
+        75,
+        76,
+        77,
+        88,
+        84,
+        102,
+        81,
+        88,
+        76,
+        79,
+        68,
+        69,
+        80,
+        74,
+        100,
+        93,
+        66,
+        72,
+        67,
+        73,
+        83,
+        72,
+        61
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 13,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 9,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/notes/data": 30,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/terminal/state": 32,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/mcp": 6,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 70
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 42
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 14,
+          "table-detail": 12,
+          "tables": 12
+        }
+      },
+      "variant": "baseline",
+      "index": 3,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94566,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 83.5,
+      "frameIntervalP95": 216.5,
+      "maxFrameInterval": 1482.2999999999993,
+      "frameSamples": 71,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 849.2999999999993,
+          "medianInterval": 17
+        },
+        "continuous": {
+          "samples": 63,
+          "maxInterval": 366.5,
+          "medianInterval": 99.90000000000146
+        },
+        "stop": {
+          "samples": 4,
+          "maxInterval": 1482.2999999999993,
+          "medianInterval": 16.700000000000728
+        }
+      },
+      "longTasks": [
+        726,
+        104,
+        61,
+        85,
+        110,
+        86,
+        84,
+        91,
+        203,
+        368,
+        139,
+        105,
+        95,
+        72,
+        73,
+        76,
+        66,
+        55,
+        78,
+        61,
+        58,
+        58,
+        69,
+        67,
+        72,
+        73,
+        82,
+        77,
+        82,
+        67,
+        71,
+        89,
+        78,
+        73,
+        70,
+        76,
+        85,
+        89,
+        103,
+        93,
+        110,
+        104,
+        94,
+        104,
+        104,
+        106,
+        112,
+        100,
+        125,
+        130,
+        158,
+        149,
+        153,
+        155,
+        121,
+        145,
+        146,
+        159,
+        127,
+        145,
+        1343,
+        162
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 17,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 9,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/notes/data": 30,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/terminal/state": 32,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/mcp": 8,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 72
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 42
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 14,
+          "table-detail": 12,
+          "tables": 12
+        }
+      },
+      "variant": "baseline",
+      "index": 4,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94566,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 66.5,
+      "frameIntervalP95": 66.90000000000146,
+      "maxFrameInterval": 649.5999999999985,
+      "frameSamples": 72,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 649.5999999999985,
+          "medianInterval": 16.700000000000728
+        },
+        "continuous": {
+          "samples": 63,
+          "maxInterval": 83.20000000000073,
+          "medianInterval": 66.5
+        },
+        "stop": {
+          "samples": 5,
+          "maxInterval": 583,
+          "medianInterval": 16.700000000000728
+        }
+      },
+      "longTasks": [
+        526,
+        93,
+        55,
+        65,
+        63,
+        56,
+        54,
+        57,
+        52,
+        68,
+        63,
+        70,
+        59,
+        56,
+        56,
+        67,
+        58,
+        57,
+        56,
+        55,
+        60,
+        54,
+        56,
+        61,
+        60,
+        60,
+        54,
+        60,
+        59,
+        59,
+        60,
+        68,
+        68,
+        61,
+        64,
+        66,
+        65,
+        59,
+        59,
+        74,
+        62,
+        64,
+        58,
+        59,
+        64,
+        64,
+        58,
+        58,
+        62,
+        68,
+        55,
+        62,
+        63,
+        59,
+        59,
+        64,
+        63,
+        62,
+        56,
+        511,
+        84
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 14,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 8,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/notes/data": 30,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/terminal/state": 32,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/mcp": 5,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 73
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 42
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 14,
+          "table-detail": 12,
+          "tables": 12
+        }
+      },
+      "variant": "candidate",
+      "index": 4,
+      "diagnostic": false,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94567,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 66.5,
+      "frameIntervalP95": 83.40000000000146,
+      "maxFrameInterval": 150,
+      "frameSamples": 73,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 50.099999999998545,
+          "medianInterval": 16.5
+        },
+        "continuous": {
+          "samples": 63,
+          "maxInterval": 83.5,
+          "medianInterval": 66.59999999999854
+        },
+        "stop": {
+          "samples": 6,
+          "maxInterval": 150,
+          "medianInterval": 16.700000000000728
+        }
+      },
+      "longTasks": [
+        63,
+        77,
+        66,
+        60,
+        54,
+        54,
+        55,
+        67,
+        67,
+        65,
+        54,
+        62,
+        57,
+        56,
+        57,
+        56,
+        61,
+        58,
+        57,
+        58,
+        60,
+        59,
+        69,
+        57,
+        58,
+        58,
+        54,
+        59,
+        60,
+        68,
+        77,
+        67,
+        84,
+        70,
+        80,
+        72,
+        62,
+        73,
+        72,
+        71,
+        59,
+        60,
+        69,
+        68,
+        66,
+        69,
+        85,
+        68,
+        61,
+        71,
+        67,
+        63,
+        68,
+        65,
+        76,
+        62,
+        63,
+        65,
+        161
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 13,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 8,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/notes/data": 30,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/terminal/state": 32,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/mcp": 5,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 74
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 42
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 14,
+          "table-detail": 12,
+          "tables": 12
+        }
+      },
+      "variant": "candidate",
+      "index": 5,
+      "diagnostic": true,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94567,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 66.79999999999563,
+      "frameIntervalP95": 116.59999999999854,
+      "maxFrameInterval": 183.09999999999854,
+      "frameSamples": 70,
+      "panPhases": {
+        "start": {
+          "samples": 4,
+          "maxInterval": 66.5,
+          "medianInterval": 16.80000000000291
+        },
+        "continuous": {
+          "samples": 63,
+          "maxInterval": 183.09999999999854,
+          "medianInterval": 83.10000000000218
+        },
+        "stop": {
+          "samples": 3,
+          "maxInterval": 66.79999999999563,
+          "medianInterval": 16.700000000004366
+        }
+      },
+      "longTasks": [
+        51,
+        58,
+        80,
+        101,
+        81,
+        65,
+        90,
+        108,
+        77,
+        92,
+        82,
+        80,
+        66,
+        67,
+        60,
+        62,
+        65,
+        89,
+        75,
+        59,
+        67,
+        103,
+        185,
+        69,
+        59,
+        65,
+        68,
+        69,
+        63,
+        74,
+        122,
+        120,
+        96,
+        59,
+        98,
+        69,
+        77,
+        74,
+        87,
+        103,
+        79,
+        88,
+        87,
+        93,
+        68,
+        72,
+        71,
+        67,
+        64,
+        67,
+        64,
+        89,
+        77,
+        69,
+        63,
+        73,
+        97,
+        74,
+        100,
+        60
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 15,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 9,
+        "/__orvane/notes/data": 30,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/terminal/state": 32,
+        "/__orvane/mcp": 6,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 71
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    },
+    {
+      "runtime": "electron",
+      "appCount": 50,
+      "cameraMode": "overview",
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "visibleApps": 42
+      },
+      "nativeIPC": {
+        "errors": [],
+        "focused": true,
+        "visible": true,
+        "minimized": false,
+        "callCounts": {
+          "folders": 2,
+          "scripts": 14,
+          "table-detail": 12,
+          "tables": 12
+        }
+      },
+      "variant": "baseline",
+      "index": 5,
+      "diagnostic": true,
+      "counts": {
+        "apps": 50,
+        "notes": 12,
+        "projects": 8,
+        "git": 10,
+        "scripts": 7,
+        "cabinets": 7,
+        "queryViews": 6,
+        "terminals": 8,
+        "elements": 94566,
+        "blur": "blur(8px) saturate(1.2)"
+      },
+      "firstSelectionMs": null,
+      "warmSelectionMs": null,
+      "frameIntervalP50": 66.60000000000218,
+      "frameIntervalP95": 99.90000000000146,
+      "maxFrameInterval": 632.7999999999993,
+      "frameSamples": 71,
+      "panPhases": {
+        "start": {
+          "samples": 5,
+          "maxInterval": 632.7999999999993,
+          "medianInterval": 17.200000000000728
+        },
+        "continuous": {
+          "samples": 62,
+          "maxInterval": 100,
+          "medianInterval": 66.70000000000073
+        },
+        "stop": {
+          "samples": 4,
+          "maxInterval": 566.4000000000015,
+          "medianInterval": 16.599999999998545
+        }
+      },
+      "longTasks": [
+        535,
+        90,
+        51,
+        58,
+        78,
+        67,
+        54,
+        55,
+        54,
+        57,
+        75,
+        57,
+        81,
+        66,
+        62,
+        80,
+        91,
+        80,
+        68,
+        80,
+        69,
+        62,
+        64,
+        66,
+        59,
+        86,
+        84,
+        68,
+        63,
+        61,
+        64,
+        60,
+        67,
+        66,
+        73,
+        74,
+        78,
+        70,
+        61,
+        70,
+        71,
+        66,
+        76,
+        67,
+        84,
+        99,
+        74,
+        51,
+        88,
+        74,
+        60,
+        64,
+        60,
+        71,
+        54,
+        63,
+        63,
+        71,
+        68,
+        64,
+        499,
+        87
+      ],
+      "requests": {
+        "/__orvane/storage/lease": 16,
+        "/__orvane/storage/preferences": 2,
+        "/__orvane/storage/state": 8,
+        "/__orvane/notes/data": 30,
+        "/__orvane/git/git_workspace_list": 2,
+        "/__orvane/projects/workspace": 2,
+        "/__orvane/git/git_history": 2,
+        "/__orvane/git/git_status": 2,
+        "/__orvane/projects/terminal/state": 32,
+        "/__orvane/mcp": 6,
+        "/__orvane/storage/release": 2
+      },
+      "validity": {
+        "focused": true,
+        "visible": true,
+        "focusLosses": 0,
+        "hidden": 0,
+        "samples": 72
+      },
+      "browserVersion": "156.0.8078.49",
+      "powerOnBattery": false
+    }
+  ],
+  "validation": {
+    "fixtureCompositionChecks": 5,
+    "savedDocumentsPreservedInAllMatrixRuns": true,
+    "firstUseTrialsIncludingDiagnostics": 12,
+    "browserCompatibilitySmokePassed": true,
+    "productionBuildPassed": true
+  },
+  "limits": [
+    "Actual Electron shell and preload with isolated userData; native NetSuite IPC is mocked.",
+    "App counts below 50 are single screening pairs, not repeated timing evidence.",
+    "Overview uses the actual UI minimum zoom of 0.2; large fixtures may not all fit on screen.",
+    "Focused/visible document checks; screenshots support visual review but do not establish presented frame rate.",
+    "Only App.vue and style.css differ from the pre-pan-change baseline; Notes loading fix and child index are common.",
+    "Mock external reads; real isolated SQLite workspace and Notes storage.",
+    "Pan samples use the restored initial workload; the separate first-use phase adds a retained query result, expanded deployments and controlled terminal output. Large Git diffs are not included.",
+    "Frame intervals cover selection and scripted pan together; first/warm readiness ends after two animation callbacks, not a measured physical display presentation.",
+    "No heap snapshots, 30-minute soak or 50-app capacity guarantee.",
+    "Cold means an uninitialized pane or terminal in an already populated renderer; shared modules may be warm. No live account/network startup latency is measured.",
+    "First-use readiness starts at click capture and ends after target content plus two animation callbacks. Dock/fit time is recorded separately.",
+    "An earlier preliminary batch and smoke runs are excluded from the accepted matrix.",
+    "Every matrix trial uses a new isolated profile and database; these runs are not a continuous soak or heap-stability test.",
+    "The active-pan snapshot is a separate visual probe, not comparative timing or proof of physical presentation."
+  ]
+}

@@ -3,6 +3,11 @@ import vue from "@vitejs/plugin-vue";
 import { chromium, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { launchElectronFixture } from "./electron-foreground.ts";
+import {
+  measureElectronFirstUse,
+  captureElectronPanAppearance,
+} from "./electron-first-use.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
@@ -15,8 +20,20 @@ import {
   workload,
 } from "./foreground-fixture.ts";
 
-// Production browser comparison of pan styles or Notes metadata. No live
-// NetSuite, filesystem, Git or command calls are permitted by this fixture.
+// Production foreground comparison in Chromium or the actual Electron shell.
+// External reads use fixed responses and terminal output is simulated.
+const runtime = process.env.ORVANE_FOREGROUND_RUNTIME || "browser";
+if (!["browser", "electron"].includes(runtime))
+  throw Error("Unknown foreground runtime.");
+const cameraModes = (
+  process.env.ORVANE_FOREGROUND_MODES ||
+  (runtime === "electron" && process.env.ORVANE_FOREGROUND_MATRIX !== "0"
+    ? "normal,overview"
+    : "normal")
+).split(",");
+const visualOnly = process.env.ORVANE_FOREGROUND_VISUAL_ONLY === "1";
+if (cameraModes.some((mode) => !["normal", "overview"].includes(mode)))
+  throw Error("Unknown camera mode.");
 const experiment = process.env.ORVANE_FOREGROUND_EXPERIMENT || "pan";
 if (!["pan", "notes"].includes(experiment))
   throw Error("Unknown foreground experiment.");
@@ -111,12 +128,38 @@ async function afterPaint(page: Page) {
   );
 }
 const results: any[] = [];
-async function run(variant: string, index: number, diagnostic = false) {
+const rejectedAttempts: any[] = [];
+async function finishTrace(cdp: any, path: string) {
+  const completed = new Promise<any>((resolve) =>
+    cdp.once("Tracing.tracingComplete", resolve),
+  );
+  await cdp.send("Tracing.end");
+  const { stream } = await completed;
+  let trace = "";
+  while (true) {
+    const chunk = await cdp.send("IO.read", { handle: stream });
+    trace += chunk.data;
+    if (chunk.eof) break;
+  }
+  await cdp.send("IO.close", { handle: stream });
+  await writeFile(path, trace);
+}
+async function run(
+  variant: string,
+  index: number,
+  diagnostic = false,
+  appCount = 50,
+  cameraMode = "normal",
+  attempt = 0,
+) {
   const directory = join(
     destination,
-    `data-${variant}-${index}${diagnostic ? "-trace" : ""}`,
+    `data-${variant}-${index}-${appCount}-${cameraMode}${diagnostic ? "-trace" : ""}-attempt-${attempt}`,
   );
-  seedForegroundFixture(directory);
+  const expected = seedForegroundFixture(directory, {
+    appCount,
+    innerTabs: runtime === "electron",
+  });
   const requests: Record<string, number> = {};
   const fixtureErrors: string[] = [];
   const mocks: Plugin = {
@@ -148,18 +191,30 @@ async function run(variant: string, index: number, diagnostic = false) {
     logLevel: "error",
     plugins: [mocks, localStorageApi(directory), notesApi(directory)],
     build: { outDir: join(destination, variant) },
-    preview: { host: "127.0.0.1", port: 5186, strictPort: true },
+    preview: {
+      host: runtime === "electron" ? "localhost" : "127.0.0.1",
+      port: 5186,
+      strictPort: true,
+    },
   });
-  const browser = await chromium.launch({
-    headless: false,
-    executablePath,
-    args: ["--window-position=0,0", "--window-size=1460,1080"],
-  });
+  const desktop =
+    runtime === "electron"
+      ? await launchElectronFixture(root, directory, 5186)
+      : undefined;
+  const browser = desktop
+    ? undefined
+    : await chromium.launch({
+        headless: false,
+        executablePath,
+        args: ["--window-position=0,0", "--window-size=1460,1080"],
+      });
   try {
-    const context = await browser.newContext({
-      viewport: { width: 1440, height: 1000 },
-    });
-    const page = await context.newPage();
+    const context =
+      desktop?.context ??
+      (await browser!.newContext({
+        viewport: { width: 1440, height: 1000 },
+      }));
+    const page = desktop?.page ?? (await context.newPage());
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     const initialize = () => {
@@ -181,40 +236,41 @@ async function run(variant: string, index: number, diagnostic = false) {
           ...list.getEntries().map((entry) => entry.duration),
         );
       }).observe({ type: "longtask", buffered: true });
-      w.orvaneDesktop = {
-        netsuite: {
-          tabs: async () => [
-            { id: "fixture", label: "Fixture", status: "ready", count: 1 },
-          ],
-          run: async (_environment: string, op: string) => {
-            if (op === "scripts")
-              return {
-                rows: Array.from({ length: 1000 }, (_, i) => ({
-                  id: i + 1,
-                  name: `Script ${i}`,
-                  scriptfile: `script-${i}.js`,
-                  fileid: i + 1,
-                  owner: "Fixture",
-                  scriptid: `customscript_${i}`,
-                  scripttype: "UserEvent",
-                })),
-              };
-            if (op === "folders")
-              return {
-                rows: Array.from({ length: 1000 }, (_, i) => ({
-                  id: i + 1,
-                  name: `Folder ${i}`,
-                  parent: null,
-                })),
-              };
-            if (op === "folder") return { folders: [], files: [] };
-            throw Error(`Unsupported NetSuite fixture operation: ${op}`);
+      if (!w.orvaneDesktop)
+        w.orvaneDesktop = {
+          netsuite: {
+            tabs: async () => [
+              { id: "fixture", label: "Fixture", status: "ready", count: 1 },
+            ],
+            run: async (_environment: string, op: string) => {
+              if (op === "scripts")
+                return {
+                  rows: Array.from({ length: 1000 }, (_, i) => ({
+                    id: i + 1,
+                    name: `Script ${i}`,
+                    scriptfile: `script-${i}.js`,
+                    fileid: i + 1,
+                    owner: "Fixture",
+                    scriptid: `customscript_${i}`,
+                    scripttype: "UserEvent",
+                  })),
+                };
+              if (op === "folders")
+                return {
+                  rows: Array.from({ length: 1000 }, (_, i) => ({
+                    id: i + 1,
+                    name: `Folder ${i}`,
+                    parent: null,
+                  })),
+                };
+              if (op === "folder") return { folders: [], files: [] };
+              throw Error(`Unsupported NetSuite fixture operation: ${op}`);
+            },
+            openRecord: async () => {
+              throw Error("Record writes/navigation are outside this fixture.");
+            },
           },
-          openRecord: async () => {
-            throw Error("Record writes/navigation are outside this fixture.");
-          },
-        },
-      };
+        };
     };
     // tsx preserves function names with a helper in serialized callbacks.
     // Supply it before invoking the initialization in the browser realm.
@@ -228,16 +284,25 @@ async function run(variant: string, index: number, diagnostic = false) {
           "devtools.timeline,v8,blink.user_timing,disabled-by-default-devtools.timeline",
         transferMode: "ReturnAsStream",
       });
-    await page.goto("http://127.0.0.1:5186/", { waitUntil: "load" });
+    await page.goto(
+      runtime === "electron"
+        ? "http://localhost:5186/"
+        : "http://127.0.0.1:5186/",
+      { waitUntil: "load" },
+    );
     await page.bringToFront();
+    await desktop?.focus();
     await page.locator('main[data-ready="true"]').waitFor();
     await page.waitForFunction(
-      () =>
+      (expected) =>
         document.querySelectorAll(".notes-workspace .page-title").length ===
-          12 && document.querySelectorAll(".canvas-app").length === 50,
+          expected.notes &&
+        document.querySelectorAll(".canvas-app").length === expected.apps,
+      expected,
     );
     await page.evaluate(() => document.fonts.ready);
     await page.waitForTimeout(700);
+    await desktop?.renderedMetadata();
     const app = page.locator('[data-app-id="app-0"]');
     const counts = await page.evaluate(() => ({
       apps: document.querySelectorAll(".canvas-app").length,
@@ -252,20 +317,79 @@ async function run(variant: string, index: number, diagnostic = false) {
       blur: getComputedStyle(document.querySelector(".topbar-frost")!)
         .backdropFilter,
     }));
-    if (
-      counts.apps !== 50 ||
-      counts.notes !== 12 ||
-      counts.projects !== 8 ||
-      counts.git !== 10 ||
-      counts.scripts !== 7 ||
-      counts.cabinets !== 7 ||
-      counts.queryViews !== 6 ||
-      counts.terminals !== 8 ||
-      !counts.blur.includes("blur")
-    )
-      throw Error(
-        `Fixture incomplete: ${JSON.stringify({ counts, errors, notices: await page.locator(".ns-notice,.ns-error").allTextContents(), tabs: await page.locator(".split-tab").allTextContents() })}`,
+    for (const key of [
+      "apps",
+      "notes",
+      "projects",
+      "git",
+      "scripts",
+      "cabinets",
+      "queryViews",
+      "terminals",
+    ] as const)
+      if (counts[key] !== expected[key])
+        throw Error(
+          `Fixture incomplete: ${JSON.stringify({ counts, expected, errors })}`,
+        );
+    if (!counts.blur.includes("blur")) throw Error("Header blur is missing.");
+    if (cameraMode === "overview") {
+      await page.mouse.move(400, 300);
+      await page.keyboard.down("Control");
+      await page.mouse.wheel(0, 2500);
+      await page.keyboard.up("Control");
+      await page.waitForFunction(
+        () =>
+          Math.abs(
+            new DOMMatrix(
+              getComputedStyle(document.querySelector(".canvas-plane")!)
+                .transform,
+            ).a - 0.2,
+          ) < 0.001,
       );
+      await page
+        .getByRole("button", { name: "Center canvas", exact: true })
+        .click();
+      await page
+        .locator(".canvas-plane.camera-moving")
+        .waitFor({ state: "detached" });
+      await afterPaint(page);
+    }
+    const view = await page.evaluate(() => ({
+      width: innerWidth,
+      height: innerHeight,
+      scale: new DOMMatrix(
+        getComputedStyle(document.querySelector(".canvas-plane")!).transform,
+      ).a,
+      visibleApps: [...document.querySelectorAll(".canvas-app")].filter(
+        (el) => {
+          const r = el.getBoundingClientRect();
+          return (
+            r.right > 0 &&
+            r.bottom > 0 &&
+            r.left < innerWidth &&
+            r.top < innerHeight
+          );
+        },
+      ).length,
+    }));
+    const nativeAnchor =
+      runtime === "electron"
+        ? await page.evaluate(() => {
+            for (let y = 100; y < innerHeight - 110; y += 12)
+              for (let x = 18; x < innerWidth - 180; x += 12) {
+                const el = document.elementFromPoint(x, y);
+                if (
+                  el?.closest("main") &&
+                  !el.closest(
+                    ".canvas-app,.spatial-group,.topbar,.dock,.floating-panel",
+                  )
+                )
+                  return { x, y };
+              }
+            throw Error("No visible empty canvas point for the pan fixture.");
+          })
+        : undefined;
+    await desktop?.focus();
     // Start the validity window after navigation/setup. A focused/visible
     // document is required throughout every measured operation.
     await page.evaluate(() => {
@@ -348,15 +472,16 @@ async function run(variant: string, index: number, diagnostic = false) {
         () => (window as any).foreground.selectionMs as number,
       );
     };
-    const firstSelectionMs = await select(1);
-    const warmSelectionMs = await select(0);
+    const firstSelectionMs = cameraMode === "normal" ? await select(1) : null;
+    const warmSelectionMs = cameraMode === "normal" ? await select(0) : null;
     await page.evaluate(() => {
       (window as any).foreground.phase = "start";
       performance.mark("foreground:pan:start");
     });
     // Exercise real canvas middle-drag events. Frame callback intervals are
     // cadence diagnostics, never proof that every frame was presented.
-    await page.mouse.move(1260, 870);
+    const anchor = runtime === "electron" ? nativeAnchor! : { x: 1260, y: 870 };
+    await page.mouse.move(anchor.x, anchor.y);
     await page.mouse.down({ button: "middle" });
     await afterPaint(page);
     await page.evaluate(() => {
@@ -364,7 +489,12 @@ async function run(variant: string, index: number, diagnostic = false) {
       performance.mark("foreground:pan:continuous");
     });
     for (let i = 0; i < 60; i++)
-      await page.mouse.move(1260 - 160 * Math.sin((i / 59) * Math.PI * 2), 870);
+      await page.mouse.move(
+        runtime === "electron"
+          ? anchor.x + 80 * (1 - Math.cos((i / 59) * Math.PI * 2))
+          : anchor.x - 160 * Math.sin((i / 59) * Math.PI * 2),
+        anchor.y,
+      );
     await afterPaint(page);
     await page.evaluate(() => {
       (window as any).foreground.phase = "stop";
@@ -394,10 +524,20 @@ async function run(variant: string, index: number, diagnostic = false) {
       await page.screenshot({
         path: join(
           destination,
-          `${variant}-${index}${diagnostic ? "-trace" : ""}.png`,
+          `${variant}-${index}-${appCount}-${cameraMode}${diagnostic ? "-trace" : ""}.png`,
         ),
       });
     const result = {
+      appearance: undefined as
+        Awaited<ReturnType<typeof captureElectronPanAppearance>> | undefined,
+      firstUse: undefined as
+        Awaited<ReturnType<typeof measureElectronFirstUse>> | undefined,
+      runtime,
+      appCount,
+      cameraMode,
+      view,
+      electron: desktop?.metadata,
+      nativeIPC: desktop ? await desktop.validate() : undefined,
       variant,
       index,
       diagnostic,
@@ -429,48 +569,138 @@ async function run(variant: string, index: number, diagnostic = false) {
         hidden: sample.hidden,
         samples: sample.samples,
       },
-      browserVersion: browser.version(),
+      browserVersion: browser?.version() ?? desktop!.metadata.versions.chrome,
     };
     // Outside the timing window: verify the persisted document, not just DOM.
     assertForegroundDocuments(directory);
     results.push(result);
-    if (diagnostic) {
-      const completed = new Promise<any>((resolve) =>
-        cdp.once("Tracing.tracingComplete", resolve),
+    if (diagnostic)
+      await finishTrace(
+        cdp,
+        join(destination, `${variant}-${appCount}-${cameraMode}-trace.json`),
       );
-      await cdp.send("Tracing.end");
-      const { stream } = await completed;
-      let trace = "";
-      while (true) {
-        const chunk = await cdp.send("IO.read", { handle: stream });
-        trace += chunk.data;
-        if (chunk.eof) break;
+    if (desktop && appCount === 50 && cameraMode === "normal") {
+      if (diagnostic)
+        await cdp.send("Tracing.start", {
+          categories:
+            "devtools.timeline,v8,blink.user_timing,disabled-by-default-devtools.timeline",
+          transferMode: "ReturnAsStream",
+        });
+      result.firstUse = await measureElectronFirstUse(
+        page,
+        join(destination, `first-use-${variant}-${index}.png`),
+      );
+      if (diagnostic)
+        await finishTrace(
+          cdp,
+          join(destination, `${variant}-first-use-trace.json`),
+        );
+      result.nativeIPC = await desktop.validate();
+      if (
+        result.nativeIPC.calls.filter((op: string) => op === "query").length !==
+          1 ||
+        result.nativeIPC.calls.filter((op: string) => op === "file").length !==
+          1
+      )
+        throw Error("Cold/warm panes repeated execution or file loading.");
+      if (requests["/__orvane/projects/terminal/run"] !== 1)
+        throw Error("Controlled command count changed.");
+      assertForegroundDocuments(directory);
+      if (errors.length) throw Error(`First-use errors: ${errors.join("; ")}`);
+      if (visualOnly) {
+        result.appearance = await captureElectronPanAppearance(
+          page,
+          destination,
+        );
+        await desktop.validate();
       }
-      await cdp.send("IO.close", { handle: stream });
-      await writeFile(join(destination, `${variant}-trace.json`), trace);
     }
-    console.log(JSON.stringify(result));
+    console.log(
+      JSON.stringify({
+        variant,
+        index,
+        appCount,
+        cameraMode,
+        diagnostic,
+        firstSelectionMs,
+        warmSelectionMs,
+        panPhases: result.panPhases,
+        firstUse: result.firstUse,
+      }),
+    );
   } finally {
-    await browser.close();
+    if (desktop) await desktop.close();
+    else await browser!.close();
     await new Promise<void>((resolve) =>
       server.httpServer.close(() => resolve()),
     );
   }
 }
-try {
-  for (let index = 0; index < repetitions; index++) {
-    for (const variant of index % 2
-      ? ["candidate", "baseline"]
-      : ["baseline", "candidate"])
-      await run(variant, index);
+async function acceptedRun(
+  variant: string,
+  index: number,
+  diagnostic = false,
+  appCount = 50,
+  cameraMode = "normal",
+) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const before = results.length;
+    try {
+      await run(variant, index, diagnostic, appCount, cameraMode, attempt);
+      return;
+    } catch (error) {
+      results.splice(before);
+      const reason = String(error);
+      if (
+        !/Electron window is not foreground|Invalid foreground run|Interrupted first-use run/.test(
+          reason,
+        )
+      )
+        throw error;
+      const rejected = {
+        variant,
+        index,
+        diagnostic,
+        appCount,
+        cameraMode,
+        attempt,
+        reason,
+      };
+      rejectedAttempts.push(rejected);
+      console.log(JSON.stringify({ rejected: true, ...rejected }));
+      if (attempt === 2) throw error;
+    }
   }
-  await run("candidate", repetitions, true);
-  if (experiment === "pan") await run("baseline", repetitions, true);
+}
+try {
+  if (visualOnly) {
+    if (runtime !== "electron") throw Error("Visual probe requires Electron.");
+    await acceptedRun("candidate", 0, true, 50, "normal");
+  } else {
+    const modes = cameraModes;
+    if (runtime === "electron" && process.env.ORVANE_FOREGROUND_MATRIX !== "0")
+      for (const count of [5, 10, 20, 35])
+        for (const mode of modes)
+          for (const variant of ["baseline", "candidate"])
+            await acceptedRun(variant, 0, false, count, mode);
+    for (const mode of modes) {
+      for (let index = 0; index < repetitions; index++)
+        for (const variant of index % 2
+          ? ["candidate", "baseline"]
+          : ["baseline", "candidate"])
+          await acceptedRun(variant, index, false, 50, mode);
+      await acceptedRun("candidate", repetitions, true, 50, mode);
+      if (experiment === "pan")
+        await acceptedRun("baseline", repetitions, true, 50, mode);
+    }
+  }
 } finally {
   await writeFile(
     join(destination, "results.json"),
     JSON.stringify(
       {
+        runtime,
+        visualOnly,
         experiment,
         baselineCommit,
         candidateBaseCommit: execFileSync("git", ["rev-parse", "HEAD"], {
@@ -511,18 +741,27 @@ try {
             .digest("hex"),
         },
         comparisonsCompleted:
-          results.filter((result) => !result.diagnostic).length ===
-          repetitions * 2,
+          results.filter(
+            (result) => !result.diagnostic && result.appCount === 50,
+          ).length ===
+          repetitions * 2 * cameraModes.length,
         repetitions,
         results,
+        rejectedAttempts,
         limits: [
-          "Production Chromium browser, not Electron.",
+          runtime === "electron"
+            ? "Actual Electron shell and preload with isolated userData; native NetSuite IPC is mocked."
+            : "Production Chromium browser, not Electron.",
+          "App counts below 50 are single screening pairs, not repeated timing evidence.",
+          "Overview uses the actual UI minimum zoom of 0.2; large fixtures may not all fit on screen.",
           "Focused/visible document checks; screenshots support visual review but do not establish presented frame rate.",
           experiment === "pan"
             ? "Only App.vue and style.css differ from the pre-pan-change baseline; Notes loading fix and child index are common."
             : "Only child lookup implementation differs; the document-loading correctness fix and pan implementation are common.",
           "Mock external reads; real isolated SQLite workspace and Notes storage.",
-          "No query outputs, expanded deployment panels, Git diff or active terminal commands in this initial fixture.",
+          runtime === "electron"
+            ? "Pan samples use the restored initial workload; the separate first-use phase adds a retained query result, expanded deployments and controlled terminal output. Large Git diffs are not included."
+            : "No query outputs, expanded deployment panels, Git diff or active terminal commands in this initial fixture.",
           "Frame intervals cover selection and scripted pan together; first/warm readiness ends after two animation callbacks, not a measured physical display presentation.",
           "No heap snapshots, 30-minute soak or 50-app capacity guarantee.",
         ],

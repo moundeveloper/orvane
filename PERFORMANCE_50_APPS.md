@@ -2,7 +2,9 @@
 
 Date: 30 October 2026. Baseline: `a5143f4`. User priority: mostly NetSuite, Notes, Git and Projects. Current interaction and appearance are acceptance requirements. Custom implementations are acceptable when measurements and correctness tests justify them.
 
-## Implementation update: 2 November 2026
+## Implementation updates: 2–3 November 2026
+
+Earlier pass notes preserve the status at their respective commits. The remaining-work checklist below records the current priorities.
 
 The first implementation pass was committed as `cbcfea8`. The measurements below remain the original research baseline; they are not measurements of this implementation.
 
@@ -211,6 +213,8 @@ Limits: this is a browser run, not Electron. Other desktop activity, power and t
 
 ### Sixteenth pass: pan cursor/style invalidation
 
+Committed as `18a3261`.
+
 Replaced the universal `.is-panning *` / `.is-panning:active *` style changes with a single transparent cursor surface above the canvas and below the toolbar, dock and floating controls. Space, middle-button and empty-space left-button pans capture on that surface; its own grab/grabbing state changes without restyling every app descendant. Pointer-down prevention suppresses new text selection during a gesture. App move/resize and group-label gestures retain their original capture/click targets and use a scoped cursor class on that target. Cancellation, lost capture, hidden-document cleanup and window blur release gesture state/capture. No compositor promotion, camera math, blur or text-rendering change was introduced.
 
 `research/foreground.ts` now defaults to the `pan` experiment, comparing `src/App.vue` and `src/style.css` from `c5d47d0` with the candidate while keeping Notes loading/indexing and all fixture data common. `ORVANE_FOREGROUND_EXPERIMENT=notes` retains the previous child-index experiment. The benchmark records pan start, continuous motion and stop separately, and captures one diagnostic trace per variant outside the ten comparative samples. Source hashes identify the measured candidate worktree; the base commit is not presented as the final candidate commit.
@@ -219,9 +223,9 @@ Five alternating production-browser pairs at 50 apps completed with zero focus/v
 
 | Pan phase | Baseline median worst interval (range), ms | Candidate median worst interval (range), ms |
 |---|---:|---:|
-| Start | 466.3 (433.0�482.9) | 16.8 (16.8�17.0) |
-| Continuous motion | 33.3 (33.2�33.5) | 33.1 (17.0�50.0) |
-| Stop | 433.0 (400.1�433.1) | 16.8 (16.7�16.8) |
+| Start | 466.3 (433.0–482.9) | 16.8 (16.8–17.0) |
+| Continuous motion | 33.3 (33.2–33.5) | 33.1 (17.0–50.0) |
+| Stop | 433.0 (400.1–433.1) | 16.8 (16.7–16.8) |
 
 The separate traces record total style recalculation at start falling from 429.13 to 0.19 ms and at stop from 419.97 to 0.07 ms. Continuous-motion style recalculation falls from 6.47 to 4.96 ms, with similar callback cadence in the comparative samples. The evidence supports removing the boundary-wide style invalidations; it does not establish a general FPS improvement or justify a camera-controller rewrite. Fixture app/data counts remain identical, with one extra transparent DOM element in the candidate. Both saved Notes documents remain intact in all 12 SQLite databases. Raw measurements, traces and source hashes are recorded in `research/pan-cursor-results.json`.
 
@@ -229,17 +233,76 @@ Validation: 20 distinct browser checks pass across `pan-cursor`, `workspace`, `w
 
 The result remains specific to the isolated production Chromium fixture on this machine. Electron, overview zoom, active commands, retained outputs/expanded panels, heap stabilization and the mixed 30-minute soak remain outstanding.
 
+### Seventeenth pass: Electron foreground and first-use validation
+
+The actual `electron/main.mjs` shell now runs the production comparison through `research/foreground.ts`, with dedicated user-data profiles and SQLite databases. The real preload, renderer sandbox, context isolation, window/navigation handling and close guard remain in use. Fixture IPC handlers replace NetSuite replies inside that isolated app process; Git/Projects responses are fixed, and the terminal command returns controlled text without executing an OS command. Production application files did not change in this pass. The baseline remains the pre-cursor App/CSS from `c5d47d0`; the candidate production source is `18a3261`, with source hashes recorded.
+
+Observed environment: Electron 45.1.0 / Chromium 156.0.8078.49, a 1920×1080 display with 1920×1032 work area, scale factor 1 and 60 Hz refresh. The content viewport is 1440×952 so the entire native window fits the work area. GPU diagnostics identify Intel UHD Graphics through ANGLE Direct3D11, driver 32.0.101.7088; hardware acceleration is enabled and the disable-GPU switches are absent. All accepted runs report AC power. Other desktop activity, power-plan settings and thermal state were not controlled.
+
+The matrix contains 40 accepted native runs: 16 single screening runs across 5/10/20/35 apps and both camera modes, 20 comparative runs at 50 apps (five alternating pairs per mode), and four separate diagnostic runs. Three interrupted attempts were rejected and retried with fresh profiles/data. A preliminary aborted batch and smoke runs are excluded. Each measured window requires both renderer focus/visibility throughout sampling and native window focus/visibility at validation. These checks do not establish physical frame presentation or exclude every possible OS overlay.
+
+Normal zoom is 100%; overview uses the actual UI minimum of 20%. Large 1200×760 fixture apps do not all fit simultaneously. App counts below 50 have one screening pair each and do not establish a stable timing distribution. Data per view remains fixed while the app mix scales toward 12 Notes / 20 NetSuite / 10 Git / 8 Projects at 50 apps.
+
+| Mounted apps | Apps intersecting the overview viewport | Candidate continuous callback interval, ms |
+|---|---:|---:|
+| 5 | 5 | 16.7 |
+| 10 | 8 | 16.7 |
+| 20 | 17 | 16.8 |
+| 35 | 30 | 33.4 |
+| 50 | 42 | 66.6 |
+
+The last column uses the run's median callback interval for screening cases and the median of five run medians at 50 apps. Partial viewport intersections count as visible. At normal zoom, three apps intersect the viewport in the 50-app fixture and continuous callback intervals have a 16.7 ms median in both variants.
+
+The repeated 50-app results below report the median of each run's worst callback interval in that gesture phase, with the range of those five maxima. They are cadence diagnostics, not input latency, presented FPS or p99 estimates.
+
+| Mode / phase | Baseline median worst interval (range), ms | Candidate median worst interval (range), ms |
+|---|---:|---:|
+| Normal / start | 516.4 (483.0–533.0) | 16.7 (16.7–33.2) |
+| Normal / stop | 416.4 (416.3–416.5) | 16.7 (16.7–17.0) |
+| Overview / start | 649.6 (566.2–849.3) | 50.1 (50.0–66.8) |
+| Overview / stop | 583.0 (516.2–1482.3) | 33.6 (16.7–150.0) |
+
+Cold/warm checks run separately after the pan samples. Here, cold means first construction/selection of a deferred pane or terminal in an already populated renderer; shared code modules may already be loaded. Readiness starts at click capture and ends when matching visible content is present followed by two animation callbacks. It excludes the separately measured dock/fit-camera interval and live account/network latency. The restored file contains approximately 100 KB of JavaScript comments.
+
+| Frontend readiness at 50 apps | Baseline median (range), ms | Candidate median (range), ms |
+|---|---:|---:|
+| File Cabinet editor, cold | 479.8 (469.7–482.1) | 81.9 (79.9–92.9) |
+| File Cabinet editor, warm | 400.1 (384.8–409.5) | 20.4 (19.2–21.4) |
+| SuiteQL editor, cold | 432.2 (427.1–445.4) | 42.6 (41.7–43.4) |
+| SuiteQL editor, warm | 405.5 (388.5–448.5) | 15.5 (13.8–20.3) |
+| Terminal view, cold | 458.7 (444.8–489.7) | 83.6 (78.8–86.0) |
+| Terminal view, warm | 407.1 (383.8–424.2) | 24.6 (23.0–25.8) |
+
+The separate first-use traces contain 24 style recalculations over 100 ms in the baseline (maximum 450.4 ms), versus zero in the candidate (maximum 37.1 ms). This supports the broader pointer-state style-invalidation explanation for the tab-click gains. The experiment compares the combined cursor implementation; it does not independently ablate individual selectors.
+
+Continuous overview motion remains expensive. Its candidate diagnostic contains 2,259 Paint events with a largest event of 130.2 ms, versus 241 Paint events with a largest event of 4.6 ms at normal zoom. Continuous overview has no Layout events in that trace and comparatively little style work. Tracing adds overhead, and event times can overlap across categories/threads; these figures identify the next investigation rather than a unique CPU or wall-time breakdown. The 66.6 ms median callback interval in the untraced overview comparisons misses the proposed refresh-cadence goal.
+
+Validation: persisted app composition and saved Notes data were checked at all five fixture sizes. All 40 accepted native runs preserve the two seeded Notes documents. All 12 first-use trials, including diagnostics, confirm that hidden File Cabinet/Query panes start uninitialized, the restored file is fetched once, query output survives switching without another execution, one expanded script shows 100 of its 1,000 deployments, and visiting a second saved terminal changes initialized xterms from one to two with no additional instance on warm return. Controlled terminal output is visible. A separate native visual probe verifies grabbing feedback, unchanged header blur, restored camera coordinates/scale and released pointer interception, with active-gesture and restored screenshots reviewed. The existing browser mode also passes a compatibility smoke run. `pnpm build` passes with the existing Vite warning.
+
+Raw accepted trials, rejected attempts, environment, source hashes and summaries are in `research/electron-foreground-results.json`. Full traces and disposable profiles are under the recorded ignored artifact directory. Run the native matrix from PowerShell with:
+
+```powershell
+$env:ORVANE_FOREGROUND_RUNTIME = 'electron'
+$env:ORVANE_FOREGROUND_MATRIX = '1'
+$env:ORVANE_FOREGROUND_MODES = 'normal,overview'
+$env:ORVANE_FOREGROUND_REPETITIONS = '5'
+$env:ORVANE_FOREGROUND_VISUAL_ONLY = '0'
+node --import tsx research/foreground.ts
+```
+
+`ORVANE_FOREGROUND_MATRIX=0` skips the smaller-size screening cases; `ORVANE_FOREGROUND_REPETITIONS=1` is a smoke check. `ORVANE_FOREGROUND_VISUAL_ONLY=1` runs a separate candidate visual probe. Every trial starts a new process/profile/database, so this matrix is not a continuous soak or a heap-stability test. The timed pan workload is the restored initial state; retained query output, expanded deployments and controlled terminal output are exercised afterward. Comparative pans with those richer states, larger Git diffs, live read-only account behavior and sustained command loads remain unmeasured.
+
 ### Remaining work, in current order
 
-Status after the sixteenth pass: the controlled browser pan experiment is complete. Next is foreground Electron and first-use validation, followed by heap/lifecycle profiling and the 30-minute soak. Functional checks and this browser comparison do not establish a general 50-app capacity guarantee.
+Status after the seventeenth pass: the first Electron matrix and deferred-view checks are complete. Overview painting/rasterization is the next measured performance priority. Heap/lifecycle profiling and the 30-minute soak remain unfinished; no general 50-app capacity guarantee is established.
 
-#### 1. Next: foreground Electron and first-use validation
+#### 1. Next: overview paint/raster cost and richer foreground workload
 
-- [ ] Run the same controlled workload in the actual Electron shell using isolated app profiles and databases. Record Electron/Chromium versions, display scale, graphics stack, focus/visibility and power conditions.
-- [ ] Compare 5/10/20/35/50 apps at overview and normal zoom, keeping fixture data and inner-tab counts fixed within each comparison. Sample header blur and text appearance during and after motion.
-- [ ] Expand the initial 50-app fixture with retained query outputs, expanded Scripts/deployments, populated File Cabinet folders/files, large Git diffs, larger Notes documents/history and controlled terminal output. Keep live account mutations and user repositories out of benchmark runs.
-- [ ] Measure cold first selection and warm return for deferred NetSuite panes, File Cabinet editors and Projects terminals. Separate request completion, usable editor/list readiness and intentional fit-camera animation.
-- [ ] Capture diagnostic scripting, style/layout, paint/raster/composite, GC, request counts and long tasks. Report callback cadence separately from presented-frame evidence and avoid p99 claims from five repetitions.
+- [ ] Isolate overview paint, raster and compositing work with the native traces. Compare visible-app count, document complexity and text/graphics content before choosing one candidate change; current evidence points beyond pan-boundary style invalidation.
+- [ ] Update the comparison baseline to the post-cursor implementation `18a3261` and include every changed source file before attributing an overview improvement. The current `pan` switch compares against `c5d47d0` and cannot isolate a subsequent optimization by itself.
+- [ ] Preserve header blur, text sharpness, pointer hit testing, selection, drafts and editor/terminal state. Run five alternating native pairs plus separate diagnostic/visual checks before keeping an overview candidate.
+- [ ] Add retained query outputs, many expanded Script/deployment panels, large file lists/diffs, larger Notes documents/history and sustained controlled terminal updates during comparative pan/zoom runs. Current first-use checks exercise only a subset of these states after the pan samples.
+- [ ] Validate representative live read-only NetSuite/processing-window behavior separately from the fixed-response frontend fixture. Keep account mutations and user repositories out of synthetic benchmark runs.
 
 #### 2. Heap, lifecycle and 30-minute soak
 
@@ -260,7 +323,7 @@ Fifty app definitions are already within the schema's 300-app limit. That is not
 
 For the requested mix, the strongest route is app-scoped changes and persistence, shared read-only data, correct disposal, and lazy initialization of expensive inner views. Start there before changing canvas drawing. These changes should make unrelated apps largely irrelevant to an edit in one app. They do not remove the cost of 50 simultaneously busy applications.
 
-This investigation did not change production code or establish that 50 apps already meet a frame-rate target. It audited the installed code, consulted primary documentation, and ran isolated executable diagnostics. It deliberately did not open another desktop benchmark window or exercise live NetSuite mutations. Earlier headless/UI figures are not used as proof of desktop usability.
+The original investigation summarized below audited the installed code, consulted primary documentation and ran isolated executable diagnostics. Subsequent implementation and foreground measurements are recorded in the updates above. A general 50-app frame-rate or memory guarantee remains unestablished; earlier headless/UI figures are not used as proof of desktop usability.
 
 ## Evidence collected
 
