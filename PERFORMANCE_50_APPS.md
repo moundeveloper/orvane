@@ -387,7 +387,15 @@ Potentially wrapping names and horizontally overflowing narrow layouts deliberat
 
 Validation: all 15 checks across `projects-windowing`, `terminal-performance` and `projects` pass serially, and `pnpm build` passes with existing warnings. Coverage includes 1,000 records, selection/filter/group/context/open actions, keyboard traversal and entry from both directions, focus pinning, the 50/51 boundary, removal of a scroll anchor, wrapped refresh, narrow horizontal keyboard scrolling, resize/zoom, hidden/show hosts, terminal output retention and observer teardown.
 
-MEASUREMENT_PENDING
+Native five-pair acceptance against production `c7c638e`, alternating order, identical high-density payloads, plus one separate diagnostic pair per mode:
+
+| Fixture | Mounted elements / rows, baseline → candidate | Continuous-pan callback median of run medians, baseline → candidate | Per-run largest interval range, baseline → candidate |
+|---|---:|---:|---:|
+| 20 Projects apps, overview | 55,954 / 2,000 → 14,214 / 260 | 300 ms → 100 ms | 300–500 ms → 133–150 ms |
+| Mixed 50 apps, overview | — | 67 ms → 67 ms | 84–100 ms → 67–100 ms |
+| Mixed 50 apps, fitted | — | 17 ms → 17 ms | 17–133 ms → 17 ms |
+
+Every pair improved in the 20-Projects stress case. The mixed workspace shows no measurable change at either zoom and no regression; its Projects apps are a small share of total content. These are frame-callback intervals, not presented FPS. An earlier 20-Projects run was interrupted when its Electron page closed mid-fixture and was discarded; the accepted runs were repeated from the committed sources. Evidence: `research/projects-rows-results.json` (validated by `research/projects-row-summary.ts`); raw runs and traces under `artifacts/performance/foreground/2026-11-03T14-23-24-052Z` and `2026-11-03T14-34-10-272Z`.
 
 ### Remaining work, in current order
 
