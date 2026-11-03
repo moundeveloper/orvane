@@ -2,6 +2,19 @@ import { ipcMain, webContents } from "electron";
 
 // Only the Orvane window can address its own browser guests. No arbitrary page
 // JavaScript or credentials are exposed through this bridge.
+
+const WRITES = ["save-file", "create-folder", "upload-file", "rename-item", "move-items", "delete-items"];
+/** Whether the page still has a NetSuite session: signed out, NetSuite
+ * redirects its home page to the login page. Unknown counts as signed in. */
+async function signedIn(contents) {
+  if (contents.isDestroyed?.()) return false;
+  return Promise.resolve()
+    .then(() => contents.executeJavaScript(
+      "fetch('/app/center/card.nl', { redirect: 'manual', credentials: 'same-origin' }).then((r) => r.type !== 'opaqueredirect')",
+    ))
+    .then((value) => value !== false)
+    .catch(() => true);
+}
 export function setupNetSuite(isOrvane, partition, processing) {
   const allowed = (event) =>
     !event.sender.isDestroyed() && isOrvane(event.sender.getURL());
@@ -155,10 +168,10 @@ export function setupNetSuite(isOrvane, partition, processing) {
       },
       origin: id,
     }).replace(/</g, "\\u003c");
-    // The result comes back as JSON text: NetSuite values that structured
-    // clone can't copy (functions, host objects) would otherwise fail the
-    // whole call with "An object could not be cloned".
-    const code = `(async () => JSON.stringify(await (async () => {
+    // The result and any error come back as JSON text: NetSuite values and
+    // errors (N.error objects) that structured clone can't copy would
+    // otherwise fail the whole call with "An object could not be cloned".
+    const code = `(async () => { try { return JSON.stringify({ result: await (async () => {
       const input = ${input};
       if (location.origin !== input.origin || !/^[a-z0-9-]+\\.app\\.netsuite\\.com$/i.test(location.hostname)) throw Error('NetSuite tab changed.');
       if (input.operation === 'tables' || input.operation === 'table-detail') {
@@ -391,36 +404,50 @@ export function setupNetSuite(isOrvane, partition, processing) {
         return { rows: data.records || [], totalCount: data.totalCount ?? (data.records || []).length, offset, pageSize };
       }
 
-    })() ?? null))()`;
-    const processingTab = await processing.acquire(event.sender, id);
-    let timer;
-    // A timeout does not mean execution has stopped; keep the tab busy until
-    // Chromium actually settles so refresh cannot interrupt an in-flight call.
-    const execution = processingTab.contents
-      .executeJavaScript(code)
-      .then((text) => JSON.parse(text))
-      .finally(processingTab.release);
+    })() ?? null }); } catch (error) { return JSON.stringify({ error: String(error?.message || error?.name || error) }); } })()`;
+    let processingTab;
+    const attempt = async () => {
+      processingTab = await processing.acquire(event.sender, id);
+      let timer;
+      // A timeout does not mean execution has stopped; keep the tab busy until
+      // Chromium actually settles so refresh cannot interrupt an in-flight call.
+      const execution = processingTab.contents
+        .executeJavaScript(code)
+        .then((text) => {
+          const answer = JSON.parse(text);
+          if (answer?.error !== undefined) throw Error(answer.error);
+          return answer?.result ?? null;
+        })
+        .finally(processingTab.release);
+      try {
+        return await Promise.race([
+          execution,
+          new Promise((_, reject) => {
+            timer = setTimeout(() => {
+              const error = Error(
+                ["save-file", "create-folder", "upload-file"].includes(operation)
+                  ? "The request timed out and may have completed. Refresh and check before retrying."
+                  : "NetSuite request timed out.",
+              );
+              error.timedOut = true;
+              reject(error);
+            }, 30000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
     try {
-      return await Promise.race([
-        execution,
-        new Promise((_, reject) => {
-          timer = setTimeout(
-            () =>
-              reject(
-                Error(
-                  ["save-file", "create-folder", "upload-file"].includes(
-                    operation,
-                  )
-                    ? "The request timed out and may have completed. Refresh and check before retrying."
-                    : "NetSuite request timed out.",
-                ),
-              ),
-            30000,
-          );
-        }),
-      ]);
-    } finally {
-      clearTimeout(timer);
+      return await attempt();
+    } catch (error) {
+      // NetSuite can end the session while the page stays put, so calls fail
+      // until it is reloaded. Then sign in again (a reload goes through the
+      // login page) and run reads once more; writes are only reported.
+      if (error?.timedOut || !processingTab || (await signedIn(processingTab.contents))) throw error;
+      if (!(await Promise.resolve(processing.reload?.(event.sender, id)).catch(() => false))) throw error;
+      if (WRITES.includes(operation)) throw error;
+      return await attempt();
     }
   });
 }

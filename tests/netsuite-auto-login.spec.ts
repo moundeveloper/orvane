@@ -94,10 +94,28 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
         }
         // Like the dashboard: portlets keep loading after the page itself.
         return response.end(
-          "<!doctype html><title>NetSuite Home</title><h1>Home</h1><iframe src=/portlet></iframe>",
+          "<!doctype html><title>NetSuite Home</title><script src=/n.js></script><h1>Home</h1><iframe src=/portlet></iframe>",
         );
       }
       if (path === "/portlet") return response.end("<!doctype html><p>Portlet</p>");
+      // The record catalog (JSON) needs a session, like NetSuite's own.
+      if (path === "/app/recordscatalog/rcendpoint.nl") {
+        if (!sessions.has(host)) {
+          response.writeHead(302, { location: "/pages/customerlogin.jsp?country=US" });
+          return response.end();
+        }
+        response.setHeader("content-type", "application/json");
+        return response.end(JSON.stringify({ data: [{ id: "customer", label: "Customer" }] }));
+      }
+      // SuiteScript's loader: N.runtime throws an N.error-like object that
+      // structured clone can't copy.
+      if (path === "/n.js") {
+        response.setHeader("content-type", "text/javascript");
+        return response.end(
+          "window.require = (names, ok) => ok({ runtime: { getCurrentUser() {" +
+            " throw { name: 'SSS_FIXTURE', message: 'Fixture NetSuite error', toJSON() {} }; } } });",
+        );
+      }
       if (path === "/app/login/secure/twofactor.nl")
         return response.end(
           "<!doctype html><title>Verification</title><form method=post action=/app/center/card.nl>" +
@@ -362,6 +380,26 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
     });
     await expect.poll(() => posts.slice(), { timeout: 20000 }).toEqual(["system.netsuite.com"]);
     await expect(row).toContainText("ready", { timeout: 20000 });
+    posts.length = 0;
+
+    // NetSuite calls through the processing page.
+    const run = (operation: string) =>
+      page.evaluate(
+        (operation) =>
+          (window as any).orvaneDesktop.netsuite
+            .run("https://1964539-sb1.app.netsuite.com", operation, {})
+            .then((value: unknown) => ({ value }), (error: Error) => ({ error: error.message })),
+        operation,
+      );
+    expect(await run("tables")).toEqual({ value: { data: [{ id: "customer", label: "Customer" }] } });
+    // A NetSuite error object comes back as its message, not "could not be cloned".
+    expect((await run("user")).error).toContain("Fixture NetSuite error");
+    // The session ends while the page stays put: the next call signs in
+    // again by itself and still answers.
+    sessions.delete("1964539-sb1.app.netsuite.com");
+    expect(await run("tables")).toEqual({ value: { data: [{ id: "customer", label: "Customer" }] } });
+    expect(posts).toEqual(["1964539-sb1.app.netsuite.com"]);
+    await expect(row).toContainText("ready");
   } finally {
     await app.close();
     await new Promise((done) => site.close(done));

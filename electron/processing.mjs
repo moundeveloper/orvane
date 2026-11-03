@@ -167,5 +167,13 @@ export function setupProcessing({ partition, isOrvane }) {
   ipcMain.handle('orvane:processing-close', (e, origin) => { assertOwner(e); const entry = entries.get(key(e.sender, origin)); if (!entry) return; if (entry.busy) throw Error('This processing tab is busy.'); stopped.add(key(e.sender, origin)); dispose(entry); });
   /** A hidden processing page (they may sign in by themselves too). */
   const owns = contents => [...entries.values()].some(e => !e.window.isDestroyed() && e.window.webContents === contents);
-  return { environments, acquire, openRecord, sourceChanged, owns, onSignInReset: fn => { resetSignIn = fn; } };
+  /** Reload (and so sign in again); true once it is ready. */
+  async function reload(host, origin) {
+    const entry = entries.get(key(host, origin));
+    if (!entry || entry.window.isDestroyed()) return false;
+    entry.retries = 0;
+    await load(entry);
+    return entry.status === 'ready';
+  }
+  return { environments, acquire, openRecord, sourceChanged, owns, reload, onSignInReset: fn => { resetSignIn = fn; } };
 }
