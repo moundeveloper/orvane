@@ -1,0 +1,2233 @@
+{
+  "productionCommit": "2db609bbfb17d91852838a174088a6d9ae56454d",
+  "environment": {
+    "versions": {
+      "node": "24.22.1",
+      "acorn": "8.18.0",
+      "ada": "4.0.0",
+      "amaro": "1.1.11",
+      "ares": "1.34.9",
+      "brotli": "1.2.0",
+      "cldr": "48.0",
+      "icu": "78.2",
+      "llhttp": "9.4.3",
+      "merve": "1.2.2",
+      "modules": "150",
+      "napi": "10",
+      "nbytes": "0.1.4",
+      "ncrypto": "0.0.1",
+      "nghttp2": "1.70.0",
+      "nghttp3": "",
+      "ngtcp2": "",
+      "openssl": "0.0.0",
+      "simdjson": "4.6.11",
+      "simdutf": "7.7.0",
+      "sqlite": "3.53.4",
+      "tz": "2026e",
+      "undici": "7.30.1",
+      "unicode": "17.0",
+      "uv": "1.52.1",
+      "uvwasi": "0.0.23",
+      "v8": "15.6.75.19-electron.0",
+      "zlib": "1.3.2.1-motley",
+      "zstd": "1.6.0",
+      "electron": "45.1.0",
+      "chrome": "156.0.8078.49"
+    },
+    "display": {
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 1920,
+        "height": 1080
+      },
+      "workArea": {
+        "x": 0,
+        "y": 0,
+        "width": 1920,
+        "height": 1032
+      },
+      "scaleFactor": 1,
+      "refreshRate": 60
+    },
+    "contentSize": {
+      "width": 1440,
+      "height": 952
+    },
+    "gpuComplete": {
+      "auxAttributes": {
+        "amdSwitchable": false,
+        "canSupportThreadedTextureMailbox": false,
+        "directMLFeatureLevel": "Not supported",
+        "displayType": "ANGLE_D3D11",
+        "dx12FeatureLevel": "Not supported",
+        "glExtensions": "GL_AMD_performance_monitor GL_ANGLE_base_vertex_base_instance_shader_builtin GL_ANGLE_blob_cache GL_ANGLE_client_arrays GL_ANGLE_clip_cull_distance GL_ANGLE_copy_texture_3d GL_ANGLE_depth_texture GL_ANGLE_framebuffer_blit GL_ANGLE_framebuffer_multisample GL_ANGLE_get_serialized_context_string GL_ANGLE_get_tex_level_parameter GL_ANGLE_instanced_arrays GL_ANGLE_memory_size GL_ANGLE_multiview_multisample GL_ANGLE_pack_reverse_row_order GL_ANGLE_polygon_mode GL_ANGLE_program_binary_readiness_query GL_ANGLE_program_cache_control GL_ANGLE_provoking_vertex GL_ANGLE_renderability_validation GL_ANGLE_request_extension GL_ANGLE_robust_client_memory GL_ANGLE_shader_pixel_local_storage GL_ANGLE_shader_pixel_local_storage_coherent GL_ANGLE_stencil_texturing GL_ANGLE_texture_compression_dxt3 GL_ANGLE_texture_compression_dxt5 GL_ANGLE_texture_multisample GL_ANGLE_texture_usage GL_ANGLE_translated_shader_source GL_APPLE_clip_distance GL_ARM_rgba8 GL_CHROMIUM_bind_generates_resource GL_CHROMIUM_bind_uniform_location GL_CHROMIUM_copy_compressed_texture GL_CHROMIUM_copy_texture GL_CHROMIUM_lose_context GL_EXT_EGL_image_external_wrap_modes GL_EXT_base_instance GL_EXT_blend_func_extended GL_EXT_blend_minmax GL_EXT_clip_control GL_EXT_clip_cull_distance GL_EXT_color_buffer_float GL_EXT_color_buffer_half_float GL_EXT_conservative_depth GL_EXT_debug_label GL_EXT_debug_marker GL_EXT_depth_clamp GL_EXT_discard_framebuffer GL_EXT_disjoint_timer_query GL_EXT_draw_buffers GL_EXT_draw_buffers_indexed GL_EXT_draw_elements_base_vertex GL_EXT_float_blend GL_EXT_frag_depth GL_EXT_instanced_arrays GL_EXT_map_buffer_range GL_EXT_occlusion_query_boolean GL_EXT_polygon_offset_clamp GL_EXT_read_format_bgra GL_EXT_render_snorm GL_EXT_robustness GL_EXT_sRGB GL_EXT_shader_texture_lod GL_EXT_texture_border_clamp GL_EXT_texture_compression_bptc GL_EXT_texture_compression_dxt1 GL_EXT_texture_compression_rgtc GL_EXT_texture_compression_s3tc_srgb GL_EXT_texture_filter_anisotropic GL_EXT_texture_format_BGRA8888 GL_EXT_texture_mirror_clamp_to_edge GL_EXT_texture_norm16 GL_EXT_texture_rg GL_EXT_texture_storage GL_EXT_texture_type_2_10_10_10_REV GL_EXT_unpack_subimage GL_KHR_debug GL_KHR_parallel_shader_compile GL_KHR_robustness GL_NV_EGL_stream_consumer_external GL_NV_fence GL_NV_framebuffer_blit GL_NV_pack_subimage GL_NV_pixel_buffer_object GL_NV_shader_noperspective_interpolation GL_OES_EGL_image GL_OES_EGL_image_external GL_OES_EGL_image_external_essl3 GL_OES_depth24 GL_OES_depth32 GL_OES_draw_buffers_indexed GL_OES_draw_elements_base_vertex GL_OES_element_index_uint GL_OES_fbo_render_mipmap GL_OES_get_program_binary GL_OES_mapbuffer GL_OES_packed_depth_stencil GL_OES_required_internalformat GL_OES_rgb8_rgba8 GL_OES_sample_variables GL_OES_shader_multisample_interpolation GL_OES_standard_derivatives GL_OES_surfaceless_context GL_OES_texture_border_clamp GL_OES_texture_float GL_OES_texture_float_linear GL_OES_texture_half_float GL_OES_texture_half_float_linear GL_OES_texture_npot GL_OES_texture_stencil8 GL_OES_texture_storage_multisample_2d_array GL_OES_vertex_array_object GL_OVR_multiview GL_OVR_multiview2 ",
+        "glImplementationParts": "(gl=egl-angle,angle=d3d11)",
+        "glRenderer": "ANGLE (Intel, Intel(R) UHD Graphics (0x0000A721) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.101.7088)",
+        "glResetNotificationStrategy": 33362,
+        "glVendor": "Google Inc. (Intel)",
+        "glVersion": "OpenGL ES 3.0 (ANGLE 2.1.28973 git hash: 3b89d84e9d59)",
+        "glWsExtensions": "EGL_EXT_create_context_robustness EGL_ANGLE_d3d_share_handle_client_buffer EGL_ANGLE_d3d_texture_client_buffer EGL_ANGLE_surface_d3d_texture_2d_share_handle EGL_ANGLE_query_surface_pointer EGL_ANGLE_window_fixed_size EGL_ANGLE_keyed_mutex EGL_ANGLE_surface_orientation EGL_ANGLE_direct_composition EGL_NV_post_sub_buffer EGL_KHR_create_context EGL_KHR_image EGL_KHR_image_base EGL_KHR_gl_texture_2D_image EGL_KHR_gl_texture_cubemap_image EGL_KHR_gl_renderbuffer_image EGL_KHR_get_all_proc_addresses EGL_KHR_stream EGL_KHR_stream_consumer_gltexture EGL_NV_stream_consumer_gltexture_yuv EGL_ANGLE_stream_producer_d3d_texture EGL_ANGLE_create_context_webgl_compatibility EGL_CHROMIUM_create_context_bind_generates_resource EGL_CHROMIUM_sync_control EGL_EXT_pixel_format_float EGL_KHR_surfaceless_context EGL_ANGLE_display_texture_share_group EGL_ANGLE_display_semaphore_share_group EGL_ANGLE_create_context_client_arrays EGL_ANGLE_program_cache_control EGL_ANGLE_robust_resource_initialization EGL_ANGLE_create_context_extensions_enabled EGL_ANDROID_blob_cache EGL_ANDROID_recordable EGL_ANGLE_image_d3d11_texture EGL_ANGLE_create_context_backwards_compatible EGL_KHR_no_config_context EGL_KHR_create_context_no_error EGL_KHR_reusable_sync EGL_ANGLE_memory_usage_report ",
+        "glWsVendor": "Google Inc. (Intel)",
+        "glWsVersion": "1.5 (ANGLE 2.1.28973 git hash: 3b89d84e9d59)",
+        "inProcessGpu": false,
+        "initializationTime": 119.489,
+        "isAsan": false,
+        "isClangCoverage": false,
+        "jpegDecodeAcceleratorSupported": false,
+        "maxMsaaSamples": "8",
+        "optimus": false,
+        "overlayInfo": {
+          "bgra8OverlaySupport": "SCALING",
+          "directComposition": true,
+          "nv12OverlaySupport": "SCALING",
+          "p010OverlaySupport": "SOFTWARE",
+          "rgb10a2OverlaySupport": "SCALING",
+          "supportsOverlays": true,
+          "yuy2OverlaySupport": "SCALING"
+        },
+        "passthroughCmdDecoder": true,
+        "pixelShaderVersion": "5.0",
+        "sandboxed": true,
+        "skiaBackendType": "GaneshGL",
+        "subpixelFontRendering": true,
+        "supportsD3dSharedImages": true,
+        "supportsDirectML": false,
+        "supportsDx12": false,
+        "supportsVulkan": false,
+        "targetCpuBits": 64,
+        "vertexShaderVersion": "5.0",
+        "videoDecodeAcceleratorSupportedProfile": {
+          "encrypted_only": false,
+          "maxResolutionHeight": 16384,
+          "maxResolutionWidth": 16384,
+          "minResolutionHeight": 64,
+          "minResolutionWidth": 64,
+          "profile": 29
+        },
+        "visibilityCallbackCallCount": 0,
+        "vulkanVersion": "Not supported"
+      },
+      "gpuDevice": [
+        {
+          "active": true,
+          "deviceId": 42785,
+          "deviceString": "Intel(R) UHD Graphics",
+          "driverVendor": "Intel",
+          "driverVersion": "32.0.101.7088",
+          "gpuPreference": 0,
+          "revision": 4,
+          "subSysId": -1954803652,
+          "vendorId": 32902
+        },
+        {
+          "active": false,
+          "deviceId": 140,
+          "deviceString": "Microsoft Basic Render Driver",
+          "driverVersion": "10.0.22621.5415",
+          "gpuPreference": 0,
+          "revision": 0,
+          "subSysId": 0,
+          "vendorId": 5140
+        }
+      ]
+    },
+    "hardwareAccelerationEnabled": true
+  },
+  "sourceHashes": {
+    "baselineAppSha256": "b86ea8684f247c45330aaaa6c48ea0752bcdcbfacf5f41ab1156b7c44f9e8160",
+    "candidateAppSha256": "b86ea8684f247c45330aaaa6c48ea0752bcdcbfacf5f41ab1156b7c44f9e8160",
+    "baselineStyleSha256": "df7ba9f66a5b8f15a73cde069820c72ffa0918ce842da6bfaf866447727c75bc",
+    "candidateStyleSha256": "df7ba9f66a5b8f15a73cde069820c72ffa0918ce842da6bfaf866447727c75bc",
+    "commonFixedBaselineStoreSha256": "f4bfc88a07fc6a1a7b92a8f2508f8dca3f37143679e7f2bfd974dcf3420bac42",
+    "candidateStoreSha256": "f4bfc88a07fc6a1a7b92a8f2508f8dca3f37143679e7f2bfd974dcf3420bac42",
+    "commonPageViewSha256": "70c52a07d422564703bfe3c49ceebc06e2af7a65571b4d0865eb862a6aaa1aad"
+  },
+  "appGeometryCssPixels": [
+    {
+      "x": 104,
+      "y": 122,
+      "width": 240,
+      "height": 152
+    },
+    {
+      "x": 352,
+      "y": 122,
+      "width": 240,
+      "height": 152
+    },
+    {
+      "x": 600,
+      "y": 122,
+      "width": 240,
+      "height": 152
+    },
+    {
+      "x": 848,
+      "y": 122,
+      "width": 240,
+      "height": 152
+    },
+    {
+      "x": 1096,
+      "y": 122,
+      "width": 240,
+      "height": 152
+    },
+    {
+      "x": 104,
+      "y": 282,
+      "width": 240,
+      "height": 152
+    },
+    {
+      "x": 352,
+      "y": 282,
+      "width": 240,
+      "height": 152
+    },
+    {
+      "x": 600,
+      "y": 282,
+      "width": 240,
+      "height": 152
+    },
+    {
+      "x": 848,
+      "y": 282,
+      "width": 240,
+      "height": 152
+    },
+    {
+      "x": 1096,
+      "y": 282,
+      "width": 240,
+      "height": 152
+    },
+    {
+      "x": 104,
+      "y": 442,
+      "width": 240,
+      "height": 152
+    },
+    {
+      "x": 352,
+      "y": 442,
+      "width": 240,
+      "height": 152
+    },
+    {
+      "x": 600,
+      "y": 442,
+      "width": 240,
+      "height": 152
+    },
+    {
+      "x": 848,
+      "y": 442,
+      "width": 240,
+      "height": 152
+    },
+    {
+      "x": 1096,
+      "y": 442,
+      "width": 240,
+      "height": 152
+    },
+    {
+      "x": 104,
+      "y": 602,
+      "width": 240,
+      "height": 152
+    },
+    {
+      "x": 352,
+      "y": 602,
+      "width": 240,
+      "height": 152
+    },
+    {
+      "x": 600,
+      "y": 602,
+      "width": 240,
+      "height": 152
+    },
+    {
+      "x": 848,
+      "y": 602,
+      "width": 240,
+      "height": 152
+    },
+    {
+      "x": 1096,
+      "y": 602,
+      "width": 240,
+      "height": 152
+    }
+  ],
+  "limits": [
+    "Controlled twenty-app homogeneous cohorts, not a mixed fifty-app capacity result.",
+    "Low/high payload comparisons with separate diagnostics; see per-profile repetitions. Not stable tail estimates or implementation speedups.",
+    "All app rectangles and production source hashes match. Payloads and component types differ intentionally.",
+    "Sequential cohorts do not hold OS/thermal conditions fixed. Callback intervals are not physical FPS or input latency.",
+    "Trace event durations overlap categories/threads; sums are not exclusive CPU or wall time.",
+    "Process snapshots are kilobytes reported by Electron; no forced GC, retained heap or stabilization claim. Do not add working sets as physical RAM.",
+    "Projects output is populated through mock commands before timing and remains static during pan; real commands are never executed.",
+    "Projects also holds 100 project entries per view; these cohorts do not uniquely attribute its cost to terminal buffers."
+  ],
+  "profiles": [
+    {
+      "profile": "git",
+      "artifacts": "artifacts/performance/foreground/2026-11-03T11-29-44-910Z",
+      "repetitions": 1,
+      "rejectedAttempts": [],
+      "runs": [
+        {
+          "density": "low",
+          "diagnostic": false,
+          "payload": {
+            "pages": 500,
+            "blocksPerDocument": 10,
+            "commits": 15,
+            "scripts": 20,
+            "projectsPerRoot": 100,
+            "savedTerminals": 20,
+            "terminalLines": 1
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 0,
+            "projects": 0,
+            "git": 20,
+            "scripts": 0,
+            "cabinets": 0,
+            "queryViews": 0,
+            "terminals": 0,
+            "elements": 4653,
+            "notesBlocks": 0,
+            "gitCommits": 300,
+            "scriptRows": 0,
+            "blur": "blur(8px) saturate(1.2)",
+            "dotsVisibility": "visible"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 3,
+              "maxInterval": 16.700000000000273,
+              "medianInterval": 16.699999999999818
+            },
+            "continuous": {
+              "samples": 65,
+              "maxInterval": 50,
+              "medianInterval": 16.699999999999818
+            },
+            "stop": {
+              "samples": 4,
+              "maxInterval": 16.700000000000273,
+              "medianInterval": 16.699999999999818
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 73
+          },
+          "terminalMockCalls": 0,
+          "processMemoryAfterKB": [
+            {
+              "type": "Browser",
+              "memory": {
+                "workingSetSize": 112872,
+                "peakWorkingSetSize": 119836,
+                "privateBytes": 83336
+              }
+            },
+            {
+              "type": "GPU",
+              "memory": {
+                "workingSetSize": 278916,
+                "peakWorkingSetSize": 291016,
+                "privateBytes": 264832
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 57700,
+                "peakWorkingSetSize": 57784,
+                "privateBytes": 18132
+              }
+            },
+            {
+              "type": "Tab",
+              "memory": {
+                "workingSetSize": 222196,
+                "peakWorkingSetSize": 222196,
+                "privateBytes": 155908
+              }
+            }
+          ]
+        },
+        {
+          "density": "high",
+          "diagnostic": false,
+          "payload": {
+            "pages": 500,
+            "blocksPerDocument": 100,
+            "commits": 150,
+            "scripts": 1000,
+            "projectsPerRoot": 100,
+            "savedTerminals": 20,
+            "terminalLines": 200
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 0,
+            "projects": 0,
+            "git": 20,
+            "scripts": 0,
+            "cabinets": 0,
+            "queryViews": 0,
+            "terminals": 0,
+            "elements": 31653,
+            "notesBlocks": 0,
+            "gitCommits": 3000,
+            "scriptRows": 0,
+            "blur": "blur(8px) saturate(1.2)",
+            "dotsVisibility": "visible"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 50.19999999999982,
+              "medianInterval": 16.300000000000182
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 66.59999999999854,
+              "medianInterval": 33.30000000000018
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 16.700000000000728,
+              "medianInterval": 16.599999999998545
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 70
+          },
+          "terminalMockCalls": 0,
+          "processMemoryAfterKB": [
+            {
+              "type": "Browser",
+              "memory": {
+                "workingSetSize": 113128,
+                "peakWorkingSetSize": 120024,
+                "privateBytes": 83320
+              }
+            },
+            {
+              "type": "GPU",
+              "memory": {
+                "workingSetSize": 289812,
+                "peakWorkingSetSize": 295152,
+                "privateBytes": 260264
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 57736,
+                "peakWorkingSetSize": 57936,
+                "privateBytes": 18140
+              }
+            },
+            {
+              "type": "Tab",
+              "memory": {
+                "workingSetSize": 613232,
+                "peakWorkingSetSize": 618976,
+                "privateBytes": 559888
+              }
+            }
+          ]
+        },
+        {
+          "density": "high",
+          "diagnostic": true,
+          "payload": {
+            "pages": 500,
+            "blocksPerDocument": 100,
+            "commits": 150,
+            "scripts": 1000,
+            "projectsPerRoot": 100,
+            "savedTerminals": 20,
+            "terminalLines": 200
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 0,
+            "projects": 0,
+            "git": 20,
+            "scripts": 0,
+            "cabinets": 0,
+            "queryViews": 0,
+            "terminals": 0,
+            "elements": 31653,
+            "notesBlocks": 0,
+            "gitCommits": 3000,
+            "scriptRows": 0,
+            "blur": "blur(8px) saturate(1.2)",
+            "dotsVisibility": "visible"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 49.899999999999636,
+              "medianInterval": 16.5
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 66.5,
+              "medianInterval": 49.600000000000364
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 16.799999999999272,
+              "medianInterval": 16.600000000000364
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 70
+          },
+          "terminalMockCalls": 0,
+          "processMemoryAfterKB": [
+            {
+              "type": "Browser",
+              "memory": {
+                "workingSetSize": 115532,
+                "peakWorkingSetSize": 142600,
+                "privateBytes": 84440
+              }
+            },
+            {
+              "type": "GPU",
+              "memory": {
+                "workingSetSize": 288364,
+                "peakWorkingSetSize": 300584,
+                "privateBytes": 253832
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 58000,
+                "peakWorkingSetSize": 58208,
+                "privateBytes": 18220
+              }
+            },
+            {
+              "type": "Tab",
+              "memory": {
+                "workingSetSize": 626216,
+                "peakWorkingSetSize": 632344,
+                "privateBytes": 574500
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 98300,
+                "peakWorkingSetSize": 98300,
+                "privateBytes": 18440
+              }
+            }
+          ],
+          "traceWork": {
+            "Paint": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 117,
+              "aggregateMs": 210.15,
+              "maxMs": 5.498
+            },
+            "RasterTask": {
+              "threads": [
+                "ThreadPoolForegroundWorker"
+              ],
+              "count": 237,
+              "aggregateMs": 293.382,
+              "maxMs": 3.751
+            },
+            "Layerize": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 62,
+              "aggregateMs": 1876.445,
+              "maxMs": 46.703
+            },
+            "Commit": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 62,
+              "aggregateMs": 22.516,
+              "maxMs": 1.042
+            },
+            "Layout": {
+              "threads": [],
+              "count": 0,
+              "aggregateMs": 0,
+              "maxMs": 0
+            },
+            "UpdateLayoutTree": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 59,
+              "aggregateMs": 5.24,
+              "maxMs": 0.458
+            },
+            "FunctionCall": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 309,
+              "aggregateMs": 13.711,
+              "maxMs": 0.546
+            }
+          }
+        },
+        {
+          "density": "low",
+          "diagnostic": true,
+          "payload": {
+            "pages": 500,
+            "blocksPerDocument": 10,
+            "commits": 15,
+            "scripts": 20,
+            "projectsPerRoot": 100,
+            "savedTerminals": 20,
+            "terminalLines": 1
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 0,
+            "projects": 0,
+            "git": 20,
+            "scripts": 0,
+            "cabinets": 0,
+            "queryViews": 0,
+            "terminals": 0,
+            "elements": 4653,
+            "notesBlocks": 0,
+            "gitCommits": 300,
+            "scriptRows": 0,
+            "blur": "blur(8px) saturate(1.2)",
+            "dotsVisibility": "visible"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 3,
+              "maxInterval": 16.700000000000273,
+              "medianInterval": 16.59999999999991
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 33.40000000000009,
+              "medianInterval": 16.700000000000273
+            },
+            "stop": {
+              "samples": 4,
+              "maxInterval": 16.700000000000273,
+              "medianInterval": 16.699999999999818
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 71
+          },
+          "terminalMockCalls": 0,
+          "processMemoryAfterKB": [
+            {
+              "type": "Browser",
+              "memory": {
+                "workingSetSize": 116016,
+                "peakWorkingSetSize": 122512,
+                "privateBytes": 85040
+              }
+            },
+            {
+              "type": "GPU",
+              "memory": {
+                "workingSetSize": 292356,
+                "peakWorkingSetSize": 298848,
+                "privateBytes": 279164
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 57788,
+                "peakWorkingSetSize": 57832,
+                "privateBytes": 18160
+              }
+            },
+            {
+              "type": "Tab",
+              "memory": {
+                "workingSetSize": 224416,
+                "peakWorkingSetSize": 224968,
+                "privateBytes": 156960
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 95708,
+                "peakWorkingSetSize": 95708,
+                "privateBytes": 18432
+              }
+            }
+          ],
+          "traceWork": {
+            "Paint": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 117,
+              "aggregateMs": 71.842,
+              "maxMs": 2.326
+            },
+            "RasterTask": {
+              "threads": [
+                "ThreadPoolForegroundWorker"
+              ],
+              "count": 234,
+              "aggregateMs": 321.819,
+              "maxMs": 4.063
+            },
+            "Layerize": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 62,
+              "aggregateMs": 328.95,
+              "maxMs": 9.746
+            },
+            "Commit": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 62,
+              "aggregateMs": 20.63,
+              "maxMs": 0.832
+            },
+            "Layout": {
+              "threads": [],
+              "count": 0,
+              "aggregateMs": 0,
+              "maxMs": 0
+            },
+            "UpdateLayoutTree": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 59,
+              "aggregateMs": 8.015,
+              "maxMs": 0.504
+            },
+            "FunctionCall": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 303,
+              "aggregateMs": 19.502,
+              "maxMs": 0.705
+            }
+          }
+        }
+      ]
+    },
+    {
+      "profile": "notes",
+      "artifacts": "artifacts/performance/foreground/2026-11-03T11-30-46-815Z",
+      "repetitions": 1,
+      "rejectedAttempts": [],
+      "runs": [
+        {
+          "density": "low",
+          "diagnostic": false,
+          "payload": {
+            "pages": 500,
+            "blocksPerDocument": 10,
+            "commits": 15,
+            "scripts": 20,
+            "projectsPerRoot": 100,
+            "savedTerminals": 20,
+            "terminalLines": 1
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 20,
+            "projects": 0,
+            "git": 0,
+            "scripts": 0,
+            "cabinets": 0,
+            "queryViews": 0,
+            "terminals": 0,
+            "elements": 72873,
+            "notesBlocks": 200,
+            "gitCommits": 0,
+            "scriptRows": 0,
+            "blur": "blur(8px) saturate(1.2)",
+            "dotsVisibility": "visible"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 16.900000000000546,
+              "medianInterval": 16.699999999999818
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 50.100000000000364,
+              "medianInterval": 33.19999999999982
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 16.699999999999818,
+              "medianInterval": 16.699999999999818
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 70
+          },
+          "terminalMockCalls": 0,
+          "processMemoryAfterKB": [
+            {
+              "type": "Browser",
+              "memory": {
+                "workingSetSize": 114764,
+                "peakWorkingSetSize": 121712,
+                "privateBytes": 85908
+              }
+            },
+            {
+              "type": "GPU",
+              "memory": {
+                "workingSetSize": 358896,
+                "peakWorkingSetSize": 364236,
+                "privateBytes": 342476
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 57788,
+                "peakWorkingSetSize": 57936,
+                "privateBytes": 18248
+              }
+            },
+            {
+              "type": "Tab",
+              "memory": {
+                "workingSetSize": 941572,
+                "peakWorkingSetSize": 943640,
+                "privateBytes": 872608
+              }
+            }
+          ]
+        },
+        {
+          "density": "high",
+          "diagnostic": false,
+          "payload": {
+            "pages": 500,
+            "blocksPerDocument": 100,
+            "commits": 150,
+            "scripts": 1000,
+            "projectsPerRoot": 100,
+            "savedTerminals": 20,
+            "terminalLines": 200
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 20,
+            "projects": 0,
+            "git": 0,
+            "scripts": 0,
+            "cabinets": 0,
+            "queryViews": 0,
+            "terminals": 0,
+            "elements": 81873,
+            "notesBlocks": 2000,
+            "gitCommits": 0,
+            "scriptRows": 0,
+            "blur": "blur(8px) saturate(1.2)",
+            "dotsVisibility": "visible"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 33.600000000000364,
+              "medianInterval": 16.699999999999818
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 66.79999999999927,
+              "medianInterval": 33.399999999999636
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 16.900000000001455,
+              "medianInterval": 16.599999999998545
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 70
+          },
+          "terminalMockCalls": 0,
+          "processMemoryAfterKB": [
+            {
+              "type": "Browser",
+              "memory": {
+                "workingSetSize": 114736,
+                "peakWorkingSetSize": 121800,
+                "privateBytes": 84620
+              }
+            },
+            {
+              "type": "GPU",
+              "memory": {
+                "workingSetSize": 324760,
+                "peakWorkingSetSize": 332620,
+                "privateBytes": 287208
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 57984,
+                "peakWorkingSetSize": 57988,
+                "privateBytes": 18384
+              }
+            },
+            {
+              "type": "Tab",
+              "memory": {
+                "workingSetSize": 1767188,
+                "peakWorkingSetSize": 1770824,
+                "privateBytes": 1721852
+              }
+            }
+          ]
+        },
+        {
+          "density": "high",
+          "diagnostic": true,
+          "payload": {
+            "pages": 500,
+            "blocksPerDocument": 100,
+            "commits": 150,
+            "scripts": 1000,
+            "projectsPerRoot": 100,
+            "savedTerminals": 20,
+            "terminalLines": 200
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 20,
+            "projects": 0,
+            "git": 0,
+            "scripts": 0,
+            "cabinets": 0,
+            "queryViews": 0,
+            "terminals": 0,
+            "elements": 81873,
+            "notesBlocks": 2000,
+            "gitCommits": 0,
+            "scriptRows": 0,
+            "blur": "blur(8px) saturate(1.2)",
+            "dotsVisibility": "visible"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 5,
+              "maxInterval": 50,
+              "medianInterval": 16.699999999999818
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 50.20000000000073,
+              "medianInterval": 33.29999999999927
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 16.899999999999636,
+              "medianInterval": 16.5
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 71
+          },
+          "terminalMockCalls": 0,
+          "processMemoryAfterKB": [
+            {
+              "type": "Browser",
+              "memory": {
+                "workingSetSize": 117164,
+                "peakWorkingSetSize": 208728,
+                "privateBytes": 85616
+              }
+            },
+            {
+              "type": "GPU",
+              "memory": {
+                "workingSetSize": 327996,
+                "peakWorkingSetSize": 333336,
+                "privateBytes": 290028
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 58452,
+                "peakWorkingSetSize": 58592,
+                "privateBytes": 18380
+              }
+            },
+            {
+              "type": "Tab",
+              "memory": {
+                "workingSetSize": 1686596,
+                "peakWorkingSetSize": 1852616,
+                "privateBytes": 1622928
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 106148,
+                "peakWorkingSetSize": 106148,
+                "privateBytes": 22672
+              }
+            }
+          ],
+          "traceWork": {
+            "Paint": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 1277,
+              "aggregateMs": 2082.286,
+              "maxMs": 25.356
+            },
+            "RasterTask": {
+              "threads": [
+                "ThreadPoolForegroundWorker"
+              ],
+              "count": 1342,
+              "aggregateMs": 322.582,
+              "maxMs": 1.4
+            },
+            "Layerize": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 62,
+              "aggregateMs": 775.01,
+              "maxMs": 18.638
+            },
+            "Commit": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 62,
+              "aggregateMs": 46.287,
+              "maxMs": 4.945
+            },
+            "Layout": {
+              "threads": [],
+              "count": 0,
+              "aggregateMs": 0,
+              "maxMs": 0
+            },
+            "UpdateLayoutTree": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 59,
+              "aggregateMs": 4.686,
+              "maxMs": 0.298
+            },
+            "FunctionCall": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 305,
+              "aggregateMs": 11.605,
+              "maxMs": 0.495
+            }
+          }
+        },
+        {
+          "density": "low",
+          "diagnostic": true,
+          "payload": {
+            "pages": 500,
+            "blocksPerDocument": 10,
+            "commits": 15,
+            "scripts": 20,
+            "projectsPerRoot": 100,
+            "savedTerminals": 20,
+            "terminalLines": 1
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 20,
+            "projects": 0,
+            "git": 0,
+            "scripts": 0,
+            "cabinets": 0,
+            "queryViews": 0,
+            "terminals": 0,
+            "elements": 72873,
+            "notesBlocks": 200,
+            "gitCommits": 0,
+            "scriptRows": 0,
+            "blur": "blur(8px) saturate(1.2)",
+            "dotsVisibility": "visible"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 16.899999999999636,
+              "medianInterval": 16.600000000000364
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 50.099999999999454,
+              "medianInterval": 33.100000000000364
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 33.30000000000018,
+              "medianInterval": 16.699999999999818
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 70
+          },
+          "terminalMockCalls": 0,
+          "processMemoryAfterKB": [
+            {
+              "type": "Browser",
+              "memory": {
+                "workingSetSize": 117068,
+                "peakWorkingSetSize": 198956,
+                "privateBytes": 85684
+              }
+            },
+            {
+              "type": "GPU",
+              "memory": {
+                "workingSetSize": 346668,
+                "peakWorkingSetSize": 352008,
+                "privateBytes": 310464
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 58264,
+                "peakWorkingSetSize": 58532,
+                "privateBytes": 18196
+              }
+            },
+            {
+              "type": "Tab",
+              "memory": {
+                "workingSetSize": 1148476,
+                "peakWorkingSetSize": 1260216,
+                "privateBytes": 1078356
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 100052,
+                "peakWorkingSetSize": 100052,
+                "privateBytes": 18436
+              }
+            }
+          ],
+          "traceWork": {
+            "Paint": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 1277,
+              "aggregateMs": 1059.038,
+              "maxMs": 18.37
+            },
+            "RasterTask": {
+              "threads": [
+                "ThreadPoolForegroundWorker"
+              ],
+              "count": 1343,
+              "aggregateMs": 393.138,
+              "maxMs": 1.598
+            },
+            "Layerize": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 62,
+              "aggregateMs": 702.709,
+              "maxMs": 18.707
+            },
+            "Commit": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 62,
+              "aggregateMs": 69.031,
+              "maxMs": 14.91
+            },
+            "Layout": {
+              "threads": [],
+              "count": 0,
+              "aggregateMs": 0,
+              "maxMs": 0
+            },
+            "UpdateLayoutTree": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 59,
+              "aggregateMs": 6.743,
+              "maxMs": 0.498
+            },
+            "FunctionCall": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 305,
+              "aggregateMs": 15.811,
+              "maxMs": 0.726
+            }
+          }
+        }
+      ]
+    },
+    {
+      "profile": "scripts",
+      "artifacts": "artifacts/performance/foreground/2026-11-03T11-32-17-062Z",
+      "repetitions": 1,
+      "rejectedAttempts": [],
+      "runs": [
+        {
+          "density": "low",
+          "diagnostic": false,
+          "payload": {
+            "pages": 500,
+            "blocksPerDocument": 10,
+            "commits": 15,
+            "scripts": 20,
+            "projectsPerRoot": 100,
+            "savedTerminals": 20,
+            "terminalLines": 1
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 0,
+            "projects": 0,
+            "git": 0,
+            "scripts": 20,
+            "cabinets": 0,
+            "queryViews": 0,
+            "terminals": 0,
+            "elements": 5061,
+            "notesBlocks": 0,
+            "gitCommits": 0,
+            "scriptRows": 400,
+            "blur": "blur(8px) saturate(1.2)",
+            "dotsVisibility": "visible"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 16.799999999999727,
+              "medianInterval": 16.5
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 33.5,
+              "medianInterval": 16.700000000000273
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 16.699999999999818,
+              "medianInterval": 16.600000000000364
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 70
+          },
+          "terminalMockCalls": 0,
+          "processMemoryAfterKB": [
+            {
+              "type": "Browser",
+              "memory": {
+                "workingSetSize": 112280,
+                "peakWorkingSetSize": 119708,
+                "privateBytes": 82716
+              }
+            },
+            {
+              "type": "GPU",
+              "memory": {
+                "workingSetSize": 290904,
+                "peakWorkingSetSize": 296240,
+                "privateBytes": 281712
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 57376,
+                "peakWorkingSetSize": 58316,
+                "privateBytes": 17848
+              }
+            },
+            {
+              "type": "Tab",
+              "memory": {
+                "workingSetSize": 240988,
+                "peakWorkingSetSize": 242204,
+                "privateBytes": 172092
+              }
+            }
+          ]
+        },
+        {
+          "density": "high",
+          "diagnostic": false,
+          "payload": {
+            "pages": 500,
+            "blocksPerDocument": 100,
+            "commits": 150,
+            "scripts": 1000,
+            "projectsPerRoot": 100,
+            "savedTerminals": 20,
+            "terminalLines": 200
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 0,
+            "projects": 0,
+            "git": 0,
+            "scripts": 20,
+            "cabinets": 0,
+            "queryViews": 0,
+            "terminals": 0,
+            "elements": 5081,
+            "notesBlocks": 0,
+            "gitCommits": 0,
+            "scriptRows": 400,
+            "blur": "blur(8px) saturate(1.2)",
+            "dotsVisibility": "visible"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 16.699999999999818,
+              "medianInterval": 16.59999999999991
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 50.100000000000364,
+              "medianInterval": 33.29999999999973
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 16.699999999999818,
+              "medianInterval": 16.59999999999991
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 70
+          },
+          "terminalMockCalls": 0,
+          "processMemoryAfterKB": [
+            {
+              "type": "Browser",
+              "memory": {
+                "workingSetSize": 112924,
+                "peakWorkingSetSize": 120040,
+                "privateBytes": 84216
+              }
+            },
+            {
+              "type": "GPU",
+              "memory": {
+                "workingSetSize": 286064,
+                "peakWorkingSetSize": 291404,
+                "privateBytes": 268460
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 58024,
+                "peakWorkingSetSize": 58620,
+                "privateBytes": 18264
+              }
+            },
+            {
+              "type": "Tab",
+              "memory": {
+                "workingSetSize": 303068,
+                "peakWorkingSetSize": 304168,
+                "privateBytes": 236920
+              }
+            }
+          ]
+        },
+        {
+          "density": "high",
+          "diagnostic": true,
+          "payload": {
+            "pages": 500,
+            "blocksPerDocument": 100,
+            "commits": 150,
+            "scripts": 1000,
+            "projectsPerRoot": 100,
+            "savedTerminals": 20,
+            "terminalLines": 200
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 0,
+            "projects": 0,
+            "git": 0,
+            "scripts": 20,
+            "cabinets": 0,
+            "queryViews": 0,
+            "terminals": 0,
+            "elements": 5081,
+            "notesBlocks": 0,
+            "gitCommits": 0,
+            "scriptRows": 400,
+            "blur": "blur(8px) saturate(1.2)",
+            "dotsVisibility": "visible"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 4,
+              "maxInterval": 33.29999999999973,
+              "medianInterval": 16.700000000000273
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 50.000000000000455,
+              "medianInterval": 33.29999999999927
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 16.799999999999272,
+              "medianInterval": 16.600000000000364
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 70
+          },
+          "terminalMockCalls": 0,
+          "processMemoryAfterKB": [
+            {
+              "type": "Browser",
+              "memory": {
+                "workingSetSize": 116012,
+                "peakWorkingSetSize": 123164,
+                "privateBytes": 85296
+              }
+            },
+            {
+              "type": "GPU",
+              "memory": {
+                "workingSetSize": 339624,
+                "peakWorkingSetSize": 344964,
+                "privateBytes": 319096
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 58148,
+                "peakWorkingSetSize": 58624,
+                "privateBytes": 18376
+              }
+            },
+            {
+              "type": "Tab",
+              "memory": {
+                "workingSetSize": 271656,
+                "peakWorkingSetSize": 271832,
+                "privateBytes": 203328
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 97852,
+                "peakWorkingSetSize": 97852,
+                "privateBytes": 18504
+              }
+            }
+          ],
+          "traceWork": {
+            "Paint": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 1277,
+              "aggregateMs": 216.391,
+              "maxMs": 4.758
+            },
+            "RasterTask": {
+              "threads": [
+                "ThreadPoolForegroundWorker"
+              ],
+              "count": 1401,
+              "aggregateMs": 349.444,
+              "maxMs": 4.096
+            },
+            "Layerize": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 62,
+              "aggregateMs": 1257.298,
+              "maxMs": 32.366
+            },
+            "Commit": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 62,
+              "aggregateMs": 31.882,
+              "maxMs": 1.942
+            },
+            "Layout": {
+              "threads": [],
+              "count": 0,
+              "aggregateMs": 0,
+              "maxMs": 0
+            },
+            "UpdateLayoutTree": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 59,
+              "aggregateMs": 5.97,
+              "maxMs": 0.342
+            },
+            "FunctionCall": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 305,
+              "aggregateMs": 15.746,
+              "maxMs": 0.506
+            }
+          }
+        },
+        {
+          "density": "low",
+          "diagnostic": true,
+          "payload": {
+            "pages": 500,
+            "blocksPerDocument": 10,
+            "commits": 15,
+            "scripts": 20,
+            "projectsPerRoot": 100,
+            "savedTerminals": 20,
+            "terminalLines": 1
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 0,
+            "projects": 0,
+            "git": 0,
+            "scripts": 20,
+            "cabinets": 0,
+            "queryViews": 0,
+            "terminals": 0,
+            "elements": 5061,
+            "notesBlocks": 0,
+            "gitCommits": 0,
+            "scriptRows": 400,
+            "blur": "blur(8px) saturate(1.2)",
+            "dotsVisibility": "visible"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 5,
+              "maxInterval": 33.40000000000009,
+              "medianInterval": 16.699999999999818
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 50.100000000000364,
+              "medianInterval": 33.29999999999973
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 16.800000000000182,
+              "medianInterval": 16.800000000000182
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 71
+          },
+          "terminalMockCalls": 0,
+          "processMemoryAfterKB": [
+            {
+              "type": "Browser",
+              "memory": {
+                "workingSetSize": 115228,
+                "peakWorkingSetSize": 122432,
+                "privateBytes": 84236
+              }
+            },
+            {
+              "type": "GPU",
+              "memory": {
+                "workingSetSize": 306420,
+                "peakWorkingSetSize": 311760,
+                "privateBytes": 286428
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 57924,
+                "peakWorkingSetSize": 58488,
+                "privateBytes": 18264
+              }
+            },
+            {
+              "type": "Tab",
+              "memory": {
+                "workingSetSize": 241752,
+                "peakWorkingSetSize": 241752,
+                "privateBytes": 169736
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 97540,
+                "peakWorkingSetSize": 97540,
+                "privateBytes": 19504
+              }
+            }
+          ],
+          "traceWork": {
+            "Paint": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 1277,
+              "aggregateMs": 254.788,
+              "maxMs": 5.789
+            },
+            "RasterTask": {
+              "threads": [
+                "ThreadPoolForegroundWorker"
+              ],
+              "count": 1401,
+              "aggregateMs": 411.706,
+              "maxMs": 5.431
+            },
+            "Layerize": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 62,
+              "aggregateMs": 1376.708,
+              "maxMs": 41.904
+            },
+            "Commit": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 62,
+              "aggregateMs": 35.336,
+              "maxMs": 1.731
+            },
+            "Layout": {
+              "threads": [],
+              "count": 0,
+              "aggregateMs": 0,
+              "maxMs": 0
+            },
+            "UpdateLayoutTree": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 59,
+              "aggregateMs": 7.157,
+              "maxMs": 0.443
+            },
+            "FunctionCall": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 305,
+              "aggregateMs": 18.341,
+              "maxMs": 0.805
+            }
+          }
+        }
+      ]
+    },
+    {
+      "profile": "projects",
+      "artifacts": "artifacts/performance/foreground/2026-11-03T11-35-59-778Z",
+      "repetitions": 1,
+      "rejectedAttempts": [],
+      "runs": [
+        {
+          "density": "low",
+          "diagnostic": false,
+          "payload": {
+            "pages": 500,
+            "blocksPerDocument": 10,
+            "commits": 15,
+            "scripts": 20,
+            "projectsPerRoot": 100,
+            "savedTerminals": 20,
+            "terminalLines": 1
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 0,
+            "projects": 20,
+            "git": 0,
+            "scripts": 0,
+            "cabinets": 0,
+            "queryViews": 0,
+            "terminals": 20,
+            "elements": 55794,
+            "notesBlocks": 0,
+            "gitCommits": 0,
+            "scriptRows": 0,
+            "blur": "blur(8px) saturate(1.2)",
+            "dotsVisibility": "visible"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 3,
+              "maxInterval": 349.8000000000029,
+              "medianInterval": 316.59999999999854
+            },
+            "continuous": {
+              "samples": 62,
+              "maxInterval": 366.5,
+              "medianInterval": 299.6999999999971
+            },
+            "stop": {
+              "samples": 4,
+              "maxInterval": 333.3999999999942,
+              "medianInterval": 16.60000000000582
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 70
+          },
+          "terminalMockCalls": 20,
+          "processMemoryAfterKB": [
+            {
+              "type": "Browser",
+              "memory": {
+                "workingSetSize": 111464,
+                "peakWorkingSetSize": 118380,
+                "privateBytes": 80828
+              }
+            },
+            {
+              "type": "GPU",
+              "memory": {
+                "workingSetSize": 280844,
+                "peakWorkingSetSize": 294696,
+                "privateBytes": 244596
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 57940,
+                "peakWorkingSetSize": 58508,
+                "privateBytes": 17836
+              }
+            },
+            {
+              "type": "Tab",
+              "memory": {
+                "workingSetSize": 987828,
+                "peakWorkingSetSize": 997064,
+                "privateBytes": 930980
+              }
+            }
+          ]
+        },
+        {
+          "density": "high",
+          "diagnostic": false,
+          "payload": {
+            "pages": 500,
+            "blocksPerDocument": 100,
+            "commits": 150,
+            "scripts": 1000,
+            "projectsPerRoot": 100,
+            "savedTerminals": 20,
+            "terminalLines": 200
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 0,
+            "projects": 20,
+            "git": 0,
+            "scripts": 0,
+            "cabinets": 0,
+            "queryViews": 0,
+            "terminals": 20,
+            "elements": 55954,
+            "notesBlocks": 0,
+            "gitCommits": 0,
+            "scriptRows": 0,
+            "blur": "blur(8px) saturate(1.2)",
+            "dotsVisibility": "visible"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 5,
+              "maxInterval": 366.3000000000029,
+              "medianInterval": 333.1999999999971
+            },
+            "continuous": {
+              "samples": 64,
+              "maxInterval": 449.8000000000029,
+              "medianInterval": 316.6000000000058
+            },
+            "stop": {
+              "samples": 5,
+              "maxInterval": 433,
+              "medianInterval": 33.30000000000291
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 75
+          },
+          "terminalMockCalls": 20,
+          "processMemoryAfterKB": [
+            {
+              "type": "Browser",
+              "memory": {
+                "workingSetSize": 116816,
+                "peakWorkingSetSize": 122936,
+                "privateBytes": 84628
+              }
+            },
+            {
+              "type": "GPU",
+              "memory": {
+                "workingSetSize": 277792,
+                "peakWorkingSetSize": 294608,
+                "privateBytes": 241444
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 57244,
+                "peakWorkingSetSize": 58100,
+                "privateBytes": 17700
+              }
+            },
+            {
+              "type": "Tab",
+              "memory": {
+                "workingSetSize": 1235360,
+                "peakWorkingSetSize": 1328252,
+                "privateBytes": 1176536
+              }
+            }
+          ]
+        },
+        {
+          "density": "high",
+          "diagnostic": true,
+          "payload": {
+            "pages": 500,
+            "blocksPerDocument": 100,
+            "commits": 150,
+            "scripts": 1000,
+            "projectsPerRoot": 100,
+            "savedTerminals": 20,
+            "terminalLines": 200
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 0,
+            "projects": 20,
+            "git": 0,
+            "scripts": 0,
+            "cabinets": 0,
+            "queryViews": 0,
+            "terminals": 20,
+            "elements": 55954,
+            "notesBlocks": 0,
+            "gitCommits": 0,
+            "scriptRows": 0,
+            "blur": "blur(8px) saturate(1.2)",
+            "dotsVisibility": "visible"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 3,
+              "maxInterval": 316.3999999999942,
+              "medianInterval": 266.6000000000058
+            },
+            "continuous": {
+              "samples": 64,
+              "maxInterval": 399.8999999999942,
+              "medianInterval": 266.3999999999942
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 249.79999999998836,
+              "medianInterval": 33.39999999999418
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 71
+          },
+          "terminalMockCalls": 20,
+          "processMemoryAfterKB": [
+            {
+              "type": "Browser",
+              "memory": {
+                "workingSetSize": 117884,
+                "peakWorkingSetSize": 161656,
+                "privateBytes": 83884
+              }
+            },
+            {
+              "type": "GPU",
+              "memory": {
+                "workingSetSize": 280364,
+                "peakWorkingSetSize": 295540,
+                "privateBytes": 243880
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 57404,
+                "peakWorkingSetSize": 58088,
+                "privateBytes": 17588
+              }
+            },
+            {
+              "type": "Tab",
+              "memory": {
+                "workingSetSize": 937184,
+                "peakWorkingSetSize": 1059228,
+                "privateBytes": 871896
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 115576,
+                "peakWorkingSetSize": 115576,
+                "privateBytes": 26776
+              }
+            }
+          ],
+          "traceWork": {
+            "Paint": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 1276,
+              "aggregateMs": 964.579,
+              "maxMs": 24.983
+            },
+            "RasterTask": {
+              "threads": [
+                "ThreadPoolForegroundWorker"
+              ],
+              "count": 2446,
+              "aggregateMs": 371.02,
+              "maxMs": 4.045
+            },
+            "Layerize": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 64,
+              "aggregateMs": 14880.972,
+              "maxMs": 368.946
+            },
+            "Commit": {
+              "threads": [
+                "CrRendererMain",
+                "CrBrowserMain"
+              ],
+              "count": 65,
+              "aggregateMs": 50.489,
+              "maxMs": 1.36
+            },
+            "Layout": {
+              "threads": [],
+              "count": 0,
+              "aggregateMs": 0,
+              "maxMs": 0
+            },
+            "UpdateLayoutTree": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 58,
+              "aggregateMs": 3.898,
+              "maxMs": 0.143
+            },
+            "FunctionCall": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 359,
+              "aggregateMs": 95.651,
+              "maxMs": 77.563
+            }
+          }
+        },
+        {
+          "density": "low",
+          "diagnostic": true,
+          "payload": {
+            "pages": 500,
+            "blocksPerDocument": 10,
+            "commits": 15,
+            "scripts": 20,
+            "projectsPerRoot": 100,
+            "savedTerminals": 20,
+            "terminalLines": 1
+          },
+          "counts": {
+            "apps": 20,
+            "notes": 0,
+            "projects": 20,
+            "git": 0,
+            "scripts": 0,
+            "cabinets": 0,
+            "queryViews": 0,
+            "terminals": 20,
+            "elements": 55794,
+            "notesBlocks": 0,
+            "gitCommits": 0,
+            "scriptRows": 0,
+            "blur": "blur(8px) saturate(1.2)",
+            "dotsVisibility": "visible"
+          },
+          "panPhases": {
+            "start": {
+              "samples": 3,
+              "maxInterval": 316.5,
+              "medianInterval": 266.1180000000022
+            },
+            "continuous": {
+              "samples": 63,
+              "maxInterval": 383,
+              "medianInterval": 266.40000000000873
+            },
+            "stop": {
+              "samples": 3,
+              "maxInterval": 283.3000000000029,
+              "medianInterval": 16.69999999999709
+            }
+          },
+          "validity": {
+            "focused": true,
+            "visible": true,
+            "focusLosses": 0,
+            "hidden": 0,
+            "samples": 70
+          },
+          "terminalMockCalls": 20,
+          "processMemoryAfterKB": [
+            {
+              "type": "Browser",
+              "memory": {
+                "workingSetSize": 118052,
+                "peakWorkingSetSize": 161924,
+                "privateBytes": 83536
+              }
+            },
+            {
+              "type": "GPU",
+              "memory": {
+                "workingSetSize": 275000,
+                "peakWorkingSetSize": 295808,
+                "privateBytes": 237380
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 57568,
+                "peakWorkingSetSize": 58168,
+                "privateBytes": 17824
+              }
+            },
+            {
+              "type": "Tab",
+              "memory": {
+                "workingSetSize": 802952,
+                "peakWorkingSetSize": 950068,
+                "privateBytes": 736656
+              }
+            },
+            {
+              "type": "Utility",
+              "memory": {
+                "workingSetSize": 112372,
+                "peakWorkingSetSize": 112372,
+                "privateBytes": 26684
+              }
+            }
+          ],
+          "traceWork": {
+            "Paint": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 1280,
+              "aggregateMs": 957.848,
+              "maxMs": 24.811
+            },
+            "RasterTask": {
+              "threads": [
+                "ThreadPoolForegroundWorker"
+              ],
+              "count": 2446,
+              "aggregateMs": 340.215,
+              "maxMs": 3.756
+            },
+            "Layerize": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 63,
+              "aggregateMs": 14825.72,
+              "maxMs": 379.719
+            },
+            "Commit": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 63,
+              "aggregateMs": 49.652,
+              "maxMs": 1.99
+            },
+            "Layout": {
+              "threads": [],
+              "count": 0,
+              "aggregateMs": 0,
+              "maxMs": 0
+            },
+            "UpdateLayoutTree": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 60,
+              "aggregateMs": 3.893,
+              "maxMs": 0.172
+            },
+            "FunctionCall": {
+              "threads": [
+                "CrRendererMain"
+              ],
+              "count": 356,
+              "aggregateMs": 16.745,
+              "maxMs": 0.661
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

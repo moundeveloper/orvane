@@ -16,6 +16,7 @@ const summaries = directories.map((directory) => {
   const result = read(join(directory, "results.json"));
   if (
     !result.comparisonsCompleted ||
+    result.failure ||
     result.results.some(
       (r: any) =>
         !r.validity.focused ||
@@ -98,6 +99,7 @@ const summaries = directories.map((directory) => {
           [
             "Paint",
             "RasterTask",
+            "Layerize",
             "GpuRasterBuffer::Playback",
             "Layout",
             "UpdateLayoutTree",

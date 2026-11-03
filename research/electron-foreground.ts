@@ -6,6 +6,7 @@ export async function launchElectronFixture(
   root: string,
   directory: string,
   port: number,
+  fixture = { scripts: 1000 },
 ) {
   const require = createRequire(import.meta.url);
   const env = {
@@ -28,7 +29,10 @@ export async function launchElectronFixture(
       "globalThis.__name = function (target) { return target; };",
     );
     const metadata = await application.evaluate(
-      async ({ app, BrowserWindow, ipcMain, screen, powerMonitor }) => {
+      async (
+        { app, BrowserWindow, ipcMain, screen, powerMonitor },
+        fixture,
+      ) => {
         const state = { errors: [] as string[], calls: [] as string[] };
         (globalThis as any).foregroundNetSuite = state;
         for (const channel of [
@@ -49,7 +53,7 @@ export async function launchElectronFixture(
             state.calls.push(op);
             if (op === "scripts")
               return {
-                rows: Array.from({ length: 1000 }, (_, i) => ({
+                rows: Array.from({ length: fixture.scripts }, (_, i) => ({
                   id: i + 1,
                   name: `Script ${i}`,
                   scriptfile: `script-${i}.js`,
@@ -143,6 +147,7 @@ export async function launchElectronFixture(
           profileIsolated: true,
         };
       },
+      fixture,
     );
     await page.locator('main[data-ready="true"]').waitFor();
     await page.locator('main[data-saved="true"]').waitFor();

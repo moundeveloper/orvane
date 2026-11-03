@@ -21,10 +21,32 @@ export const workload = {
   projectsPerRoot: 100,
   savedTerminals: 20,
 };
+export type ContentProfile = "mixed" | "notes" | "scripts" | "git" | "projects";
+export function contentWorkload(
+  density: "standard" | "low" | "high" = "standard",
+) {
+  return {
+    pages: workload.pages,
+    folders: workload.folders,
+    projectsPerRoot: workload.projectsPerRoot,
+    savedTerminals: workload.savedTerminals,
+    blocksPerDocument: density === "low" ? 10 : workload.blocksPerDocument,
+    scripts: density === "low" ? 20 : workload.scripts,
+    commits: density === "low" ? 15 : 150,
+    terminalLines: density === "standard" ? 0 : density === "low" ? 1 : 200,
+  };
+}
 export function seedForegroundFixture(
   directory: string,
-  options: { appCount?: number; innerTabs?: boolean } = {},
+  options: {
+    appCount?: number;
+    innerTabs?: boolean;
+    profile?: ContentProfile;
+    density?: "standard" | "low" | "high";
+  } = {},
 ) {
+  const settings = contentWorkload(options.density);
+  const profile = options.profile ?? "mixed";
   const count = options.appCount ?? 50;
   if (![5, 10, 20, 35, 50].includes(count))
     throw Error("Unsupported fixture app count.");
@@ -43,7 +65,16 @@ export function seedForegroundFixture(
     .sort((a, b) => b.remainder - a.remainder);
   const remaining = count - allocated.reduce((sum, n) => sum + n, 0);
   for (let i = 0; i < remaining; i++) allocated[order[i]!.i]!++;
-  const [notesCount, netsuiteCount, gitCount, projectsCount] = allocated as [
+  const selected =
+    profile === "mixed"
+      ? allocated
+      : [
+          profile === "notes" ? count : 0,
+          profile === "scripts" ? count : 0,
+          profile === "git" ? count : 0,
+          profile === "projects" ? count : 0,
+        ];
+  const [notesCount, netsuiteCount, gitCount, projectsCount] = selected as [
     number,
     number,
     number,
@@ -62,7 +93,14 @@ export function seedForegroundFixture(
     if (kind === "notes")
       block.value = JSON.stringify({ active: "page-0", tabs: ["page-0"] });
     if (kind === "netsuite") {
-      const view = i % 3 === 0 ? "scripts" : i % 3 === 1 ? "files" : "query";
+      const view =
+        profile === "scripts"
+          ? "scripts"
+          : i % 3 === 0
+            ? "scripts"
+            : i % 3 === 1
+              ? "files"
+              : "query";
       const extra = options.innerTabs && i === notesCount;
       const tabs = extra
         ? [
@@ -108,8 +146,18 @@ export function seedForegroundFixture(
       id: `app-${i}`,
       name: `${kind} ${i}`,
       icon: "app",
-      x: i === 0 ? 40 : 1400 + ((i - 1) % 7) * 1240,
-      y: i === 0 ? 90 : 90 + Math.floor((i - 1) / 7) * 800,
+      x:
+        profile !== "mixed"
+          ? 40 + (i % 5) * 1240
+          : i === 0
+            ? 40
+            : 1400 + ((i - 1) % 7) * 1240,
+      y:
+        profile !== "mixed"
+          ? 90 + Math.floor(i / 5) * 800
+          : i === 0
+            ? 90
+            : 90 + Math.floor((i - 1) / 7) * 800,
       width: 1200,
       height: 760,
       blocks: [block],
@@ -155,12 +203,12 @@ export function seedForegroundFixture(
         collection: "blocks",
         action: "replaceBlocks",
         pageId: `page-${page}`,
-        rows: Array.from({ length: workload.blocksPerDocument }, (_, i) => ({
+        rows: Array.from({ length: settings.blocksPerDocument }, (_, i) => ({
           id: `body-${page}-${i}`,
           pageId: `page-${page}`,
           type: "paragraph",
           html:
-            i === workload.blocksPerDocument - 1
+            i === settings.blocksPerDocument - 1
               ? ""
               : `Document ${page} paragraph ${i}: ${"fixture text ".repeat(30)}`,
           indent: 0,
@@ -188,7 +236,10 @@ export function seedForegroundFixture(
   };
 }
 
-export function assertForegroundDocuments(directory: string) {
+export function assertForegroundDocuments(
+  directory: string,
+  blocks = workload.blocksPerDocument,
+) {
   const notes = new NotesService(directory);
   try {
     for (let page = 0; page < 2; page++) {
@@ -198,7 +249,7 @@ export function assertForegroundDocuments(directory: string) {
         pageId: `page-${page}`,
       }) as { position: number; html: string }[];
       if (
-        rows.length !== workload.blocksPerDocument ||
+        rows.length !== blocks ||
         !rows
           .find((row) => row.position === 0)
           ?.html.startsWith(`Document ${page} paragraph 0`)
@@ -214,9 +265,21 @@ export function assertForegroundDocuments(directory: string) {
 
 // Only fixed fixture responses are supported; unexpected operations fail instead
 // of reaching a user's repository, filesystem or command execution endpoint.
-export function externalRead(path: string): unknown {
+export function externalRead(
+  path: string,
+  settings = contentWorkload(),
+): unknown {
   if (path === "/__orvane/projects/terminal/run")
-    return { stdOut: "Controlled fixture output\n", stdErr: "", exitCode: 0 };
+    return {
+      stdOut: settings.terminalLines
+        ? Array.from(
+            { length: settings.terminalLines },
+            (_, i) => `Controlled fixture output ${i}\n`,
+          ).join("")
+        : "Controlled fixture output\n",
+      stdErr: "",
+      exitCode: 0,
+    };
   // Terminal layout persistence is acknowledged only in this disposable
   // fixture; no terminal command or filesystem operation is implemented.
   if (path === "/__orvane/projects/terminal/state") return { saved: true };
@@ -231,9 +294,10 @@ export function externalRead(path: string): unknown {
   if (path === "/__orvane/git/git_status") return { files: [] };
   if (path === "/__orvane/git/git_history")
     return {
-      commits: Array.from({ length: 150 }, (_, i) => ({
+      commits: Array.from({ length: settings.commits }, (_, i) => ({
         hash: String(i).padStart(40, "0"),
-        parents: i < 149 ? [String(i + 1).padStart(40, "0")] : [],
+        parents:
+          i < settings.commits - 1 ? [String(i + 1).padStart(40, "0")] : [],
         author: "Fixture",
         date: "2026-11-02",
         subject: `Commit ${i}`,
