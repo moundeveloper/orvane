@@ -55,4 +55,7 @@ test("NetSuite auto sign-in covers sandboxes and listed accounts, most recent lo
   ];
   const page = { origin: "https://1964539-sb2.app.netsuite.com", account: "1964539-sb2" };
   assert.deepEqual(autoLoginCandidates(logins, page).map((l) => l.id), ["b", "a"]);
+  // system.netsuite.com with no account: any saved NetSuite login.
+  const system = { origin: "https://system.netsuite.com", account: undefined };
+  assert.deepEqual(autoLoginCandidates(logins, system).map((l) => l.id), ["c", "b", "a"]);
 });

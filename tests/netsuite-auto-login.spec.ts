@@ -282,6 +282,21 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
     // The Orvane window still can't ask for a password.
     const api = await page.evaluate(() => Object.keys((window as any).orvaneDesktop.passwords).join(","));
     expect(api).not.toMatch(/reveal|get|fill/);
+
+    // A new tab straight on system.netsuite.com (no account named, none
+    // headed to): NetSuite signs in to the default account, so it is allowed.
+    await browser.getByRole("button", { name: "Saved passwords" }).click();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await addressBar.click();
+    posts.length = 0;
+    await browser.getByRole("button", { name: "New tab" }).click();
+    await expect(tabs).toHaveCount(2);
+    await addressBar.fill("https://system.netsuite.com/pages/customerlogin.jsp?country=US");
+    await addressBar.focus();
+    await page.keyboard.press("Enter");
+    await expect(tabs.nth(1)).toContainText("NetSuite Home", { timeout: 20000 });
+    expect(posts).toEqual(["system.netsuite.com"]);
   } finally {
     await app.close();
     await new Promise((done) => site.close(done));

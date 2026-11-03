@@ -74,7 +74,8 @@ const baseAccount = (account) => account?.replace(/-[a-z]+\d*$/, "");
 
 /** Saved logins that may sign in to this login page, best first: one saved
  * on this page's own host, on system.netsuite.com, or on another
- * environment of the same account (its production or another sandbox). */
+ * environment of the same account (its production or another sandbox).
+ * With no account known (system.netsuite.com), any saved NetSuite login. */
 export function autoLoginCandidates(logins, login) {
   return logins
     .filter((saved) => {
@@ -87,8 +88,8 @@ export function autoLoginCandidates(logins, login) {
         return false;
       }
       if (!isNetSuitePage(saved.origin)) return false;
-      if (host === SYSTEM_HOST) return true;
-      return !!login.account && baseAccount(savedAccount(saved.origin)) === baseAccount(login.account);
+      if (host === SYSTEM_HOST || !login.account) return true;
+      return baseAccount(savedAccount(saved.origin)) === baseAccount(login.account);
     })
     .sort((a, b) => Math.max(b.used ?? 0, b.updated) - Math.max(a.used ?? 0, a.updated));
 }

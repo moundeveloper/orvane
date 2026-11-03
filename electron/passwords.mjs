@@ -242,11 +242,11 @@ export function setupPasswords({ partition, isOrvane, folder }) {
     const page = origin && autoLoginTab(event) && netSuiteLogin(event.senderFrame.url);
     if (!page || page.origin !== origin) return;
     const login = { ...page, account: page.account ?? headedTo.get(event.sender.id) };
-    if (!login.account) {
-      notice(event.sender, "unknown", origin);
+    // system.netsuite.com opened directly names no account: NetSuite signs
+    // in to the user's default one, so it is allowed. A known account must
+    // be one auto sign-in covers.
+    if (login.account ? !autoLoginAccount(login.account) : origin !== "https://system.netsuite.com")
       return;
-    }
-    if (!autoLoginAccount(login.account)) return;
     if (!(await ready())) return;
     const contents = event.sender;
     let pending = attempts.get(contents.id);
