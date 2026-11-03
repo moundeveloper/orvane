@@ -381,6 +381,62 @@ test("commit search finds older commits across the whole history and lists only 
   await search.fill("");
   await expect(rows).toHaveCount(150);
 });
+test("dropdown lists scale with the canvas zoom like the app around them", async ({
+  page,
+}, info) => {
+  const repo = await repository(info.outputPath("Zoomed select"));
+  await page.addInitScript(() =>
+    localStorage.setItem("orvane.examples.v1", "installed"),
+  );
+  await page.goto("/");
+  await page.getByRole("button", { name: "Workspace options" }).click();
+  await page
+    .getByRole("button", { name: "Create Git viewer", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Choose a folder", exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Local folder path" })
+    .fill(repo.path);
+  await page.getByRole("button", { name: "Go", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Use this folder", exact: true })
+    .click();
+  const trigger = page.getByRole("combobox", { name: "Git history order" });
+  await expect(trigger).toBeVisible();
+  const scale = () =>
+    trigger.evaluate((el) => el.getBoundingClientRect().width / (el as HTMLElement).offsetWidth);
+  const box = await page.locator(".git-viewer").boundingBox();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, 600);
+  await page.keyboard.up("Control");
+  await expect.poll(scale).toBeLessThan(0.75);
+  await page.waitForTimeout(400);
+  const zoom = await scale();
+  await trigger.click();
+  const list = page.getByRole("listbox", { name: "Git history order" });
+  await expect(list).toBeVisible();
+  const sizes = await page.evaluate(() => {
+    const list = document.querySelector(".select-popover") as HTMLElement;
+    const trigger = document.querySelector('[role=combobox][aria-label="Git history order"]') as HTMLElement;
+    const option = list.querySelector("button")!;
+    return {
+      option: option.getBoundingClientRect().height,
+      optionCss: option.offsetHeight,
+      listWidth: list.getBoundingClientRect().width,
+      listCss: list.offsetWidth,
+      listTop: list.getBoundingClientRect().top,
+      triggerBottom: trigger.getBoundingClientRect().bottom,
+    };
+  });
+  // On screen, the list is as zoomed out as the app.
+  expect(sizes.option / sizes.optionCss).toBeCloseTo(zoom, 1);
+  expect(sizes.listWidth / sizes.listCss).toBeCloseTo(zoom, 1);
+  // And still opens right under its trigger.
+  expect(Math.abs(sizes.listTop - sizes.triggerBottom)).toBeLessThan(10);
+});
 test("folder picker saves a local Git workspace and preserves selection across reloads", async ({
   page,
 }, info) => {

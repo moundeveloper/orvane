@@ -61,6 +61,7 @@ const position = ref({
   width: "180px",
   maxHeight: "240px",
   fontSize: "11px",
+  zoom: "1",
 });
 const label = computed(
   () =>
@@ -72,19 +73,25 @@ const id = `select-${crypto.randomUUID()}`;
 function place() {
   if (!trigger.value) return;
   const r = trigger.value.getBoundingClientRect();
-  const height = Math.min(248, options.value.length * 32 + 10);
+  // The list lives outside the canvas: zoom it by the trigger's on-screen
+  // scale so it matches the app at any canvas zoom. CSS zoom also scales
+  // left/top, so those are given in unzoomed pixels.
+  const scale = r.width / (trigger.value.offsetWidth || r.width) || 1;
+  const height = Math.min(248, options.value.length * 32 + 10) * scale;
   const below = innerHeight - r.bottom;
+  const left = Math.max(8, Math.min(innerWidth - r.width - 8, r.left));
+  const top =
+    below < height && r.top > below
+      ? Math.max(8, r.top - height - 5 * scale)
+      : r.bottom + 5 * scale;
   position.value = {
-    left: Math.max(8, Math.min(innerWidth - r.width - 8, r.left)) + "px",
-    top:
-      (below < height && r.top > below
-        ? Math.max(8, r.top - height - 5)
-        : r.bottom + 5) + "px",
-    width: Math.max(150, r.width) + "px",
-    maxHeight: Math.max(80, Math.min(248, Math.max(below, r.top) - 16)) + "px",
-    fontSize:
-      Math.max(10, Math.min(15, (11 * r.width) / trigger.value.offsetWidth)) +
-      "px",
+    left: left / scale + "px",
+    top: top / scale + "px",
+    width: Math.max(150, trigger.value.offsetWidth) + "px",
+    maxHeight:
+      Math.max(80, Math.min(248, (Math.max(below, r.top) - 16) / scale)) + "px",
+    fontSize: "11px",
+    zoom: String(scale),
   };
 }
 function show() {
