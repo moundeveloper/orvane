@@ -422,5 +422,11 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
     return true;
   });
 
+  /** A page Orvane itself (re)loads may sign in again, unless its login
+   * failed (wrong password: paused until it changes or a sign-in works). */
+  track.resetAutoLogin = (contents) => {
+    const pending = attempts.get(contents.id);
+    if (pending && !failing.has(pending.login)) attempts.delete(contents.id);
+  };
   return track;
 }

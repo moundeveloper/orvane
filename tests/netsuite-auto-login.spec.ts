@@ -348,6 +348,20 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
     await row.getByRole("button", { name: "Refresh" }).click();
     await expect.poll(() => posts.slice(), { timeout: 20000 }).toEqual(["1964539-sb1.app.netsuite.com"]);
     await expect(row).toContainText("ready", { timeout: 20000 });
+    posts.length = 0;
+    // NetSuite signs the page out and sends it to system.netsuite.com by
+    // itself: the processing page follows and signs back in, untouched.
+    sessions.delete("1964539-sb1.app.netsuite.com");
+    await app.evaluate(({ webContents }) => {
+      const hidden = webContents
+        .getAllWebContents()
+        .find((c) => c.getType() === "window" && c.getURL().startsWith("https://1964539-sb1.app.netsuite.com/"))!;
+      return hidden.executeJavaScript(
+        "location.href = 'https://system.netsuite.com/pages/customerlogin.jsp?country=US'; 1",
+      );
+    });
+    await expect.poll(() => posts.slice(), { timeout: 20000 }).toEqual(["system.netsuite.com"]);
+    await expect(row).toContainText("ready", { timeout: 20000 });
   } finally {
     await app.close();
     await new Promise((done) => site.close(done));

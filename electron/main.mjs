@@ -143,6 +143,7 @@ function secure() {
     isProcessing: processing.owns,
     folder: app.getPath("userData"),
   });
+  processing.onSignInReset(trackPasswords.resetAutoLogin);
 
   app.on("web-contents-created", (_event, contents) => {
     if (contents.session === sites) trackPasswords(contents);

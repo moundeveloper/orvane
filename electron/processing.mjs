@@ -1,5 +1,5 @@
 import { BrowserWindow, ipcMain, webContents } from "electron";
-import { netSuiteLogin } from "./netsuite-login.mjs";
+import { isNetSuitePage, netSuiteLogin } from "./netsuite-login.mjs";
 
 // Headless, session-sharing browser pages owned by the Orvane window. Processing
 // pages never expose Node or a preload, and are not addressable by websites.
@@ -14,6 +14,21 @@ export function setupProcessing({ partition, isOrvane }) {
   const describe = entry => ({ id: entry.origin, origin: entry.origin, label: entry.label, status: entry.status, url: entry.window.webContents.isDestroyed() ? '' : entry.window.webContents.getURL(), autoRefresh: entry.autoRefresh });
   const update = entry => { if (!entry.owner.isDestroyed()) entry.owner.send('orvane:processing-changed'); };
   const onLogin = url => !!netSuiteLogin(url) || /\/app\/login\//i.test(site(url)?.pathname || '');
+  /** Set by passwords.mjs: lets a page Orvane (re)loads sign in again even
+   * after an earlier try in it was stopped. */
+  let resetSignIn = () => {};
+  /** Signed out and not signing back in: try again a few times. */
+  const RETRY_AFTER = 30000, RETRIES = 3;
+  function retryLater(entry) {
+    if (entry.retryTimer || entry.retries >= RETRIES || entry.window.isDestroyed()) return;
+    entry.retryTimer = setTimeout(() => {
+      entry.retryTimer = undefined;
+      if (entry.window.isDestroyed() || entry.status === 'ready' || entry.busy) return;
+      entry.retries++;
+      void load(entry).catch(() => {});
+    }, RETRY_AFTER);
+    entry.retryTimer.unref?.();
+  }
   // On a NetSuite login page, give auto sign-in (passwords.mjs) a moment to
   // finish before reporting the result.
   const signingIn = entry => new Promise(done => {
@@ -27,15 +42,26 @@ export function setupProcessing({ partition, isOrvane }) {
   function load(entry) {
     if (entry.loading) return entry.loading;
     entry.status = 'loading'; update(entry);
-    const pending = entry.window.loadURL(entry.target).then(() => signingIn(entry)).catch(error => {
+    resetSignIn(entry.window.webContents);
+    const contents = entry.window.webContents;
+    const pending = entry.window.loadURL(entry.target).then(() => signingIn(entry)).then(async () => {
+      // Signing in on system.netsuite.com can land on the user's default
+      // account: go back to this environment's own page.
+      const url = site(contents.getURL());
+      if (!contents.isDestroyed() && url && url.origin !== entry.origin && isNetSuitePage(url.href) && !onLogin(url.href)) {
+        await entry.window.loadURL(entry.target);
+        await signingIn(entry);
+      }
+    }).then(() => { if (entry.status !== 'ready') retryLater(entry); }).catch(error => {
       if (entry.status !== 'sign-in required') entry.status = 'unavailable';
       update(entry);
+      retryLater(entry);
       throw error;
     }).finally(() => { if (entry.loading === pending) entry.loading = undefined; });
     entry.loading = pending;
     return pending;
   }
-  const dispose = entry => { clearInterval(entry.timer); entries.delete(key(entry.owner, entry.origin)); if (!entry.window.isDestroyed()) entry.window.destroy(); update(entry); };
+  const dispose = entry => { clearInterval(entry.timer); clearTimeout(entry.retryTimer); entries.delete(key(entry.owner, entry.origin)); if (!entry.window.isDestroyed()) entry.window.destroy(); update(entry); };
   async function create(owner, source) {
     const u = site(source.getURL());
     if (!u) throw Error('Open a web page before creating a processing tab.');
@@ -47,17 +73,30 @@ export function setupProcessing({ partition, isOrvane }) {
     const parent = BrowserWindow.fromWebContents(owner);
     if (!parent) throw Error('Browser window is unavailable.');
     const window = new BrowserWindow({ show: false, parent, webPreferences: { partition: 'persist:orvane-browser', sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
-    const entry = { origin: u.origin, label: u.hostname, owner, window, target, status: 'loading', autoRefresh: ns, busy: 0, timer: undefined, loading: undefined };
+    const entry = { origin: u.origin, label: u.hostname, owner, window, target, status: 'loading', autoRefresh: ns, busy: 0, timer: undefined, loading: undefined, retries: 0, retryTimer: undefined };
     entries.set(k, entry);
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-    window.webContents.on('will-navigate', (event, url) => { if (site(url)?.origin !== entry.origin) event.preventDefault(); });
+    // Signed out, NetSuite sends the page to a login page on another of its
+    // hosts (system.netsuite.com…): follow it so it can sign back in.
+    window.webContents.on('will-navigate', (event, url) => { if (site(url)?.origin !== entry.origin && !(ns && isNetSuitePage(url))) event.preventDefault(); });
     window.webContents.on('will-redirect', (event, url) => { if (site(url)?.origin !== entry.origin && !(netSuite(entry.origin) && site(url)?.protocol === 'https:' && /(^|\.)netsuite\.com$/i.test(site(url)?.hostname || ''))) { event.preventDefault(); entry.status = 'sign-in required'; update(entry); } });
     // Main-frame navigations only: iframes and dashboard portlets also start
     // loads, and the status must not go back to "loading" for those.
-    window.webContents.on('did-start-navigation', (details, _url, inPlace, legacyMain) => { if ((details?.isMainFrame ?? legacyMain) && !(details?.isSameDocument ?? inPlace)) { entry.status = 'loading'; update(entry); } });
-    window.webContents.on('did-finish-load', () => { const url = site(window.webContents.getURL()); entry.status = url?.origin === entry.origin && !onLogin(url.href) ? 'ready' : 'sign-in required'; update(entry); });
+    window.webContents.on('did-start-navigation', (details, legacyUrl, inPlace, legacyMain) => {
+      if (!(details?.isMainFrame ?? legacyMain) || (details?.isSameDocument ?? inPlace)) return;
+      // The session ended while the page was in use: a new sign-in.
+      if (entry.status === 'ready' && onLogin(details?.url ?? legacyUrl)) resetSignIn(window.webContents);
+      entry.status = 'loading'; update(entry);
+    });
+    window.webContents.on('did-finish-load', () => {
+      const url = site(window.webContents.getURL());
+      entry.status = url?.origin === entry.origin && !onLogin(url.href) ? 'ready' : 'sign-in required';
+      if (entry.status === 'ready') { entry.retries = 0; clearTimeout(entry.retryTimer); entry.retryTimer = undefined; }
+      else if (!entry.loading) retryLater(entry);
+      update(entry);
+    });
     window.webContents.on('did-fail-load', (_e, code, _description, _url, main) => { if (main && code !== -3) { entry.status = 'unavailable'; update(entry); } });
-    window.on('closed', () => { clearInterval(entry.timer); entries.delete(k); update(entry); });
+    window.on('closed', () => { clearInterval(entry.timer); clearTimeout(entry.retryTimer); entries.delete(k); update(entry); });
     owner.once('destroyed', () => { if (!window.isDestroyed()) window.destroy(); });
     entry.timer = setInterval(() => { if (entry.autoRefresh && !entry.busy && entry.status === 'ready' && !window.isDestroyed()) void load(entry).catch(() => {}); }, 8 * 60 * 1000);
     entry.timer.unref?.();
@@ -124,9 +163,9 @@ export function setupProcessing({ partition, isOrvane }) {
   }
   ipcMain.handle('orvane:processing-list', e => { assertOwner(e); return list(e.sender); });
   ipcMain.handle('orvane:processing-create', async (e, id) => { assertOwner(e); const source = listSources(e.sender).find(w => w.id === id); if (!source) throw Error('Browser tab is no longer available.'); return describe(await create(e.sender, source)); });
-  ipcMain.handle('orvane:processing-refresh', async (e, origin) => { assertOwner(e); const entry = entries.get(key(e.sender, origin)); if (!entry || entry.window.isDestroyed()) throw Error('Processing tab is no longer available.'); if (entry.busy) throw Error('This processing tab is busy.'); await load(entry); return describe(entry); });
+  ipcMain.handle('orvane:processing-refresh', async (e, origin) => { assertOwner(e); const entry = entries.get(key(e.sender, origin)); if (!entry || entry.window.isDestroyed()) throw Error('Processing tab is no longer available.'); if (entry.busy) throw Error('This processing tab is busy.'); entry.retries = 0; await load(entry); return describe(entry); });
   ipcMain.handle('orvane:processing-close', (e, origin) => { assertOwner(e); const entry = entries.get(key(e.sender, origin)); if (!entry) return; if (entry.busy) throw Error('This processing tab is busy.'); stopped.add(key(e.sender, origin)); dispose(entry); });
   /** A hidden processing page (they may sign in by themselves too). */
   const owns = contents => [...entries.values()].some(e => !e.window.isDestroyed() && e.window.webContents === contents);
-  return { environments, acquire, openRecord, sourceChanged, owns };
+  return { environments, acquire, openRecord, sourceChanged, owns, onSignInReset: fn => { resetSignIn = fn; } };
 }
