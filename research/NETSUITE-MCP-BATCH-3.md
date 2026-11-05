@@ -2,6 +2,8 @@
 
 Date: 5 November 2026. Branch: `codex/netsuite-mcp-migration`.
 
+Implementation commit: `51b565e`.
+
 ## Implemented
 
 The Desktop-owned Node worker records request intent before dispatch and assigns a UUID request ID. Completed reads and executor errors return that ID. SQLite stores operation, timestamps, outcome, sanitized error code, input/target hashes and available origin; it stores no SQL, identity tokens, result rows or remote error messages. The journal uses WAL and FULL synchronous writes in the existing protected broker directory. It retains the latest 1,000 records, except running requests are never pruned.

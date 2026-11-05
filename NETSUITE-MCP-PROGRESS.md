@@ -174,6 +174,8 @@ Live closing/reopening of Desktop, closing user views, sign-out/role changes and
 
 ## Batch 3 — Durable reads and observed session fences
 
+Implementation commit: `51b565e` — `feat: journal NetSuite reads and fence observed session changes`.
+
 - Added a worker-owned SQLite metadata journal with durable intent, request/error IDs, bounded history and interrupted-request recovery without replay. SQL, tokens and business rows are not stored.
 - Added `status` action `requests` with pagination, preserving the existing two MCP tool names. Older running brokers return `UPGRADE_PENDING` for history while existing reads remain available.
 - Added observed source lifecycle generations, target/token rotation, private gateway validation, and shared executor checks before/after reads and after queue/acquisition waits. Changed generations discard results, release reservations and do not retry.
