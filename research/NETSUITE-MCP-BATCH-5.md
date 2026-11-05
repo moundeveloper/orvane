@@ -2,6 +2,8 @@
 
 Date: 5 November 2026. Branch: `codex/netsuite-mcp-migration`.
 
+Implementation commit: `691a3a4`.
+
 ## Implemented behavior
 
 The dedicated profile now advertises three tools: existing status/query plus `orvane_netsuite_read`. The new tool takes an explicit target/identity, action, optional numeric ID, page and optional in-flight sharing. Older broker capabilities or a failed capability lookup prevent submission; existing status/query calls remain compatible.

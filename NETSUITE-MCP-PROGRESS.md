@@ -218,6 +218,8 @@ The redacted report is local and ignored by Git. This verifies the actual runnin
 
 ## Batch 5 — Typed script/deployment and File Cabinet metadata
 
+Implementation commit: `691a3a4` — `feat: add typed script and File Cabinet metadata reads`.
+
 - Added compact `orvane_netsuite_read`: `scripts`, `deployments` by script ID, top-level/child `folders`, and `files` by folder ID. Strict shared schema/registry compiles fixed ordered SELECTs and 100-row pages through the existing executor.
 - Preserved explicit identity, source-generation fences, optional sharing, bounds and per-caller journal IDs; journal outcomes now distinguish `read.<action>`. Capability checks prevent submission against older brokers.
 - Added a separate incremental legacy disposition map. These are partial native read replacements; source content, script filters, combined folder/breadcrumb contracts, record-type deployments, logs and other feature families remain pending.
