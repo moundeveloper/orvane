@@ -436,7 +436,7 @@ onBeforeUnmount(() => {
           ＋
         </button>
       </div>
-      <div class="notes-page-scroll">
+      <div class="notes-page-scroll" tabindex="0" aria-label="Note content">
         <PageView v-if="activePageId" :id="activePageId" />
         <EmptyState v-else />
       </div>

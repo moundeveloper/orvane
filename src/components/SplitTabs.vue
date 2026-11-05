@@ -283,7 +283,9 @@ onBeforeUnmount(() => {
             }"
             draggable="true"
             :title="info(id).title || info(id).label"
-            @mousedown.middle.prevent="emit('close', id)"
+            @pointerdown.middle.stop.prevent
+            @mousedown.middle.stop.prevent
+            @auxclick.middle.stop.prevent="emit('close', id)"
             @contextmenu.prevent.stop="showMenu($event, id)"
             @dragstart="dragStart($event, id)"
             @dragend="dragEnd"

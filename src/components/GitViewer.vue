@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch, nextTick, onBeforeUnmount, defineAsyncComponent } from "vue";
+import {
+  computed,
+  ref,
+  watch,
+  nextTick,
+  onBeforeUnmount,
+  defineAsyncComponent,
+} from "vue";
 import type { Block } from "../model";
 import {
   gitRequest,
@@ -118,6 +125,21 @@ const detail = ref<GitCommitDetail>(),
   truncated = ref(false),
   detailBusy = ref(false);
 const changeMode = ref<"worktree" | "index">("worktree");
+const changeGroups = computed(() => [
+  {
+    mode: "index" as const,
+    label: "Staged",
+    files:
+      status.value?.files.filter(
+        (file) => file.index !== " " && file.index !== "?",
+      ) || [],
+  },
+  {
+    mode: "worktree" as const,
+    label: "Unstaged",
+    files: status.value?.files.filter((file) => file.worktree !== " ") || [],
+  },
+]);
 const order = ref<"date" | "topo">("date");
 const mainElement = ref<HTMLElement>();
 const historyShare = ref(0.53);
@@ -383,10 +405,10 @@ async function selectFile(
         e instanceof Error ? e.message : "The diff could not be loaded.";
   }
 }
-function selectChange(path: string, index: string) {
+function selectChange(path: string, mode: "worktree" | "index") {
   clearDetails();
   tab.value = "changes";
-  void selectFile(path, index !== " " && index !== "?" ? "index" : "worktree");
+  void selectFile(path, mode);
 }
 function changeTab(value: "history" | "changes") {
   tab.value = value;
@@ -552,7 +574,7 @@ function curve(from: number, to: number, top = 0, bottom = 36) {
             :class="{ active: tab === 'history' }"
             @click="changeTab('history')"
           >
-            History</button
+            Committed</button
           ><button
             :class="{ active: tab === 'changes' }"
             @click="changeTab('changes')"
@@ -566,6 +588,7 @@ function curve(from: number, to: number, top = 0, bottom = 36) {
           aria-label="Git branch filter"
           :options="[
             { value: '', label: 'All branches' },
+            { value: 'HEAD', label: 'Current branch' },
             ...(history?.refs || []).map((r) => ({
               value: r.fullName,
               label: r.name,
@@ -731,32 +754,50 @@ function curve(from: number, to: number, top = 0, bottom = 36) {
           </div>
         </div>
         <div v-else class="git-changes">
+          <p class="git-inline-message">
+            Uncommitted changes · {{ history?.branch }}
+          </p>
           <p v-if="!status?.files.length" class="git-inline-message">
             Working tree clean.
           </p>
-          <button
-            v-for="file in status?.files || []"
-            :key="file.path"
-            class="git-change-row"
-            :class="{ selected: selectedFile === file.path }"
-            @click="selectChange(file.path, file.index)"
+          <section
+            v-for="group in changeGroups"
+            :key="group.mode"
+            :aria-label="`${group.label} changes`"
           >
-            <span class="git-file-status">{{
-              file.index === "?"
-                ? "?"
-                : file.index !== " "
-                  ? file.index
-                  : file.worktree
-            }}</span
-            ><span>{{ file.path }}</span
-            ><small>{{
-              file.index === "?"
-                ? "Untracked"
-                : file.index !== " "
-                  ? "Staged"
-                  : "Modified"
-            }}</small>
-          </button>
+            <h3 class="git-change-heading">
+              {{ group.label }} <span>{{ group.files.length }}</span>
+            </h3>
+            <p v-if="!group.files.length" class="git-inline-message">
+              No {{ group.label.toLowerCase() }} changes.
+            </p>
+            <button
+              v-for="file in group.files"
+              :key="file.path"
+              class="git-change-row"
+              :class="{
+                selected:
+                  selectedFile === file.path && changeMode === group.mode,
+              }"
+              @click="selectChange(file.path, group.mode)"
+            >
+              <span class="git-file-status">{{
+                file.index === "?"
+                  ? "?"
+                  : group.mode === "index"
+                    ? file.index
+                    : file.worktree
+              }}</span
+              ><span>{{ file.path }}</span
+              ><small>{{
+                file.index === "?"
+                  ? "Untracked"
+                  : group.mode === "index"
+                    ? "Staged"
+                    : "Unstaged"
+              }}</small>
+            </button>
+          </section>
         </div>
         <div
           v-if="selectedHash || selectedFile"

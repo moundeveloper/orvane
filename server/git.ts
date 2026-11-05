@@ -310,7 +310,7 @@ export class GitService {
               .filter(Boolean)
           : [];
         let revision = "--all";
-        if (p.ref)
+        if (p.ref && (p.ref !== "HEAD" || head.trim()))
           revision = (
             await git(workspace.path, [
               "rev-parse",
@@ -320,7 +320,7 @@ export class GitService {
             ])
           ).trim();
         const log =
-          head.trim() || refs.length
+          (p.ref === "HEAD" ? head.trim() : head.trim() || refs.length)
             ? await git(workspace.path, [
                 "log",
                 p.order === "topo" ? "--topo-order" : "--date-order",

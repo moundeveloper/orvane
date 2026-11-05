@@ -1,5 +1,84 @@
 import { test, expect } from "./fixtures";
 
+test("arrow navigation keeps Notes blocks visible inside a scaled pane", async ({
+  page,
+}, info) => {
+  const timestamp = "2026-11-05";
+  await page.route("**/__orvane/notes/data", async (route) => {
+    const p = route.request().postDataJSON();
+    await route.fulfill({
+      json:
+        p.action !== "list"
+          ? {}
+          : p.collection === "pages"
+            ? [
+                {
+                  id: "a",
+                  title: "Keyboard navigation",
+                  type: "page",
+                  parentId: null,
+                  position: 0,
+                  trashedAt: null,
+                  createdAt: timestamp,
+                  updatedAt: timestamp,
+                },
+              ]
+            : Array.from({ length: 60 }, (_, position) => ({
+                id: `line-${position}`,
+                pageId: "a",
+                type: "paragraph",
+                html: position === 59 ? "" : `Line ${position}`,
+                indent: 0,
+                position,
+                createdAt: timestamp,
+                updatedAt: timestamp,
+              })),
+    });
+  });
+  await page.goto("/");
+  await page.evaluate(async () => {
+    const module = "/tests/notes-loading-harness.ts";
+    (window as any).notesLoadingFixture = (
+      await import(module)
+    ).mountNotesLoadingFixture();
+    document.getElementById("notes-loading-fixture")!.style.cssText =
+      "position:fixed;left:80px;top:80px;width:1000px;height:600px;transform:scale(.75);transform-origin:top left;z-index:99999;background:white";
+  });
+  const root = page.locator("#notes-loading-fixture");
+  const blocks = root.locator(".block-content");
+  await expect(blocks).toHaveCount(60);
+  await blocks.first().click();
+  for (let i = 0; i < 40; i++) {
+    await page.keyboard.press("End");
+    await page.keyboard.press("ArrowDown");
+    await expect(blocks.nth(i + 1)).toBeFocused();
+  }
+  const caretIsVisible = () =>
+    root.locator(".notes-page-scroll").evaluate((viewport) => {
+      const bounds = viewport.getBoundingClientRect();
+      const top = viewport.querySelector(".crumbs")!.getBoundingClientRect().bottom;
+      const caret = window
+        .getSelection()
+        ?.getRangeAt(0)
+        .getBoundingClientRect();
+      return (
+        !!caret && caret.top >= top && caret.bottom <= bounds.bottom
+      );
+    });
+  await expect.poll(caretIsVisible).toBe(true);
+  expect(
+    await root.locator(".notes-page-scroll").evaluate((el) => el.scrollTop),
+  ).toBeGreaterThan(0);
+  for (let i = 40; i > 0; i--) {
+    await page.keyboard.press("Home");
+    await page.keyboard.press("ArrowUp");
+    await expect(blocks.nth(i - 1)).toBeFocused();
+  }
+  await expect.poll(caretIsVisible).toBe(true);
+  await root.screenshot({ path: info.outputPath("notes-keyboard.png") });
+  await page.evaluate(() => (window as any).notesLoadingFixture.unmount());
+});
+
 test("initial and switched Notes documents wait for their own data before creating editable blocks", async ({
   page,
 }) => {

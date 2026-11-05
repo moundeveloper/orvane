@@ -1,0 +1,2644 @@
+{
+  "capturedAt": "2026-11-05",
+  "sourceRoot": "C:/Projects/MagicNetsuiteExtension",
+  "method": "Static extraction of native tools/list, MCP App registrations, extension definitions, and shared tool schema JSON. No tool calls or NetSuite mutations performed.",
+  "limitations": [
+    "Includes configuration-gated legacy declarations.",
+    "Dynamic custom-tool names are excluded; export enabled definitions and perform a live tools/list handshake during P0 implementation.",
+    "Internal helper calls such as validate_skill_preflight are not public tools unless declared in these surfaces."
+  ],
+  "sourceFiles": [
+    {
+      "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+      "sha256": "7efc609d1eaa182f81163d65a43a9b806f7bf32b7b284371e26e1b546ca07cbb"
+    },
+    {
+      "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+      "sha256": "2460bce3d590a52367e2d5ced7e1d3c83828a765fb87a61fdaa0bf5f16718e6a"
+    },
+    {
+      "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+      "sha256": "49dbce1e298b829bd3edcffcb2f368d52680a716bbe5e94f18af200489879f57"
+    },
+    {
+      "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/dashboardTools.json",
+      "sha256": "194f29b021271f139aeee48ed13f4db1997c9bb5badee158b4a026ec77434167"
+    },
+    {
+      "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/browserTabTools.json",
+      "sha256": "3c73015bc0e0026aa65fc852e43dbce7b89126e1171366ebcb06416b9c862696"
+    }
+  ],
+  "counts": {
+    "uniqueDeclaredTools": 155,
+    "byFamily": {
+      "Context picker": 9,
+      "Custom tools": 5,
+      "Dashboard authoring": 15,
+      "Documentation and jobs": 4,
+      "Environment and status": 4,
+      "File Cabinet": 13,
+      "Quizzes": 4,
+      "Records, lists and metadata": 16,
+      "Scripts, deployments and logs": 3,
+      "Server execution, bundles and SDF": 9,
+      "Skills and preflight": 6,
+      "SuiteQL and catalog": 6,
+      "Suitelet and Browser control": 35,
+      "Template Studio and assets": 17,
+      "legacy template compatibility": 9
+    }
+  },
+  "tools": [
+    {
+      "name": "magic_netsuite_bridge_status",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1658,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Environment and status",
+      "plannedPhase": "P1",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_get_deployed_scripts",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1991,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7283,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Scripts, deployments and logs",
+      "plannedPhase": "P1",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_get_logs",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2009,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7301,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Scripts, deployments and logs",
+      "plannedPhase": "P1",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_get_scripts",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1942,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7234,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Scripts, deployments and logs",
+      "plannedPhase": "P1",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_list_accounts",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1759,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7043,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Environment and status",
+      "plannedPhase": "P1",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_switch_environment",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1739,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7024,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Environment and status",
+      "plannedPhase": "P1",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "ping",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1515,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 6795,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Environment and status",
+      "plannedPhase": "P1",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "suiteql_discover_field_values",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1834,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7125,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "SuiteQL and catalog",
+      "plannedPhase": "P1",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "suiteql_execute_query",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1818,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7109,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "SuiteQL and catalog",
+      "plannedPhase": "P1",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "suiteql_get_guide",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1509,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7058,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "SuiteQL and catalog",
+      "plannedPhase": "P1",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "suiteql_get_table_fields",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1788,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7081,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "SuiteQL and catalog",
+      "plannedPhase": "P1",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "suiteql_get_table_joins",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1803,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7095,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "SuiteQL and catalog",
+      "plannedPhase": "P1",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "suiteql_search_tables",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1774,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7068,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "SuiteQL and catalog",
+      "plannedPhase": "P1",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_create_folder",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2607,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7865,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "File Cabinet",
+      "plannedPhase": "P1/P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_delete_file",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2784,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8044,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "File Cabinet",
+      "plannedPhase": "P1/P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_delete_folder",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2803,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8063,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "File Cabinet",
+      "plannedPhase": "P1/P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_find_file",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2567,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7825,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "File Cabinet",
+      "plannedPhase": "P1/P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_find_folder",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2529,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7787,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "File Cabinet",
+      "plannedPhase": "P1/P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_get_script_files",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1975,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7267,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "File Cabinet",
+      "plannedPhase": "P1/P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_list_folder",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2550,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7808,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "File Cabinet",
+      "plannedPhase": "P1/P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_move_items",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2818,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8078,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "File Cabinet",
+      "plannedPhase": "P1/P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_read_file",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2588,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7846,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "File Cabinet",
+      "plannedPhase": "P1/P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_rename_file",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2738,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7998,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "File Cabinet",
+      "plannedPhase": "P1/P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_rename_folder",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2761,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8021,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "File Cabinet",
+      "plannedPhase": "P1/P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_update_file_content",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2698,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7957,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "File Cabinet",
+      "plannedPhase": "P1/P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_upload_file",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2626,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7885,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "File Cabinet",
+      "plannedPhase": "P1/P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_context_picker",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 821,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Context picker",
+      "plannedPhase": "P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_get_selected_context",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 2094,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Context picker",
+      "plannedPhase": "P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_list_file_cabinet_folder",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 2200,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Context picker",
+      "plannedPhase": "P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_list_record_types",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 2121,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Context picker",
+      "plannedPhase": "P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_load_record_context",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 2174,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Context picker",
+      "plannedPhase": "P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_read_file_context",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 2300,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Context picker",
+      "plannedPhase": "P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_save_selected_context",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 2065,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Context picker",
+      "plannedPhase": "P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_search_files",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 2252,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Context picker",
+      "plannedPhase": "P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_search_records",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 2140,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Context picker",
+      "plannedPhase": "P2",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_deploy_server_components",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8362,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Records, lists and metadata",
+      "plannedPhase": "P2/P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_create_list",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2138,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7434,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Records, lists and metadata",
+      "plannedPhase": "P2/P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_create_record",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2211,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7507,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Records, lists and metadata",
+      "plannedPhase": "P2/P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_create_script_field",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2302,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7598,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Records, lists and metadata",
+      "plannedPhase": "P2/P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_dump_cookies",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8879,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Records, lists and metadata",
+      "plannedPhase": "P2/P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_get_record_fields",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2285,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7581,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Records, lists and metadata",
+      "plannedPhase": "P2/P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_get_record_sublists",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2060,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7356,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Records, lists and metadata",
+      "plannedPhase": "P2/P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_inspect_custom_record_field",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2430,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7682,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Records, lists and metadata",
+      "plannedPhase": "P2/P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_list_items",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2118,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7414,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Records, lists and metadata",
+      "plannedPhase": "P2/P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_list_record_types",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2088,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7384,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Records, lists and metadata",
+      "plannedPhase": "P2/P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_lists",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2099,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7395,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Records, lists and metadata",
+      "plannedPhase": "P2/P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_load_record",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2036,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7332,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Records, lists and metadata",
+      "plannedPhase": "P2/P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_update_list",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2176,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7472,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Records, lists and metadata",
+      "plannedPhase": "P2/P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_update_metadata_record",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2457,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7709,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Records, lists and metadata",
+      "plannedPhase": "P2/P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_update_record_fields",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2250,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7546,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Records, lists and metadata",
+      "plannedPhase": "P2/P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_update_script_field",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2364,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7638,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Records, lists and metadata",
+      "plannedPhase": "P2/P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_create_quiz",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1613,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 6904,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Quizzes",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_dashboard_action",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/dashboardTools.json",
+          "line": 102,
+          "surface": "shared JSON schema"
+        }
+      ],
+      "featureFamily": "Dashboard authoring",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_dashboard_catalog",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/dashboardTools.json",
+          "line": 3,
+          "surface": "shared JSON schema"
+        }
+      ],
+      "featureFamily": "Dashboard authoring",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_dashboard_code",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/dashboardTools.json",
+          "line": 252,
+          "surface": "shared JSON schema"
+        }
+      ],
+      "featureFamily": "Dashboard authoring",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_dashboard_create",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/dashboardTools.json",
+          "line": 40,
+          "surface": "shared JSON schema"
+        }
+      ],
+      "featureFamily": "Dashboard authoring",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_dashboard_delete",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/dashboardTools.json",
+          "line": 84,
+          "surface": "shared JSON schema"
+        }
+      ],
+      "featureFamily": "Dashboard authoring",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_dashboard_export",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/dashboardTools.json",
+          "line": 290,
+          "surface": "shared JSON schema"
+        }
+      ],
+      "featureFamily": "Dashboard authoring",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_dashboard_get",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/dashboardTools.json",
+          "line": 26,
+          "surface": "shared JSON schema"
+        }
+      ],
+      "featureFamily": "Dashboard authoring",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_dashboard_history",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/dashboardTools.json",
+          "line": 333,
+          "surface": "shared JSON schema"
+        }
+      ],
+      "featureFamily": "Dashboard authoring",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_dashboard_import",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/dashboardTools.json",
+          "line": 310,
+          "surface": "shared JSON schema"
+        }
+      ],
+      "featureFamily": "Dashboard authoring",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_dashboard_list",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/dashboardTools.json",
+          "line": 12,
+          "surface": "shared JSON schema"
+        }
+      ],
+      "featureFamily": "Dashboard authoring",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_dashboard_node",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/dashboardTools.json",
+          "line": 166,
+          "surface": "shared JSON schema"
+        }
+      ],
+      "featureFamily": "Dashboard authoring",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_dashboard_render",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/dashboardTools.json",
+          "line": 238,
+          "surface": "shared JSON schema"
+        }
+      ],
+      "featureFamily": "Dashboard authoring",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_dashboard_run",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/dashboardTools.json",
+          "line": 137,
+          "surface": "shared JSON schema"
+        }
+      ],
+      "featureFamily": "Dashboard authoring",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_dashboard_update",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/dashboardTools.json",
+          "line": 58,
+          "surface": "shared JSON schema"
+        }
+      ],
+      "featureFamily": "Dashboard authoring",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_dashboard_validate",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/dashboardTools.json",
+          "line": 218,
+          "surface": "shared JSON schema"
+        }
+      ],
+      "featureFamily": "Dashboard authoring",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_delete_quiz",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1658,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 6946,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Quizzes",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_get_quiz",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1643,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 6934,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Quizzes",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_list_quizzes",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1637,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 6928,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Quizzes",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_list_skills",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1568,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1738,
+          "surface": "MCP App registration"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 6859,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Skills and preflight",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_load_skill",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1589,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1761,
+          "surface": "MCP App registration"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 6880,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Skills and preflight",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_prepare_tool",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1525,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 6810,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Skills and preflight",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_save_skill",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1546,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1718,
+          "surface": "MCP App registration"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 6831,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Skills and preflight",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_search_skills",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1578,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1749,
+          "surface": "MCP App registration"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 6869,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Skills and preflight",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_set_skill_enabled",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1600,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1773,
+          "surface": "MCP App registration"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 6891,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Skills and preflight",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_get_docs_batch",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1916,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7207,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Documentation and jobs",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_read_doc_page",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1868,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7159,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Documentation and jobs",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_search_docs",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1853,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7144,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Documentation and jobs",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_submit_docs_batch",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1883,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7174,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Documentation and jobs",
+      "plannedPhase": "P3",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_call_custom_tool",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1726,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7011,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Custom tools",
+      "plannedPhase": "P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_create_custom_tool",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1683,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 6968,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Custom tools",
+      "plannedPhase": "P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_search_custom_tools",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1673,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 6958,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Custom tools",
+      "plannedPhase": "P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_test_custom_tool",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1714,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 6999,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Custom tools",
+      "plannedPhase": "P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_update_custom_tool",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 1699,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 6984,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Custom tools",
+      "plannedPhase": "P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_check_task_status",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 3198,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8767,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Server execution, bundles and SDF",
+      "plannedPhase": "P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_get_bundle_components",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2510,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7763,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Server execution, bundles and SDF",
+      "plannedPhase": "P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_list_bundles",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2494,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 7747,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Server execution, bundles and SDF",
+      "plannedPhase": "P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_run_quick_script",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 3081,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8344,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Server execution, bundles and SDF",
+      "plannedPhase": "P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_sdf_deploy",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 2847,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8107,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Server execution, bundles and SDF",
+      "plannedPhase": "P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_sdf_import_object",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 3057,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8319,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Server execution, bundles and SDF",
+      "plannedPhase": "P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_sdf_list_objects",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 3036,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8297,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Server execution, bundles and SDF",
+      "plannedPhase": "P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_server_info",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 3169,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8738,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Server execution, bundles and SDF",
+      "plannedPhase": "P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_submit_task",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 3179,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8748,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Server execution, bundles and SDF",
+      "plannedPhase": "P4",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_browser_tabs",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/browserTabTools.json",
+          "line": 3,
+          "surface": "shared JSON schema"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_recreate_template_workflow",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 887,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Template Studio and assets",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_suitelet_click",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 2021,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_suitelet_control_open",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1873,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_suitelet_eval",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 2051,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_suitelet_fetch_html",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1839,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_suitelet_fill",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1985,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_suitelet_hover",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1940,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_suitelet_inspect",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1910,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_suitelet_probe_url",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1828,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_suitelet_proxy_request",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1850,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_suitelet_read",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 2036,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_suitelet_screenshot",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1922,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_suitelet_scroll",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1962,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_suitelet_select",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 2000,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_suitelet_stream_frame",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1808,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_suitelet_stream_input",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1817,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_suitelet_stream_list",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1797,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_suitelet_stream_start",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1786,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_suitelet_viewer",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 836,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_template_asset_delete",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 3155,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8481,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Template Studio and assets",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_template_asset_get_svg",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 3114,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8432,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Template Studio and assets",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_template_asset_list",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 3099,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8418,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Template Studio and assets",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_template_asset_save_svg",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_server/magiNetsuiteMCPServer.js",
+          "line": 3130,
+          "surface": "native MCP tools/list"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8448,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Template Studio and assets",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_template_session_get_current",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 946,
+          "surface": "MCP App registration"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8380,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Template Studio and assets",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_template_session_list",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 937,
+          "surface": "MCP App registration"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8371,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Template Studio and assets",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_template_session_patch",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1021,
+          "surface": "MCP App registration"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8517,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Template Studio and assets",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_template_session_read",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1006,
+          "surface": "MCP App registration"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8499,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Template Studio and assets",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_template_session_render",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1078,
+          "surface": "MCP App registration"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8628,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Template Studio and assets",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_template_session_screenshot",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1092,
+          "surface": "MCP App registration"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8654,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Template Studio and assets",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_template_session_set_current",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 993,
+          "surface": "MCP App registration"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8406,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Template Studio and assets",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_template_session_update",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1044,
+          "surface": "MCP App registration"
+        },
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8563,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Template Studio and assets",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_freemarker_approval_status",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8710,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Template Studio and assets",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_freemarker_convert_approved",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8722,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Template Studio and assets",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_freemarker_preview_html",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8680,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Template Studio and assets",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_freemarker_set_approval",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8696,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Template Studio and assets",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_suitelet_click",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8952,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_suitelet_control_open",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8885,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_suitelet_eval",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8976,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_suitelet_fetch_html",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8849,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_suitelet_fill",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8939,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_suitelet_hover",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8912,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_suitelet_inspect",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8900,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_suitelet_probe_url",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8834,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_suitelet_proxy_request",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8864,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_suitelet_read",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8964,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_suitelet_screenshot",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8906,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_suitelet_scroll",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8925,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_suitelet_stream_frame",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8810,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_suitelet_stream_input",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8819,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_suitelet_stream_list",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8796,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "netsuite_suitelet_stream_start",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/extension-src/background.ts",
+          "line": 8782,
+          "surface": "extension tool definitions"
+        }
+      ],
+      "featureFamily": "Suitelet and Browser control",
+      "plannedPhase": "P5",
+      "migrationStatus": "planned",
+      "availability": "static declaration; live availability not verified"
+    },
+    {
+      "name": "magic_netsuite_freemarker_approval_status",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1681,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "legacy template compatibility",
+      "plannedPhase": "P6",
+      "migrationStatus": "planned",
+      "availability": "legacy / configuration dependent"
+    },
+    {
+      "name": "magic_netsuite_freemarker_convert_approved",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1692,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "legacy template compatibility",
+      "plannedPhase": "P6",
+      "migrationStatus": "planned",
+      "availability": "legacy / configuration dependent"
+    },
+    {
+      "name": "magic_netsuite_freemarker_preview_html",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 851,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "legacy template compatibility",
+      "plannedPhase": "P6",
+      "migrationStatus": "planned",
+      "availability": "legacy / configuration dependent"
+    },
+    {
+      "name": "magic_netsuite_freemarker_preview_playwright",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1604,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "legacy template compatibility",
+      "plannedPhase": "P6",
+      "migrationStatus": "planned",
+      "availability": "legacy / configuration dependent"
+    },
+    {
+      "name": "magic_netsuite_freemarker_set_approval",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1668,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "legacy template compatibility",
+      "plannedPhase": "P6",
+      "migrationStatus": "planned",
+      "availability": "legacy / configuration dependent"
+    },
+    {
+      "name": "magic_netsuite_template_preview_playwright",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1446,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "legacy template compatibility",
+      "plannedPhase": "P6",
+      "migrationStatus": "planned",
+      "availability": "legacy / configuration dependent"
+    },
+    {
+      "name": "magic_netsuite_template_review_open",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1439,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "legacy template compatibility",
+      "plannedPhase": "P6",
+      "migrationStatus": "planned",
+      "availability": "legacy / configuration dependent"
+    },
+    {
+      "name": "magic_netsuite_template_review_update",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1453,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "legacy template compatibility",
+      "plannedPhase": "P6",
+      "migrationStatus": "planned",
+      "availability": "legacy / configuration dependent"
+    },
+    {
+      "name": "magic_netsuite_template_review_wait",
+      "declaredIn": [
+        {
+          "path": "C:/Projects/MagicNetsuiteExtension/mcp_app/server.ts",
+          "line": 1581,
+          "surface": "MCP App registration"
+        }
+      ],
+      "featureFamily": "legacy template compatibility",
+      "plannedPhase": "P6",
+      "migrationStatus": "planned",
+      "availability": "legacy / configuration dependent"
+    }
+  ]
+}

@@ -537,7 +537,7 @@ test("File Cabinet tabs reopen and restore their folders", async ({ page }) => {
   await cabinet.getByRole("menuitem", { name: "Open in left split" }).click();
   await expect(cabinet.getByRole("tablist")).toHaveCount(1);
   await cabinet.getByRole("tab", { name: "SuiteScripts" }).click();
-  await cabinet.getByRole("button", { name: "Close File Cabinet tab" }).click();
+  await cabinet.getByRole("tab", { name: "File Cabinet", exact: true }).click({ button: "middle" });
   await cabinet
     .getByRole("button", { name: "Reopen closed File Cabinet tab" })
     .click();
@@ -615,7 +615,7 @@ test("NetSuite workspace tabs keep separate views, split and restore", async ({
   await expect(app.locator(".ns-query:visible")).toHaveCount(1);
   await expect(app.locator(".ns-panel:visible")).toHaveCount(1);
   // Closing the only tab of a group collapses the split; reopen restores it.
-  await app.getByRole("button", { name: "Close SuiteQL tab" }).click();
+  await app.getByRole("tab", { name: "SuiteQL", exact: true }).click({ button: "middle" });
   await expect(app.getByRole("tablist", { name: "NetSuite" })).toBeVisible();
   await app.getByRole("button", { name: "Reopen closed NetSuite tab" }).click();
   await expect(strip.getByRole("tab", { name: "SuiteQL" })).toHaveAttribute(

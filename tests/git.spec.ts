@@ -827,3 +827,38 @@ test("real MCP tools register repositories and create a live Git viewer with wor
     await vite.close();
   }
 });
+
+
+test("current branch separates committed history from staged and unstaged versions", async ({ page }, info) => {
+  const repo = await repository(info.outputPath("worktree-repository"));
+  const tree = (await repo.git("rev-parse", "HEAD^{tree}")).trim();
+  const other = (await repo.git("commit-tree", tree, "-p", "HEAD", "-m", "Unrelated branch commit")).trim();
+  await repo.git("branch", "other-branch", other);
+  await writeFile(join(repo.path, "viewer.txt"), "A visual history.\nStaged improvement.\nUnstaged improvement.\n");
+  await page.route("**/inter-latin-wght-normal.woff2", route => route.fulfill({ path: resolve("node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2"), contentType: "font/woff2" }));
+  await page.goto("/tests/git-worktree.html");
+  await page.waitForFunction(() => typeof (window as any).mountGitWorktreeFixture === "function");
+  await page.evaluate(async (path) => {
+    const response = await fetch("/__orvane/git/git_workspace_add", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) });
+    const workspace = await response.json();
+    if (!response.ok) throw Error(workspace.error);
+    (window as any).gitWorktreeFixture = (window as any).mountGitWorktreeFixture(workspace.id);
+  }, repo.path);
+  const viewer = page.locator("#git-worktree-fixture");
+  await expect(viewer.locator(".git-commit-row")).toHaveCount(5);
+  await viewer.getByRole("combobox", { name: "Git branch filter" }).click();
+  await page.getByRole("option", { name: "Current branch", exact: true }).click();
+  await expect(viewer.locator(".git-commit-row")).toHaveCount(4);
+  await expect(viewer.locator(".git-commit-row")).not.toContainText(["Unrelated branch commit"]);
+  await viewer.getByRole("button", { name: /Changes/ }).click();
+  await expect(viewer.locator(".git-change-row")).toHaveCount(4);
+  const staged = viewer.getByRole("region", { name: "Staged changes", exact: true });
+  const unstaged = viewer.getByRole("region", { name: "Unstaged changes", exact: true });
+  await staged.locator(".git-change-row").filter({ hasText: "viewer.txt" }).click();
+  await expect(viewer.getByLabel("Git diff", { exact: true })).toContainText("+Staged improvement.");
+  await expect(viewer.getByLabel("Git diff", { exact: true })).not.toContainText("+Unstaged improvement.");
+  await unstaged.locator(".git-change-row").filter({ hasText: "viewer.txt" }).click();
+  await expect(viewer.getByLabel("Git diff", { exact: true })).toContainText("+Unstaged improvement.");
+  await viewer.screenshot({ path: info.outputPath("git-changes.png") });
+  await page.evaluate(() => (window as any).gitWorktreeFixture.unmount());
+});
