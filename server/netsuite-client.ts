@@ -6,6 +6,7 @@ export class DesktopNetSuiteError extends Error {
   constructor(
     public code: string,
     message: string,
+    public requestId?: string,
   ) {
     super(message);
   }
@@ -107,6 +108,7 @@ export async function desktopNetSuiteRequest(
             new DesktopNetSuiteError(
               result.code || "NETSUITE_ERROR",
               result.error || "NetSuite read failed.",
+              result.requestId,
             ),
           );
         else finish(undefined, result.data);

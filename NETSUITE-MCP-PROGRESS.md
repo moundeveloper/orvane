@@ -15,7 +15,8 @@ Updated: 5 November 2026. Working branch: `codex/netsuite-mcp-migration`.
 Batch 0 is committed: `bd04a91` — baseline UI fixes and migration design.
 Batch 1 core live test passed, as reported by the user: explicit sandbox selection, inspect and SELECT through Orvane only. Claude Desktop and Claude Code configurations are installed and unchanged by Batch 2.
 Batch 2 implements the Desktop-owned broker worker and has now passed background live verification against the existing Desktop and both installed Claude MCP configurations. Routine testing is handled by the agent from this point onward.
-Next implementation work remains a separate committed batch; no further user test is required to accept the verified Batch 2 read path.
+Batch 3 adds a durable metadata-only request journal, traceable request/error IDs, bounded MCP history and observed session-generation fences. Agent-run verification passed: 26 targeted tests, type-check, 10 baseline live checks and 7 isolated-new-worker live checks. The user's running Batch 2 Desktop was left untouched; new Electron lifecycle wiring activates at the next ordinary restart and has fixture coverage meanwhile.
+No routine user test is required at this checkpoint. See [Batch 3 implementation and evidence](research/NETSUITE-MCP-BATCH-3.md).
 The broader migration is not complete; see [the implementation plan](research/NETSUITE-MCP-IMPLEMENTATION.md).
 
 ## Batch 0 — Baseline fixes and design
@@ -170,3 +171,14 @@ node scripts/test-orvane-mcp-live.mjs --origin https://4027610-sb1.app.netsuite.
 The checker refuses production origins and ambiguous targets. It stops rather than changing account/role or falling back to Magic. A changed expected identity must be deliberately selected for a future authorized test.
 
 Live closing/reopening of Desktop, closing user views, sign-out/role changes and killing the live worker were **not performed**, because the user is actively using the PC. Their isolated lifecycle coverage remains in the automated fixture tests; the new live checks do not prove server-side session/role verification.
+
+## Batch 3 — Durable reads and observed session fences
+
+- Added a worker-owned SQLite metadata journal with durable intent, request/error IDs, bounded history and interrupted-request recovery without replay. SQL, tokens and business rows are not stored.
+- Added `status` action `requests` with pagination, preserving the existing two MCP tool names. Older running brokers return `UPGRADE_PENDING` for history while existing reads remain available.
+- Added observed source lifecycle generations, target/token rotation, private gateway validation, and shared executor checks before/after reads and after queue/acquisition waits. Changed generations discard results, release reservations and do not retry.
+- Optional MCP startup errors now leave Desktop open. Client-runtime identity remains explicitly unverified by a server.
+- **26 targeted tests**, type-check and syntax checks passed. **10 baseline live checks** and **7 isolated Batch 3 worker checks** passed on the authorized sandbox. The original live Desktop/broker was neither restarted nor replaced. Actual new Electron navigation-event wiring has fixture coverage and awaits the next ordinary app restart; no manual testing gate is imposed.
+- Full implementation, commands, evidence limits and next work: [Batch 3 record](research/NETSUITE-MCP-BATCH-3.md).
+
+Next batch: select the next bounded migration slice from the implementation plan after committing this work. Server-side identity verification, explicit pipe DACLs, full workspace broker ownership, jobs/cache/artifacts and feature expansion remain pending.

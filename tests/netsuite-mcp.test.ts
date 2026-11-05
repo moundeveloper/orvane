@@ -233,6 +233,15 @@ test("two complete NetSuite MCP clients share the gateway without workspace list
   });
   for (const { client } of connections) {
     const tools = await client.listTools();
+    const pendingUpgrade = await client.callTool({
+      name: "orvane_netsuite_status",
+      arguments: { action: "requests" },
+    });
+    assert.equal(pendingUpgrade.isError, true);
+    assert.equal(
+      JSON.parse((pendingUpgrade.content[0] as any).text).code,
+      "UPGRADE_PENDING",
+    );
     assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), [
       "orvane_netsuite_query",
       "orvane_netsuite_status",

@@ -24,7 +24,7 @@ async function workspace(t: any) {
   t.after(async () => {
     // Dedicated fixture directory: only remove known descriptor/socket files, never recurse.
     for (const name of await readdir(brokerDirectory)) {
-      assert.match(name, /^(desktop\.json|rpc-[a-f\d-]{36}\.sock)$/i);
+      assert.match(name, /^(desktop\.json|rpc-[a-f\d-]{36}\.sock|requests\.sqlite(?:-wal|-shm)?)$/i);
       await unlink(join(brokerDirectory, name));
     }
     await rmdir(brokerDirectory);
@@ -81,7 +81,7 @@ test(
       assert.equal(descriptor.pid, broker.pid);
       assert.equal(descriptor.desktopPid, process.pid);
       const listed = await request(directory, { operation: "status" });
-      assert.equal(listed.batch, 2);
+      assert.equal(listed.batch, 3);
       assert.deepEqual(listed.execution, {
         mode: "broker-worker",
         brokerPid: broker.pid,
@@ -246,6 +246,8 @@ test(
         execPath: process.execPath,
       });
       const again = await request(directory, { operation: "status" });
+    const history = await request(directory, { operation: "status", action: "requests" });
+    assert(history.requests.some((entry: any) => entry.operation === "query.select" && entry.state === "interrupted" && entry.errorCode === "BROKER_INTERRUPTED"));
       assert.notEqual(again.environments[0].targetId, targetId);
       await assert.rejects(
         request(directory, {

@@ -75,7 +75,8 @@ export async function startNetSuiteRpc({
           ok: false,
           code: "RESULT_TOO_LARGE",
           error:
-            "Result exceeds the 1 MiB first-batch limit. Select fewer columns/shorter values.",
+            "Read result exceeds the 1 MiB limit. Select fewer columns/shorter values.",
+          requestId: value.requestId || value.data?.requestId,
         });
       socket.end(json + "\n");
     };
@@ -120,6 +121,7 @@ export async function startNetSuiteRpc({
           ok: false,
           code: error.code || "NETSUITE_ERROR",
           error: error.message || "NetSuite request failed.",
+          requestId: error.requestId,
         });
       }
     });

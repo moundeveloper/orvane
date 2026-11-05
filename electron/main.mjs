@@ -21,6 +21,7 @@ import { setupPasswords } from "./passwords.mjs";
 import { setupNetSuite } from "./netsuite.mjs";
 import { setupProcessing } from "./processing.mjs";
 import { startNetSuiteBroker } from "./netsuite-broker.mjs";
+import { createNetSuiteSessionTracker } from "./netsuite-session-tracker.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.ORVANE_PORT || 5173);
@@ -139,7 +140,8 @@ function secure() {
   );
 
   const processing = setupProcessing({ partition: sites, isOrvane });
-  const netSuiteService = setupNetSuite(isOrvane, sites, processing);
+  const sessions = createNetSuiteSessionTracker();
+  const netSuiteService = setupNetSuite(isOrvane, sites, processing, { sessionEpoch: sessions.current });
 
   // Saved logins: offered on sign-in forms, saved after a sign-in works.
   const trackPasswords = setupPasswords({
@@ -154,6 +156,7 @@ function secure() {
   app.on("web-contents-created", (_event, contents) => {
     if (contents.session === sites) trackPasswords(contents);
     if (contents.getType() === "webview") {
+      sessions.observe(contents);
       // Discovery follows the real Browser tab as login and navigation finish.
       // The host UI can update its environment list without a refresh button.
       let wasNetSuite = false, environmentHost;
@@ -553,13 +556,16 @@ else {
       secure();
       await startServer();
       createWindow();
-      netSuiteBroker = await startNetSuiteBroker({
+      try { netSuiteBroker = await startNetSuiteBroker({
         directory: join(process.env.ORVANE_DATA_DIR || join(root, ".orvane"), "netsuite-broker"),
         service: desktopNetSuiteService,
         hosts: () => BrowserWindow.getAllWindows().map(window => window.webContents)
           .filter(contents => !contents.isDestroyed() && isOrvane(contents.getURL())),
-        onExit: ({ expected }) => { if (!expected) console.error("NetSuite broker exited. Restart Desktop to restore MCP reads; no requests were replayed."); },
-      });
+        onExit: ({ expected, wasReady }) => { if (!expected && wasReady) console.error("NetSuite broker exited. Restart Desktop to restore MCP reads; no requests were replayed."); },
+      }); } catch (error) {
+        // A failed optional MCP journal/gateway must not close the user's UI.
+        console.error("NetSuite MCP unavailable; Desktop remains open:", error.code || "BROKER_START_FAILED", error.message);
+      }
     })
     .catch((error) => {
       console.error(error);

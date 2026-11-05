@@ -2,6 +2,7 @@ import { isAbsolute } from "node:path";
 import { randomUUID } from "node:crypto";
 import { startNetSuiteRpc } from "./netsuite-rpc.mjs";
 import { createNetSuiteReadService } from "./netsuite-read-service.mjs";
+import { openRequestJournal } from "./netsuite-request-journal.mjs";
 import {
   BROKER_PROTOCOL,
   MAX_BROKER_PENDING,
@@ -13,11 +14,13 @@ if (!process.send)
     "The NetSuite broker must be started by Desktop using a private IPC channel.",
   );
 let rpc,
+  journal,
   initialized = false,
   stopping = false,
   desktopPid;
 const pending = new Map();
 const hostMap = new Map();
+const activeRequests = new Set();
 const send = (message) => {
   if (process.connected) process.send(message, () => {});
 };
@@ -62,6 +65,8 @@ async function stop() {
   const deadline = setTimeout(() => process.exit(1), 1500);
   try {
     await rpc?.close();
+    await Promise.allSettled([...activeRequests]);
+    journal?.close();
   } finally {
     clearTimeout(deadline);
     process.exit(0);
@@ -119,8 +124,15 @@ process.on("message", async (message) => {
     const service = {
       environments: (host) =>
         execute({ kind: "environments", hostId: host.id }),
-      run: (host, origin, operation, args) =>
-        execute({ kind: "read", hostId: host.id, origin, operation, args }),
+      run: (host, origin, operation, args, expectedSessionEpoch) =>
+        execute({
+          kind: "read",
+          hostId: host.id,
+          origin,
+          operation,
+          args,
+          expectedSessionEpoch,
+        }),
     };
     const dispatch = createNetSuiteReadService({
       hosts: () => [...hostMap.values()],
@@ -132,26 +144,53 @@ process.on("message", async (message) => {
       instanceId: message.instanceId,
       desktopPid,
       dispatch: async (request) => {
-        const hosts = await execute({ kind: "hosts" });
-        const active = new Set(hosts.map((host) => host.id));
-        for (const id of hostMap.keys())
-          if (!active.has(id)) hostMap.delete(id);
-        for (const id of active)
-          if (!hostMap.has(id))
-            hostMap.set(id, { id, isDestroyed: () => !hostMap.has(id) });
-        const result = await dispatch(request);
-        return {
-          ...result,
-          batch: 2,
-          execution: {
-            mode: "broker-worker",
-            brokerPid: process.pid,
-            desktopPid,
-            protocol: BROKER_PROTOCOL,
-          },
+        if (!journal)
+          throw brokerError(
+            "BROKER_STARTING",
+            "The broker journal is initializing.",
+          );
+        const execution = {
+          mode: "broker-worker",
+          brokerPid: process.pid,
+          desktopPid,
+          protocol: BROKER_PROTOCOL,
         };
+        if (request?.operation === "status" && request.action === "requests")
+          return {
+            ...journal.list({
+              limit: request.limit,
+              beforeSequence: request.beforeSequence,
+            }),
+            batch: 3,
+            execution,
+          };
+        const tracked = journal.run(request, async () => {
+          const hosts = await execute({ kind: "hosts" });
+          const active = new Set(hosts.map((host) => host.id));
+          for (const id of hostMap.keys())
+            if (!active.has(id)) hostMap.delete(id);
+          for (const id of active)
+            if (!hostMap.has(id))
+              hostMap.set(id, { id, isDestroyed: () => !hostMap.has(id) });
+          const result = await dispatch(request);
+          return {
+            ...result,
+            capabilities: result.capabilities
+              ? [...result.capabilities, "requests.read"]
+              : undefined,
+            batch: 3,
+            execution,
+          };
+        });
+        activeRequests.add(tracked);
+        try {
+          return await tracked;
+        } finally {
+          activeRequests.delete(tracked);
+        }
       },
     });
+    journal = openRequestJournal(message.directory, message.instanceId);
     // A disconnect during asynchronous startup must not leave an orphaned listener.
     if (stopping || !process.connected) {
       await rpc.close();

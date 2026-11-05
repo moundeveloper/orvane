@@ -29,6 +29,12 @@ export function validateExecutorCommand(command) {
       "The broker executor supports only identity and SELECT reads.",
     );
   if (
+    command.expectedSessionEpoch !== undefined &&
+    (!Number.isSafeInteger(command.expectedSessionEpoch) ||
+      command.expectedSessionEpoch < 1)
+  )
+    throw brokerError("INVALID_EXECUTOR_REQUEST", "Invalid session epoch.");
+  if (
     typeof command.origin !== "string" ||
     !/^https:\/\/[a-z0-9-]+\.app\.netsuite\.com$/i.test(command.origin)
   )
@@ -66,12 +72,48 @@ export function createExecutorGateway({ hosts, service }) {
         "TARGET_UNAVAILABLE",
         "The selected Desktop window is no longer available.",
       );
-    if (command.kind === "environments") return service.environments(host);
+    if (command.kind === "environments") {
+      const environments = await service.environments(host);
+      return environments.map((environment) => ({
+        ...environment,
+        sessionEpoch: service.sessionEpoch?.(host, environment.id) ?? null,
+      }));
+    }
+    const epoch = service.sessionEpoch?.(host, command.origin);
+    if (epoch !== undefined && command.expectedSessionEpoch === undefined)
+      throw brokerError(
+        "SESSION_CHANGED",
+        "List and inspect the environment with its current session epoch.",
+      );
+    if (
+      command.expectedSessionEpoch !== undefined &&
+      command.expectedSessionEpoch !== epoch
+    )
+      throw brokerError(
+        "SESSION_CHANGED",
+        "The observed browser session changed. List and inspect a fresh target.",
+      );
     // Never forward arbitrary args/operations from the worker to the privileged service.
     const args =
       command.operation === "user"
         ? {}
         : { sql: command.args.sql, offset: command.args.offset ?? 0 };
-    return service.run(host, command.origin, command.operation, args);
+    const result = await service.run(
+      host,
+      command.origin,
+      command.operation,
+      args,
+      command.expectedSessionEpoch,
+    );
+    if (
+      command.expectedSessionEpoch !== undefined &&
+      service.sessionEpoch?.(host, command.origin) !==
+        command.expectedSessionEpoch
+    )
+      throw brokerError(
+        "SESSION_CHANGED",
+        "The observed session changed during the read. Results were discarded.",
+      );
+    return result;
   };
 }

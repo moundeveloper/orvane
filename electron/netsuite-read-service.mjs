@@ -29,7 +29,13 @@ export function createNetSuiteReadService({ hosts, service, instanceId }) {
     return target;
   }
   async function identity(target) {
-    const user = await service.run(target.host, target.origin, "user", {});
+    const user = await service.run(
+      target.host,
+      target.origin,
+      "user",
+      {},
+      target.sessionEpoch ?? undefined,
+    );
     if (!user?.account || user.id == null || user.role == null)
       reject(
         "IDENTITY_UNAVAILABLE",
@@ -57,9 +63,12 @@ export function createNetSuiteReadService({ hosts, service, instanceId }) {
         account,
         userId,
         roleId,
+        target.sessionEpoch ?? null,
       ]),
       source: "client-runtime",
       serverRuntimeVerified: false,
+      sessionEpoch: target.sessionEpoch ?? null,
+      sessionEpochSupported: target.sessionEpoch != null,
     };
   }
   return async function dispatch(request) {
@@ -83,8 +92,14 @@ export function createNetSuiteReadService({ hosts, service, instanceId }) {
         if (host.isDestroyed()) continue;
         for (const environment of await service.environments(host)) {
           if (!originPattern.test(environment.id)) continue;
-          const targetId = token([instanceId, host.id, environment.id]);
-          targets.set(targetId, { host, origin: environment.id });
+          const sessionEpoch = environment.sessionEpoch ?? null;
+          const targetId = token([
+            instanceId,
+            host.id,
+            environment.id,
+            sessionEpoch,
+          ]);
+          targets.set(targetId, { host, origin: environment.id, sessionEpoch });
           active.add(targetId);
           environments.push({
             targetId,
@@ -92,6 +107,7 @@ export function createNetSuiteReadService({ hosts, service, instanceId }) {
             label: environment.label,
             status: environment.status,
             windowId: host.id,
+            sessionEpoch,
           });
         }
       }
@@ -136,10 +152,16 @@ export function createNetSuiteReadService({ hosts, service, instanceId }) {
         "IDENTITY_CHANGED",
         "Inspect this target again; its account, user or role changed, or the identity token is missing.",
       );
-    const result = await service.run(target.host, target.origin, "query", {
-      sql: request.sql,
-      offset: request.offset ?? 0,
-    });
+    const result = await service.run(
+      target.host,
+      target.origin,
+      "query",
+      {
+        sql: request.sql,
+        offset: request.offset ?? 0,
+      },
+      target.sessionEpoch ?? undefined,
+    );
     if (!Array.isArray(result?.rows) || result.rows.length > 100)
       reject(
         "INVALID_QUERY_RESULT",

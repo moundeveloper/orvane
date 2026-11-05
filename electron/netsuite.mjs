@@ -15,8 +15,9 @@ async function signedIn(contents) {
     .then((value) => value !== false)
     .catch(() => true);
 }
-export function setupNetSuite(isOrvane, partition, processing) {
+export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
   const queues = new Map();
+  const refreshedEpochs = new Map();
   const allowed = (event) =>
     !event.sender.isDestroyed() && isOrvane(event.sender.getURL());
   ipcMain.handle("orvane:netsuite-tabs", async (event) => {
@@ -27,7 +28,7 @@ export function setupNetSuite(isOrvane, partition, processing) {
     if (!allowed(event)) throw Error("Unauthorized request.");
     return processing.openRecord(event.sender, origin, kind, id);
   });
-  const run = async (event, id, operation, args) => {
+  const run = async (event, id, operation, args, expectedSessionEpoch) => {
     const options = typeof args === "string" ? { sql: args } : args || {};
     if (!allowed(event)) throw Error("Unauthorized request.");
     if (typeof id !== "string") throw Error("Choose a NetSuite environment.");
@@ -407,13 +408,22 @@ export function setupNetSuite(isOrvane, partition, processing) {
 
     })() ?? null }); } catch (error) { return JSON.stringify({ error: String(error?.message || error?.name || error) }); } })()`;
     let processingTab;
+    const assertSession = () => {
+      if (expectedSessionEpoch !== undefined && lifecycle.sessionEpoch?.(event.sender, id) !== expectedSessionEpoch)
+        throw Object.assign(Error("The observed NetSuite session changed. List and inspect a fresh target."), { code: "SESSION_CHANGED" });
+    };
     const attempt = async () => {
+      assertSession();
       processingTab = await processing.acquire(event.sender, id);
       let timer;
       // A timeout does not mean execution has stopped; keep the tab busy until
       // Chromium actually settles so refresh cannot interrupt an in-flight call.
-      const execution = processingTab.contents
-        .executeJavaScript(code)
+      const execution = Promise.resolve()
+        .then(() => {
+          assertSession();
+          if (expectedSessionEpoch !== undefined) refreshedEpochs.set(`${event.sender.id}:${id}`, expectedSessionEpoch);
+          return processingTab.contents.executeJavaScript(code);
+        })
         .then((text) => {
           const answer = JSON.parse(text);
           if (answer?.error !== undefined) throw Error(answer.error);
@@ -421,7 +431,7 @@ export function setupNetSuite(isOrvane, partition, processing) {
         })
         .finally(processingTab.release);
       try {
-        return await Promise.race([
+        const value = await Promise.race([
           execution,
           new Promise((_, reject) => {
             timer = setTimeout(() => {
@@ -435,18 +445,25 @@ export function setupNetSuite(isOrvane, partition, processing) {
             }, 30000);
           }),
         ]);
+        assertSession();
+        return value;
       } finally {
         clearTimeout(timer);
       }
     };
     const execute = async () => {
       try {
+        assertSession();
+        if (expectedSessionEpoch !== undefined && refreshedEpochs.get(`${event.sender.id}:${id}`) !== expectedSessionEpoch) {
+          await processing.reload?.(event.sender, id);
+          assertSession();
+        }
         return await attempt();
       } catch (error) {
         // NetSuite can end the session while the page stays put, so calls fail
         // until it is reloaded. Then sign in again (a reload goes through the
         // login page) and run reads once more; writes are only reported.
-        if (error?.timedOut || !processingTab || (await signedIn(processingTab.contents))) throw error;
+        if (error?.code === "SESSION_CHANGED" || error?.timedOut || !processingTab || (await signedIn(processingTab.contents))) throw error;
         if (!(await Promise.resolve(processing.reload?.(event.sender, id)).catch(() => false))) throw error;
         if (WRITES.includes(operation)) throw error;
         return await attempt();
@@ -465,6 +482,7 @@ export function setupNetSuite(isOrvane, partition, processing) {
   ipcMain.handle("orvane:netsuite-run", run);
   return {
     environments: host => processing.environments(host),
-    run: (host, id, operation, args) => run({ sender: host }, id, operation, args),
+    run: (host, id, operation, args, expectedSessionEpoch) => run({ sender: host }, id, operation, args, expectedSessionEpoch),
+    sessionEpoch: lifecycle.sessionEpoch,
   };
 }

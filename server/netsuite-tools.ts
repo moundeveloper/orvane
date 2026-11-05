@@ -22,7 +22,17 @@ export function registerNetSuiteTools(server: McpServer, directory: string) {
       return {
         isError: true,
         content: [
-          { type: "text" as const, text: JSON.stringify({ code, message }) },
+          {
+            type: "text" as const,
+            text: JSON.stringify({
+              code,
+              message,
+              requestId:
+                error instanceof DesktopNetSuiteError
+                  ? error.requestId
+                  : undefined,
+            }),
+          },
         ],
       };
     }
@@ -31,10 +41,12 @@ export function registerNetSuiteTools(server: McpServer, directory: string) {
     "orvane_netsuite_status",
     {
       description:
-        "Read-only Orvane Desktop NetSuite status. list returns explicitly selectable environment target IDs; inspect requires a targetId and returns a client-runtime account/user/role identityToken required by query. No renderer or canvas editing lease is required. Client runtime identity does not verify a server-side Suitelet. Restart Desktop after installing a new batch.",
+        "Read-only Orvane Desktop NetSuite status. list returns environment target IDs; inspect requires targetId and returns client-runtime identityToken for query. requests reads bounded, redacted request history on brokers advertising requests.read (Batch 3+). Returns UPGRADE_PENDING on older active brokers. No renderer/canvas lease required. Session epochs fence observed source-page lifecycle changes; they do not verify server-side identity.",
       inputSchema: {
-        action: z.enum(["list", "inspect"]).default("list"),
+        action: z.enum(["list", "inspect", "requests"]).default("list"),
         targetId: z.string().min(1).max(100).optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+        beforeSequence: z.number().int().min(1).optional(),
       },
       annotations: {
         readOnlyHint: true,
@@ -42,8 +54,36 @@ export function registerNetSuiteTools(server: McpServer, directory: string) {
         openWorldHint: true,
       },
     },
-    ({ action, targetId }) =>
-      call({ operation: "status", action, targetId }, action === "list"),
+    async ({ action, targetId, limit, beforeSequence }) => {
+      if (action === "requests") {
+        try {
+          const status = (await desktopNetSuiteRequest(directory, {
+            operation: "status",
+            action: "list",
+          })) as { capabilities?: string[] };
+          if (!status.capabilities?.includes("requests.read"))
+            return {
+              isError: true,
+              content: [
+                {
+                  type: "text" as const,
+                  text: JSON.stringify({
+                    code: "UPGRADE_PENDING",
+                    message:
+                      "The running Desktop broker does not have request history yet. Existing reads remain available; no automatic restart was performed.",
+                  }),
+                },
+              ],
+            };
+        } catch {
+          return call({ operation: "status", action, limit, beforeSequence });
+        }
+      }
+      return call(
+        { operation: "status", action, targetId, limit, beforeSequence },
+        action === "list",
+      );
+    },
   );
   server.registerTool(
     "orvane_netsuite_query",
