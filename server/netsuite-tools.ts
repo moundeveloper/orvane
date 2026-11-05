@@ -1,6 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
+  netSuiteReadSchema,
+  netSuiteReadOperations,
+} from "./netsuite-read-operations.ts";
+import {
   desktopNetSuiteRequest,
   DesktopNetSuiteError,
 } from "./netsuite-client.ts";
@@ -83,6 +87,63 @@ export function registerNetSuiteTools(server: McpServer, directory: string) {
         { operation: "status", action, targetId, limit, beforeSequence },
         action === "list",
       );
+    },
+  );
+  server.registerTool(
+    "orvane_netsuite_read",
+    {
+      description:
+        "Read-only typed NetSuite lists (Batch 5+). First list/inspect a target. actions: scripts (no id); deployments (positive script id); folders (omit id for roots, or parent folder id); files (folder id required). Negative system folder IDs are allowed. Fixed SELECTs, stable name/id ordering, up to 100 rows per page; page starts at 0. Live offset paging is not a snapshot. Metadata only: no file contents, writes, arbitrary SQL or server identity verification. shareInFlight defaults false. Missing broker capability returns UPGRADE_PENDING without submitting a read.",
+      inputSchema: netSuiteReadSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: true,
+      },
+    },
+    async (args) => {
+      try {
+        const status = (await desktopNetSuiteRequest(directory, {
+          operation: "status",
+          action: "list",
+        })) as { capabilities?: string[] };
+        if (
+          !status.capabilities?.includes(
+            netSuiteReadOperations[args.action].capability,
+          )
+        )
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({
+                  code: "UPGRADE_PENDING",
+                  message:
+                    "The running Desktop broker does not support this typed read. No read was submitted.",
+                }),
+              },
+            ],
+          };
+      } catch (error) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                code:
+                  error instanceof DesktopNetSuiteError
+                    ? error.code
+                    : "NETSUITE_ERROR",
+                message:
+                  "Typed-read capability could not be checked. No read was submitted.",
+              }),
+            },
+          ],
+        };
+      }
+      return call({ operation: "read", ...args });
     },
   );
   server.registerTool(

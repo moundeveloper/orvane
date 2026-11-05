@@ -1,5 +1,9 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { createSharedNetSuiteReads } from "./netsuite-shared-reads.mjs";
+import {
+  compileNetSuiteRead,
+  netSuiteReadOperations,
+} from "../server/netsuite-read-operations.ts";
 
 export class NetSuiteReadError extends Error {
   constructor(code, message) {
@@ -125,30 +129,33 @@ export function createNetSuiteReadService({ hosts, service, instanceId }) {
           "identity.inspect",
           "query.select",
           "query.share-in-flight",
+          ...Object.values(netSuiteReadOperations).map(
+            (policy) => policy.capability,
+          ),
         ],
         environments,
       };
     }
-    if (request.operation !== "query")
+    const typed =
+      request.operation === "read" ? compileNetSuiteRead(request) : null;
+    if (request.operation !== "query" && !typed)
       reject(
         "UNKNOWN_OPERATION",
-        "This batch supports only status and SELECT reads.",
+        "This broker supports status, SELECT queries and registered typed reads.",
       );
+    const sql = typed ? typed.sql : request.sql;
+    const offset = typed ? typed.offset : (request.offset ?? 0);
     if (
-      typeof request.sql !== "string" ||
-      request.sql.length > 20000 ||
-      !/^\s*select\b/i.test(request.sql) ||
-      request.sql.includes(";")
+      typeof sql !== "string" ||
+      sql.length > 20000 ||
+      !/^\s*select\b/i.test(sql) ||
+      sql.includes(";")
     )
       reject(
         "INVALID_QUERY",
         "Use one SELECT statement without a semicolon, up to 20,000 characters.",
       );
-    if (
-      !Number.isSafeInteger(request.offset ?? 0) ||
-      (request.offset ?? 0) < 0 ||
-      (request.offset ?? 0) > 1000000
-    )
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000000)
       reject("INVALID_QUERY", "Invalid query offset.");
     const target = resolve(request.targetId);
     if (
@@ -171,8 +178,8 @@ export function createNetSuiteReadService({ hosts, service, instanceId }) {
         target.origin,
         "query",
         {
-          sql: request.sql,
-          offset: request.offset ?? 0,
+          sql,
+          offset,
         },
         target.sessionEpoch ?? undefined,
       );
@@ -196,16 +203,9 @@ export function createNetSuiteReadService({ hosts, service, instanceId }) {
         observedAt: new Date().toISOString(),
       };
     };
-    return request.shareInFlight === true
-      ? share(
-          [
-            request.targetId,
-            request.identityToken,
-            request.sql,
-            request.offset ?? 0,
-          ],
-          read,
-        )
-      : read();
+    const result = await (request.shareInFlight === true
+      ? share([request.targetId, request.identityToken, sql, offset], read)
+      : read());
+    return typed ? { ...result, read: typed.descriptor } : result;
   };
 }

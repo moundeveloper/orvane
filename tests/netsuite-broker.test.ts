@@ -81,7 +81,7 @@ test(
       assert.equal(descriptor.pid, broker.pid);
       assert.equal(descriptor.desktopPid, process.pid);
       const listed = await request(directory, { operation: "status" });
-      assert.equal(listed.batch, 4);
+      assert.equal(listed.batch, 5);
       assert.deepEqual(listed.execution, {
         mode: "broker-worker",
         brokerPid: broker.pid,
@@ -138,6 +138,41 @@ test(
             (result.structuredContent as any).result.execution.brokerPid,
             broker.pid,
           );
+        for (const [index, action] of ["scripts", "deployments", "folders", "files"].entries()) {
+          const response = await clients[index % 2].client.callTool({
+            name: "orvane_netsuite_read", arguments: {
+              action, targetId, identityToken: inspected.identity.identityToken, page: 1,
+              ...(action === "deployments" ? { id: 42 } : action === "files" ? { id: -15 } : {}),
+            },
+          });
+          assert.notEqual(response.isError, true);
+          const read = (response.structuredContent as any).result;
+          assert.equal(read.read.action, action);
+          assert.equal(read.data.offset, 100);
+          const history = await request(directory, { operation: "status", action: "requests" });
+          const logged = history.requests.find((item: any) => item.requestId === read.requestId);
+          assert.equal(logged.operation, `read.${action}`);
+          assert.equal(logged.state, "completed");
+          assert(!JSON.stringify(history).includes(read.data.rows[0].sql));
+        }
+        const invalidRead = await clients[0].client.callTool({
+          name: "orvane_netsuite_read", arguments: {
+            action: "files", targetId, identityToken: inspected.identity.identityToken,
+          },
+        });
+        assert.equal(invalidRead.isError, true);
+        const failure = JSON.parse((invalidRead.content[0] as any).text);
+        assert.equal(failure.code, "INVALID_READ");
+        assert.match(failure.requestId, /^[a-f\d-]{36}$/i);
+        const beforeInvalid = fixture.calls.filter((operation) => operation === "query").length;
+        const unknownField = await clients[0].client.callTool({
+          name: "orvane_netsuite_read", arguments: {
+            action: "scripts", targetId, identityToken: inspected.identity.identityToken,
+            sql: "DELETE FROM file",
+          },
+        });
+        assert.equal(unknownField.isError, true);
+        assert.equal(fixture.calls.filter((operation) => operation === "query").length, beforeInvalid);
       } finally {
         for (const { client, transport } of clients) {
           await client.close();

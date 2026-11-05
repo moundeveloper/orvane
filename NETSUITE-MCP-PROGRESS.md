@@ -12,6 +12,8 @@ Updated: 5 November 2026. Working branch: `codex/netsuite-mcp-migration`.
 
 ## Current position
 
+Batch 5 adds `orvane_netsuite_read` with typed script/deployment and folder/file metadata pages, using the same identity-checked SELECT executor. **37 targeted tests, 18 current-Desktop compatibility checks and 15 isolated-new-worker live checks passed.** The active Desktop remains Batch 4; Batch 5 needs the next normal restart and a fresh Claude MCP connection/schema. No reinstall or manual query test is required. See [Batch 5 evidence](research/NETSUITE-MCP-BATCH-5.md) and [incremental legacy dispositions](research/netsuite-mcp-migration-map.json).
+
 Batch 4 is active after the user restarted Orvane. Explicit, bounded in-flight SELECT sharing passed **16 direct live checks** through both installed Claude MCP configurations, including five overlapping opted-in reads with one execution ID and five distinct request IDs, followed by a fresh execution for a later read. Earlier verification also passed **32 targeted tests, 16 Batch 3 compatibility checks and 9 isolated-new-worker live checks**. See [Batch 4 implementation/evidence](research/NETSUITE-MCP-BATCH-4.md). No further restart or manual test is needed for this checkpoint.
 
 Batch 0 is committed: `bd04a91` — baseline UI fixes and migration design.
@@ -213,3 +215,11 @@ On 5 November 2026 the user confirmed a normal Orvane restart. The actual Batch 
 Command: `node scripts/test-orvane-mcp-live.mjs --batch 4 --origin https://4027610-sb1.app.netsuite.com --account 4027610_SB1 --user 4033 --role 3 --report artifacts/netsuite-batch4-desktop-live.json`.
 
 The redacted report is local and ignored by Git. This verifies the actual running Desktop rather than the earlier isolated relay. No Magic, production query, account mutation, GUI input, additional application restart or Claude conversation automation was used. Navigation/role-change disruption was not induced, and server identity remains unverified.
+
+## Batch 5 — Typed script/deployment and File Cabinet metadata
+
+- Added compact `orvane_netsuite_read`: `scripts`, `deployments` by script ID, top-level/child `folders`, and `files` by folder ID. Strict shared schema/registry compiles fixed ordered SELECTs and 100-row pages through the existing executor.
+- Preserved explicit identity, source-generation fences, optional sharing, bounds and per-caller journal IDs; journal outcomes now distinguish `read.<action>`. Capability checks prevent submission against older brokers.
+- Added a separate incremental legacy disposition map. These are partial native read replacements; source content, script filters, combined folder/breadcrumb contracts, record-type deployments, logs and other feature families remain pending.
+- **37 targeted tests**, type-check/syntax checks, **18 active-Desktop compatibility checks** and **15 isolated new-worker live checks passed**, including all four typed actions with real sandbox data. The user Desktop/broker remained open and unchanged; no account writes or Magic calls were made.
+- Full scope, test commands, evidence limits and activation steps: [Batch 5 record](research/NETSUITE-MCP-BATCH-5.md).

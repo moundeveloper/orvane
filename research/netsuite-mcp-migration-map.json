@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-11-05",
+  "inventory": "netsuite-mcp-tool-inventory.json",
+  "scope": "Incremental disposition map. Unlisted legacy declarations remain pending; original inventory is unchanged. No legacy-name aliases are installed.",
+  "entries": [
+    {
+      "legacyName": "netsuite_get_scripts",
+      "state": "partial",
+      "replacement": {
+        "tool": "orvane_netsuite_read",
+        "action": "scripts",
+        "schemaVersion": 1
+      },
+      "implemented": "Bounded live script metadata, explicit identity, deterministic offset pages and optional in-flight sharing.",
+      "remaining": "Legacy scriptId/type/name/owner/fuzzy filters, all-row response semantics and exact compatibility result adapter.",
+      "fixture": "../tests/netsuite-typed-reads.test.ts"
+    },
+    {
+      "legacyName": "netsuite_list_folder",
+      "state": "partial",
+      "replacement": {
+        "tool": "orvane_netsuite_read",
+        "actions": ["folders", "files"],
+        "schemaVersion": 1
+      },
+      "implemented": "Immediate child folder and file metadata using separate bounded read actions; negative system folder IDs supported.",
+      "remaining": "Combined legacy response, URL fields, legacy string folder IDs and compatibility adapter. Separate reads do not form an atomic snapshot.",
+      "fixture": "../tests/netsuite-typed-reads.test.ts"
+    },
+    {
+      "legacyName": "magic_netsuite_list_file_cabinet_folder",
+      "state": "partial",
+      "replacement": {
+        "tool": "orvane_netsuite_read",
+        "actions": ["folders", "files"],
+        "schemaVersion": 1
+      },
+      "implemented": "Root/child folder pages and file metadata through the broker, independent of the context-picker renderer.",
+      "remaining": "Combined result, folder info, breadcrumbs, context-picker integration and null-to-omitted-ID compatibility. Root selection uses the current Orvane IsTopLevel predicate.",
+      "fixture": "../tests/netsuite-broker.test.ts"
+    },
+    {
+      "legacyName": "netsuite_get_deployed_scripts",
+      "state": "pending",
+      "relatedOperation": {
+        "tool": "orvane_netsuite_read",
+        "action": "deployments"
+      },
+      "remaining": "The new action lists deployment metadata by positive script ID. Legacy behavior filters by record type and includes source code; it is not implemented by this action.",
+      "fixture": "../tests/netsuite-typed-reads.test.ts"
+    },
+    {
+      "legacyName": "netsuite_read_file",
+      "state": "pending",
+      "remaining": "File contents, binary/PDF handling and artifacts are not implemented by metadata-only files reads."
+    },
+    {
+      "legacyName": "netsuite_get_logs",
+      "state": "pending",
+      "remaining": "Script execution logs and legacy date/type filters remain outside this batch."
+    }
+  ]
+}

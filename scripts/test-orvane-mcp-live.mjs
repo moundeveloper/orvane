@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { checkTypedNetSuiteReads } from "./test-netsuite-typed-reads.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const { values } = parseArgs({
@@ -32,7 +33,10 @@ if (
 const sql =
   "SELECT id FROM (SELECT id FROM employee ORDER BY id) WHERE ROWNUM <= 1";
 const expectedBatch = Number(values.batch);
-assert([2, 3, 4].includes(expectedBatch), "Supported --batch values: 2, 3, 4");
+assert(
+  [2, 3, 4, 5].includes(expectedBatch),
+  "Supported --batch values: 2, 3, 4, 5",
+);
 const report = {
   startedAt: new Date().toISOString(),
   scope:
@@ -111,7 +115,7 @@ async function connect(label, path) {
   await client.connect(transport);
   assert.deepEqual(
     (await client.listTools()).tools.map((tool) => tool.name).sort(),
-    ["orvane_netsuite_query", "orvane_netsuite_status"],
+    ["orvane_netsuite_query", "orvane_netsuite_read", "orvane_netsuite_status"],
   );
   record(`${label}: installed read-only MCP profile connects`);
   return connection;
@@ -246,6 +250,29 @@ try {
       },
     );
     record(`${label}: invalid target and identity are rejected`);
+    if (expectedBatch < 5) {
+      await assert.rejects(
+        call(client, "orvane_netsuite_read", {
+          action: "scripts",
+          targetId,
+          identityToken: inspected.identity.identityToken,
+        }),
+        { code: "UPGRADE_PENDING" },
+      );
+      record(
+        `${label}: older active broker rejects typed reads before submission`,
+      );
+    } else {
+      const evidence = await checkTypedNetSuiteReads({
+        call,
+        client,
+        targetId,
+        identity: inspected.identity,
+        record,
+      });
+      report.typedReads ??= [];
+      report.typedReads.push({ profile: label, ...evidence });
+    }
     if (expectedBatch < 4) {
       await assert.rejects(
         call(client, "orvane_netsuite_query", {

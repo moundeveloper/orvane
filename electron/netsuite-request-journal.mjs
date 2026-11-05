@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { chmodSync } from "node:fs";
 import { brokerError } from "./netsuite-broker-protocol.mjs";
+import { netSuiteReadOperations } from "../server/netsuite-read-operations.ts";
 
 const digest = (value) =>
   createHash("sha256").update(String(value)).digest("hex");
@@ -102,16 +103,22 @@ export function openRequestJournal(
       const operation =
         request?.operation === "query"
           ? "query.select"
-          : request?.operation === "status" &&
-              ["list", "inspect", undefined].includes(request.action)
-            ? `status.${request.action || "list"}`
-            : "invalid";
+          : request?.operation === "read" &&
+              Object.hasOwn(netSuiteReadOperations, request.action)
+            ? `read.${request.action}`
+            : request?.operation === "status" &&
+                ["list", "inspect", undefined].includes(request.action)
+              ? `status.${request.action || "list"}`
+              : "invalid";
       const inputHash = digest(
         JSON.stringify({
           operation,
           sql: request?.sql,
           offset: request?.offset,
           shareInFlight: request?.shareInFlight === true,
+          action: request?.action,
+          id: request?.id,
+          page: request?.page,
         }),
       );
       try {

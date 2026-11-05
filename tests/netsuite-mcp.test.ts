@@ -205,7 +205,7 @@ test("two complete NetSuite MCP clients share the gateway without workspace list
       throw Object.assign(Error("Fixture capability lookup failed"), { code: "TEST_STATUS_FAILURE" });
     const result = await fixture.dispatch(request);
     if (result.capabilities)
-      result.capabilities = result.capabilities.filter((value: string) => value !== "query.share-in-flight");
+      result.capabilities = result.capabilities.filter((value: string) => value !== "query.share-in-flight" && !value.startsWith("read."));
     return result;
   });
   const connections = await Promise.all(
@@ -252,6 +252,7 @@ test("two complete NetSuite MCP clients share the gateway without workspace list
     );
     assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), [
       "orvane_netsuite_query",
+      "orvane_netsuite_read",
       "orvane_netsuite_status",
     ]);
     const listed = await client.callTool({
@@ -268,6 +269,12 @@ test("two complete NetSuite MCP clients share the gateway without workspace list
     });
     const identity = (inspected.structuredContent as any).result.identity;
     const before = fixture.calls.filter((op) => op === "query").length;
+    const unsupportedRead = await client.callTool({ name: "orvane_netsuite_read", arguments: {
+      targetId: status.environments[0].targetId, identityToken: identity.identityToken, action: "scripts",
+    } });
+    assert.equal(unsupportedRead.isError, true);
+    assert.equal(JSON.parse((unsupportedRead.content[0] as any).text).code, "UPGRADE_PENDING");
+    assert.equal(fixture.calls.filter((op) => op === "query").length, before);
     const unsupportedShare = await client.callTool({
       name: "orvane_netsuite_query",
       arguments: {
