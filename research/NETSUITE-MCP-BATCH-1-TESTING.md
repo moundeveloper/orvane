@@ -4,6 +4,8 @@ Branch: `codex/netsuite-mcp-migration`. This is the first read-only checkpoint, 
 
 Implementation commit: `568a1fe`. The current branch HEAD also includes the documentation checkpoint recording this hash.
 
+User feedback on 5 November 2026 confirms environment listing, explicit sandbox selection, inspect and one SELECT using only Orvane. The smoke query below now orders inside a subquery before applying `ROWNUM`; the earlier top-level ordering did not guarantee the lowest ID. This does not change the query adapter itself.
+
 ## What is installed
 
 Both Claude Code CLI and Claude Desktop now have an `orvane` stdio server using:
@@ -45,7 +47,7 @@ Expected: Desktop is available. If Browser has no signed-in NetSuite environment
 2. Run status/list again. If more than one target appears, tell Claude exactly which origin/window to use. Do not let it switch to Magic's account.
 3. Use this prompt, replacing the origin:
 
-> Use only Orvane MCP. List environments and select the target for https://YOUR-ACCOUNT.app.netsuite.com. Inspect that target using orvane_netsuite_status, action inspect. Show the returned accountId, userId and roleId. If the target is ambiguous or not ready, stop and report it. Otherwise use its targetId and identityToken to call orvane_netsuite_query with SELECT id FROM employee WHERE ROWNUM <= 1 ORDER BY id. Make no changes.
+> Use only Orvane MCP. List environments and select the target for https://YOUR-ACCOUNT.app.netsuite.com. Inspect that target using orvane_netsuite_status, action inspect. Show the returned accountId, userId and roleId. If the target is ambiguous or not ready, stop and report it. Otherwise use its targetId and identityToken to call orvane_netsuite_query with SELECT id FROM (SELECT id FROM employee ORDER BY id) WHERE ROWNUM <= 1. Make no changes.
 
 Expected: one bounded query page, target/identity metadata, and an observation time. A role without access to `employee` can produce a NetSuite permission error; choose a table you can already query in Orvane's SuiteQL view and retry explicitly. Do not treat an error as an empty successful result.
 

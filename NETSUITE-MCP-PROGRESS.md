@@ -14,7 +14,7 @@ Updated: 5 November 2026. Working branch: `codex/netsuite-mcp-migration`.
 Batch 0 is committed: `bd04a91` — baseline UI fixes and migration design.
 Batch 1 is implemented and at the manual-test checkpoint — direct Desktop read service and Claude Code MCP installation. Commit details are recorded below.
 Batch 1 follow-up: Orvane is also installed in **Claude Desktop's Local MCP servers configuration**, matching the user's screenshot. Fully quitting/reopening Claude Desktop is required to reload it.
-**Next action: user tests Batch 1; do not start Batch 2 until feedback.**
+Batch 1 core live test passed, as reported by the user: explicit sandbox selection, inspect and SELECT through Orvane only. Batch 2 is authorized by the standing batch workflow and is next: extract the read gateway into a Desktop-owned worker.
 The broader migration is not complete; see [the implementation plan](research/NETSUITE-MCP-IMPLEMENTATION.md).
 
 ## Batch 0 — Baseline fixes and design
@@ -62,7 +62,7 @@ The socket and stdio tests use a fake NetSuite executor. No live account query/w
 1. Save work and **restart Orvane Desktop** (`pnpm desktop` from this repository). Refreshing the renderer alone does not load the Electron gateway.
 2. Start a new Claude Code session. Run `/mcp`; check **orvane** is connected.
 3. Ask: **“Use only Orvane MCP. Call orvane_netsuite_status with action list. Do not use Magic or make changes.”**
-4. Open/sign in to the intended NetSuite account in Orvane's Browser app. List again, select its explicit target, inspect it, then use its returned identityToken for `SELECT id FROM employee WHERE ROWNUM <= 1 ORDER BY id`. A permission error means use a table your role can already query in Orvane; do not automatically switch accounts/tools.
+4. Open/sign in to the intended NetSuite account in Orvane's Browser app. List again, select its explicit target, inspect it, then use its returned identityToken for `SELECT id FROM (SELECT id FROM employee ORDER BY id) WHERE ROWNUM <= 1`. A permission error means use a table your role can already query in Orvane; do not automatically switch accounts/tools.
 5. Close only the NetSuite app view and repeat. Also try status from a second Claude Code session. Both should work with the same Desktop gateway.
 6. Report connection/list/inspect/query results and error codes, including whether Desktop was restarted. Full copyable prompts and failure checks are in [the test guide](research/NETSUITE-MCP-BATCH-1-TESTING.md).
 
@@ -84,7 +84,7 @@ Address reported live connection/identity/query defects first. Then extract the 
 | Batch | Commit | State |
 | --- | --- | --- |
 | 0 | `bd04a91` | Baseline recorded; separate migration branch created |
-| 1 | `568a1fe` | Automated checks passed; user test pending |
+| 1 | `568a1fe`, follow-up `d3f6697` | Automated checks and user-reported sandbox list/inspect/query passed |
 
 The follow-up checkpoint documentation commit only records this implementation hash. Use the current branch HEAD when testing; it includes Batch 1 and its recorded handoff.
 
@@ -99,3 +99,19 @@ The first installer targeted Claude Code CLI (`~/.claude.json`), while the user'
 - Commit subject: `fix: install Orvane MCP in Claude Desktop alongside Magic` (current follow-up commit).
 
 **User action:** fully quit Claude Desktop including its tray process, reopen it, and check **Settings > Developer > Local MCP servers > orvane**. Then restart Orvane Desktop if needed and continue the Batch 1 read-only test. Batch 2 remains pending feedback.
+
+## Batch 1 user test result — received 5 November 2026
+
+- User reports using only Orvane MCP, no Magic tools and no changes.
+- Both production and sandbox origins were listed. The sandbox `4027610-sb1.app.netsuite.com` was selected explicitly.
+- Inspect reported account `4027610_SB1`, role `3`, client-runtime identity, and `serverRuntimeVerified: false`.
+- The bounded employee SELECT returned one row, `id: -5`; the reported before/after identities matched.
+- Ephemeral target IDs and identity tokens are intentionally omitted from this progress record.
+- The user correctly noted that the original smoke query applied `ROWNUM` before sorting. Manual prompts now use `SELECT id FROM (SELECT id FROM employee ORDER BY id) WHERE ROWNUM <= 1` to select the lowest ID deterministically.
+- The second-client, closed-view and restart cases were not reported in this feedback; they remain in the manual test matrix.
+
+## Batch 2 — next bounded implementation slice
+
+Extract the authenticated read gateway and target/identity orchestration into a Desktop-owned Node worker. Keep Electron browser/session ownership in main behind a narrow read-only private IPC gateway. Preserve the existing MCP names and configuration; test worker startup/shutdown/crash behavior and two clients before the next commit/test checkpoint.
+
+Durable jobs/journal, explicit Windows pipe DACLs, server-side identity verification, full workspace bridge migration and new feature families are separate follow-up slices. Do not claim Stage B or the full migration complete after worker extraction.
