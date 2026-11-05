@@ -6,7 +6,7 @@ Implementation commit: `568a1fe`. The current branch HEAD also includes the docu
 
 ## What is installed
 
-Claude Code has a user-scoped `orvane` stdio server using:
+Both Claude Code CLI and Claude Desktop now have an `orvane` stdio server using:
 
 - Runtime: the local Node executable found by the installer.
 - Entrypoint: `C:/Projects/Orvane/server/launch.mjs`.
@@ -14,14 +14,18 @@ Claude Code has a user-scoped `orvane` stdio server using:
 - Data: `ORVANE_DATA_DIR=C:/Projects/Orvane/.orvane`.
 - Tools: `orvane_netsuite_status`, `orvane_netsuite_query`.
 
-This profile avoids the existing canvas bridge entirely. Magic's servers remain unchanged in Claude Desktop; this machine's Claude Code profile had no MCP servers before installation. The normal full Orvane MCP entrypoint is still available without the `netsuite` profile; its workspace transport has not been migrated in this batch.
+This profile avoids the existing canvas bridge entirely. Magic's servers remain unchanged in Claude Desktop; this machine's Claude Code CLI profile had no MCP servers before installation. The normal full Orvane MCP entrypoint is still available without the `netsuite` profile; its workspace transport has not been migrated in this batch.
+
+**The two clients use separate configuration files.** The first installation changed only `~/.claude.json` for Claude Code CLI. The follow-up also adds Orvane to `%APPDATA%/Claude/claude_desktop_config.json`, which controls the screenshot's **Settings > Developer > Local MCP servers** screen. Existing Magic entries and other Desktop preferences were verified unchanged against the backup.
 
 The installer is `scripts/install-claude-code-mcp.ps1` (PowerShell 7). It backs up the user config under `~/.claude/backups/`, preserves other servers, and is a no-op when this exact profile is already installed. It refuses to overwrite a different existing Orvane entry. A custom `CLAUDE_CONFIG_DIR` requires adding the documented entry explicitly in that profile rather than guessing where its configuration lives.
+
+For the Claude Desktop settings screen, use `scripts/install-claude-desktop-mcp.ps1` (PowerShell 7). It atomically adds the entry, writes a timestamped backup next to the Desktop config, preserves other entries/preferences, and is idempotent.
 
 ## 1. Restart and check connection
 
 1. Save work, then close and reopen **Orvane Desktop**. An already-running Electron main process cannot load the new gateway by refreshing the page. From this repository, `pnpm desktop` launches Desktop.
-2. Start a **new Claude Code session**, run `/mcp`, and check that `orvane` is connected. Existing Claude Code sessions may need a restart to discover the new server.
+2. For **Claude Desktop's Local MCP servers screen**, fully quit Claude Desktop (including its tray process), reopen it, then check **Settings > Developer > Local MCP servers** for `orvane`. Merely closing the settings panel may not reload the file. For **Claude Code CLI**, start a new session, run `/mcp`, and check that `orvane` is connected.
 3. In a terminal, `claude mcp get orvane` and `claude mcp list` should also report it connected.
 4. Optional terminal smoke check from `C:/Projects/Orvane`: `node scripts/check-orvane-mcp.mjs`. It only lists tools/environments and never runs SQL.
 

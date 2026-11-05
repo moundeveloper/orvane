@@ -13,6 +13,7 @@ Updated: 5 November 2026. Working branch: `codex/netsuite-mcp-migration`.
 
 Batch 0 is committed: `bd04a91` — baseline UI fixes and migration design.
 Batch 1 is implemented and at the manual-test checkpoint — direct Desktop read service and Claude Code MCP installation. Commit details are recorded below.
+Batch 1 follow-up: Orvane is also installed in **Claude Desktop's Local MCP servers configuration**, matching the user's screenshot. Fully quitting/reopening Claude Desktop is required to reload it.
 **Next action: user tests Batch 1; do not start Batch 2 until feedback.**
 The broader migration is not complete; see [the implementation plan](research/NETSUITE-MCP-IMPLEMENTATION.md).
 
@@ -86,3 +87,15 @@ Address reported live connection/identity/query defects first. Then extract the 
 | 1 | `568a1fe` | Automated checks passed; user test pending |
 
 The follow-up checkpoint documentation commit only records this implementation hash. Use the current branch HEAD when testing; it includes Batch 1 and its recorded handoff.
+
+## Batch 1 follow-up — Claude Desktop configuration correction
+
+The first installer targeted Claude Code CLI (`~/.claude.json`), while the user's screenshot was Claude Desktop's **Local MCP servers** screen. Added `orvane` to `%APPDATA%/Claude/claude_desktop_config.json` alongside `magic-netsuite-apps` and `magic-netsuite`.
+
+- Added an idempotent Desktop installer: `scripts/install-claude-desktop-mcp.ps1`.
+- Backed up the Desktop config before the atomic update; structural comparison confirms all existing servers and preferences are unchanged.
+- Connected an MCP client using the exact Desktop config command/arguments/environment and verified both Batch 1 tools are discoverable. Actual status remains `DESKTOP_UNAVAILABLE` until Orvane Desktop is started/restarted with the new gateway.
+- Installer rerun made no change. Updated the manual guide to distinguish Desktop settings from Claude Code CLI's `/mcp`.
+- Commit subject: `fix: install Orvane MCP in Claude Desktop alongside Magic` (current follow-up commit).
+
+**User action:** fully quit Claude Desktop including its tray process, reopen it, and check **Settings > Developer > Local MCP servers > orvane**. Then restart Orvane Desktop if needed and continue the Batch 1 read-only test. Batch 2 remains pending feedback.
