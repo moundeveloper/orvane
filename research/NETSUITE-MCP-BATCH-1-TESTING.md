@@ -2,6 +2,8 @@
 
 Branch: `codex/netsuite-mcp-migration`. This is the first read-only checkpoint, not the full migration.
 
+Implementation commit: `568a1fe`. The current branch HEAD also includes the documentation checkpoint recording this hash.
+
 ## What is installed
 
 Claude Code has a user-scoped `orvane` stdio server using:

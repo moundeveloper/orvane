@@ -34,7 +34,7 @@ These commits exclude pre-existing certificate/API-key-vault and other unrelated
 
 ## Batch 1 — Direct read path and Claude Code setup
 
-Implementation commit: `feat: add read-only Desktop NetSuite MCP and Claude Code setup` (hash to be recorded in the checkpoint update after committing).
+Implementation commit: `568a1fe` — `feat: add read-only Desktop NetSuite MCP and Claude Code setup`.
 
 ### Completed
 
@@ -83,4 +83,6 @@ Address reported live connection/identity/query defects first. Then extract the 
 | Batch | Commit | State |
 | --- | --- | --- |
 | 0 | `bd04a91` | Baseline recorded; separate migration branch created |
-| 1 | Implementation commit recorded in the next checkpoint update | Automated checks passed; user test pending |
+| 1 | `568a1fe` | Automated checks passed; user test pending |
+
+The follow-up checkpoint documentation commit only records this implementation hash. Use the current branch HEAD when testing; it includes Batch 1 and its recorded handoff.
