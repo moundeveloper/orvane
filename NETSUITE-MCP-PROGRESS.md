@@ -262,6 +262,8 @@ The local report is redacted and ignored by Git. No Magic, production query, acc
 
 ## Batch 7 — Managed bounded-page artifacts
 
+Implementation commit: `6556d56` — `feat: persist bounded NetSuite page artifacts with identity-bound reads`.
+
 - Added `orvane_netsuite_artifact` with local CSV/NDJSON page export, inspect and bounded text read actions. The worker owns content-addressed payloads and versioned metadata, protected by fresh reported identity checks and source origin/account/user/role binding.
 - Enforced 2 MiB per payload, 16 MiB unique retained payload, 64 IDs, 24-hour logical expiry and bounded Unicode-aware chunks. Cleanup runs on startup/export; ordinary query handling remains independent of lazy artifact-store initialization.
 - Added formula-like CSV string/header prefixing, strict source/path/action validation, checksum checks, normal restart persistence and action-specific metadata-only journal outcomes. This exports one page, not a whole-query snapshot or NetSuite file content.

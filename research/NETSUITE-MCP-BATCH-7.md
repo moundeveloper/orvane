@@ -2,6 +2,8 @@
 
 Date: 5 November 2026. Branch: `codex/netsuite-mcp-migration`.
 
+Implementation commit: `6556d56`.
+
 ## Implemented behavior
 
 New `orvane_netsuite_artifact` provides three actions through the Desktop-owned worker. The dedicated profile now advertises four tools; existing configuration paths are unchanged.
