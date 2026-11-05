@@ -48,6 +48,16 @@ node scripts/test-orvane-broker-live.mjs --origin https://4027610-sb1.app.netsui
 
 After normal restart, run the direct checker with `--batch 6`. It checks filters through both configured paths, selecting criteria from discovered rows and explicitly recording skips if suitable data is absent. Reports under `artifacts/` are redacted and ignored by Git; the isolated checker tracks the current worker version.
 
+## Direct Desktop acceptance after user restart
+
+The user subsequently restarted Orvane. **42 live checks passed** against the actual Batch 6 Desktop through fresh clients from both installed Claude configurations. Each profile passed all seven filter/global-search cases without skips, alongside existing typed reads, SELECT/history/error checks and shared/fresh execution behavior. Identity and action-specific journal outcomes matched; disconnecting a test client left the other usable.
+
+```powershell
+node scripts/test-orvane-mcp-live.mjs --batch 6 --origin https://4027610-sb1.app.netsuite.com --account 4027610_SB1 --user 4033 --role 3 --report artifacts/netsuite-batch6-desktop-live.json
+```
+
+This supersedes the pending-activation limitation above. No further restart or manual query test is needed for this checkpoint. No production query, write, Magic call, GUI input or induced role/navigation change was performed. The report is local/redacted/ignored by Git; server identity remains unverified.
+
 ## Migration disposition
 
 [The incremental map](netsuite-mcp-migration-map.json) now records partial native replacements for `netsuite_find_file` and `netsuite_find_folder`, and the script filters implemented here. Legacy fuzzy search, wildcard/all-row behavior, exact response adapters/string-ID aliases, URL fields, file contents/artifacts, script logs and mutations remain pending. The original 155-tool inventory and Magic installation are preserved. The wider migration is not complete.

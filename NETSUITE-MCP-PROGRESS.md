@@ -12,7 +12,7 @@ Updated: 5 November 2026. Working branch: `codex/netsuite-mcp-migration`.
 
 ## Current position
 
-Batch 6 adds script filters, scoped name filters and global `find-files`/`find-folders` actions to the existing read tool. **40 targeted tests, 30 active-Desktop compatibility checks and 22 isolated-new-worker live checks passed.** The active Desktop remains Batch 5; activation needs the next normal restart and fresh Claude MCP schema. No reinstall or manual query test is required. See [Batch 6 evidence](research/NETSUITE-MCP-BATCH-6.md).
+Batch 6 is active after the user restarted Orvane. **42 direct live checks passed** through fresh MCP clients from both installed Claude configurations, including seven filter/global-search cases per profile with no skips. Earlier verification passed **40 targeted tests, 30 Batch 5 compatibility checks and 22 isolated-new-worker live checks**. No further restart or manual query test is needed for this checkpoint. See [Batch 6 evidence](research/NETSUITE-MCP-BATCH-6.md).
 
 Batch 5 is active after the user restarted Orvane. **28 direct live checks passed** through fresh MCP clients launched from both installed Claude configurations, including all four typed metadata actions with no skipped cases. Earlier verification passed **37 targeted tests, 18 Batch 4 compatibility checks and 15 isolated-new-worker live checks**. No further restart or manual query test is needed for this checkpoint. See [Batch 5 evidence](research/NETSUITE-MCP-BATCH-5.md) and [incremental legacy dispositions](research/netsuite-mcp-migration-map.json).
 
@@ -247,3 +247,13 @@ Implementation commit: `8f8ea80` — `feat: filter metadata reads and search the
 - Retained identity/session fences, bounded pages, sharing and private executor routing; journal hashes include criteria without persisting their text. Updated the separate legacy map to distinguish partial search/filter replacements from remaining compatibility work.
 - Verified **40 targeted tests**, type-check/syntax checks, **30 live compatibility checks** on the active Batch 5 Desktop and **22 isolated Batch 6 worker checks**, including seven non-skipped filter/search cases on discovered sandbox data. No Magic, production query, account mutation or user application restart was used.
 - Commands, scope, remaining work and activation: [Batch 6 record](research/NETSUITE-MCP-BATCH-6.md).
+
+### Batch 6 direct Desktop acceptance after user restart
+
+The user confirmed a normal Orvane restart. **42 direct live checks passed** against the actual Batch 6 Desktop through fresh MCP SDK clients launched from both installed Claude configurations. Each profile exercised seven new filter/search cases without skips: combined script ID/type/name/owner, contradictory AND predicates, global folder ID/name, scoped folder name, global file ID/name, filename-only global search and scoped file name. Discovered sandbox rows supplied the criteria; identity and completed action-specific journal outcomes matched.
+
+The existing typed metadata pages, SELECT/history/error checks, five simultaneous reads sharing one execution with separate request IDs, a fresh subsequent execution and continued service after a test-client disconnect also passed.
+
+Command: `node scripts/test-orvane-mcp-live.mjs --batch 6 --origin https://4027610-sb1.app.netsuite.com --account 4027610_SB1 --user 4033 --role 3 --report artifacts/netsuite-batch6-desktop-live.json`.
+
+The local report is redacted and ignored by Git. No Magic, production query, account mutation, GUI input or additional application restart was used. This verifies the installed connection paths, not a Claude conversation/cached menu. Server identity and disruptive lifecycle transitions remain outside this live check.
