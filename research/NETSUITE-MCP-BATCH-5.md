@@ -53,6 +53,16 @@ node scripts/test-orvane-broker-live.mjs --origin https://4027610-sb1.app.netsui
 
 After the next normal restart the agent can use the direct checker with `--batch 5`. It checks typed actions through both configured paths using discovered IDs, recording skips if suitable data is unavailable. It never guesses an account or changes roles. Reports in `artifacts/` are ignored by Git. The isolated checker tracks the current worker; earlier batch documents describe historical runs.
 
+## Direct Desktop acceptance after user restart
+
+The user subsequently restarted Orvane. **28 live checks passed** against the actual Batch 5 Desktop through fresh MCP SDK clients from both installed Claude configurations. Each advertised all three tools and exercised all four typed actions without skips: two 100-row script pages, one deployment, 100 top-level folders, a valid empty child-folder page and two file metadata rows. Identity and action-specific journal outcomes matched. Existing SELECT/sharing/fresh-read/error/disconnect checks also passed.
+
+```powershell
+node scripts/test-orvane-mcp-live.mjs --batch 5 --origin https://4027610-sb1.app.netsuite.com --account 4027610_SB1 --user 4033 --role 3 --report artifacts/netsuite-batch5-desktop-live.json
+```
+
+This supersedes the pending-activation limitation above. No additional restart or manual query test is required. The test did not control a Claude conversation, mutate NetSuite, query production, call Magic, take UI focus or induce navigation/role changes. The report remains local/redacted/ignored by Git; server identity is still unverified.
+
 ## Remaining foundations
 
 This registry covers the new read family only. Consolidating all existing policies, explicit Windows pipe DACLs, server-verified capabilities/identity, workspace listener ownership and artifacts/export remain separate slices. This is not full Magic migration completion.
