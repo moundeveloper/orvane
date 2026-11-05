@@ -199,7 +199,15 @@ test("direct gateway authenticates, bounds payloads, rejects duplicate owners an
 
 test("two complete NetSuite MCP clients share the gateway without workspace listeners or database writers", async (t) => {
   const fixture = serviceFixture();
-  const { directory } = await rpcFixture(t, fixture.dispatch);
+  let failStatus = false;
+  const { directory } = await rpcFixture(t, async (request: any) => {
+    if (failStatus && request.operation === "status")
+      throw Object.assign(Error("Fixture capability lookup failed"), { code: "TEST_STATUS_FAILURE" });
+    const result = await fixture.dispatch(request);
+    if (result.capabilities)
+      result.capabilities = result.capabilities.filter((value: string) => value !== "query.share-in-flight");
+    return result;
+  });
   const connections = await Promise.all(
     [0, 1].map(async (index) => {
       const transport = new StdioClientTransport({
@@ -259,6 +267,31 @@ test("two complete NetSuite MCP clients share the gateway without workspace list
       },
     });
     const identity = (inspected.structuredContent as any).result.identity;
+    const before = fixture.calls.filter((op) => op === "query").length;
+    const unsupportedShare = await client.callTool({
+      name: "orvane_netsuite_query",
+      arguments: {
+        targetId: status.environments[0].targetId,
+        identityToken: identity.identityToken,
+        sql: "SELECT id FROM employee ORDER BY id", shareInFlight: true,
+      },
+    });
+    assert.equal(unsupportedShare.isError, true);
+    assert.equal(JSON.parse((unsupportedShare.content[0] as any).text).code, "UPGRADE_PENDING");
+    assert.equal(fixture.calls.filter((op) => op === "query").length, before);
+    failStatus = true;
+    const unavailableShare = await client.callTool({
+      name: "orvane_netsuite_query",
+      arguments: {
+        targetId: status.environments[0].targetId,
+        identityToken: identity.identityToken,
+        sql: "SELECT id FROM employee ORDER BY id", shareInFlight: true,
+      },
+    });
+    failStatus = false;
+    assert.equal(unavailableShare.isError, true);
+    assert.equal(JSON.parse((unavailableShare.content[0] as any).text).code, "TEST_STATUS_FAILURE");
+    assert.equal(fixture.calls.filter((op) => op === "query").length, before);
     const query = await client.callTool({
       name: "orvane_netsuite_query",
       arguments: {

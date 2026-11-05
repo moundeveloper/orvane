@@ -1,4 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
+import { createSharedNetSuiteReads } from "./netsuite-shared-reads.mjs";
 
 export class NetSuiteReadError extends Error {
   constructor(code, message) {
@@ -15,6 +16,7 @@ const originPattern = /^https:\/\/[a-z0-9-]+\.app\.netsuite\.com$/i;
 export function createNetSuiteReadService({ hosts, service, instanceId }) {
   const secret = randomBytes(32);
   const targets = new Map();
+  const share = createSharedNetSuiteReads();
   const token = (value) =>
     createHmac("sha256", secret)
       .update(JSON.stringify(value))
@@ -117,7 +119,13 @@ export function createNetSuiteReadService({ hosts, service, instanceId }) {
         desktopId: instanceId,
         batch: 1,
         readOnly: true,
-        capabilities: ["environments.list", "identity.inspect", "query.select"],
+        readSharingBudget: share.budget(),
+        capabilities: [
+          "environments.list",
+          "identity.inspect",
+          "query.select",
+          "query.share-in-flight",
+        ],
         environments,
       };
     }
@@ -143,43 +151,61 @@ export function createNetSuiteReadService({ hosts, service, instanceId }) {
     )
       reject("INVALID_QUERY", "Invalid query offset.");
     const target = resolve(request.targetId);
-    const before = await identity(target);
     if (
-      typeof request.identityToken !== "string" ||
-      request.identityToken !== before.identityToken
+      request.shareInFlight !== undefined &&
+      typeof request.shareInFlight !== "boolean"
     )
-      reject(
-        "IDENTITY_CHANGED",
-        "Inspect this target again; its account, user or role changed, or the identity token is missing.",
+      reject("INVALID_QUERY", "shareInFlight must be a boolean.");
+    const read = async () => {
+      const before = await identity(target);
+      if (
+        typeof request.identityToken !== "string" ||
+        request.identityToken !== before.identityToken
+      )
+        reject(
+          "IDENTITY_CHANGED",
+          "Inspect this target again; its account, user or role changed, or the identity token is missing.",
+        );
+      const result = await service.run(
+        target.host,
+        target.origin,
+        "query",
+        {
+          sql: request.sql,
+          offset: request.offset ?? 0,
+        },
+        target.sessionEpoch ?? undefined,
       );
-    const result = await service.run(
-      target.host,
-      target.origin,
-      "query",
-      {
-        sql: request.sql,
-        offset: request.offset ?? 0,
-      },
-      target.sessionEpoch ?? undefined,
-    );
-    if (!Array.isArray(result?.rows) || result.rows.length > 100)
-      reject(
-        "INVALID_QUERY_RESULT",
-        "The query adapter did not return a bounded page of up to 100 rows.",
-      );
-    const after = await identity(target);
-    if (before.identityToken !== after.identityToken)
-      reject(
-        "IDENTITY_CHANGED",
-        "Identity changed while reading. Results were discarded; inspect the target again.",
-      );
-    return {
-      desktopId: instanceId,
-      targetId: request.targetId,
-      origin: target.origin,
-      identity: after,
-      data: result,
-      observedAt: new Date().toISOString(),
+      if (!Array.isArray(result?.rows) || result.rows.length > 100)
+        reject(
+          "INVALID_QUERY_RESULT",
+          "The query adapter did not return a bounded page of up to 100 rows.",
+        );
+      const after = await identity(target);
+      if (before.identityToken !== after.identityToken)
+        reject(
+          "IDENTITY_CHANGED",
+          "Identity changed while reading. Results were discarded; inspect the target again.",
+        );
+      return {
+        desktopId: instanceId,
+        targetId: request.targetId,
+        origin: target.origin,
+        identity: after,
+        data: result,
+        observedAt: new Date().toISOString(),
+      };
     };
+    return request.shareInFlight === true
+      ? share(
+          [
+            request.targetId,
+            request.identityToken,
+            request.sql,
+            request.offset ?? 0,
+          ],
+          read,
+        )
+      : read();
   };
 }

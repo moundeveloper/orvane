@@ -89,12 +89,13 @@ export function registerNetSuiteTools(server: McpServer, directory: string) {
     "orvane_netsuite_query",
     {
       description:
-        "Execute one bounded SELECT through Orvane's internal-browser processing page. First list and inspect a target using orvane_netsuite_status. Pass that targetId and identityToken explicitly. Returns one existing-adapter page (100 rows), with a 1 MiB response cap. No writes, arbitrary JavaScript or automatic retries. Changed reported client-runtime identity discards results; this is not server-side session/role verification. Paging follows the existing adapter, not a materialized snapshot; use deterministic ORDER BY.",
+        "Execute one bounded SELECT through Orvane's internal-browser processing page. First list and inspect a target using orvane_netsuite_status. Pass targetId and identityToken explicitly. Returns up to 100 rows, with a 1 MiB response cap. Optional shareInFlight (default false, Batch 4+) shares an identical currently running SELECT for the same target/identity/offset; use only when one observation may serve multiple callers. No completed-result cache, writes or automatic retries. Client-runtime identity checks are not server-side verification. Paging is not a materialized snapshot; use deterministic ORDER BY.",
       inputSchema: {
         targetId: z.string().min(1).max(100),
         identityToken: z.string().min(1).max(100),
         sql: z.string().min(1).max(20000),
         offset: z.number().int().min(0).max(1000000).default(0),
+        shareInFlight: z.boolean().default(false),
       },
       annotations: {
         readOnlyHint: true,
@@ -102,6 +103,47 @@ export function registerNetSuiteTools(server: McpServer, directory: string) {
         openWorldHint: true,
       },
     },
-    (args) => call({ operation: "query", ...args }),
+    async (args) => {
+      if (args.shareInFlight) {
+        try {
+          const status = (await desktopNetSuiteRequest(directory, {
+            operation: "status",
+            action: "list",
+          })) as { capabilities?: string[] };
+          if (!status.capabilities?.includes("query.share-in-flight"))
+            return {
+              isError: true,
+              content: [
+                {
+                  type: "text" as const,
+                  text: JSON.stringify({
+                    code: "UPGRADE_PENDING",
+                    message:
+                      "The running Desktop broker does not support in-flight read sharing. No query was submitted. Use shareInFlight:false for an independent read.",
+                  }),
+                },
+              ],
+            };
+        } catch (error) {
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({
+                  code:
+                    error instanceof DesktopNetSuiteError
+                      ? error.code
+                      : "NETSUITE_ERROR",
+                  message:
+                    "Read-sharing capability could not be checked. No query was submitted.",
+                }),
+              },
+            ],
+          };
+        }
+      }
+      return call({ operation: "query", ...args });
+    },
   );
 }

@@ -111,6 +111,7 @@ export function openRequestJournal(
           operation,
           sql: request?.sql,
           offset: request?.offset,
+          shareInFlight: request?.shareInFlight === true,
         }),
       );
       try {

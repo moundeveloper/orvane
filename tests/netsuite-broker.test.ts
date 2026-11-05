@@ -81,7 +81,7 @@ test(
       assert.equal(descriptor.pid, broker.pid);
       assert.equal(descriptor.desktopPid, process.pid);
       const listed = await request(directory, { operation: "status" });
-      assert.equal(listed.batch, 3);
+      assert.equal(listed.batch, 4);
       assert.deepEqual(listed.execution, {
         mode: "broker-worker",
         brokerPid: broker.pid,

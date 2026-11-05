@@ -209,7 +209,7 @@ test(
       const call = (request: object): Promise<any> =>
         desktopNetSuiteRequest(root, request);
       const listed = await call({ operation: "status" });
-      assert.equal(listed.batch, 3);
+      assert.equal(listed.batch, 4);
       assert(listed.capabilities.includes("requests.read"));
       assert.match(listed.requestId, /^[a-f\d-]{36}$/i);
       const targetId = listed.environments[0].targetId;

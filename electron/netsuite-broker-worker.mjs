@@ -161,7 +161,7 @@ process.on("message", async (message) => {
               limit: request.limit,
               beforeSequence: request.beforeSequence,
             }),
-            batch: 3,
+            batch: 4,
             execution,
           };
         const tracked = journal.run(request, async () => {
@@ -178,7 +178,7 @@ process.on("message", async (message) => {
             capabilities: result.capabilities
               ? [...result.capabilities, "requests.read"]
               : undefined,
-            batch: 3,
+            batch: 4,
             execution,
           };
         });

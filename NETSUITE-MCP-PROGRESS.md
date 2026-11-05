@@ -12,6 +12,8 @@ Updated: 5 November 2026. Working branch: `codex/netsuite-mcp-migration`.
 
 ## Current position
 
+Batch 4 adds explicit, bounded in-flight SELECT sharing: five overlapping opted-in calls were measured issuing one sandbox SELECT while retaining five journal IDs. **32 targeted tests, 16 current-Desktop compatibility checks and 9 isolated-new-worker live checks passed.** See [Batch 4 implementation/evidence](research/NETSUITE-MCP-BATCH-4.md). The currently running Desktop remains Batch 3; Batch 4 activates at the next normal restart. No manual test is requested.
+
 Batch 0 is committed: `bd04a91` — baseline UI fixes and migration design.
 Batch 1 core live test passed, as reported by the user: explicit sandbox selection, inspect and SELECT through Orvane only. Claude Desktop and Claude Code configurations are installed and unchanged by Batch 2.
 Batch 2 implements the Desktop-owned broker worker and has now passed background live verification against the existing Desktop and both installed Claude MCP configurations. Routine testing is handled by the agent from this point onward.
@@ -193,3 +195,11 @@ The user confirmed a normal Orvane restart. The background checker was extended 
 Command: `node scripts/test-orvane-mcp-live.mjs --batch 3 --origin https://4027610-sb1.app.netsuite.com --account 4027610_SB1 --user 4033 --role 3 --report artifacts/netsuite-batch3-desktop-live.json`.
 
 The report is local and ignored by Git. No Magic, account mutation, production query, UI input or additional application restart was used. Observed navigation invalidation remains fixture-tested; this live run verifies activation and normal reads, not every lifecycle transition or server-side identity.
+
+## Batch 4 — Bounded in-flight SELECT sharing
+
+- Added explicit `shareInFlight` query option, default false. Identical overlapping target/identity/SQL/offset reads share one complete identity-checked execution. No completed-result cache or automatic retry was added.
+- Every caller retains an independent durable request ID/result/error; disconnecting one actual MCP client does not cancel the other caller. Status exposes bounded active group/participant counts; responses report the shared execution ID and participant count.
+- Capability preflight prevents accidental execution on an older broker when sharing was requested. Existing independent queries and the two installed Claude profiles remain compatible.
+- Verified **32 targeted tests**, type-check and syntax checks, **16 live compatibility checks** on the active Batch 3 Desktop, and **9 isolated Batch 4 worker live checks** relaying to the authorized sandbox. Measured five concurrent requests → one SELECT; the later request executed anew. No user application was restarted and no NetSuite mutation was made.
+- Full evidence, limits, commands and activation status: [Batch 4 record](research/NETSUITE-MCP-BATCH-4.md).

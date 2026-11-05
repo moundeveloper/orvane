@@ -48,7 +48,7 @@ const report = {
   passed: false,
   limitations: [
     "Active Desktop is not restarted or upgraded by this test.",
-    "Source navigation/session epoch events are fixture-tested; the legacy live relay does not provide the new source lifecycle tracker.",
+    "Source navigation/session epoch events are fixture-tested; the isolated relay does not forward source lifecycle events.",
     "Server-side identity remains unverified.",
   ],
 };
@@ -129,6 +129,7 @@ try {
   await inspect();
   record("authorized live sandbox identity matches");
   const host = { id: 1, isDestroyed: () => false };
+  let selectCalls = 0;
   const service = {
     environments: async () => [
       { id: values.origin, label: "Authorized sandbox relay", status: "ready" },
@@ -144,6 +145,7 @@ try {
         };
       }
       assert.equal(operation, "query");
+      selectCalls++;
       const answer = await call(live, "orvane_netsuite_query", {
         targetId,
         identityToken: liveIdentity.identityToken,
@@ -153,7 +155,7 @@ try {
       return answer.data;
     },
   };
-  temporary = await mkdtemp(join(tmpdir(), "orvane-live-b3-"));
+  temporary = await mkdtemp(join(tmpdir(), "orvane-live-b4-"));
   const directory = join(temporary, "netsuite-broker");
   const start = () =>
     startNetSuiteBroker({
@@ -178,11 +180,12 @@ try {
     ),
   );
   for (const status of statuses) {
-    assert.equal(status.batch, 3);
+    assert.equal(status.batch, 4);
     assert.equal(status.execution.brokerPid, broker.pid);
     assert(status.capabilities.includes("requests.read"));
+    assert(status.capabilities.includes("query.share-in-flight"));
   }
-  record("two real stdio clients share the isolated Batch 3 worker");
+  record("two real stdio clients share the isolated Batch 4 worker");
   const shadowTarget = statuses[0].environments[0].targetId;
   const inspected = await call(clients[0], "orvane_netsuite_status", {
     action: "inspect",
@@ -192,7 +195,7 @@ try {
   assert.equal(
     inspected.identity.sessionEpochSupported,
     false,
-    "Legacy relay must not claim new source lifecycle support",
+    "Isolated relay must not claim source lifecycle events are forwarded",
   );
   const sql =
     "SELECT id FROM (SELECT id FROM employee ORDER BY id) WHERE ROWNUM <= 1";
@@ -220,6 +223,66 @@ try {
   assert(!JSON.stringify(history).includes('"rows"'));
   record(
     "MCP request history links the completed read without SQL, tokens or row payloads",
+  );
+  const queryArgs = {
+    targetId: shadowTarget,
+    identityToken: inspected.identity.identityToken,
+    sql,
+    shareInFlight: true,
+  };
+  const beforeSharing = selectCalls;
+  const shared = await Promise.all(
+    Array.from({ length: 5 }, (_, index) =>
+      call(clients[index % clients.length], "orvane_netsuite_query", queryArgs),
+    ),
+  );
+  assert.equal(
+    selectCalls - beforeSharing,
+    1,
+    "Five overlapping opted-in reads must issue exactly one SELECT through the live relay",
+  );
+  assert.equal(new Set(shared.map((item) => item.requestId)).size, 5);
+  assert.equal(
+    new Set(shared.map((item) => item.readSharing.executionId)).size,
+    1,
+  );
+  assert(
+    shared.every(
+      (item) =>
+        item.readSharing.participants === 5 &&
+        item.data.rows.length === 1 &&
+        !item.readSharing.cacheHit,
+    ),
+  );
+  history = await call(clients[1], "orvane_netsuite_status", {
+    action: "requests",
+    limit: 100,
+  });
+  assert(
+    shared.every((item) =>
+      history.requests.some(
+        (row) => row.requestId === item.requestId && row.state === "completed",
+      ),
+    ),
+  );
+  report.sharing = {
+    callers: 5,
+    selectDispatches: selectCalls - beforeSharing,
+    completedRequestIds: 5,
+    completedCache: false,
+  };
+  record(
+    "five concurrent real MCP reads issue one sandbox SELECT and retain five completed journal IDs",
+  );
+  const fresh = await call(clients[0], "orvane_netsuite_query", queryArgs);
+  assert.equal(selectCalls - beforeSharing, 2);
+  assert.notEqual(
+    fresh.readSharing.executionId,
+    shared[0].readSharing.executionId,
+  );
+  assert.equal(fresh.readSharing.joined, false);
+  record(
+    "a later identical read executes again instead of reusing a completed result",
   );
   let failedId;
   await assert.rejects(

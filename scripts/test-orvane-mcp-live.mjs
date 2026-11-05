@@ -32,7 +32,7 @@ if (
 const sql =
   "SELECT id FROM (SELECT id FROM employee ORDER BY id) WHERE ROWNUM <= 1";
 const expectedBatch = Number(values.batch);
-assert([2, 3].includes(expectedBatch), "Supported --batch values: 2, 3");
+assert([2, 3, 4].includes(expectedBatch), "Supported --batch values: 2, 3, 4");
 const report = {
   startedAt: new Date().toISOString(),
   scope:
@@ -175,7 +175,9 @@ try {
       assert.equal(inspected.identity.sessionEpochSupported, true);
       assert(Number.isSafeInteger(inspected.identity.sessionEpoch));
       assert(inspected.identity.sessionEpoch > 0);
-      record(`${label}: live Desktop reports source session-generation support`);
+      record(
+        `${label}: live Desktop reports source session-generation support`,
+      );
     }
     record(`${label}: explicit sandbox and reported identity match`, {
       serverRuntimeVerified: false,
@@ -199,19 +201,29 @@ try {
     );
     if (expectedBatch >= 3) {
       assert.match(answer.requestId, /^[a-f\d-]{36}$/i);
-      assert.equal(answer.identity.sessionEpoch, inspected.identity.sessionEpoch);
+      assert.equal(
+        answer.identity.sessionEpoch,
+        inspected.identity.sessionEpoch,
+      );
       const history = await call(client, "orvane_netsuite_status", {
-        action: "requests", limit: 100,
+        action: "requests",
+        limit: 100,
       });
-      const logged = history.requests.find((item) => item.requestId === answer.requestId);
+      const logged = history.requests.find(
+        (item) => item.requestId === answer.requestId,
+      );
       assert(logged, "Live query must appear in the active Desktop journal");
       assert.equal(logged.operation, "query.select");
       assert.equal(logged.state, "completed");
       const serialized = JSON.stringify(history);
       assert(!serialized.includes(sql));
       assert(!serialized.includes(inspected.identity.identityToken));
-      assert(history.requests.every((item) => !('rows' in item) && !('sql' in item)));
-      record(`${label}: live journal records completed read with metadata only`);
+      assert(
+        history.requests.every((item) => !("rows" in item) && !("sql" in item)),
+      );
+      record(
+        `${label}: live journal records completed read with metadata only`,
+      );
     }
     await assert.rejects(
       call(client, "orvane_netsuite_status", {
@@ -228,11 +240,73 @@ try {
       }),
       (error) => {
         assert.equal(error.code, "IDENTITY_CHANGED");
-        if (expectedBatch >= 3) assert.match(error.requestId, /^[a-f\d-]{36}$/i);
+        if (expectedBatch >= 3)
+          assert.match(error.requestId, /^[a-f\d-]{36}$/i);
         return true;
       },
     );
     record(`${label}: invalid target and identity are rejected`);
+    if (expectedBatch < 4) {
+      await assert.rejects(
+        call(client, "orvane_netsuite_query", {
+          targetId,
+          identityToken: inspected.identity.identityToken,
+          sql,
+          shareInFlight: true,
+        }),
+        { code: "UPGRADE_PENDING" },
+      );
+      record(
+        `${label}: older active broker explicitly rejects opted-in sharing`,
+      );
+    }
+  }
+  if (expectedBatch >= 4) {
+    const target = statuses[0].environments.find(
+      (item) => item.origin === values.origin,
+    );
+    const inspected = await call(clients[0].client, "orvane_netsuite_status", {
+      action: "inspect",
+      targetId: target.targetId,
+    });
+    const args = {
+      targetId: target.targetId,
+      identityToken: inspected.identity.identityToken,
+      sql,
+      shareInFlight: true,
+    };
+    const shared = await Promise.all(
+      Array.from({ length: 5 }, (_, index) =>
+        call(
+          clients[index % clients.length].client,
+          "orvane_netsuite_query",
+          args,
+        ),
+      ),
+    );
+    assert.equal(new Set(shared.map((item) => item.requestId)).size, 5);
+    assert.equal(
+      new Set(shared.map((item) => item.readSharing.executionId)).size,
+      1,
+    );
+    assert(
+      shared.every(
+        (item) =>
+          item.readSharing.participants === 5 &&
+          !item.readSharing.cacheHit &&
+          item.data.rows.length === 1,
+      ),
+    );
+    record(
+      "five concurrent live reads share one execution and preserve distinct request IDs",
+    );
+    const fresh = await call(clients[0].client, "orvane_netsuite_query", args);
+    assert.notEqual(
+      fresh.readSharing.executionId,
+      shared[0].readSharing.executionId,
+    );
+    assert.equal(fresh.readSharing.joined, false);
+    record("later identical live read starts a new execution");
   }
   await clients[0].client.close();
   await clients[0].transport.close();
