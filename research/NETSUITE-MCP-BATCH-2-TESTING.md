@@ -2,6 +2,8 @@
 
 Branch: `codex/netsuite-mcp-migration`. Batch 1 listing/inspection/SELECT was confirmed by the user on 5 November 2026. This checkpoint moves that same read path into a separate process; it adds no account-write capability.
 
+Implementation commit: `ef793cb`. Test the current branch HEAD, which also records the checkpoint documentation.
+
 ## What changed
 
 - Desktop starts one Node broker worker on its own private process IPC channel. The socket listener, authentication, target IDs and client-runtime identity tokens live in that worker.

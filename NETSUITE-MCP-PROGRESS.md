@@ -85,8 +85,10 @@ Address reported live connection/identity/query defects first. Then extract the 
 | --- | --- | --- |
 | 0 | `bd04a91` | Baseline recorded; separate migration branch created |
 | 1 | `568a1fe`, follow-up `d3f6697` | Automated checks and user-reported sandbox list/inspect/query passed |
+| 1 acceptance | `62ca0df` | User feedback recorded; deterministic smoke query corrected |
+| 2 | `ef793cb` | Worker extraction implemented; 19 targeted tests passed; live user test pending |
 
-The follow-up checkpoint documentation commit only records this implementation hash. Use the current branch HEAD when testing; it includes Batch 1 and its recorded handoff.
+Use the current branch HEAD when testing; checkpoint documentation commits record the implementation hashes above without starting another implementation batch.
 
 ## Batch 1 follow-up — Claude Desktop configuration correction
 
@@ -112,7 +114,7 @@ That setup checkpoint was followed by the successful user test recorded below.
 
 ## Batch 2 — Desktop-owned broker worker
 
-Implementation commit: `feat: run NetSuite MCP gateway in a Desktop-owned broker worker` (record the hash in the documentation checkpoint after committing).
+Implementation commit: `ef793cb` — `feat: run NetSuite MCP gateway in a Desktop-owned broker worker`.
 
 ### Completed
 
