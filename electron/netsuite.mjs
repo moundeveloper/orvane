@@ -16,6 +16,7 @@ async function signedIn(contents) {
     .catch(() => true);
 }
 export function setupNetSuite(isOrvane, partition, processing) {
+  const queues = new Map();
   const allowed = (event) =>
     !event.sender.isDestroyed() && isOrvane(event.sender.getURL());
   ipcMain.handle("orvane:netsuite-tabs", async (event) => {
@@ -26,7 +27,7 @@ export function setupNetSuite(isOrvane, partition, processing) {
     if (!allowed(event)) throw Error("Unauthorized request.");
     return processing.openRecord(event.sender, origin, kind, id);
   });
-  ipcMain.handle("orvane:netsuite-run", async (event, id, operation, args) => {
+  const run = async (event, id, operation, args) => {
     const options = typeof args === "string" ? { sql: args } : args || {};
     if (!allowed(event)) throw Error("Unauthorized request.");
     if (typeof id !== "string") throw Error("Choose a NetSuite environment.");
@@ -438,16 +439,32 @@ export function setupNetSuite(isOrvane, partition, processing) {
         clearTimeout(timer);
       }
     };
-    try {
-      return await attempt();
-    } catch (error) {
-      // NetSuite can end the session while the page stays put, so calls fail
-      // until it is reloaded. Then sign in again (a reload goes through the
-      // login page) and run reads once more; writes are only reported.
-      if (error?.timedOut || !processingTab || (await signedIn(processingTab.contents))) throw error;
-      if (!(await Promise.resolve(processing.reload?.(event.sender, id)).catch(() => false))) throw error;
-      if (WRITES.includes(operation)) throw error;
-      return await attempt();
-    }
-  });
+    const execute = async () => {
+      try {
+        return await attempt();
+      } catch (error) {
+        // NetSuite can end the session while the page stays put, so calls fail
+        // until it is reloaded. Then sign in again (a reload goes through the
+        // login page) and run reads once more; writes are only reported.
+        if (error?.timedOut || !processingTab || (await signedIn(processingTab.contents))) throw error;
+        if (!(await Promise.resolve(processing.reload?.(event.sender, id)).catch(() => false))) throw error;
+        if (WRITES.includes(operation)) throw error;
+        return await attempt();
+      }
+    };
+    // UI and MCP share the same executor reservation, including failed calls.
+    const key = `${event.sender.id}:${id}`;
+    const pending = (queues.get(key) || Promise.resolve()).then(execute);
+    const settled = pending.catch(() => {});
+    queues.set(key, settled);
+    void settled.then(() => {
+      if (queues.get(key) === settled) queues.delete(key);
+    });
+    return pending;
+  };
+  ipcMain.handle("orvane:netsuite-run", run);
+  return {
+    environments: host => processing.environments(host),
+    run: (host, id, operation, args) => run({ sender: host }, id, operation, args),
+  };
 }

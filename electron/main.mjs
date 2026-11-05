@@ -20,6 +20,9 @@ import { dirname, join } from "node:path";
 import { setupPasswords } from "./passwords.mjs";
 import { setupNetSuite } from "./netsuite.mjs";
 import { setupProcessing } from "./processing.mjs";
+import { randomUUID } from "node:crypto";
+import { startNetSuiteRpc } from "./netsuite-rpc.mjs";
+import { createNetSuiteReadService } from "./netsuite-read-service.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.ORVANE_PORT || 5173);
@@ -91,6 +94,7 @@ async function running() {
 // The dev server runs on the system Node, not Electron's, so native modules
 // (better-sqlite3) stay built for the same Node the MCP server uses.
 let server;
+let desktopNetSuiteService, netSuiteRpc;
 async function startServer() {
   if (await running()) return;
   server = spawn(
@@ -112,6 +116,8 @@ async function startServer() {
   throw Error("The Orvane server did not answer within 60 seconds.");
 }
 function stopServer() {
+  void netSuiteRpc?.close().catch(error => console.error("NetSuite gateway close failed:", error.message));
+  netSuiteRpc = undefined;
   server?.kill();
   server = undefined;
 }
@@ -134,7 +140,7 @@ function secure() {
   );
 
   const processing = setupProcessing({ partition: sites, isOrvane });
-  setupNetSuite(isOrvane, sites, processing);
+  const netSuiteService = setupNetSuite(isOrvane, sites, processing);
 
   // Saved logins: offered on sign-in forms, saved after a sign-in works.
   const trackPasswords = setupPasswords({
@@ -144,6 +150,7 @@ function secure() {
     folder: app.getPath("userData"),
   });
   processing.onSignInReset(trackPasswords.resetAutoLogin);
+  desktopNetSuiteService = netSuiteService;
 
   app.on("web-contents-created", (_event, contents) => {
     if (contents.session === sites) trackPasswords(contents);
@@ -542,6 +549,17 @@ else {
       secure();
       await startServer();
       createWindow();
+      const instanceId = randomUUID();
+      netSuiteRpc = await startNetSuiteRpc({
+        directory: join(process.env.ORVANE_DATA_DIR || join(root, ".orvane"), "netsuite-broker"),
+        instanceId,
+        dispatch: createNetSuiteReadService({
+          instanceId,
+          service: desktopNetSuiteService,
+          hosts: () => BrowserWindow.getAllWindows().map(window => window.webContents)
+            .filter(contents => !contents.isDestroyed() && isOrvane(contents.getURL())),
+        }),
+      });
     })
     .catch((error) => {
       console.error(error);
