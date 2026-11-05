@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   netSuiteReadSchema,
   netSuiteReadOperations,
+  NETSUITE_FILTER_CAPABILITY,
 } from "./netsuite-read-operations.ts";
 import {
   desktopNetSuiteRequest,
@@ -93,7 +94,7 @@ export function registerNetSuiteTools(server: McpServer, directory: string) {
     "orvane_netsuite_read",
     {
       description:
-        "Read-only typed NetSuite lists (Batch 5+). First list/inspect a target. actions: scripts (no id); deployments (positive script id); folders (omit id for roots, or parent folder id); files (folder id required). Negative system folder IDs are allowed. Fixed SELECTs, stable name/id ordering, up to 100 rows per page; page starts at 0. Live offset paging is not a snapshot. Metadata only: no file contents, writes, arbitrary SQL or server identity verification. shareInFlight defaults false. Missing broker capability returns UPGRADE_PENDING without submitting a read.",
+        "Read-only typed NetSuite metadata. First list/inspect a target. actions: scripts (no id); deployments (positive script id); folders (omit id for roots, or parent folder id); files (folder id required). Batch 6 adds find-files/find-folders: global search requires an exact File Cabinet id or filters.name. Never pass an entity/transaction ID as a File Cabinet ID. Optional filters: scripts accepts exact scriptId, case-insensitive exact scriptType, name/owner substrings; folders/files/search accept name substring only. Filters combine with AND and run before paging. Substrings treat % and _ literally; max 160 chars. Negative folder IDs are allowed. Fixed SELECTs, 100 rows/page, page starts at 0; live offset paging is not a snapshot. Metadata only, no file contents or writes. shareInFlight defaults false. Unsupported filters/actions return UPGRADE_PENDING before submission.",
       inputSchema: netSuiteReadSchema,
       annotations: {
         readOnlyHint: true,
@@ -110,7 +111,9 @@ export function registerNetSuiteTools(server: McpServer, directory: string) {
         if (
           !status.capabilities?.includes(
             netSuiteReadOperations[args.action].capability,
-          )
+          ) ||
+          (args.filters !== undefined &&
+            !status.capabilities?.includes(NETSUITE_FILTER_CAPABILITY))
         )
           return {
             isError: true,

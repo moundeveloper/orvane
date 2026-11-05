@@ -75,6 +75,8 @@ test("durable request IDs, pagination and recovery store metadata without SQL, r
       beforeSequence: first.nextBeforeSequence,
     });
     assert.equal(second.requests[0].requestId, answer.requestId);
+    const filtered = await journal.run({ operation: "read", action: "find-files", filters: { name: "private-filter" } }, async () => ({}));
+    assert.equal(journal.list().requests.find((item: any) => item.requestId === filtered.requestId)?.operation, "read.find-files");
     const encoded = JSON.stringify(journal.list());
     for (const secret of [
       "private-target",
@@ -82,6 +84,7 @@ test("durable request IDs, pagination and recovery store metadata without SQL, r
       "private-literal",
       "private-row",
       "private-error",
+      "private-filter",
     ])
       assert(!encoded.includes(secret));
     await journal.run({ operation: "status" }, async () => ({}));
@@ -109,6 +112,7 @@ test("durable request IDs, pagination and recovery store metadata without SQL, r
     "private-token",
     "private-literal",
     "private-row",
+    "private-filter",
     "private-error",
   ])
     assert(!disk.includes(Buffer.from(secret)));
@@ -209,7 +213,7 @@ test(
       const call = (request: object): Promise<any> =>
         desktopNetSuiteRequest(root, request);
       const listed = await call({ operation: "status" });
-      assert.equal(listed.batch, 5);
+      assert.equal(listed.batch, 6);
       assert(listed.capabilities.includes("requests.read"));
       assert.match(listed.requestId, /^[a-f\d-]{36}$/i);
       const targetId = listed.environments[0].targetId;

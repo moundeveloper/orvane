@@ -16,6 +16,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { startNetSuiteBroker } from "../electron/netsuite-broker.mjs";
 import { checkTypedNetSuiteReads } from "./test-netsuite-typed-reads.mjs";
+import { checkNetSuiteReadFilters } from "./test-netsuite-read-filters.mjs";
 
 // Run the new worker in an isolated profile. Its executor relays SELECT/identity
 // through the already-running read-only Desktop MCP, without restarting user apps.
@@ -156,7 +157,7 @@ try {
       return answer.data;
     },
   };
-  temporary = await mkdtemp(join(tmpdir(), "orvane-live-b5-"));
+  temporary = await mkdtemp(join(tmpdir(), "orvane-live-b6-"));
   const directory = join(temporary, "netsuite-broker");
   const start = () =>
     startNetSuiteBroker({
@@ -181,14 +182,15 @@ try {
     ),
   );
   for (const status of statuses) {
-    assert.equal(status.batch, 5);
+    assert.equal(status.batch, 6);
     assert.equal(status.execution.brokerPid, broker.pid);
     assert(status.capabilities.includes("requests.read"));
     assert(status.capabilities.includes("query.share-in-flight"));
     for (const action of ["scripts", "deployments", "folders", "files"])
       assert(status.capabilities.includes(`read.${action}`));
+    assert(status.capabilities.includes("read.filters-v1"));
   }
-  record("two real stdio clients share the isolated Batch 5 worker");
+  record("two real stdio clients share the isolated Batch 6 worker");
   const shadowTarget = statuses[0].environments[0].targetId;
   const inspected = await call(clients[0], "orvane_netsuite_status", {
     action: "inspect",
@@ -311,6 +313,13 @@ try {
     "rejected identity is traceable by request ID without an account write",
   );
   report.typedReads = await checkTypedNetSuiteReads({
+    call,
+    client: clients[1],
+    targetId: shadowTarget,
+    identity: inspected.identity,
+    record,
+  });
+  report.readFilters = await checkNetSuiteReadFilters({
     call,
     client: clients[1],
     targetId: shadowTarget,

@@ -81,7 +81,7 @@ test(
       assert.equal(descriptor.pid, broker.pid);
       assert.equal(descriptor.desktopPid, process.pid);
       const listed = await request(directory, { operation: "status" });
-      assert.equal(listed.batch, 5);
+      assert.equal(listed.batch, 6);
       assert.deepEqual(listed.execution, {
         mode: "broker-worker",
         brokerPid: broker.pid,
@@ -138,16 +138,17 @@ test(
             (result.structuredContent as any).result.execution.brokerPid,
             broker.pid,
           );
-        for (const [index, action] of ["scripts", "deployments", "folders", "files"].entries()) {
+        for (const [index, action] of ["scripts", "deployments", "folders", "files", "find-files", "find-folders"].entries()) {
           const response = await clients[index % 2].client.callTool({
             name: "orvane_netsuite_read", arguments: {
               action, targetId, identityToken: inspected.identity.identityToken, page: 1,
-              ...(action === "deployments" ? { id: 42 } : action === "files" ? { id: -15 } : {}),
+              ...(action === "deployments" ? { id: 42 } : action === "files" ? { id: -15 } : action.startsWith("find-") ? { filters: { name: "test" } } : {}),
             },
           });
           assert.notEqual(response.isError, true);
           const read = (response.structuredContent as any).result;
           assert.equal(read.read.action, action);
+          assert.equal(read.read.schemaVersion, 2);
           assert.equal(read.data.offset, 100);
           const history = await request(directory, { operation: "status", action: "requests" });
           const logged = history.requests.find((item: any) => item.requestId === read.requestId);
@@ -173,6 +174,15 @@ test(
         });
         assert.equal(unknownField.isError, true);
         assert.equal(fixture.calls.filter((operation) => operation === "query").length, beforeInvalid);
+        const filtered = await clients[0].client.callTool({
+          name: "orvane_netsuite_read", arguments: { action: "scripts", targetId,
+            identityToken: inspected.identity.identityToken, filters: { name: "O'Reilly %_" } },
+        });
+        assert.notEqual(filtered.isError, true);
+        const filteredResult = (filtered.structuredContent as any).result;
+        assert.deepEqual(filteredResult.read.filterFields, ["name"]);
+        const redactedHistory = await request(directory, { operation: "status", action: "requests", limit: 100 });
+        assert(!JSON.stringify(redactedHistory).includes("O'Reilly"));
       } finally {
         for (const { client, transport } of clients) {
           await client.close();

@@ -7,6 +7,7 @@ import { parseArgs } from "node:util";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { checkTypedNetSuiteReads } from "./test-netsuite-typed-reads.mjs";
+import { checkNetSuiteReadFilters } from "./test-netsuite-read-filters.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const { values } = parseArgs({
@@ -34,8 +35,8 @@ const sql =
   "SELECT id FROM (SELECT id FROM employee ORDER BY id) WHERE ROWNUM <= 1";
 const expectedBatch = Number(values.batch);
 assert(
-  [2, 3, 4, 5].includes(expectedBatch),
-  "Supported --batch values: 2, 3, 4, 5",
+  [2, 3, 4, 5, 6].includes(expectedBatch),
+  "Supported --batch values: 2, 3, 4, 5, 6",
 );
 const report = {
   startedAt: new Date().toISOString(),
@@ -272,6 +273,33 @@ try {
       });
       report.typedReads ??= [];
       report.typedReads.push({ profile: label, ...evidence });
+    }
+    if (expectedBatch < 6) {
+      for (const options of [
+        { action: "scripts", filters: { name: "test" } },
+        { action: "find-files", id: 1 },
+      ])
+        await assert.rejects(
+          call(client, "orvane_netsuite_read", {
+            ...options,
+            targetId,
+            identityToken: inspected.identity.identityToken,
+          }),
+          { code: "UPGRADE_PENDING" },
+        );
+      record(
+        `${label}: older active broker rejects filters and global search before submission`,
+      );
+    } else {
+      const evidence = await checkNetSuiteReadFilters({
+        call,
+        client,
+        targetId,
+        identity: inspected.identity,
+        record,
+      });
+      report.readFilters ??= [];
+      report.readFilters.push({ profile: label, ...evidence });
     }
     if (expectedBatch < 4) {
       await assert.rejects(

@@ -10,10 +10,10 @@
       "replacement": {
         "tool": "orvane_netsuite_read",
         "action": "scripts",
-        "schemaVersion": 1
+        "schemaVersion": 2
       },
-      "implemented": "Bounded live script metadata, explicit identity, deterministic offset pages and optional in-flight sharing.",
-      "remaining": "Legacy scriptId/type/name/owner/fuzzy filters, all-row response semantics and exact compatibility result adapter.",
+      "implemented": "Bounded script metadata, explicit identity, deterministic pages, optional sharing and data-source filters for exact scriptId, case-insensitive exact type and name/owner substrings.",
+      "remaining": "Legacy fuzzy search, all-row response semantics and exact compatibility adapter. Native name/owner substrings treat percent/underscore literally rather than as LIKE wildcards.",
       "fixture": "../tests/netsuite-typed-reads.test.ts"
     },
     {
@@ -22,7 +22,7 @@
       "replacement": {
         "tool": "orvane_netsuite_read",
         "actions": ["folders", "files"],
-        "schemaVersion": 1
+        "schemaVersion": 2
       },
       "implemented": "Immediate child folder and file metadata using separate bounded read actions; negative system folder IDs supported.",
       "remaining": "Combined legacy response, URL fields, legacy string folder IDs and compatibility adapter. Separate reads do not form an atomic snapshot.",
@@ -34,7 +34,7 @@
       "replacement": {
         "tool": "orvane_netsuite_read",
         "actions": ["folders", "files"],
-        "schemaVersion": 1
+        "schemaVersion": 2
       },
       "implemented": "Root/child folder pages and file metadata through the broker, independent of the context-picker renderer.",
       "remaining": "Combined result, folder info, breadcrumbs, context-picker integration and null-to-omitted-ID compatibility. Root selection uses the current Orvane IsTopLevel predicate.",
@@ -49,6 +49,30 @@
       },
       "remaining": "The new action lists deployment metadata by positive script ID. Legacy behavior filters by record type and includes source code; it is not implemented by this action.",
       "fixture": "../tests/netsuite-typed-reads.test.ts"
+    },
+    {
+      "legacyName": "netsuite_find_file",
+      "state": "partial",
+      "replacement": {
+        "tool": "orvane_netsuite_read",
+        "action": "find-files",
+        "schemaVersion": 2
+      },
+      "implemented": "Global bounded File Cabinet file metadata search by exact positive file ID, case-insensitive literal name substring, or their conjunction; explicit target/identity and stable pages.",
+      "remaining": "Legacy string IDs, flat name argument, URL fields and exact compatibility adapter. File content remains separate and pending.",
+      "fixture": "../tests/netsuite-read-filters.test.ts"
+    },
+    {
+      "legacyName": "netsuite_find_folder",
+      "state": "partial",
+      "replacement": {
+        "tool": "orvane_netsuite_read",
+        "action": "find-folders",
+        "schemaVersion": 2
+      },
+      "implemented": "Global bounded folder metadata search by exact nonzero folder ID (including system folders), literal case-insensitive name substring, or their conjunction.",
+      "remaining": "Legacy string IDs, flat name argument, empty-criteria behavior and exact compatibility adapter. Native search requires an ID or a nonempty bounded name.",
+      "fixture": "../tests/netsuite-read-filters.test.ts"
     },
     {
       "legacyName": "netsuite_read_file",

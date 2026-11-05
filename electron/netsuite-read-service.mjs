@@ -3,6 +3,7 @@ import { createSharedNetSuiteReads } from "./netsuite-shared-reads.mjs";
 import {
   compileNetSuiteRead,
   netSuiteReadOperations,
+  NETSUITE_FILTER_CAPABILITY,
 } from "../server/netsuite-read-operations.ts";
 
 export class NetSuiteReadError extends Error {
@@ -129,6 +130,7 @@ export function createNetSuiteReadService({ hosts, service, instanceId }) {
           "identity.inspect",
           "query.select",
           "query.share-in-flight",
+          NETSUITE_FILTER_CAPABILITY,
           ...Object.values(netSuiteReadOperations).map(
             (policy) => policy.capability,
           ),

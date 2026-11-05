@@ -119,6 +119,7 @@ export function openRequestJournal(
           action: request?.action,
           id: request?.id,
           page: request?.page,
+          filters: request?.filters,
         }),
       );
       try {

@@ -21,7 +21,9 @@ test("typed policies compile fixed SELECTs, deterministic pages and valid negati
         ? { id: 42 }
         : action === "files"
           ? { id: -15 }
-          : {}),
+          : action.startsWith("find-")
+            ? { filters: { name: "test" } }
+            : {}),
       page: 2,
     });
     assert.equal(read.policy.capability, policy.capability);
@@ -138,7 +140,9 @@ test("all typed actions use the existing query executor and keep explicit identi
         ? { id: 42 }
         : action === "files"
           ? { id: -15 }
-          : {}),
+          : action.startsWith("find-")
+            ? { filters: { name: "test" } }
+            : {}),
     };
     const first = await f.dispatch(request);
     const second = await f.dispatch({ ...request, page: 1 });
@@ -151,7 +155,7 @@ test("all typed actions use the existing query executor and keep explicit identi
     assert.equal(first.identity.identityToken, f.request.identityToken);
     assert.equal(first.identity.serverRuntimeVerified, false);
   }
-  assert.equal(f.calls.filter((call) => call.operation === "query").length, 8);
+  assert.equal(f.calls.filter((call) => call.operation === "query").length, 12);
   assert(f.calls.every((call) => ["user", "query"].includes(call.operation)));
   for (const policy of Object.values(netSuiteReadOperations))
     assert(f.status.capabilities.includes(policy.capability));

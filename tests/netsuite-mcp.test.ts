@@ -200,12 +200,15 @@ test("direct gateway authenticates, bounds payloads, rejects duplicate owners an
 test("two complete NetSuite MCP clients share the gateway without workspace listeners or database writers", async (t) => {
   const fixture = serviceFixture();
   let failStatus = false;
+  let legacyBatch5 = false;
   const { directory } = await rpcFixture(t, async (request: any) => {
     if (failStatus && request.operation === "status")
       throw Object.assign(Error("Fixture capability lookup failed"), { code: "TEST_STATUS_FAILURE" });
     const result = await fixture.dispatch(request);
     if (result.capabilities)
-      result.capabilities = result.capabilities.filter((value: string) => value !== "query.share-in-flight" && !value.startsWith("read."));
+      result.capabilities = result.capabilities.filter((value: string) => legacyBatch5
+        ? !["read.filters-v1", "read.find-files", "read.find-folders"].includes(value)
+        : value !== "query.share-in-flight" && !value.startsWith("read."));
     return result;
   });
   const connections = await Promise.all(
@@ -275,6 +278,16 @@ test("two complete NetSuite MCP clients share the gateway without workspace list
     assert.equal(unsupportedRead.isError, true);
     assert.equal(JSON.parse((unsupportedRead.content[0] as any).text).code, "UPGRADE_PENDING");
     assert.equal(fixture.calls.filter((op) => op === "query").length, before);
+    legacyBatch5 = true;
+    for (const input of [{ action: "scripts", filters: { name: "test" } }, { action: "find-files", id: 1 }]) {
+      const guarded = await client.callTool({ name: "orvane_netsuite_read", arguments: {
+        targetId: status.environments[0].targetId, identityToken: identity.identityToken, ...input,
+      } });
+      assert.equal(guarded.isError, true);
+      assert.equal(JSON.parse((guarded.content[0] as any).text).code, "UPGRADE_PENDING");
+    }
+    assert.equal(fixture.calls.filter((op) => op === "query").length, before);
+    legacyBatch5 = false;
     const unsupportedShare = await client.callTool({
       name: "orvane_netsuite_query",
       arguments: {

@@ -12,6 +12,8 @@ Updated: 5 November 2026. Working branch: `codex/netsuite-mcp-migration`.
 
 ## Current position
 
+Batch 6 adds script filters, scoped name filters and global `find-files`/`find-folders` actions to the existing read tool. **40 targeted tests, 30 active-Desktop compatibility checks and 22 isolated-new-worker live checks passed.** The active Desktop remains Batch 5; activation needs the next normal restart and fresh Claude MCP schema. No reinstall or manual query test is required. See [Batch 6 evidence](research/NETSUITE-MCP-BATCH-6.md).
+
 Batch 5 is active after the user restarted Orvane. **28 direct live checks passed** through fresh MCP clients launched from both installed Claude configurations, including all four typed metadata actions with no skipped cases. Earlier verification passed **37 targeted tests, 18 Batch 4 compatibility checks and 15 isolated-new-worker live checks**. No further restart or manual query test is needed for this checkpoint. See [Batch 5 evidence](research/NETSUITE-MCP-BATCH-5.md) and [incremental legacy dispositions](research/netsuite-mcp-migration-map.json).
 
 Batch 4 is active after the user restarted Orvane. Explicit, bounded in-flight SELECT sharing passed **16 direct live checks** through both installed Claude MCP configurations, including five overlapping opted-in reads with one execution ID and five distinct request IDs, followed by a fresh execution for a later read. Earlier verification also passed **32 targeted tests, 16 Batch 3 compatibility checks and 9 isolated-new-worker live checks**. See [Batch 4 implementation/evidence](research/NETSUITE-MCP-BATCH-4.md). No further restart or manual test is needed for this checkpoint.
@@ -235,3 +237,11 @@ Existing SELECT/history/error checks, five overlapping queries sharing one execu
 Command: `node scripts/test-orvane-mcp-live.mjs --batch 5 --origin https://4027610-sb1.app.netsuite.com --account 4027610_SB1 --user 4033 --role 3 --report artifacts/netsuite-batch5-desktop-live.json`.
 
 The local report is redacted and ignored by Git. No Magic call, production query, account mutation, GUI input or additional application restart was used. This checks the installed connection paths, not a Claude conversation or its cached tool menu. Server identity and disruptive lifecycle transitions remain outside this live check.
+
+## Batch 6 — Filtered metadata and global File Cabinet search
+
+- Extended the existing read tool with `find-files`/`find-folders` and strict filters: exact script ID/type and name/owner substrings; scoped folder/file name search. Predicates combine with AND before paging; global search requires a File Cabinet ID or a bounded name.
+- Typed descriptors/policies report schema version 2 and applied filter field names. Dedicated filter/action capabilities prevent accidental submission against the active older broker. Text is quoted as literals, `%`/`_` stay literal, and invalid/action-incompatible criteria are rejected.
+- Retained identity/session fences, bounded pages, sharing and private executor routing; journal hashes include criteria without persisting their text. Updated the separate legacy map to distinguish partial search/filter replacements from remaining compatibility work.
+- Verified **40 targeted tests**, type-check/syntax checks, **30 live compatibility checks** on the active Batch 5 Desktop and **22 isolated Batch 6 worker checks**, including seven non-skipped filter/search cases on discovered sandbox data. No Magic, production query, account mutation or user application restart was used.
+- Commands, scope, remaining work and activation: [Batch 6 record](research/NETSUITE-MCP-BATCH-6.md).
