@@ -198,6 +198,8 @@ The report is local and ignored by Git. No Magic, account mutation, production q
 
 ## Batch 4 — Bounded in-flight SELECT sharing
 
+Implementation commit: `9d55050` — `feat: share explicitly opted-in NetSuite reads while in flight`.
+
 - Added explicit `shareInFlight` query option, default false. Identical overlapping target/identity/SQL/offset reads share one complete identity-checked execution. No completed-result cache or automatic retry was added.
 - Every caller retains an independent durable request ID/result/error; disconnecting one actual MCP client does not cancel the other caller. Status exposes bounded active group/participant counts; responses report the shared execution ID and participant count.
 - Capability preflight prevents accidental execution on an older broker when sharing was requested. Existing independent queries and the two installed Claude profiles remain compatible.

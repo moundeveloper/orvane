@@ -2,6 +2,8 @@
 
 Date: 5 November 2026. Branch: `codex/netsuite-mcp-migration`.
 
+Implementation commit: `9d55050`.
+
 ## Behavior and efficiency
 
 `orvane_netsuite_query` accepts `shareInFlight: true` for reads where one observation may serve multiple callers. The default remains `false`: existing requests execute independently. The two public tool names and installed Claude configurations are unchanged.
