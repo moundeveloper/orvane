@@ -106,10 +106,13 @@ export function openRequestJournal(
           : request?.operation === "read" &&
               Object.hasOwn(netSuiteReadOperations, request.action)
             ? `read.${request.action}`
-            : request?.operation === "status" &&
-                ["list", "inspect", undefined].includes(request.action)
-              ? `status.${request.action || "list"}`
-              : "invalid";
+            : request?.operation === "artifact" &&
+                ["export", "inspect", "read"].includes(request.action)
+              ? `artifact.${request.action}`
+              : request?.operation === "status" &&
+                  ["list", "inspect", undefined].includes(request.action)
+                ? `status.${request.action || "list"}`
+                : "invalid";
       const inputHash = digest(
         JSON.stringify({
           operation,
@@ -120,6 +123,10 @@ export function openRequestJournal(
           id: request?.id,
           page: request?.page,
           filters: request?.filters,
+          source: request?.source,
+          artifactId: request?.artifactId,
+          format: request?.format,
+          length: request?.length,
         }),
       );
       try {

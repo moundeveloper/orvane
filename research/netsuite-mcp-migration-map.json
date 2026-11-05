@@ -5,6 +5,18 @@
   "scope": "Incremental disposition map. Unlisted legacy declarations remain pending; original inventory is unchanged. No legacy-name aliases are installed.",
   "entries": [
     {
+      "legacyName": "suiteql_execute_query",
+      "state": "partial",
+      "replacement": { "tool": "orvane_netsuite_query" },
+      "artifactExtension": {
+        "tool": "orvane_netsuite_artifact",
+        "schemaVersion": 1
+      },
+      "implemented": "Bounded SELECT pages with explicit target/identity; optional local CSV/NDJSON page artifacts, checksums, retention and text chunks shared across MCP clients.",
+      "remaining": "Legacy request/result compatibility, materialized full executions, cursor/export continuation, multi-page exports, jobs and custom-path download UI. A saved artifact covers one returned page only.",
+      "fixture": "../tests/netsuite-artifacts.test.ts"
+    },
+    {
       "legacyName": "netsuite_get_scripts",
       "state": "partial",
       "replacement": {

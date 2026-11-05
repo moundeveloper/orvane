@@ -254,6 +254,7 @@ test("two complete NetSuite MCP clients share the gateway without workspace list
       "UPGRADE_PENDING",
     );
     assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), [
+      "orvane_netsuite_artifact",
       "orvane_netsuite_query",
       "orvane_netsuite_read",
       "orvane_netsuite_status",
@@ -272,6 +273,13 @@ test("two complete NetSuite MCP clients share the gateway without workspace list
     });
     const identity = (inspected.structuredContent as any).result.identity;
     const before = fixture.calls.filter((op) => op === "query").length;
+    const unsupportedArtifact = await client.callTool({ name: "orvane_netsuite_artifact", arguments: {
+      action: "export", targetId: status.environments[0].targetId, identityToken: identity.identityToken,
+      source: { kind: "query", sql: "SELECT id FROM employee" },
+    } });
+    assert.equal(unsupportedArtifact.isError, true);
+    assert.equal(JSON.parse((unsupportedArtifact.content[0] as any).text).code, "UPGRADE_PENDING");
+    assert.equal(fixture.calls.filter((op) => op === "query").length, before);
     const unsupportedRead = await client.callTool({ name: "orvane_netsuite_read", arguments: {
       targetId: status.environments[0].targetId, identityToken: identity.identityToken, action: "scripts",
     } });

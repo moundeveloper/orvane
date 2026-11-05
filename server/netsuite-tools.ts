@@ -1,6 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
+  ARTIFACT_CAPABILITY,
+  netSuiteArtifactSchema,
+} from "./netsuite-artifact-protocol.ts";
+import {
   netSuiteReadSchema,
   netSuiteReadOperations,
   NETSUITE_FILTER_CAPABILITY,
@@ -42,6 +46,59 @@ export function registerNetSuiteTools(server: McpServer, directory: string) {
       };
     }
   }
+  server.registerTool(
+    "orvane_netsuite_artifact",
+    {
+      description:
+        "Export one bounded NetSuite result page to a local CSV/NDJSON artifact (Batch 7+), then inspect/read text chunks by artifactId. Requires explicit target/identity and live matching account/user/role for every call. export takes source {kind:query,sql,offset?} or {kind:read,action,id?,page?,filters?}; format defaults ndjson. No multi-page export or file-content download. inspect/read take artifactId; read offset is UTF-16 code units, length defaults 8000, max 16000, follow nextOffset. Artifacts are saved historical pages, not whole-query live snapshots. Access expires after 24h; payload quota 16 MiB/64 IDs may evict earlier. Cleanup runs on export/startup. No arbitrary paths. CSV prefixes formula-looking string/header cells with an apostrophe; NDJSON preserves JSON values. Writes local files, never mutates NetSuite.",
+      inputSchema: netSuiteArtifactSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        openWorldHint: true,
+      },
+    },
+    async (args) => {
+      try {
+        const status = (await desktopNetSuiteRequest(directory, {
+          operation: "status",
+          action: "list",
+        })) as { capabilities?: string[] };
+        if (!status.capabilities?.includes(ARTIFACT_CAPABILITY))
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({
+                  code: "UPGRADE_PENDING",
+                  message:
+                    "The running Desktop broker does not support page artifacts. No export/read was submitted.",
+                }),
+              },
+            ],
+          };
+      } catch (error) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                code:
+                  error instanceof DesktopNetSuiteError
+                    ? error.code
+                    : "NETSUITE_ERROR",
+                message:
+                  "Artifact capability could not be checked. No export/read was submitted.",
+              }),
+            },
+          ],
+        };
+      }
+      return call({ operation: "artifact", ...args });
+    },
+  );
   server.registerTool(
     "orvane_netsuite_status",
     {

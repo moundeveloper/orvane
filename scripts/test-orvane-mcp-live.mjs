@@ -8,6 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { checkTypedNetSuiteReads } from "./test-netsuite-typed-reads.mjs";
 import { checkNetSuiteReadFilters } from "./test-netsuite-read-filters.mjs";
+import { checkNetSuiteArtifacts } from "./test-netsuite-artifacts.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const { values } = parseArgs({
@@ -35,8 +36,8 @@ const sql =
   "SELECT id FROM (SELECT id FROM employee ORDER BY id) WHERE ROWNUM <= 1";
 const expectedBatch = Number(values.batch);
 assert(
-  [2, 3, 4, 5, 6].includes(expectedBatch),
-  "Supported --batch values: 2, 3, 4, 5, 6",
+  [2, 3, 4, 5, 6, 7].includes(expectedBatch),
+  "Supported --batch values: 2, 3, 4, 5, 6, 7",
 );
 const report = {
   startedAt: new Date().toISOString(),
@@ -116,7 +117,12 @@ async function connect(label, path) {
   await client.connect(transport);
   assert.deepEqual(
     (await client.listTools()).tools.map((tool) => tool.name).sort(),
-    ["orvane_netsuite_query", "orvane_netsuite_read", "orvane_netsuite_status"],
+    [
+      "orvane_netsuite_artifact",
+      "orvane_netsuite_query",
+      "orvane_netsuite_read",
+      "orvane_netsuite_status",
+    ],
   );
   record(`${label}: installed read-only MCP profile connects`);
   return connection;
@@ -251,6 +257,31 @@ try {
       },
     );
     record(`${label}: invalid target and identity are rejected`);
+    if (expectedBatch < 7) {
+      await assert.rejects(
+        call(client, "orvane_netsuite_artifact", {
+          action: "export",
+          targetId,
+          identityToken: inspected.identity.identityToken,
+          source: { kind: "query", sql },
+        }),
+        { code: "UPGRADE_PENDING" },
+      );
+      record(
+        `${label}: older active broker rejects page artifacts before submission`,
+      );
+    } else {
+      const { evidence } = await checkNetSuiteArtifacts({
+        call,
+        client,
+        otherClient: clients[(index + 1) % clients.length].client,
+        targetId,
+        identity: inspected.identity,
+        record,
+      });
+      report.artifacts ??= [];
+      report.artifacts.push({ profile: label, ...evidence });
+    }
     if (expectedBatch < 5) {
       await assert.rejects(
         call(client, "orvane_netsuite_read", {

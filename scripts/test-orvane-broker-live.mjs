@@ -17,6 +17,8 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { startNetSuiteBroker } from "../electron/netsuite-broker.mjs";
 import { checkTypedNetSuiteReads } from "./test-netsuite-typed-reads.mjs";
 import { checkNetSuiteReadFilters } from "./test-netsuite-read-filters.mjs";
+import { checkNetSuiteArtifacts } from "./test-netsuite-artifacts.mjs";
+import { removeTestArtifactDirectory } from "./netsuite-artifact-test-cleanup.mjs";
 
 // Run the new worker in an isolated profile. Its executor relays SELECT/identity
 // through the already-running read-only Desktop MCP, without restarting user apps.
@@ -157,7 +159,7 @@ try {
       return answer.data;
     },
   };
-  temporary = await mkdtemp(join(tmpdir(), "orvane-live-b6-"));
+  temporary = await mkdtemp(join(tmpdir(), "orvane-live-b7-"));
   const directory = join(temporary, "netsuite-broker");
   const start = () =>
     startNetSuiteBroker({
@@ -182,15 +184,16 @@ try {
     ),
   );
   for (const status of statuses) {
-    assert.equal(status.batch, 6);
+    assert.equal(status.batch, 7);
     assert.equal(status.execution.brokerPid, broker.pid);
     assert(status.capabilities.includes("requests.read"));
     assert(status.capabilities.includes("query.share-in-flight"));
     for (const action of ["scripts", "deployments", "folders", "files"])
       assert(status.capabilities.includes(`read.${action}`));
     assert(status.capabilities.includes("read.filters-v1"));
+    assert(status.capabilities.includes("artifacts.page-v1"));
   }
-  record("two real stdio clients share the isolated Batch 6 worker");
+  record("two real stdio clients share the isolated Batch 7 worker");
   const shadowTarget = statuses[0].environments[0].targetId;
   const inspected = await call(clients[0], "orvane_netsuite_status", {
     action: "inspect",
@@ -326,18 +329,51 @@ try {
     identity: inspected.identity,
     record,
   });
+  const artifacts = await checkNetSuiteArtifacts({
+    call,
+    client: clients[0],
+    otherClient: clients[1],
+    targetId: shadowTarget,
+    identity: inspected.identity,
+    record,
+  });
+  report.artifacts = artifacts.evidence;
   await broker.close();
   broker = await start();
-  history = await call(clients[0], "orvane_netsuite_status", {
-    action: "requests",
-    limit: 100,
-  });
-  assert.equal(
-    history.requests.find((item) => item.requestId === answer.requestId).state,
-    "completed",
-  );
+  let recovered, beforeSequence;
+  for (let page = 0; page < 10; page++) {
+    history = await call(clients[0], "orvane_netsuite_status", {
+      action: "requests",
+      limit: 100,
+      beforeSequence,
+    });
+    recovered = history.requests.find(
+      (item) => item.requestId === answer.requestId,
+    );
+    if (recovered || !history.nextBeforeSequence) break;
+    beforeSequence = history.nextBeforeSequence;
+  }
+  assert.equal(recovered?.state, "completed");
   record(
     "history survives an isolated worker restart while user applications stay open",
+  );
+  const freshTargets = await call(clients[0], "orvane_netsuite_status", {
+    action: "list",
+  });
+  const freshTarget = freshTargets.environments[0].targetId;
+  const freshIdentity = await call(clients[0], "orvane_netsuite_status", {
+    action: "inspect",
+    targetId: freshTarget,
+  });
+  const retained = await call(clients[1], "orvane_netsuite_artifact", {
+    action: "inspect",
+    targetId: freshTarget,
+    identityToken: freshIdentity.identity.identityToken,
+    artifactId: artifacts.retained.artifactId,
+  });
+  assert.equal(retained.artifact.sha256, artifacts.retained.sha256);
+  record(
+    "artifact persistence: isolated worker restart accepts a fresh matching identity for saved metadata",
   );
   const after = await call(live, "orvane_netsuite_status", { action: "list" });
   assert.equal(after.desktopId, initial.desktopId);
@@ -361,6 +397,7 @@ try {
   }
   await broker?.close();
   if (temporary) {
+    await removeTestArtifactDirectory(temporary);
     const directory = join(temporary, "netsuite-broker");
     for (const name of await readdir(directory).catch((error) => {
       if (error.code === "ENOENT") return [];

@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { startNetSuiteRpc } from "./netsuite-rpc.mjs";
 import { createNetSuiteReadService } from "./netsuite-read-service.mjs";
 import { openRequestJournal } from "./netsuite-request-journal.mjs";
+import { createNetSuiteArtifactService } from "./netsuite-artifact-service.mjs";
+import { ARTIFACT_CAPABILITY } from "../server/netsuite-artifact-protocol.ts";
 import {
   BROKER_PROTOCOL,
   MAX_BROKER_PENDING,
@@ -15,6 +17,7 @@ if (!process.send)
   );
 let rpc,
   journal,
+  artifacts,
   initialized = false,
   stopping = false,
   desktopPid;
@@ -66,6 +69,7 @@ async function stop() {
   try {
     await rpc?.close();
     await Promise.allSettled([...activeRequests]);
+    await artifacts?.close();
     journal?.close();
   } finally {
     clearTimeout(deadline);
@@ -139,6 +143,10 @@ process.on("message", async (message) => {
       service,
       instanceId: message.instanceId,
     });
+    artifacts = createNetSuiteArtifactService({
+      directory: message.directory,
+      dispatch,
+    });
     rpc = await startNetSuiteRpc({
       directory: message.directory,
       instanceId: message.instanceId,
@@ -161,7 +169,7 @@ process.on("message", async (message) => {
               limit: request.limit,
               beforeSequence: request.beforeSequence,
             }),
-            batch: 6,
+            batch: 7,
             execution,
           };
         const tracked = journal.run(request, async () => {
@@ -172,13 +180,15 @@ process.on("message", async (message) => {
           for (const id of active)
             if (!hostMap.has(id))
               hostMap.set(id, { id, isDestroyed: () => !hostMap.has(id) });
-          const result = await dispatch(request);
+          const result = await (request?.operation === "artifact"
+            ? artifacts.dispatch(request)
+            : dispatch(request));
           return {
             ...result,
             capabilities: result.capabilities
-              ? [...result.capabilities, "requests.read"]
+              ? [...result.capabilities, "requests.read", ARTIFACT_CAPABILITY]
               : undefined,
-            batch: 6,
+            batch: 7,
             execution,
           };
         });
