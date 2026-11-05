@@ -12,7 +12,7 @@ Updated: 5 November 2026. Working branch: `codex/netsuite-mcp-migration`.
 
 ## Current position
 
-Batch 4 adds explicit, bounded in-flight SELECT sharing: five overlapping opted-in calls were measured issuing one sandbox SELECT while retaining five journal IDs. **32 targeted tests, 16 current-Desktop compatibility checks and 9 isolated-new-worker live checks passed.** See [Batch 4 implementation/evidence](research/NETSUITE-MCP-BATCH-4.md). The currently running Desktop remains Batch 3; Batch 4 activates at the next normal restart. No manual test is requested.
+Batch 4 is active after the user restarted Orvane. Explicit, bounded in-flight SELECT sharing passed **16 direct live checks** through both installed Claude MCP configurations, including five overlapping opted-in reads with one execution ID and five distinct request IDs, followed by a fresh execution for a later read. Earlier verification also passed **32 targeted tests, 16 Batch 3 compatibility checks and 9 isolated-new-worker live checks**. See [Batch 4 implementation/evidence](research/NETSUITE-MCP-BATCH-4.md). No further restart or manual test is needed for this checkpoint.
 
 Batch 0 is committed: `bd04a91` — baseline UI fixes and migration design.
 Batch 1 core live test passed, as reported by the user: explicit sandbox selection, inspect and SELECT through Orvane only. Claude Desktop and Claude Code configurations are installed and unchanged by Batch 2.
@@ -205,3 +205,11 @@ Implementation commit: `9d55050` — `feat: share explicitly opted-in NetSuite r
 - Capability preflight prevents accidental execution on an older broker when sharing was requested. Existing independent queries and the two installed Claude profiles remain compatible.
 - Verified **32 targeted tests**, type-check and syntax checks, **16 live compatibility checks** on the active Batch 3 Desktop, and **9 isolated Batch 4 worker live checks** relaying to the authorized sandbox. Measured five concurrent requests → one SELECT; the later request executed anew. No user application was restarted and no NetSuite mutation was made.
 - Full evidence, limits, commands and activation status: [Batch 4 record](research/NETSUITE-MCP-BATCH-4.md).
+
+### Batch 4 direct Desktop acceptance after user restart
+
+On 5 November 2026 the user confirmed a normal Orvane restart. The actual Batch 4 Desktop passed **16 direct live checks** through fresh MCP SDK clients launched from the installed Claude Desktop and Code configurations. Both profiles reached the same separate worker, checked sandbox account/user/role, completed the ordered one-row SELECT, exposed completed metadata-only history and rejected invalid target/identity inputs. Five overlapping opted-in queries returned a common execution ID and five distinct request IDs; the subsequent identical read started a fresh execution. Disconnecting one test client left the other usable.
+
+Command: `node scripts/test-orvane-mcp-live.mjs --batch 4 --origin https://4027610-sb1.app.netsuite.com --account 4027610_SB1 --user 4033 --role 3 --report artifacts/netsuite-batch4-desktop-live.json`.
+
+The redacted report is local and ignored by Git. This verifies the actual running Desktop rather than the earlier isolated relay. No Magic, production query, account mutation, GUI input, additional application restart or Claude conversation automation was used. Navigation/role-change disruption was not induced, and server identity remains unverified.

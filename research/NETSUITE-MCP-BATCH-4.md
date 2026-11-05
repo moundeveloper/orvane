@@ -44,6 +44,16 @@ node scripts/test-orvane-broker-live.mjs --origin https://4027610-sb1.app.netsui
 
 After the next normal Desktop restart, use the direct checker with `--batch 4` instead of `--batch 3`. It additionally checks five overlapping direct reads and a subsequent fresh execution. The isolated checker tracks the current worker version, superseding its earlier Batch 3 implementation; older batch documents describe their historical runs. Reports are local, redacted and ignored by Git.
 
+## Direct Desktop acceptance after user restart
+
+The user subsequently restarted Orvane normally. The actual running Batch 4 Desktop passed **16 direct live checks** through both installed Claude configurations, using fresh background MCP SDK clients. Five concurrent opted-in sandbox reads shared one execution ID and retained five distinct request IDs; a later identical read started a fresh execution. Both profiles also passed identity/SELECT/history/error checks and continued service after one test client disconnected. This supersedes the pending-activation limitation above. No additional restart or manual test is required for this checkpoint.
+
+```powershell
+node scripts/test-orvane-mcp-live.mjs --batch 4 --origin https://4027610-sb1.app.netsuite.com --account 4027610_SB1 --user 4033 --role 3 --report artifacts/netsuite-batch4-desktop-live.json
+```
+
+The direct run verifies shared execution metadata, not an independent count of all server HTTP calls; the earlier isolated live test separately counted one SELECT dispatch. No production query, mutation, Magic call, UI input or disruptive lifecycle transition was performed. The local report is redacted and ignored by Git.
+
 ## Remaining migration
 
 This batch improves the existing bounded query path. It does not migrate the other Magic feature families or the full workspace transport. Typed operation registry consolidation, explicit Windows pipe DACLs, server-verified identity, full workspace listener ownership, artifacts/export and feature-family reads remain separate increments. Client-runtime identity is still explicitly unverified by the server.
