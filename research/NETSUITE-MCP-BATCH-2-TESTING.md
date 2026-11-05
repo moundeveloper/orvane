@@ -4,6 +4,16 @@ Branch: `codex/netsuite-mcp-migration`. Batch 1 listing/inspection/SELECT was co
 
 Implementation commit: `ef793cb`. Test the current branch HEAD, which also records the checkpoint documentation.
 
+**Accepted by agent-run live checks on 5 November 2026.** The user requested background testing instead of routine manual tasks. `scripts/test-orvane-mcp-live.mjs` connected using both actual Claude configurations, verified a shared separate worker, inspected the authorized sandbox, ran the ordered one-row SELECT from both clients, checked invalid targets/identities, and confirmed one test client can disconnect while the other continues. Ten live checks passed. No GUI interaction, application restart, Magic tool or account write was used. This is MCP-level testing using the installed configurations, not automation of existing Claude conversations.
+
+Repeatable background check (only for the already authorized sandbox/identity):
+
+```powershell
+node scripts/test-orvane-mcp-live.mjs --origin https://4027610-sb1.app.netsuite.com --account 4027610_SB1 --user 4033 --role 3
+```
+
+The redacted report is `artifacts/netsuite-mcp-live.json`. It excludes identity tokens and row contents. The manual cases below remain reference instructions; they are no longer a request for the user to execute routine checks. Disruptive live lifecycle cases were not run while the user was using the PC.
+
 ## What changed
 
 - Desktop starts one Node broker worker on its own private process IPC channel. The socket listener, authentication, target IDs and client-runtime identity tokens live in that worker.
@@ -74,4 +84,4 @@ Worker crash and forced-parent-termination cases are covered by automated child-
 
 Report the current commit, `batch`, execution mode, whether the two process IDs differ, whether both Claude clients share one broker, and whether inspect/query and close/reopen work. Include error codes/messages if any. Do not send identity tokens, the discovery file/token, cookies, passwords or unrelated account data.
 
-Batch 3 starts after this feedback. See [the progress log](../NETSUITE-MCP-PROGRESS.md) for actual commits and remaining work.
+Routine checkpoints are now tested independently by the agent and committed before further implementation. See [the progress log](../NETSUITE-MCP-PROGRESS.md) for actual commits and remaining work.

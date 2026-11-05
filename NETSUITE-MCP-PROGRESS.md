@@ -6,15 +6,16 @@ Updated: 5 November 2026. Working branch: `codex/netsuite-mcp-migration`.
 
 - Work in bounded, reviewable batches; update this file with changes, checks, limitations, and manual test steps.
 - Commit each batch before starting another implementation batch.
-- At a test checkpoint, provide the commit and concrete instructions to the user and wait for their test feedback before the next implementation batch.
+- Updated by the user after Batch 2: run automated and available live MCP checks independently instead of asking the user to perform routine tests. Record results and commit before moving to another batch. User feedback is no longer a mandatory gate for checks the agent can execute.
+- While the user is using the computer, prefer background APIs/processes. Do not move focus, close views, sign out, kill the live broker, or restart their applications to manufacture a test result. Keep disruptive lifecycle tests in isolated fixture processes; report unexecuted live cases honestly.
 - Keep unrelated workspace changes out of these commits. Do not change a NetSuite account, deploy a Suitelet, or remove the Magic setup during migration.
 
 ## Current position
 
 Batch 0 is committed: `bd04a91` — baseline UI fixes and migration design.
 Batch 1 core live test passed, as reported by the user: explicit sandbox selection, inspect and SELECT through Orvane only. Claude Desktop and Claude Code configurations are installed and unchanged by Batch 2.
-Batch 2 implements the Desktop-owned broker worker and is at its manual-test checkpoint. Restart **Orvane Desktop**, then follow [the Batch 2 guide](research/NETSUITE-MCP-BATCH-2-TESTING.md).
-**Next action: user tests Batch 2; do not start Batch 3 until feedback.**
+Batch 2 implements the Desktop-owned broker worker and has now passed background live verification against the existing Desktop and both installed Claude MCP configurations. Routine testing is handled by the agent from this point onward.
+Next implementation work remains a separate committed batch; no further user test is required to accept the verified Batch 2 read path.
 The broader migration is not complete; see [the implementation plan](research/NETSUITE-MCP-IMPLEMENTATION.md).
 
 ## Batch 0 — Baseline fixes and design
@@ -86,7 +87,7 @@ Address reported live connection/identity/query defects first. Then extract the 
 | 0 | `bd04a91` | Baseline recorded; separate migration branch created |
 | 1 | `568a1fe`, follow-up `d3f6697` | Automated checks and user-reported sandbox list/inspect/query passed |
 | 1 acceptance | `62ca0df` | User feedback recorded; deterministic smoke query corrected |
-| 2 | `ef793cb` | Worker extraction implemented; 19 targeted tests passed; live user test pending |
+| 2 | `ef793cb` | 19 targeted tests passed; background live MCP checks passed against both installed profiles |
 
 Use the current branch HEAD when testing; checkpoint documentation commits record the implementation hashes above without starting another implementation batch.
 
@@ -132,9 +133,9 @@ Implementation commit: `ef793cb` — `feat: run NetSuite MCP gateway in a Deskto
 - `node --test tests/netsuite-bridge.test.mjs tests/netsuite-login.test.mjs`: **7 existing bridge/login tests**.
 - Type-check (`node node_modules/vue-tsc/bin/vue-tsc.js --build`) and Node syntax checks for the Electron entrypoint and new broker modules: **passed**. Total targeted tests: **19 passed**.
 
-All worker/socket/stdio test executors are fixtures; no live NetSuite query or mutation was performed by the agent for this batch. Batch 1's user result does not replace the live worker checkpoint.
+The 19 automated worker/socket/stdio tests use fixtures. Subsequent agent-run live verification is recorded below separately; it exercised the actual Desktop worker and sandbox without an account write.
 
-### Manual checkpoint — please test now
+### Original manual checkpoint (superseded by agent-run checks below)
 
 1. Save work and fully restart Orvane Desktop from this branch. No MCP reinstall is required.
 2. Call status/list from Orvane MCP. Expect `batch: 2`, `execution.mode: broker-worker`, and a `brokerPid` different from `desktopPid`.
@@ -145,3 +146,27 @@ All worker/socket/stdio test executors are fixtures; no live NetSuite query or m
 Full copyable prompts and expected results are in [the Batch 2 guide](research/NETSUITE-MCP-BATCH-2-TESTING.md).
 
 Durable jobs/journal, explicit Windows pipe DACLs, server-side identity verification, full workspace bridge migration and new feature families are separate follow-up slices. Do not claim Stage B or the full migration complete after worker extraction.
+
+## Batch 2 live acceptance — agent-run background checks
+
+Date: 5 November 2026. The user requested independent testing while continuing to use the PC. No application was closed/restarted, no focus/input was taken, and no Magic tool or account write was used.
+
+- Added `scripts/test-orvane-mcp-live.mjs`, a repeatable read-only integration checker. It loads the actual `orvane` entries from Claude Desktop and Claude Code configuration, validates the expected repository/profile, and starts two independent MCP SDK clients in the background.
+- This tests the configured stdio/MCP paths and real Desktop/NetSuite execution; it does not claim to automate an existing Claude conversation or Claude's visual UI.
+- Both profiles connected and advertised exactly the two expected read-only tools.
+- Both returned `batch: 2`, `execution.mode: broker-worker`, the same Desktop/broker IDs, and distinct broker/Desktop process IDs.
+- Only the previously selected sandbox `4027610-sb1.app.netsuite.com` was inspected/queried. Account, user and role were checked against the user-reported expected values before reading.
+- The ordered one-row employee SELECT succeeded from each profile, returned one row and preserved the reported identity. Business row contents and identity tokens are omitted from the report.
+- Invalid target IDs and deliberately invalid identity tokens returned `TARGET_UNAVAILABLE` and `IDENTITY_CHANGED` respectively, without selecting another environment.
+- Closing only the first **test client's stdio connection** left the existing broker and second test client usable. The user's Claude/Orvane applications were not touched.
+- Live result: **10 integration checks passed**. A redacted local report is written to `artifacts/netsuite-mcp-live.json` (ignored by Git).
+
+Reproduction for the already authorized sandbox:
+
+```powershell
+node scripts/test-orvane-mcp-live.mjs --origin https://4027610-sb1.app.netsuite.com --account 4027610_SB1 --user 4033 --role 3
+```
+
+The checker refuses production origins and ambiguous targets. It stops rather than changing account/role or falling back to Magic. A changed expected identity must be deliberately selected for a future authorized test.
+
+Live closing/reopening of Desktop, closing user views, sign-out/role changes and killing the live worker were **not performed**, because the user is actively using the PC. Their isolated lifecycle coverage remains in the automated fixture tests; the new live checks do not prove server-side session/role verification.
