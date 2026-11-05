@@ -59,6 +59,16 @@ node scripts/test-orvane-broker-live.mjs --origin https://4027610-sb1.app.netsui
 
 After normal restart use `--batch 7` for direct activation checks. The expanded isolated checker paginates journal history by sequence rather than assuming old requests remain on the newest page. Local reports under `artifacts/` are redacted and ignored by Git; old batch documents describe historical checker versions.
 
+## Direct Desktop acceptance after user restart
+
+The user subsequently restarted Orvane. **54 live checks passed** against the actual Batch 7 Desktop through fresh MCP SDK clients from both installed Claude configurations. Both advertised all four tools and passed CSV/NDJSON exports, cross-client chunk reconstruction with matching size/hash, typed page export, unknown-ID rejection and journal checks without skips. Existing reads, filters, sharing and error/disconnect checks also passed.
+
+```powershell
+node scripts/test-orvane-mcp-live.mjs --batch 7 --origin https://4027610-sb1.app.netsuite.com --account 4027610_SB1 --user 4033 --role 3 --report artifacts/netsuite-batch7-desktop-live.json
+```
+
+This supersedes the pending-activation limitation above. No further restart or manual query test is needed for this checkpoint. The run created bounded local page artifacts in the active profile, subject to normal expiry/quota; it made no NetSuite mutation, production query, Magic call, GUI input or additional app restart. Persistent artifacts across a worker restart were covered separately by the earlier isolated checks. The report remains local/redacted/ignored by Git, and server identity remains unverified.
+
 ## Remaining migration
 
 This is the common text-artifact foundation with single-page sources. Full query executions/cursors, multi-page export jobs, NetSuite file content/binary/PDF capture, artifact UI/downloads, server-verified identity, explicit pipe DACLs and shared workspace transport remain separate slices. The [incremental legacy map](netsuite-mcp-migration-map.json) records partial query/artifact support; full Magic migration is not complete.

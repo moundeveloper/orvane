@@ -12,7 +12,7 @@ Updated: 5 November 2026. Working branch: `codex/netsuite-mcp-migration`.
 
 ## Current position
 
-Batch 7 adds local CSV/NDJSON page artifacts, bounded text chunks, content hashes/deduplication, expiry/quota and identity-bound cross-client access through `orvane_netsuite_artifact`. **47 targeted tests, 44 active-Desktop compatibility checks and 29 isolated-new-worker live checks passed.** The actual Desktop remains Batch 6; activation needs the next normal restart and fresh Claude MCP schema. No reinstall or manual query test is required. See [Batch 7 evidence](research/NETSUITE-MCP-BATCH-7.md).
+Batch 7 is active after the user restarted Orvane. **54 direct live checks passed** through fresh MCP clients from both installed Claude configurations, including CSV/NDJSON page artifacts, cross-client chunk reconstruction/checksums and typed page exports without skips. Earlier verification passed **47 targeted tests, 44 Batch 6 compatibility checks and 29 isolated-new-worker live checks**. No further restart or manual query test is needed for this checkpoint. See [Batch 7 evidence](research/NETSUITE-MCP-BATCH-7.md).
 
 Batch 6 is active after the user restarted Orvane. **42 direct live checks passed** through fresh MCP clients from both installed Claude configurations, including seven filter/global-search cases per profile with no skips. Earlier verification passed **40 targeted tests, 30 Batch 5 compatibility checks and 22 isolated-new-worker live checks**. No further restart or manual query test is needed for this checkpoint. See [Batch 6 evidence](research/NETSUITE-MCP-BATCH-6.md).
 
@@ -269,3 +269,13 @@ Implementation commit: `6556d56` — `feat: persist bounded NetSuite page artifa
 - Added formula-like CSV string/header prefixing, strict source/path/action validation, checksum checks, normal restart persistence and action-specific metadata-only journal outcomes. This exports one page, not a whole-query snapshot or NetSuite file content.
 - Verified **47 targeted tests**, type-check/syntax checks, **44 active Batch 6 compatibility checks** and **29 isolated Batch 7 worker live checks**, including real two-client reconstruction and persisted metadata after isolated restart. No NetSuite mutation or user application restart was performed.
 - Full API, limits, evidence and remaining work: [Batch 7 record](research/NETSUITE-MCP-BATCH-7.md).
+
+### Batch 7 direct Desktop acceptance after user restart
+
+The user confirmed a normal Orvane restart. **54 direct live checks passed** against the actual Batch 7 Desktop through fresh MCP SDK clients from both installed Claude configurations. All four tools were advertised. Each profile exported a real one-row query to NDJSON, let the other test client reconstruct chunks with matching size/checksum, verified CSV formula-like string prefixing, exported discovered folder metadata through the typed service, rejected an unknown artifact ID and verified metadata-only journal outcomes. No artifact case was skipped.
+
+Existing typed reads, filters/global search, SELECT/history/errors, shared/fresh executions and continued service after a test-client disconnect also passed. Normal-restart artifact persistence remains separately covered by the earlier isolated worker/live and real-worker fixture tests; this direct run did not restart the user's applications again.
+
+Command: `node scripts/test-orvane-mcp-live.mjs --batch 7 --origin https://4027610-sb1.app.netsuite.com --account 4027610_SB1 --user 4033 --role 3 --report artifacts/netsuite-batch7-desktop-live.json`.
+
+The local report is redacted and ignored by Git. The test created bounded local artifacts in the active profile; configured expiry/quota applies. No Magic call, production query, NetSuite mutation, GUI input or additional application restart was used. Connection paths were tested via fresh SDK clients rather than a Claude conversation/cached menu. Server identity remains unverified.
