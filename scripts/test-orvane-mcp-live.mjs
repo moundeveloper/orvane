@@ -14,6 +14,7 @@ const { values } = parseArgs({
     account: { type: "string" },
     user: { type: "string" },
     role: { type: "string" },
+    batch: { type: "string", default: "2" },
     report: {
       type: "string",
       default: join(root, "artifacts/netsuite-mcp-live.json"),
@@ -30,6 +31,8 @@ if (
   );
 const sql =
   "SELECT id FROM (SELECT id FROM employee ORDER BY id) WHERE ROWNUM <= 1";
+const expectedBatch = Number(values.batch);
+assert([2, 3].includes(expectedBatch), "Supported --batch values: 2, 3");
 const report = {
   startedAt: new Date().toISOString(),
   scope:
@@ -67,7 +70,7 @@ async function call(client, name, args) {
     // Don't persist tool arguments, identity tokens or unbounded remote errors.
     throw Object.assign(
       new Error(`MCP ${name} failed (${value.code || "UNKNOWN"})`),
-      { code: value.code },
+      { code: value.code, requestId: value.requestId },
     );
   }
   return result.structuredContent?.result;
@@ -135,7 +138,7 @@ try {
       true,
       "Desktop must already be running; this checker never starts/restarts it",
     );
-    assert.equal(status.batch, 2);
+    assert.equal(status.batch, expectedBatch);
     assert.equal(status.execution.mode, "broker-worker");
     assert.notEqual(status.execution.brokerPid, status.execution.desktopPid);
   }
@@ -146,7 +149,7 @@ try {
   );
   report.execution = statuses[0].execution;
   record("both installed profiles share the same separate broker", {
-    batch: 2,
+    batch: expectedBatch,
   });
   for (let index = 0; index < clients.length; index++) {
     const { label, client } = clients[index];
@@ -168,6 +171,12 @@ try {
     if (values.role) assert.equal(inspected.identity.roleId, values.role);
     assert.equal(inspected.identity.source, "client-runtime");
     assert.equal(inspected.identity.serverRuntimeVerified, false);
+    if (expectedBatch >= 3) {
+      assert.equal(inspected.identity.sessionEpochSupported, true);
+      assert(Number.isSafeInteger(inspected.identity.sessionEpoch));
+      assert(inspected.identity.sessionEpoch > 0);
+      record(`${label}: live Desktop reports source session-generation support`);
+    }
     record(`${label}: explicit sandbox and reported identity match`, {
       serverRuntimeVerified: false,
     });
@@ -188,6 +197,22 @@ try {
       `${label}: real ordered SELECT returns one row with matching identity`,
       { rowCount: 1, pageSize: answer.data.pageSize },
     );
+    if (expectedBatch >= 3) {
+      assert.match(answer.requestId, /^[a-f\d-]{36}$/i);
+      assert.equal(answer.identity.sessionEpoch, inspected.identity.sessionEpoch);
+      const history = await call(client, "orvane_netsuite_status", {
+        action: "requests", limit: 100,
+      });
+      const logged = history.requests.find((item) => item.requestId === answer.requestId);
+      assert(logged, "Live query must appear in the active Desktop journal");
+      assert.equal(logged.operation, "query.select");
+      assert.equal(logged.state, "completed");
+      const serialized = JSON.stringify(history);
+      assert(!serialized.includes(sql));
+      assert(!serialized.includes(inspected.identity.identityToken));
+      assert(history.requests.every((item) => !('rows' in item) && !('sql' in item)));
+      record(`${label}: live journal records completed read with metadata only`);
+    }
     await assert.rejects(
       call(client, "orvane_netsuite_status", {
         action: "inspect",
@@ -201,7 +226,11 @@ try {
         identityToken: "invalid-live-check-identity",
         sql,
       }),
-      { code: "IDENTITY_CHANGED" },
+      (error) => {
+        assert.equal(error.code, "IDENTITY_CHANGED");
+        if (expectedBatch >= 3) assert.match(error.requestId, /^[a-f\d-]{36}$/i);
+        return true;
+      },
     );
     record(`${label}: invalid target and identity are rejected`);
   }

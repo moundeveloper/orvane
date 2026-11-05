@@ -39,6 +39,16 @@ node scripts/test-orvane-broker-live.mjs --origin https://4027610-sb1.app.netsui
 
 The baseline live checker currently expects the active Batch 2 broker. Local redacted reports are in ignored `artifacts/netsuite-mcp-live.json` and `artifacts/netsuite-broker-live.json`.
 
+## Direct Desktop acceptance after user restart
+
+The user subsequently restarted Orvane normally. The actual Batch 3 Desktop then passed **14 live checks** from both installed Claude configurations, including positive supported session generations, real sandbox reads, completed metadata-only journal entries and request IDs on identity errors. The original isolated-relay limitation above no longer applies to activation/normal-read verification. Navigation/role-change transitions were not induced, and server identity remains unverified.
+
+```powershell
+node scripts/test-orvane-mcp-live.mjs --batch 3 --origin https://4027610-sb1.app.netsuite.com --account 4027610_SB1 --user 4033 --role 3 --report artifacts/netsuite-batch3-desktop-live.json
+```
+
+The checker defaults to Batch 2 for the historical command above; `--batch 3` additionally requires live generation support, traceable errors and journal entries. No application restart or focus change is performed by the checker.
+
 ## Remaining migration work
 
 This is a durable read-request journal, not a job scheduler. Explicit Windows pipe DACL construction, server-verified identity/capabilities, shared workspace listener ownership, artifacts/cache/export and additional feature families remain separate batches. Existing Claude installation and Magic configuration are preserved. The full migration is not complete.

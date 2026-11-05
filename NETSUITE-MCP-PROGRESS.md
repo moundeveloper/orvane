@@ -17,6 +17,7 @@ Batch 1 core live test passed, as reported by the user: explicit sandbox selecti
 Batch 2 implements the Desktop-owned broker worker and has now passed background live verification against the existing Desktop and both installed Claude MCP configurations. Routine testing is handled by the agent from this point onward.
 Batch 3 adds a durable metadata-only request journal, traceable request/error IDs, bounded MCP history and observed session-generation fences. Agent-run verification passed: 26 targeted tests, type-check, 10 baseline live checks and 7 isolated-new-worker live checks. The user's running Batch 2 Desktop was left untouched; new Electron lifecycle wiring activates at the next ordinary restart and has fixture coverage meanwhile.
 No routine user test is required at this checkpoint. See [Batch 3 implementation and evidence](research/NETSUITE-MCP-BATCH-3.md).
+After the user restarted Orvane, the active Batch 3 Desktop also passed **14 direct live checks** through both installed Claude MCP configurations. Session-generation support, completed journal entries and traceable identity errors are now verified on the actual running Desktop. Source navigation/role-change scenarios were not induced.
 The broader migration is not complete; see [the implementation plan](research/NETSUITE-MCP-IMPLEMENTATION.md).
 
 ## Batch 0 — Baseline fixes and design
@@ -184,3 +185,11 @@ Implementation commit: `51b565e` — `feat: journal NetSuite reads and fence obs
 - Full implementation, commands, evidence limits and next work: [Batch 3 record](research/NETSUITE-MCP-BATCH-3.md).
 
 Next batch: select the next bounded migration slice from the implementation plan after committing this work. Server-side identity verification, explicit pipe DACLs, full workspace broker ownership, jobs/cache/artifacts and feature expansion remain pending.
+
+### Batch 3 direct Desktop acceptance after user restart
+
+The user confirmed a normal Orvane restart. The background checker was extended with `--batch 3` and ran against the actual installed Desktop and Code profiles, without an isolated relay. All **14 checks passed**: shared Batch 3 worker, explicit sandbox account/user/role, supported positive session generations, ordered one-row SELECT from both clients, stable reported identity/generation, completed metadata-only journal entries, invalid target/identity rejection with request IDs, and continued service after one test client disconnected.
+
+Command: `node scripts/test-orvane-mcp-live.mjs --batch 3 --origin https://4027610-sb1.app.netsuite.com --account 4027610_SB1 --user 4033 --role 3 --report artifacts/netsuite-batch3-desktop-live.json`.
+
+The report is local and ignored by Git. No Magic, account mutation, production query, UI input or additional application restart was used. Observed navigation invalidation remains fixture-tested; this live run verifies activation and normal reads, not every lifecycle transition or server-side identity.
