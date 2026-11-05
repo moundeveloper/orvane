@@ -2,6 +2,8 @@
 
 Branch: `codex/netsuite-mcp-migration`. This is the first read-only checkpoint, not the full migration.
 
+For the current worker implementation, use [the Batch 2 test guide](./NETSUITE-MCP-BATCH-2-TESTING.md). This document records the original Batch 1 setup and checks.
+
 Implementation commit: `568a1fe`. The current branch HEAD also includes the documentation checkpoint recording this hash.
 
 User feedback on 5 November 2026 confirms environment listing, explicit sandbox selection, inspect and one SELECT using only Orvane. The smoke query below now orders inside a subquery before applying `ROWNUM`; the earlier top-level ordering did not guarantee the lowest ID. This does not change the query adapter itself.

@@ -6,11 +6,12 @@ import { execFileSync } from "node:child_process";
 
 const MAX_REQUEST = 64 * 1024,
   MAX_RESPONSE = 1024 * 1024;
-/** A first direct, read-only Desktop gateway. Worker/job extraction is a later batch. */
+/** Authenticated read gateway; production runs this in the Desktop-owned worker. */
 export async function startNetSuiteRpc({
   directory,
   dispatch,
   instanceId = randomUUID(),
+  desktopPid = process.pid,
 }) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   if (process.platform === "win32") {
@@ -138,6 +139,7 @@ export async function startNetSuiteRpc({
         version: 1,
         instanceId,
         pid: process.pid,
+        desktopPid,
         endpoint,
         token,
       }),

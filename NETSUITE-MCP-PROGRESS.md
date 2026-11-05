@@ -12,9 +12,9 @@ Updated: 5 November 2026. Working branch: `codex/netsuite-mcp-migration`.
 ## Current position
 
 Batch 0 is committed: `bd04a91` — baseline UI fixes and migration design.
-Batch 1 is implemented and at the manual-test checkpoint — direct Desktop read service and Claude Code MCP installation. Commit details are recorded below.
-Batch 1 follow-up: Orvane is also installed in **Claude Desktop's Local MCP servers configuration**, matching the user's screenshot. Fully quitting/reopening Claude Desktop is required to reload it.
-Batch 1 core live test passed, as reported by the user: explicit sandbox selection, inspect and SELECT through Orvane only. Batch 2 is authorized by the standing batch workflow and is next: extract the read gateway into a Desktop-owned worker.
+Batch 1 core live test passed, as reported by the user: explicit sandbox selection, inspect and SELECT through Orvane only. Claude Desktop and Claude Code configurations are installed and unchanged by Batch 2.
+Batch 2 implements the Desktop-owned broker worker and is at its manual-test checkpoint. Restart **Orvane Desktop**, then follow [the Batch 2 guide](research/NETSUITE-MCP-BATCH-2-TESTING.md).
+**Next action: user tests Batch 2; do not start Batch 3 until feedback.**
 The broader migration is not complete; see [the implementation plan](research/NETSUITE-MCP-IMPLEMENTATION.md).
 
 ## Batch 0 — Baseline fixes and design
@@ -55,7 +55,7 @@ Implementation commit: `568a1fe` — `feat: add read-only Desktop NetSuite MCP a
 - Installer rerun: correct no-op; Claude Code health checks: Connected.
 - `node scripts/check-orvane-mcp.mjs`: both tools discovered; actual local status reports `DESKTOP_UNAVAILABLE` until Desktop is started/restarted with the new main-process code.
 
-The socket and stdio tests use a fake NetSuite executor. No live account query/write, role switch or deployment was performed by these automated checks. Live account behavior is pending the user test.
+The socket and stdio tests use a fake NetSuite executor. No live account query/write, role switch or deployment was performed by these automated checks. User-reported live account results are recorded below.
 
 ### Manual checkpoint — please test now
 
@@ -98,7 +98,7 @@ The first installer targeted Claude Code CLI (`~/.claude.json`), while the user'
 - Installer rerun made no change. Updated the manual guide to distinguish Desktop settings from Claude Code CLI's `/mcp`.
 - Commit subject: `fix: install Orvane MCP in Claude Desktop alongside Magic` (current follow-up commit).
 
-**User action:** fully quit Claude Desktop including its tray process, reopen it, and check **Settings > Developer > Local MCP servers > orvane**. Then restart Orvane Desktop if needed and continue the Batch 1 read-only test. Batch 2 remains pending feedback.
+That setup checkpoint was followed by the successful user test recorded below.
 
 ## Batch 1 user test result — received 5 November 2026
 
@@ -110,8 +110,36 @@ The first installer targeted Claude Code CLI (`~/.claude.json`), while the user'
 - The user correctly noted that the original smoke query applied `ROWNUM` before sorting. Manual prompts now use `SELECT id FROM (SELECT id FROM employee ORDER BY id) WHERE ROWNUM <= 1` to select the lowest ID deterministically.
 - The second-client, closed-view and restart cases were not reported in this feedback; they remain in the manual test matrix.
 
-## Batch 2 — next bounded implementation slice
+## Batch 2 — Desktop-owned broker worker
 
-Extract the authenticated read gateway and target/identity orchestration into a Desktop-owned Node worker. Keep Electron browser/session ownership in main behind a narrow read-only private IPC gateway. Preserve the existing MCP names and configuration; test worker startup/shutdown/crash behavior and two clients before the next commit/test checkpoint.
+Implementation commit: `feat: run NetSuite MCP gateway in a Desktop-owned broker worker` (record the hash in the documentation checkpoint after committing).
+
+### Completed
+
+- Desktop now forks one dedicated Node worker with an inherited private IPC channel. The worker owns authenticated socket handling and target/identity orchestration; Electron main owns browser sessions and a limited read executor.
+- The Electron boundary independently validates host ownership, NetSuite origin, read operation and SELECT bounds. Unknown operations and account-write attempts are rejected before existing service dispatch.
+- Private-channel requests and responses are bounded, pending executor work is limited, and transport/executor failures have explicit error codes.
+- Status/inspect/query results expose `batch: 2` and execution metadata with distinct worker/Desktop process IDs. Public tool names and Claude configurations are unchanged.
+- Desktop waits for graceful worker shutdown before quitting, with bounded fallback. Worker failure disconnects clients without replay or main-process fallback; stale discovery from a hard termination is reclaimed on a later start after checking the old owner PID.
+- Added [the Batch 2 manual test guide](research/NETSUITE-MCP-BATCH-2-TESTING.md). Corrected the smoke SQL after the user's `ROWNUM` observation and committed the Batch 1 acceptance record as `62ca0df` before implementation.
+
+### Automated verification
+
+- `node --import tsx --test tests/netsuite-broker.test.ts tests/netsuite-mcp.test.ts`: **12 tests** — six real-worker lifecycle/private-gateway checks plus the six Batch 1 socket/stdio/identity/queue checks.
+- Real worker tests cover two stdio clients sharing one process, privileged-boundary rejection, worker crash during a read with no replay, stale-target invalidation, forced parent termination with no orphaned worker, stale descriptor recovery, missing Node executable, and duplicate profile-owner rejection.
+- `node --test tests/netsuite-bridge.test.mjs tests/netsuite-login.test.mjs`: **7 existing bridge/login tests**.
+- Type-check (`node node_modules/vue-tsc/bin/vue-tsc.js --build`) and Node syntax checks for the Electron entrypoint and new broker modules: **passed**. Total targeted tests: **19 passed**.
+
+All worker/socket/stdio test executors are fixtures; no live NetSuite query or mutation was performed by the agent for this batch. Batch 1's user result does not replace the live worker checkpoint.
+
+### Manual checkpoint — please test now
+
+1. Save work and fully restart Orvane Desktop from this branch. No MCP reinstall is required.
+2. Call status/list from Orvane MCP. Expect `batch: 2`, `execution.mode: broker-worker`, and a `brokerPid` different from `desktopPid`.
+3. List and inspect a **fresh** target for the intended sandbox, then run `SELECT id FROM (SELECT id FROM employee ORDER BY id) WHERE ROWNUM <= 1` using the new identity token.
+4. Try a second Claude client and confirm the same Desktop/broker IDs. Close only the NetSuite app view, keeping Browser/Desktop open, and repeat the read.
+5. Save and close/reopen Desktop normally. Status should become unavailable while closed; after reopening, list/inspect again before querying.
+
+Full copyable prompts and expected results are in [the Batch 2 guide](research/NETSUITE-MCP-BATCH-2-TESTING.md).
 
 Durable jobs/journal, explicit Windows pipe DACLs, server-side identity verification, full workspace bridge migration and new feature families are separate follow-up slices. Do not claim Stage B or the full migration complete after worker extraction.

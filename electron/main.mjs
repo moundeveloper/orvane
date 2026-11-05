@@ -20,9 +20,7 @@ import { dirname, join } from "node:path";
 import { setupPasswords } from "./passwords.mjs";
 import { setupNetSuite } from "./netsuite.mjs";
 import { setupProcessing } from "./processing.mjs";
-import { randomUUID } from "node:crypto";
-import { startNetSuiteRpc } from "./netsuite-rpc.mjs";
-import { createNetSuiteReadService } from "./netsuite-read-service.mjs";
+import { startNetSuiteBroker } from "./netsuite-broker.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.ORVANE_PORT || 5173);
@@ -94,7 +92,7 @@ async function running() {
 // The dev server runs on the system Node, not Electron's, so native modules
 // (better-sqlite3) stay built for the same Node the MCP server uses.
 let server;
-let desktopNetSuiteService, netSuiteRpc;
+let desktopNetSuiteService, netSuiteBroker;
 async function startServer() {
   if (await running()) return;
   server = spawn(
@@ -116,10 +114,11 @@ async function startServer() {
   throw Error("The Orvane server did not answer within 60 seconds.");
 }
 function stopServer() {
-  void netSuiteRpc?.close().catch(error => console.error("NetSuite gateway close failed:", error.message));
-  netSuiteRpc = undefined;
+  const closing = netSuiteBroker?.close().catch(error => console.error("NetSuite broker close failed:", error.message));
+  netSuiteBroker = undefined;
   server?.kill();
   server = undefined;
+  return closing;
 }
 
 function secure() {
@@ -542,23 +541,24 @@ else {
     window?.focus();
   });
   app.on("window-all-closed", () => app.quit());
-  app.on("will-quit", stopServer);
+  app.on("will-quit", event => {
+    if (netSuiteBroker) {
+      event.preventDefault();
+      void stopServer().finally(() => app.quit());
+    } else stopServer();
+  });
   app
     .whenReady()
     .then(async () => {
       secure();
       await startServer();
       createWindow();
-      const instanceId = randomUUID();
-      netSuiteRpc = await startNetSuiteRpc({
+      netSuiteBroker = await startNetSuiteBroker({
         directory: join(process.env.ORVANE_DATA_DIR || join(root, ".orvane"), "netsuite-broker"),
-        instanceId,
-        dispatch: createNetSuiteReadService({
-          instanceId,
-          service: desktopNetSuiteService,
-          hosts: () => BrowserWindow.getAllWindows().map(window => window.webContents)
-            .filter(contents => !contents.isDestroyed() && isOrvane(contents.getURL())),
-        }),
+        service: desktopNetSuiteService,
+        hosts: () => BrowserWindow.getAllWindows().map(window => window.webContents)
+          .filter(contents => !contents.isDestroyed() && isOrvane(contents.getURL())),
+        onExit: ({ expected }) => { if (!expected) console.error("NetSuite broker exited. Restart Desktop to restore MCP reads; no requests were replayed."); },
       });
     })
     .catch((error) => {
