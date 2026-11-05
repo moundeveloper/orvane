@@ -240,6 +240,8 @@ The local report is redacted and ignored by Git. No Magic call, production query
 
 ## Batch 6 — Filtered metadata and global File Cabinet search
 
+Implementation commit: `8f8ea80` — `feat: filter metadata reads and search the File Cabinet globally`.
+
 - Extended the existing read tool with `find-files`/`find-folders` and strict filters: exact script ID/type and name/owner substrings; scoped folder/file name search. Predicates combine with AND before paging; global search requires a File Cabinet ID or a bounded name.
 - Typed descriptors/policies report schema version 2 and applied filter field names. Dedicated filter/action capabilities prevent accidental submission against the active older broker. Text is quoted as literals, `%`/`_` stay literal, and invalid/action-incompatible criteria are rejected.
 - Retained identity/session fences, bounded pages, sharing and private executor routing; journal hashes include criteria without persisting their text. Updated the separate legacy map to distinguish partial search/filter replacements from remaining compatibility work.

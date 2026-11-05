@@ -2,6 +2,8 @@
 
 Date: 5 November 2026. Branch: `codex/netsuite-mcp-migration`.
 
+Implementation commit: `8f8ea80`.
+
 ## Implemented
 
 The existing `orvane_netsuite_read` tool gains optional strict `filters` and two actions, `find-files` and `find-folders`. The profile still advertises three tool names. No configuration reinstall is needed.
