@@ -12,10 +12,17 @@ import {
 import Icon from "./Icon.vue";
 import { vMotion } from "../motion";
 defineOptions({ inheritAttrs: false });
+interface Option {
+  value: string;
+  label: string;
+  disabled?: boolean;
+  icon?: string;
+}
 const props = defineProps<{
   modelValue?: T;
-  options?: { value: string; label: string; disabled?: boolean }[];
+  options?: Option[];
   placeholder?: string;
+  inline?: boolean;
 }>();
 const emit = defineEmits<{ "update:modelValue": [value: T]; change: [] }>();
 const attrs = useAttrs(),
@@ -24,9 +31,7 @@ const attrs = useAttrs(),
   open = ref(false),
   highlighted = ref(0);
 const slots = useSlots();
-function collect(
-  nodes: VNode[],
-): { value: string; label: string; disabled?: boolean }[] {
+function collect(nodes: VNode[]): Option[] {
   return nodes.flatMap((n) =>
     n.type === "option"
       ? [
@@ -92,7 +97,7 @@ function show() {
     open.value = false;
     return;
   }
-  place();
+  if (!props.inline) place();
   open.value = true;
   highlighted.value = Math.max(
     0,
@@ -186,7 +191,7 @@ onBeforeUnmount(() => {
     <span>{{ label }}</span
     ><Icon name="down" :size="12" />
   </button>
-  <Teleport to="body"
+  <Teleport to="body" :disabled="inline"
     ><div
       v-if="open"
       :id="id"
@@ -196,7 +201,7 @@ onBeforeUnmount(() => {
       role="listbox"
       tabindex="-1"
       :aria-label="String(attrs['aria-label'] || 'Options')"
-      :style="position"
+      :style="inline ? undefined : position"
       :aria-activedescendant="`${id}-${highlighted}`"
       @pointerdown.stop
       @keydown.stop="key"
@@ -208,12 +213,14 @@ onBeforeUnmount(() => {
         :key="option.value"
         type="button"
         role="option"
+        :tabindex="inline ? -1 : undefined"
         :aria-selected="option.value === modelValue"
         :disabled="option.disabled"
         :data-highlighted="highlighted === index"
         @pointermove="highlighted = index"
         @click="choose(index)"
       >
+        <Icon v-if="option.icon" :name="option.icon" :size="14" />
         <span>{{ option.label }}</span
         ><Icon v-if="option.value === modelValue" name="check" :size="12" />
       </button></div

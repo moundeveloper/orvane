@@ -46,7 +46,66 @@ test("Desktop Browser app loads frame-blocking sites in a webview", async ({}, i
         BrowserWindow.getAllWindows().map((w) => w.isMenuBarVisible() || w.isMenuBarAutoHide()),
       ),
     ).toEqual([false]);
+    // No system title bar; the window opens maximized and Orvane's own
+    // close button follows the settings button.
+    expect(
+      await app.evaluate(({ BrowserWindow }) => {
+        const [window] = BrowserWindow.getAllWindows();
+        const outer = window!.getSize(),
+          inner = window!.getContentSize();
+        return {
+          maximized: window!.isMaximized(),
+          // A maximized frameless window still reports a few pixels of resize
+          // border; a system title bar would add about thirty more.
+          titleBar: outer[1]! - inner[1]! > 24,
+        };
+      }),
+    ).toEqual({ maximized: true, titleBar: false });
+    const close = page.getByRole("button", { name: "Close Orvane" });
+    await expect(close).toBeVisible();
+    expect(
+      await page.evaluate(
+        () =>
+          document.querySelector(".workspace-options")!.nextElementSibling
+            ?.className,
+      ),
+    ).toContain("window-close");
     await page.getByRole("button", { name: "Workspace options" }).click();
+    // The monitor picker lists the real displays; choosing one is remembered
+    // and leaves the window maximized on it.
+    const monitors = await app.evaluate(({ screen }) =>
+      screen.getAllDisplays().map((display) => display.id),
+    );
+    const picker = page.getByRole("combobox", {
+      name: "Monitor for the Orvane window",
+    });
+    await picker.click();
+    const options = page.locator(".select-popover [role=option]");
+    await expect(options).toHaveCount(monitors.length);
+    await options.last().click();
+    await expect
+      .poll(() =>
+        app.evaluate(({ BrowserWindow, screen, app }) => {
+          const [window] = BrowserWindow.getAllWindows();
+          const fs = process.mainModule!.require("node:fs");
+          const path = process.mainModule!.require("node:path");
+          return {
+            maximized: window!.isMaximized(),
+            on: screen.getDisplayMatching(window!.getBounds()).id,
+            saved: JSON.parse(
+              fs.readFileSync(
+                path.join(app.getPath("userData"), "window.json"),
+                "utf8",
+              ),
+            ).displayId,
+          };
+        }),
+      )
+      .toEqual({
+        maximized: true,
+        on: monitors.at(-1),
+        saved: monitors.at(-1),
+      });
     await page
       .getByRole("button", { name: "Create Browser", exact: true })
       .click();

@@ -113,7 +113,7 @@ Call `workspace_batch` with:
 }
 ```
 
-Create IDs must be unique; omit them to generate UUIDs and use the returned IDs in later calls. For a nested layout, create a `container` and pass its ID as `parentId` when creating children. For code, create a `code` component with `properties.code` containing its HTML/CSS/JavaScript. New and changed authored code runs only through the existing browser sandbox behavior, not in Node.
+Create IDs must be unique; omit them to generate UUIDs and use the returned IDs in later calls. For a nested layout, create a `container` and pass its ID as `parentId` when creating children. For code, create a `code` component with `properties.code` containing its HTML/CSS/JavaScript. New and changed authored code runs only through the existing browser sandbox behavior, not in Node. Every code app already has `window.orvane` (visibility, frame-coalesced writes, debounce/throttle, idle work, cleanup and a windowed list); generated code is expected to follow [the app performance standards](../APP_PERFORMANCE.md), which the server also states in its MCP instructions.
 
 For cross-app rules, set `appId` to the explicit target app ID; use `app_update` with `patch.exposed: true` to expose that app's interface. Local rules use `appId: ""`. Read existing apps before choosing component IDs. Graph edges are `{id, source, target, on?: "success" | "failure"}`; `source: "trigger"` starts a graph. Rule ID `trigger` is reserved. `positions` maps trigger/rule IDs to `{x,y}`.
 

@@ -12,6 +12,8 @@
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
     "test": "playwright test",
+    "test:css": "node --test bench/css-guard.test.mjs",
+    "bench": "node --import tsx bench/run.ts",
     "format": "prettier --write src tests playwright.config.ts vite.config.ts"
   },
   "dependencies": {

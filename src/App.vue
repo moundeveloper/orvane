@@ -38,6 +38,36 @@ import {
   type WorkspaceAction,
 } from "./model";
 const STORAGE = LEGACY_STORAGE;
+// Desktop shell without a system title bar: the top bar is the drag area
+// and carries the close button.
+const desktopWindow = (
+  window as unknown as {
+    orvaneDesktop?: {
+      frameless?: boolean;
+      closeWindow?: () => void;
+      displays?: () => Promise<
+        { id: number; label: string; chosen: boolean }[]
+      >;
+      setDisplay?: (id: number) => Promise<boolean>;
+    };
+  }
+).orvaneDesktop;
+const frameless = !!desktopWindow?.frameless && !!desktopWindow.closeWindow;
+// The monitor Orvane opens on, chosen in Workspace options.
+const displays = ref<{ value: string; label: string }[]>([]),
+  displayChoice = ref("");
+async function loadDisplays() {
+  const list = (await desktopWindow?.displays?.().catch(() => [])) || [];
+  displays.value = list.map((item) => ({
+    value: String(item.id),
+    label: item.label,
+  }));
+  displayChoice.value = String(list.find((item) => item.chosen)?.id ?? "");
+}
+async function chooseDisplay() {
+  if (displayChoice.value)
+    await desktopWindow?.setDisplay?.(Number(displayChoice.value));
+}
 const ActionStudio = defineAsyncComponent(
   () => import("./components/ActionStudio.vue"),
 );
@@ -251,6 +281,10 @@ const panel = ref<
   searchInput = ref<HTMLInputElement>(),
   importInput = ref<HTMLInputElement>(),
   geometryApp = ref<CanvasApp>();
+// Monitors can be plugged in or removed, so read them each time.
+watch(panel, (open) => {
+  if (open === "workspace") void loadDisplays();
+});
 const searchButton = ref<HTMLButtonElement>();
 const searchOrigin = ref("50% calc(100% + 35px)");
 const viewport = reactive({
@@ -540,10 +574,13 @@ function panTo(x: number, y: number, done?: () => void, zoom = camera.zoom) {
   const fromX = camera.x,
     fromY = camera.y,
     fromZoom = camera.zoom;
+  // The motion is timed from the request, so its first frame already moves;
+  // a late first frame counts as at most one frame of progress.
+  const requested = performance.now();
   let start: number | undefined;
   movingCamera.value = true;
   const tick = (time: number) => {
-    start ??= time;
+    start ??= Math.min(time, Math.max(requested, time - 1000 / 60));
     const progress = Math.max(0, Math.min(1, (time - start) / 280)),
       eased = 1 - (1 - progress) ** 4;
     camera.x = fromX + (x - fromX) * eased;
@@ -558,6 +595,108 @@ function panTo(x: number, y: number, done?: () => void, zoom = camera.zoom) {
   };
   panFrame = requestAnimationFrame(tick);
 }
+const idle = (work: () => void, timeout = 600) =>
+  "requestIdleCallback" in window
+    ? requestIdleCallback(work, { timeout })
+    : setTimeout(work, 60);
+const cancelIdle = (handle: number) => {
+  if ("cancelIdleCallback" in window) cancelIdleCallback(handle);
+  clearTimeout(handle);
+};
+/** The app closest to the middle of the view among those that qualify. */
+function nearestApp(qualifies: (app: CanvasApp) => boolean) {
+  const centerX = (viewport.width / 2 - camera.x) / camera.zoom,
+    centerY = (viewport.height / 2 - camera.y) / camera.zoom;
+  let nearest: CanvasApp | undefined,
+    best = Infinity;
+  for (const app of apps.value) {
+    if (!qualifies(app)) continue;
+    const distance = Math.hypot(
+      app.x + app.width / 2 - centerX,
+      app.y + app.height / 2 - centerY,
+    );
+    if (distance < best) {
+      best = distance;
+      nearest = app;
+    }
+  }
+  return nearest;
+}
+// Startup mounts the apps in view at once and the others in idle slices,
+// nearest first, so a large workspace can be used before all of it exists.
+// Anything opened, created or navigated to later mounts immediately.
+const mountedApps = reactive(new Set<string>());
+let mountHandle = 0;
+function inView(app: CanvasApp) {
+  const left = app.x * camera.zoom + camera.x,
+    top = app.y * camera.zoom + camera.y;
+  return (
+    left < viewport.width &&
+    top < viewport.height &&
+    left + app.width * camera.zoom > 0 &&
+    top + app.height * camera.zoom > 0
+  );
+}
+function mountPending() {
+  if (mountHandle) return;
+  mountHandle = idle(() => {
+    mountHandle = 0;
+    // Motion owns the frame budget; resume once the canvas is still.
+    if (gesture || pinch || panFrame || zoomFrame) return mountPending();
+    const next = nearestApp((app) => !mountedApps.has(app.id));
+    if (!next) return warmApps();
+    mountedApps.add(next.id);
+    mountPending();
+  }, 80);
+}
+watch(
+  apps,
+  (current) => {
+    for (const app of current)
+      if (ready.value || inView(app)) mountedApps.add(app.id);
+    if (current.some((app) => !mountedApps.has(app.id))) mountPending();
+  },
+  { immediate: true, flush: "sync" },
+);
+// Off-screen apps skip rendering (content-visibility in style.css). Each is
+// laid out once while the canvas is idle, nearest first, so panning or
+// switching to it later paints existing layout instead of stalling on it.
+const warmedApps = new Set<string>();
+let warmHandle = 0,
+  warmFrame = 0;
+function warmApps() {
+  if (warmHandle || warmFrame || !ready.value) return;
+  warmHandle = idle(() => {
+    warmHandle = 0;
+    // Motion owns the frame budget; resume once the canvas is still.
+    if (gesture || pinch || panFrame || zoomFrame) return warmApps();
+    const next = nearestApp(
+      (app) => mountedApps.has(app.id) && !warmedApps.has(app.id),
+    );
+    if (!next) return;
+    warmedApps.add(next.id);
+    const surface = document.querySelector<HTMLElement>(
+      `.canvas-app[data-app-id="${CSS.escape(next.id)}"] > .app-surface`,
+    );
+    if (!surface) return warmApps();
+    surface.classList.add("is-warming");
+    // One rendered frame computes its style and layout; the browser keeps
+    // both when the app is skipped again.
+    warmFrame = requestAnimationFrame(() => {
+      warmFrame = requestAnimationFrame(() => {
+        warmFrame = 0;
+        surface.classList.remove("is-warming");
+        warmApps();
+      });
+    });
+  });
+}
+watch([ready, () => apps.value.length], warmApps, { flush: "post" });
+onBeforeUnmount(() => {
+  cancelIdle(mountHandle);
+  cancelIdle(warmHandle);
+  cancelAnimationFrame(warmFrame);
+});
 const locatedAppId = ref("");
 const locatorSequence = ref(0);
 let locatorTimer: ReturnType<typeof setTimeout> | undefined;
@@ -571,6 +710,7 @@ async function focusApp(a: CanvasApp, locate = false) {
   stopZoom();
   const sequence = navigationSequence;
   clearLocator();
+  mountedApps.add(a.id);
   active.value = a.id;
   panel.value = null;
   movingCamera.value = true;
@@ -686,6 +826,18 @@ let gesture: {
 } | null = null;
 const space = ref(false),
   dragging = ref(false);
+// Grab/grabbing feedback is one overlay above the canvas. It is updated
+// synchronously so it can take pointer capture in the same event, and so the
+// rest of the document is never restyled for a pan.
+const panShield = ref<HTMLElement>();
+watch(
+  [space, dragging],
+  ([armed, active]) => {
+    panShield.value?.classList.toggle("armed", armed || active);
+    panShield.value?.classList.toggle("dragging", active);
+  },
+  { flush: "sync" },
+);
 const touches = new Map<number, { x: number; y: number }>();
 let pinch: {
   distance: number;
@@ -785,8 +937,10 @@ function pointerDown(e: PointerEvent, app?: CanvasApp, edge = "") {
   e.preventDefault();
   stopZoom();
   stopPan();
-  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   dragging.value = true;
+  (panShield.value || (e.currentTarget as HTMLElement)).setPointerCapture(
+    e.pointerId,
+  );
   gesture = {
     pointerId: e.pointerId,
     type: edge ? "resize" : moveApp ? "move" : "pan",
@@ -1356,6 +1510,7 @@ async function importWorkspace(e: Event) {
 }
 function resetTransient() {
   renderGeneration.value++;
+  warmedApps.clear();
   geometryApp.value = undefined;
   active.value = "";
   managedApp.value = undefined;
@@ -1974,7 +2129,7 @@ onBeforeUnmount(() => {
     :data-ready="ready"
     :data-saved="!unsavedChanges"
     :data-editable="canEdit && ready"
-    :class="{ 'is-panning': space || dragging }"
+    :class="{ 'is-panning': space || dragging, frameless }"
     @pointerdown.capture="touchStart"
     @pointermove.capture="touchMove"
     @pointerup.capture="touchEnd"
@@ -2278,7 +2433,15 @@ onBeforeUnmount(() => {
           aria-label="Workspace options"
           @click="panel = panel === 'workspace' ? null : 'workspace'"
         >
-          <Icon name="settings" />
+          <Icon name="settings" /></button
+        ><button
+          v-if="frameless"
+          class="icon-button window-close"
+          aria-label="Close Orvane"
+          title="Close"
+          @click="desktopWindow?.closeWindow?.()"
+        >
+          <Icon name="close" />
         </button>
       </div>
     </header>
@@ -2289,10 +2452,12 @@ onBeforeUnmount(() => {
         backgroundSize: `${24 * camera.zoom}px ${24 * camera.zoom}px`,
       }"
     ></div>
+    <!-- Toggling inert restyles the whole subtree, so the plane does not
+         repeat it while the workspace above is already inert for an MCP edit. -->
     <div
       class="canvas-plane"
       v-show="ready"
-      :inert="!canEdit || importBusy"
+      :inert="!canEdit || (importBusy && !mcpBusy)"
       :class="{ 'camera-moving': movingCamera }"
       :style="{
         transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})`,
@@ -2352,7 +2517,21 @@ onBeforeUnmount(() => {
           aria-hidden="true"
           :style="{ '--locator-radius': app.radius + 'px' }"
         ></div>
+        <section
+          v-if="!mountedApps.has(app.id)"
+          class="app-surface app-pending"
+          aria-busy="true"
+          :aria-label="app.name"
+          :style="{ '--app-radius': app.radius + 'px' }"
+        >
+          <div v-if="app.showName !== false" class="app-topline">
+            <span class="app-name app-title">{{
+              app.name || "Untitled app"
+            }}</span>
+          </div>
+        </section>
         <AppSurface
+          v-else
           :ref="
             (el) => {
               if (el)
@@ -2401,6 +2580,7 @@ onBeforeUnmount(() => {
         ></div>
       </div>
     </div>
+    <div ref="panShield" class="pan-shield" aria-hidden="true"></div>
     <div
       v-if="status"
       class="status-area"
@@ -2676,6 +2856,22 @@ onBeforeUnmount(() => {
         Import previews Merge or Replace. A local recovery snapshot keeps your
         current workspace safe.
       </p>
+      <div v-if="displays.length" class="settings-section">
+        <div class="section-line">
+          <Icon name="box" :size="14" />Window
+        </div>
+        <label class="property"
+          >Open on monitor<CustomSelect
+            v-model="displayChoice"
+            aria-label="Monitor for the Orvane window"
+            :options="displays"
+            placeholder="Primary monitor"
+            @change="chooseDisplay"
+        /></label>
+        <p class="field-help">
+          Orvane moves there now and opens there next time.
+        </p>
+      </div>
       <div class="settings-section">
         <div class="section-line">
           <Icon name="keyboard" :size="14" />Keyboard shortcuts

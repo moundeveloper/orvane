@@ -21,6 +21,16 @@ pnpm dev
 
 Open the local URL Vite prints. Four editable examples (Daily list, Notes, Tally and Calculator) are added once, including to existing workspaces without replacing existing apps. Re-add them from Workspace → Add example apps. Click **+** in the bottom dock to create a blank app; use **Build app** to add and configure components. No accounts, separate database-server installation, API keys or publish step are needed. Fonts and icons are bundled locally. The local Orvane server owns the shared SQLite file.
 
+## Performance
+
+Pan, zoom, clicks and app switching are kept independent of how many apps are open: pan feedback is a single overlay, apps away from the viewport skip rendering, and startup mounts the apps in view first. [PERFORMANCE.md](PERFORMANCE.md) has the measurements and limits; [APP_PERFORMANCE.md](APP_PERFORMANCE.md) has the standards every app follows, including the `window.orvane` runtime that each code app receives.
+
+```sh
+pnpm bench              # interaction benchmark on a 50-app fixture (opens an Electron window)
+pnpm bench -- --check   # fail when a budget is exceeded
+pnpm test:css           # reject selectors that restyle every descendant
+```
+
 ## MCP automation
 
 An optional local MCP server can create, inspect and edit apps, nested components, rules/graphs, reusable actions and spatial groups in the live browser workspace. It also provides atomic batches, validated Merge/Replace import, revision checks and recovery snapshots. Keep Orvane open, and configure your MCP client with [mcp.json](mcp.json); the client launches the server through `server/launch.mjs`. See [MCP setup, tools and examples](server/README.md). Nothing is installed into a host automatically.
@@ -84,7 +94,17 @@ MCP exposes the same data through `notes_data`; create the app with `workspace_b
 
 ## Browser
 
-Open **Workspace → Create Browser**, or add a **Web browser** component in an app's builder. It has tabs (up to 12), an address bar (text that isn't an address searches DuckDuckGo), back/forward through addresses entered there, reload and **Open in your browser**. Tabs and their addresses save with the workspace.
+Open **Workspace → Create Browser**, or add a **Web browser** component in an app's builder. Tabs live in a sidebar under Pinned, Groups and Tabs headings (up to 12 per space), with bookmarks below; the toolbar has back, forward, reload, start page, an address bar (text that isn't an address searches DuckDuckGo), bookmark, **Open in your browser**, Peek and Split View. Everything saves with the workspace.
+
+- **Layouts** (Browser menu, bottom of the sidebar): sidebar with address bar, sidebar only (Ctrl+L or the address chip shows the bar), or tabs on top. The sidebar collapses to icons, resizes by its edge, and collapses by itself in a narrow app.
+- **Spaces**: named, coloured sets of tabs and bookmarks, switched from the sidebar header. All spaces share one login session.
+- **Pinned tabs**: right-click a tab to pin it; double-click returns it to its pinned address. In the desktop app, a link that leaves a pinned tab's site opens in a Peek.
+- **Tab groups**: Ctrl-click or Shift-click tabs, then right-click to group them. Groups rename, recolour, collapse, become a bookmark folder, or are made for you by **Group tabs by site**.
+- **Peek**: Shift-click a link or bookmark (or the eye button) to preview a page in a panel over the current one, then open it as a tab or as a Split View. Escape closes it.
+- **Split View**: Alt-click a tab, bookmark or link, or use the toolbar button. The two tabs appear together in the sidebar; choosing one moves the selection, the divider drags, and the panes swap or stack.
+- **Search** (Ctrl+K or Ctrl+Shift+A): open tabs in every space and bookmarks. Ctrl+Tab cycles recently used tabs.
+- **Screenshots** (desktop app, Browser menu): the visible page, the full page, or a dragged area, copied to the clipboard.
+- A tab playing sound in the background shows a mini player with mute; **Pop out video when leaving a tab** is optional. Ctrl+Shift+C copies the address.
 
 Pages load in a sandboxed iframe, so this is a light embedded browser, not a full one: many sites (Google, GitHub, banks, most sign-in pages) forbid being embedded and stay blank; use **Open in your browser** for those. Links clicked inside a page don't update the address bar or back/forward history. Only `http`/`https` addresses load, and Orvane's own address is refused so pages can't reach its local APIs. While you're not using a page, a transparent shield covers it so middle-drag, Space-drag and Ctrl+scroll still move the canvas; click the page once to use it, click anywhere outside to give the canvas back.
 
@@ -94,7 +114,7 @@ Pages load in a sandboxed iframe, so this is a light embedded browser, not a ful
 pnpm desktop
 ```
 
-Opens Orvane in its own window. It reuses a dev server already running on `http://localhost:5173`, otherwise starts one with the system `node` (so `better-sqlite3` stays built for the same Node as the MCP server) and stops it on exit. Set `ORVANE_PORT` to use another port (MCP browser bridging then also needs `ORVANE_MCP_ORIGINS`).
+Opens Orvane maximized in its own window, without a system title bar: drag the window by the orvane wordmark, and close it with the button after Workspace options. It reuses a dev server already running on `http://localhost:5173`, otherwise starts one with the system `node` (so `better-sqlite3` stays built for the same Node as the MCP server) and stops it on exit. Set `ORVANE_PORT` to use another port (MCP browser bridging then also needs `ORVANE_MCP_ORIGINS`).
 
 In the desktop app the Browser app uses Electron's `<webview>` instead of an iframe, so sites that refuse embedding (NetSuite, Google, GitHub…) load normally, with real back/forward history, page titles on tabs and one live page per tab. Sign-ins persist in a separate `persist:orvane-browser` session, isolated from Orvane itself. Links that open a new tab become Browser tabs; `window.open` popups (e.g. NetSuite selectors) open as small windows. Web pages never get Node, a preload script, or camera/microphone/location/notification permissions, and can't navigate to Orvane's own address. Orvane's window only navigates within Orvane; other links open in your system browser.
 

@@ -301,14 +301,40 @@ button:hover {
 .workspace-options {
   color: #556c7a;
 }
-.is-panning,
-.is-panning * {
-  cursor: grab !important;
-  user-select: none !important;
+/* Desktop window without a system title bar: drag it by the wordmark. */
+.frameless .wordmark {
+  -webkit-app-region: drag;
+  user-select: none;
 }
-.is-panning:active,
-.is-panning:active * {
-  cursor: grabbing !important;
+.window-close {
+  color: #556c7a;
+  margin-left: -8px;
+}
+.window-close:hover {
+  background: #ecd9d3;
+  color: #8a4a3a;
+}
+/* Pan feedback: one overlay above the canvas and below the top bar, dock and
+   panels. Never style "every descendant" from a class or :active on the
+   workspace: the browser then recomputes style for the whole document on
+   every press, release and Space, which grows with each open app. */
+.pan-shield {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: none;
+  cursor: grab;
+  touch-action: none;
+}
+.pan-shield.armed {
+  display: block;
+}
+.pan-shield.dragging {
+  cursor: grabbing;
+}
+.spatial-group-label:active,
+.group-drag-edge:active {
+  cursor: grabbing;
 }
 .canvas-app {
   position: absolute;
@@ -389,6 +415,14 @@ button:hover {
   overflow: hidden;
   position: relative;
   touch-action: auto;
+  /* Apps away from the viewport skip style, layout and paint; their state,
+     scripts and scroll positions are untouched. The canvas lays each one out
+     once while idle (.is-warming) so arriving at it only costs a paint. */
+  content-visibility: auto;
+}
+.app-surface.has-live-page,
+.app-surface.is-warming {
+  content-visibility: visible;
 }
 .app-topline {
   cursor: grab;
