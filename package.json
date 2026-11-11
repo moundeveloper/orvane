@@ -38,6 +38,7 @@
     "codemirror": "^6.0.2",
     "dexie": "^4.4.7",
     "dompurify": "^3.4.17",
+    "marked": "^18.1.3",
     "node-sql-parser": "^5.4.0",
     "pinia": "^4.0.3",
     "sql-formatter": "^15.9.0",

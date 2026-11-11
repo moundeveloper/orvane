@@ -107,7 +107,7 @@ try {
     ).replace(/^\uFEFF/, ""),
   );
   const entry = config.mcpServers.orvane;
-  assert.equal(entry.env.ORVANE_MCP_PROFILE, "netsuite");
+  assert(["netsuite", "desktop"].includes(entry.env.ORVANE_MCP_PROFILE));
   const live = await connect(entry, "live-relay");
   const initial = await call(live, "orvane_netsuite_status", {
     action: "list",

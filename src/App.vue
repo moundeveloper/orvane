@@ -475,11 +475,13 @@ function createApp() {
 }
 let panFrame = 0;
 const toolApps = {
+  claude: { name: "Claude sessions", icon: "text" },
   git: { name: "Git viewer", icon: "git" },
   projects: { name: "Projects Hub", icon: "folder" },
   notes: { name: "Notes", icon: "text" },
   browser: { name: "Browser", icon: "globe" },
   netsuite: { name: "NetSuite", icon: "globe" },
+  certificates: { name: "Certificate manager", icon: "key" },
 };
 function createGitViewer(kind: keyof typeof toolApps = "git") {
   if (!canEdit.value || importBusy.value) return;
@@ -2655,6 +2657,16 @@ onBeforeUnmount(() => {
         @click="createGitViewer('netsuite')"
       >
         <Icon name="globe" :size="14" />Create NetSuite app
+      </button>
+      <button
+        class="subtle-button"
+        :disabled="!canEdit || importBusy"
+        @click="createGitViewer('certificates')"
+      >
+        <Icon name="key" :size="14" />Create Certificate manager
+      </button>
+      <button class="subtle-button" :disabled="!canEdit || importBusy" @click="createGitViewer('claude')">
+        <Icon name="text" :size="14" />Create Claude sessions
       </button>
       <button
         class="subtle-button"

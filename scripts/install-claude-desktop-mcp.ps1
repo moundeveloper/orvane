@@ -16,9 +16,9 @@ $existing = $config['mcpServers']['orvane']
 if ($existing) {
     if ($existing.command -eq $nodePath -and $existing.args.Count -eq 1 -and
         [IO.Path]::GetFullPath($existing.args[0]) -eq [IO.Path]::GetFullPath($launchPath) -and
-        $existing.env.ORVANE_MCP_PROFILE -eq 'netsuite' -and
+        $existing.env.ORVANE_MCP_PROFILE -in @('netsuite', 'desktop') -and
         $existing.env.ORVANE_DATA_DIR -eq $dataPath) {
-        Write-Output 'Orvane is already installed in Claude Desktop with the Batch 1 NetSuite profile.'
+        Write-Output 'Orvane is already installed in Claude Desktop.'
         exit 0
     }
     throw 'A different Orvane entry already exists in Claude Desktop. Inspect it before replacing it.'

@@ -7,6 +7,10 @@ import {
   defineAsyncComponent,
 } from "vue";
 const GitViewer = defineAsyncComponent(() => import("./GitViewer.vue"));
+const ClaudeSessions = defineAsyncComponent(() => import("./ClaudeSessions.vue"));
+const CertificateManager = defineAsyncComponent(
+  () => import("./CertificateManager.vue"),
+);
 const NotesView = defineAsyncComponent(() => import("./notes/NotesView.vue"));
 const NetSuiteView = defineAsyncComponent(() => import("./NetSuiteView.vue"));
 const BrowserView = defineAsyncComponent(() => import("./BrowserView.vue"));
@@ -92,8 +96,10 @@ const sandboxDocument = (code: string) => {
       @click.stop="emit('select', block.id)"
       :aria-label="`Edit ${block.label}`"
     ></div>
+    <ClaudeSessions v-if="block.kind === 'claude'" :block="block" />
+    <CertificateManager v-else-if="block.kind === 'certificates'" />
     <NotesView
-      v-if="block.kind === 'notes'"
+      v-else-if="block.kind === 'notes'"
       :block="block"
       :editing="editing"
     />

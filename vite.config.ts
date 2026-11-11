@@ -7,6 +7,8 @@ import { localStorageApi } from "./server/storage-api.ts";
 import { gitApi } from "./server/git-api.ts";
 import { projectsApi } from "./server/projects-api.ts";
 import { notesApi } from "./server/notes-api.ts";
+import { certificatesApi } from "./server/certificates-api.ts";
+import { claudeApi } from "./server/claude-api.ts";
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -15,6 +17,11 @@ export default defineConfig({
   // which makes the frosted header disappear in the production desktop app.
   build: { cssMinify: "esbuild" },
   plugins: [
+    claudeApi(process.env.ORVANE_DATA_DIR || fileURLToPath(new URL("./.orvane", import.meta.url))),
+    certificatesApi(
+      process.env.ORVANE_DATA_DIR ||
+        fileURLToPath(new URL("./.orvane", import.meta.url)),
+    ),
     // <webview> is Electron's built-in element (desktop Browser app).
     vue({
       template: {

@@ -95,7 +95,7 @@ async function connect(label, path) {
     Array.isArray(entry.args) && entry.args.length === 1,
     "Expected the installed single-entrypoint profile",
   );
-  assert.equal(entry.env?.ORVANE_MCP_PROFILE, "netsuite");
+  assert(["netsuite", "desktop"].includes(entry.env?.ORVANE_MCP_PROFILE));
   assert.equal(
     resolve(entry.args?.[0]).toLowerCase(),
     resolve(root, "server/launch.mjs").toLowerCase(),
@@ -118,6 +118,14 @@ async function connect(label, path) {
   assert.deepEqual(
     (await client.listTools()).tools.map((tool) => tool.name).sort(),
     [
+      ...(entry.env.ORVANE_MCP_PROFILE === "desktop"
+        ? [
+            "exposition_read",
+            "exposition_sessions",
+            "exposition_show",
+            "exposition_update",
+          ]
+        : []),
       "orvane_netsuite_artifact",
       "orvane_netsuite_query",
       "orvane_netsuite_read",

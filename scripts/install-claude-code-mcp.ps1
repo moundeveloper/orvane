@@ -14,9 +14,9 @@ if (Test-Path -LiteralPath $configPath) {
         $launchPath = Join-Path $projectRoot 'server/launch.mjs'
         if ($existing.command -eq $nodePath -and $existing.args.Count -eq 1 -and
             [IO.Path]::GetFullPath($existing.args[0]) -eq [IO.Path]::GetFullPath($launchPath) -and
-            $existing.env.ORVANE_MCP_PROFILE -eq 'netsuite' -and
+            $existing.env.ORVANE_MCP_PROFILE -in @('netsuite', 'desktop') -and
             $existing.env.ORVANE_DATA_DIR -eq (Join-Path $projectRoot '.orvane')) {
-            Write-Output 'Orvane is already installed with the Batch 1 NetSuite profile.'
+            Write-Output 'Orvane is already installed for Claude Code.'
             exit 0
         }
         throw 'A different user-scoped Orvane configuration already exists. Inspect it with claude mcp get orvane before replacing it.'

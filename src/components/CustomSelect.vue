@@ -17,6 +17,7 @@ const props = defineProps<{
   modelValue?: T;
   options?: { value: string; label: string; disabled?: boolean }[];
   placeholder?: string;
+  teleportTo?: HTMLElement;
 }>();
 const emit = defineEmits<{ "update:modelValue": [value: T]; change: [] }>();
 const attrs = useAttrs(),
@@ -102,16 +103,28 @@ function place() {
   };
 }
 // Follow the trigger while open: the canvas can pan or zoom under it.
-let placed: DOMRect | undefined, follow = 0;
+let placed: DOMRect | undefined,
+  follow = 0;
 function track() {
   follow = 0;
   if (!open.value || !trigger.value) return;
   const r = trigger.value.getBoundingClientRect();
-  if (!r.width || r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) {
+  if (
+    !r.width ||
+    r.bottom < 0 ||
+    r.top > innerHeight ||
+    r.right < 0 ||
+    r.left > innerWidth
+  ) {
     open.value = false;
     return;
   }
-  if (!placed || r.left !== placed.left || r.top !== placed.top || r.width !== placed.width)
+  if (
+    !placed ||
+    r.left !== placed.left ||
+    r.top !== placed.top ||
+    r.width !== placed.width
+  )
     place();
   follow = requestAnimationFrame(track);
 }
@@ -142,6 +155,7 @@ function choose(index: number) {
 }
 function key(e: KeyboardEvent) {
   if (e.key === "Escape") {
+    e.preventDefault();
     e.stopPropagation();
     open.value = false;
     trigger.value?.focus();
@@ -219,7 +233,7 @@ onBeforeUnmount(() => {
     <span>{{ label }}</span
     ><Icon name="down" :size="12" />
   </button>
-  <Teleport to="body"
+  <Teleport :to="teleportTo || 'body'"
     ><div
       v-if="open"
       :id="id"

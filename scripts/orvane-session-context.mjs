@@ -1,0 +1,3 @@
+// SessionStart hook: identity only, no transcript contents and no writes.
+let raw='';for await(const chunk of process.stdin){raw+=chunk;if(raw.length>1_000_000)process.exit(0);}
+try{const event=JSON.parse(raw);if(typeof event.session_id==='string'&&typeof event.cwd==='string')process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:'SessionStart',additionalContext:`Orvane graphical exposition session binding: ${JSON.stringify({sessionId:event.session_id,projectPath:event.cwd})}. Use this exact binding when calling exposition_show/update/read. Do not choose another session by title or recency. Use the orvane-exposition skill when a graphical explanation would help.`}}));}catch{}
