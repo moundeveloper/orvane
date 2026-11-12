@@ -30,7 +30,7 @@ async function open(page: Page) {
     await expect(browser.locator(".browser-tab.active")).toContainText("127.0.0.1");
   };
   const tab = async (path: string) => {
-    await browser.getByRole("button", { name: "New tab" }).click();
+    await browser.getByRole("button", { name: "New tab", exact: true }).click();
     await go(path);
   };
   const menu = async (target: Locator, item: string) => {
@@ -136,9 +136,11 @@ test("pinned tabs, groups, multi-select and spaces organise tabs", async ({
     // A group becomes a bookmark folder and its tabs are ungrouped.
     await menu(group, "Save as bookmark folder");
     await expect(group).toHaveCount(0);
-    const folder = browser.locator(".browser-folder");
-    await expect(folder).toContainText("Research");
-    await expect(browser.locator(".browser-bookmark.in-folder")).toHaveCount(2);
+    await browser.getByRole("button", { name: "Library", exact: true }).click();
+    const bookmarks = browser.getByRole("navigation", { name: "Bookmarks" });
+    await expect(bookmarks.getByRole("button", { name: /Research/ })).toBeVisible();
+    await expect(bookmarks.getByRole("button", { name: "127.0.0.1", exact: true })).toHaveCount(2);
+    await page.keyboard.press("Escape");
 
     // Group by site sweeps the loose tabs together.
     await more("Group tabs by site");
@@ -251,13 +253,13 @@ test("Peek, Split View and tab search open pages without losing the current one"
     await expect(frames).toHaveCount(1);
 
     // Search finds a tab by its address and switches to it.
-    await more("Search tabs");
-    const search = browser.getByRole("textbox", {
+    await more("Command palette");
+    const search = browser.getByRole("combobox", {
       name: "Search open tabs and bookmarks",
     });
     await search.fill("other");
     // One matching tab, plus the offer to open the text in a new tab.
-    const results = browser.getByRole("dialog", { name: "Search tabs" }).locator("button");
+    const results = browser.getByRole("dialog", { name: "Search tabs" }).getByRole("option");
     await expect(results).toHaveCount(2);
     await page.screenshot({ path: "artifacts/browser-command.png" });
     await search.press("Enter");
@@ -267,6 +269,7 @@ test("Peek, Split View and tab search open pages without losing the current one"
 
     // In the Chrome-like layout a peek opens as an ordinary tab.
     await more("Layout: tabs on top");
+    await library.click();
     await bookmark.click({ modifiers: ["Shift"] });
     await expect(peekBar).toBeHidden();
     await expect(tabs).toHaveCount(4);

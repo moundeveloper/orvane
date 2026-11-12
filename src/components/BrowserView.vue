@@ -228,6 +228,10 @@ const MAX_SPACES = 6;
 const MAX_BOOKMARKS = 60;
 const MAX_HISTORY = 60;
 const MAX_CLOSED = 16;
+const DEFAULT_SIDEBAR_WIDTH = 262;
+function sidebarWidth(width: number) {
+  return Math.round(Math.max(208, Math.min(376, width)));
+}
 const COLORS = ["#6f8998", "#7a9a7e", "#b5874a", "#a36f8f", "#6b7fb3", "#9a6a5a"];
 function readBookmarks(saved: { bookmarks?: unknown }): Bookmark[] {
   if (!Array.isArray(saved.bookmarks)) return [];
@@ -395,7 +399,7 @@ function readState(imported?: Record<string, unknown>) {
     /** Where the divider sits, as a percentage. */
     ratio: splitRatio(Number(saved.ratio) || 50),
     /** Sidebar width in pixels. */
-    side: Math.max(190, Math.min(360, Number(saved.side) || 232)),
+    side: sidebarWidth(Number(saved.side) || DEFAULT_SIDEBAR_WIDTH),
     collapsed: saved.collapsed === true,
     pip: saved.pip === true,
   };
@@ -2075,7 +2079,7 @@ function gripDown(event: PointerEvent) {
 }
 function gripMove(event: PointerEvent) {
   if (gripping)
-    state.value.side = Math.round(Math.max(190, Math.min(360, local(event).x)));
+    state.value.side = sidebarWidth(local(event).x);
 }
 function gripUp() {
   if (gripping) save();
@@ -3063,7 +3067,7 @@ function browserWheel(event: WheelEvent) {
         class="icon-button"
         :class="{ on: !!state.split }"
         aria-label="Toggle Split View"
-        data-tip="Toggle Split View"
+        :data-tip="state.split ? 'Exit Split View' : 'Enter Split View'"
         :aria-pressed="!!state.split"
         @click="toggleSplit"
       >
@@ -3337,7 +3341,8 @@ function browserWheel(event: WheelEvent) {
         </div>
       </template>
       <div v-if="!useWebview && activeTab.url && !peek && !embedHintDismissed"
-        class="browser-embed-hint" :class="paneClass(activeTab.id)">
+        class="browser-embed-hint"
+        :class="{ 'hint-first': splitPair?.[0].id === activeTab.id, 'hint-second': splitPair?.[1].id === activeTab.id }">
         <Icon name="info" :size="14" />
         <span>Some websites block embedded browsing.</span>
         <button type="button" @click="openExternal">Open site <Icon name="external" :size="12" /></button>
@@ -3757,7 +3762,7 @@ function browserWheel(event: WheelEvent) {
   --scroll-thumb: rgb(108 143 164 / 35%);
   --floating: 0 22px 56px rgb(52 79 97 / 16%), 0 3px 10px rgb(52 79 97 / 8%);
   --ease: cubic-bezier(0.22, 0.75, 0.25, 1);
-  --side: var(--side-wide, 232px);
+  --side: var(--side-wide);
   position: relative;
   display: grid;
   grid-template-columns: var(--side) minmax(0, 1fr);
@@ -3780,7 +3785,7 @@ function browserWheel(event: WheelEvent) {
   --floating: 0 22px 56px rgb(0 0 0 / 40%);
 }
 .browser-view.side-collapsed {
-  --side: 58px;
+  --side: 65px;
 }
 .browser-view > * {
   grid-column: 2;
@@ -4114,6 +4119,10 @@ function browserWheel(event: WheelEvent) {
 .browser-tab.selected {
   box-shadow: inset 0 0 0 1px #9db6c4;
 }
+.browser-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .browser-tab .browser-tab-close {
   width: 20px;
   height: 20px;
@@ -4413,6 +4422,12 @@ function browserWheel(event: WheelEvent) {
   background: var(--surface);
   border-bottom: 1px solid var(--soft);
 }
+.browser-bar-divider {
+  flex: 0 0 1px;
+  height: 16px;
+  margin-inline: 3px;
+  background: var(--soft);
+}
 .address-shell {
   position: relative;
   display: flex;
@@ -4431,6 +4446,10 @@ function browserWheel(event: WheelEvent) {
 .address-shell > :deep(svg) {
   color: var(--faint);
   flex: none;
+}
+.address-shell input::placeholder,
+.start-search input::placeholder {
+  color: var(--faint);
 }
 .address-shell::after {
   content: "";
@@ -4675,6 +4694,7 @@ function browserWheel(event: WheelEvent) {
   overflow: auto;
 }
 .start-wrap {
+  container: browser-start / inline-size;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -4778,10 +4798,15 @@ function browserWheel(event: WheelEvent) {
 }
 .quick-sites {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 9px;
   align-self: stretch;
   margin-top: 11px;
+}
+@container browser-start (max-width: 415px) {
+  .quick-sites {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .quick-site {
   display: flex;
@@ -4828,6 +4853,50 @@ function browserWheel(event: WheelEvent) {
   font-size: 10px;
   line-height: 1.6;
   color: var(--faint);
+}
+
+.browser-embed-hint {
+  --hint-width: 100%;
+  position: absolute;
+  z-index: 1;
+  right: 18px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(430px, calc(var(--hint-width) - 36px));
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 10px 34px rgb(52 79 97 / 10%);
+  color: var(--sub);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.split:not(.stacked) .browser-embed-hint.hint-first {
+  --hint-width: var(--split);
+  right: calc(100% - var(--split) + 18px);
+}
+.split:not(.stacked) .browser-embed-hint.hint-second {
+  --hint-width: calc(100% - var(--split));
+}
+.stacked .browser-embed-hint.hint-first {
+  bottom: calc(100% - var(--split) + 18px);
+}
+.browser-embed-hint button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  background: none;
+  color: var(--ink);
+}
+.browser-embed-hint button:first-of-type {
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 /* Peek: a panel over the page with its controls on a rail. */
@@ -4897,8 +4966,8 @@ function browserWheel(event: WheelEvent) {
   position: absolute;
   z-index: 4;
   left: calc(7% + 14px);
-  bottom: calc(6% + 13px);
-  max-width: 60%;
+  top: calc(6% + 13px);
+  max-width: min(410px, calc(86% - 71px));
   display: flex;
   align-items: center;
   gap: 7px;
