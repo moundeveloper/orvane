@@ -228,6 +228,23 @@ function flatIndex(cmd: Cmd): number {
   return filtered.value.indexOf(cmd);
 }
 
+function revealSelected() {
+  const menu = menuEl.value;
+  const option = menu?.querySelector<HTMLElement>(".menu-item.selected");
+  if (!menu || !option) return;
+  const bounds = menu.getBoundingClientRect();
+  const scale = bounds.height / menu.offsetHeight || 1;
+  const row = option.getBoundingClientRect();
+  const top = bounds.top + menu.clientTop * scale;
+  const bottom = top + menu.clientHeight * scale;
+  // Scroll only this popup: scrolling an ancestor dismisses the menu and
+  // can move the Notes document or canvas instead of revealing the option.
+  if (row.top < top) menu.scrollTop += (row.top - top) / scale;
+  else if (row.bottom > bottom) menu.scrollTop += (row.bottom - bottom) / scale;
+}
+
+watch([selected, filtered], () => nextTick(revealSelected), { flush: "post" });
+
 function onKeydown(e: KeyboardEvent) {
   if (e.key === "Escape") {
     e.preventDefault();
@@ -236,7 +253,10 @@ function onKeydown(e: KeyboardEvent) {
   } else if (e.key === "ArrowDown") {
     e.preventDefault();
     e.stopPropagation();
-    selected.value = Math.min(filtered.value.length - 1, selected.value + 1);
+    selected.value = Math.max(
+      0,
+      Math.min(filtered.value.length - 1, selected.value + 1),
+    );
   } else if (e.key === "ArrowUp") {
     e.preventDefault();
     e.stopPropagation();

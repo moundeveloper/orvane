@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Git Viewer regression fixture</title>
+    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/editor.css" />
+  </head>
+  <body>
+    <script type="module">
+      import { mountGitWorktreeFixture } from "./git-worktree-harness.ts";
+      window.mountGitWorktreeFixture = mountGitWorktreeFixture;
+    </script>
+  </body>
+</html>

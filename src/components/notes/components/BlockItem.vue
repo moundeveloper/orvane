@@ -181,13 +181,55 @@ function focusAt(at: "start" | "end") {
   const html = renderHtml(props.block.html);
   if (storedHtml(el.innerHTML) !== props.block.html)
     el.innerHTML = DOMPurify.sanitize(html);
-  el.focus();
+  el.focus({ preventScroll: true });
   const range = document.createRange();
   range.selectNodeContents(el);
   range.collapse(at === "start");
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let text = walker.nextNode();
+  if (text) {
+    if (at === "end") {
+      let next: Node | null;
+      while ((next = walker.nextNode())) text = next;
+    }
+    range.setStart(text, at === "start" ? 0 : text.textContent!.length);
+    range.collapse(true);
+  }
   const sel = window.getSelection()!;
   sel.removeAllRanges();
   sel.addRange(range);
+  revealCaret();
+}
+
+function revealCaret() {
+  const el = contentEl.value;
+  const selection = window.getSelection();
+  if (!el || !selection?.rangeCount || !el.contains(selection.focusNode))
+    return;
+  const range = document.createRange();
+  range.setStart(selection.focusNode!, selection.focusOffset);
+  range.collapse(true);
+  // Native focus scrolling is unreliable inside the transformed canvas.
+  // Reveal the caret in the Notes viewport without moving the canvas itself.
+  const viewport = el.closest<HTMLElement>(".notes-page-scroll");
+  if (viewport) {
+    const bounds = viewport.getBoundingClientRect();
+    const top = Math.max(bounds.top, viewport.querySelector(".crumbs")?.getBoundingClientRect().bottom || bounds.top);
+    const caret = range.getClientRects()[0] || el.getBoundingClientRect();
+    const scale = bounds.height / viewport.offsetHeight || 1;
+    const delta =
+      caret.top < top + 12
+        ? caret.top - top - 12
+        : caret.bottom > bounds.bottom - 12
+          ? caret.bottom - bounds.bottom + 12
+          : 0;
+    viewport.scrollTop += delta / scale;
+  }
+}
+
+function onNavigationKeyup(event: KeyboardEvent) {
+  if (event.key.startsWith("Arrow") || ["Home", "End", "PageUp", "PageDown"].includes(event.key))
+    revealCaret();
 }
 
 function contentHasSelection(): boolean {
@@ -768,6 +810,7 @@ function copyCode() {
         :data-empty="contentEmpty ? 'true' : undefined"
         @input="onInput"
         @keydown="onKeydown"
+        @keyup="onNavigationKeyup"
         @paste="onPaste"
         @click="onClickContent"
         @mousedown="preventMiddleContent"

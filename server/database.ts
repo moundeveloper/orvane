@@ -126,6 +126,20 @@ export class LocalDatabase {
       )
       .run(key, JSON.stringify(value));
   }
+  saveApiKeyVault(expectedRevision: number, envelope: unknown) {
+    return this.db.transaction(() => {
+      const current = this.appData("api-key-vault") as
+        { revision: number } | undefined;
+      if ((current?.revision ?? 0) !== expectedRevision)
+        throw new StorageError(
+          409,
+          "The API key vault changed in another window. Lock and unlock it again before saving.",
+        );
+      const next = { revision: expectedRevision + 1, envelope };
+      this.saveAppData("api-key-vault", next);
+      return next;
+    })();
+  }
   editingActive() {
     const row = this.db
       .prepare("SELECT expires FROM lease WHERE id=1")

@@ -2,7 +2,22 @@ import { ipcMain, webContents } from "electron";
 
 // Only the Orvane window can address its own browser guests. No arbitrary page
 // JavaScript or credentials are exposed through this bridge.
-export function setupNetSuite(isOrvane, partition, processing) {
+
+const WRITES = ["save-file", "create-folder", "upload-file", "rename-item", "move-items", "delete-items"];
+/** Whether the page still has a NetSuite session: signed out, NetSuite
+ * redirects its home page to the login page. Unknown counts as signed in. */
+async function signedIn(contents) {
+  if (contents.isDestroyed?.()) return false;
+  return Promise.resolve()
+    .then(() => contents.executeJavaScript(
+      "fetch('/app/center/card.nl', { redirect: 'manual', credentials: 'same-origin' }).then((r) => r.type !== 'opaqueredirect')",
+    ))
+    .then((value) => value !== false)
+    .catch(() => true);
+}
+export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
+  const queues = new Map();
+  const refreshedEpochs = new Map();
   const allowed = (event) =>
     !event.sender.isDestroyed() && isOrvane(event.sender.getURL());
   ipcMain.handle("orvane:netsuite-tabs", async (event) => {
@@ -13,7 +28,7 @@ export function setupNetSuite(isOrvane, partition, processing) {
     if (!allowed(event)) throw Error("Unauthorized request.");
     return processing.openRecord(event.sender, origin, kind, id);
   });
-  ipcMain.handle("orvane:netsuite-run", async (event, id, operation, args) => {
+  const run = async (event, id, operation, args, expectedSessionEpoch) => {
     const options = typeof args === "string" ? { sql: args } : args || {};
     if (!allowed(event)) throw Error("Unauthorized request.");
     if (typeof id !== "string") throw Error("Choose a NetSuite environment.");
@@ -155,7 +170,10 @@ export function setupNetSuite(isOrvane, partition, processing) {
       },
       origin: id,
     }).replace(/</g, "\\u003c");
-    const code = `(async () => {
+    // The result and any error come back as JSON text: NetSuite values and
+    // errors (N.error objects) that structured clone can't copy would
+    // otherwise fail the whole call with "An object could not be cloned".
+    const code = `(async () => { try { return JSON.stringify({ result: await (async () => {
       const input = ${input};
       if (location.origin !== input.origin || !/^[a-z0-9-]+\\.app\\.netsuite\\.com$/i.test(location.hostname)) throw Error('NetSuite tab changed.');
       if (input.operation === 'tables' || input.operation === 'table-detail') {
@@ -388,35 +406,83 @@ export function setupNetSuite(isOrvane, partition, processing) {
         return { rows: data.records || [], totalCount: data.totalCount ?? (data.records || []).length, offset, pageSize };
       }
 
-    })()`;
-    const processingTab = await processing.acquire(event.sender, id);
-    let timer;
-    // A timeout does not mean execution has stopped; keep the tab busy until
-    // Chromium actually settles so refresh cannot interrupt an in-flight call.
-    const execution = processingTab.contents
-      .executeJavaScript(code)
-      .finally(processingTab.release);
-    try {
-      return await Promise.race([
-        execution,
-        new Promise((_, reject) => {
-          timer = setTimeout(
-            () =>
-              reject(
-                Error(
-                  ["save-file", "create-folder", "upload-file"].includes(
-                    operation,
-                  )
-                    ? "The request timed out and may have completed. Refresh and check before retrying."
-                    : "NetSuite request timed out.",
-                ),
-              ),
-            30000,
-          );
-        }),
-      ]);
-    } finally {
-      clearTimeout(timer);
-    }
-  });
+    })() ?? null }); } catch (error) { return JSON.stringify({ error: String(error?.message || error?.name || error) }); } })()`;
+    let processingTab;
+    const assertSession = () => {
+      if (expectedSessionEpoch !== undefined && lifecycle.sessionEpoch?.(event.sender, id) !== expectedSessionEpoch)
+        throw Object.assign(Error("The observed NetSuite session changed. List and inspect a fresh target."), { code: "SESSION_CHANGED" });
+    };
+    const attempt = async () => {
+      assertSession();
+      processingTab = await processing.acquire(event.sender, id);
+      let timer;
+      // A timeout does not mean execution has stopped; keep the tab busy until
+      // Chromium actually settles so refresh cannot interrupt an in-flight call.
+      const execution = Promise.resolve()
+        .then(() => {
+          assertSession();
+          if (expectedSessionEpoch !== undefined) refreshedEpochs.set(`${event.sender.id}:${id}`, expectedSessionEpoch);
+          return processingTab.contents.executeJavaScript(code);
+        })
+        .then((text) => {
+          const answer = JSON.parse(text);
+          if (answer?.error !== undefined) throw Error(answer.error);
+          return answer?.result ?? null;
+        })
+        .finally(processingTab.release);
+      try {
+        const value = await Promise.race([
+          execution,
+          new Promise((_, reject) => {
+            timer = setTimeout(() => {
+              const error = Error(
+                ["save-file", "create-folder", "upload-file"].includes(operation)
+                  ? "The request timed out and may have completed. Refresh and check before retrying."
+                  : "NetSuite request timed out.",
+              );
+              error.timedOut = true;
+              reject(error);
+            }, 30000);
+          }),
+        ]);
+        assertSession();
+        return value;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    const execute = async () => {
+      try {
+        assertSession();
+        if (expectedSessionEpoch !== undefined && refreshedEpochs.get(`${event.sender.id}:${id}`) !== expectedSessionEpoch) {
+          await processing.reload?.(event.sender, id);
+          assertSession();
+        }
+        return await attempt();
+      } catch (error) {
+        // NetSuite can end the session while the page stays put, so calls fail
+        // until it is reloaded. Then sign in again (a reload goes through the
+        // login page) and run reads once more; writes are only reported.
+        if (error?.code === "SESSION_CHANGED" || error?.timedOut || !processingTab || (await signedIn(processingTab.contents))) throw error;
+        if (!(await Promise.resolve(processing.reload?.(event.sender, id)).catch(() => false))) throw error;
+        if (WRITES.includes(operation)) throw error;
+        return await attempt();
+      }
+    };
+    // UI and MCP share the same executor reservation, including failed calls.
+    const key = `${event.sender.id}:${id}`;
+    const pending = (queues.get(key) || Promise.resolve()).then(execute);
+    const settled = pending.catch(() => {});
+    queues.set(key, settled);
+    void settled.then(() => {
+      if (queues.get(key) === settled) queues.delete(key);
+    });
+    return pending;
+  };
+  ipcMain.handle("orvane:netsuite-run", run);
+  return {
+    environments: host => processing.environments(host),
+    run: (host, id, operation, args, expectedSessionEpoch) => run({ sender: host }, id, operation, args, expectedSessionEpoch),
+    sessionEpoch: lifecycle.sessionEpoch,
+  };
 }

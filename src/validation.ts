@@ -69,6 +69,8 @@ const block: z.ZodType<Block> = z.lazy(() =>
       "notes",
       "browser",
       "netsuite",
+      "certificates",
+      "claude",
     ]),
     label: z.string(),
     value: z.string(),

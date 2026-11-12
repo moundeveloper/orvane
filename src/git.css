@@ -167,6 +167,15 @@
   min-height: 0;
   min-width: 0;
 }
+.git-change-heading {
+  margin: 12px 12px 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.git-change-heading span {
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+}
 .git-history {
   display: flex;
   flex-direction: column;
@@ -252,12 +261,6 @@
 .git-file-list button.selected {
   background: #e0ebf1;
   color: #304e60;
-}
-.git-commit-row.search-dim {
-  opacity: 0.55;
-}
-.git-commit-row.search-match:not(.selected) {
-  background: #eef2e6;
 }
 .git-subject {
   display: flex;

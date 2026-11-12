@@ -1,7 +1,7 @@
 import { test, expect } from "./fixtures";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { createServer } from "vite";
 import vue from "@vitejs/plugin-vue";
@@ -328,6 +328,173 @@ test("opening a commit with very long lines keeps the viewer width; the patch sc
   expect(
     await patch.evaluate((el) => el.scrollWidth > el.clientWidth + 100),
   ).toBe(true);
+});
+test("commit search finds older commits across the whole history and lists only matches", async ({
+  page,
+}, info) => {
+  const repo = await repository(info.outputPath("Search"));
+  await repo.git("commit", "--allow-empty", "-m", "Needle in an old haystack");
+  // More commits than the first page (150) on top, written in one go.
+  const branch = (await repo.git("symbolic-ref", "--short", "HEAD")).trim();
+  let stream = "";
+  for (let i = 0; i < 170; i++) {
+    const message = `Filler change ${i}\n`;
+    stream +=
+      `commit refs/heads/${branch}\ncommitter Orvane tests <orvane@example.test> ${1700000000 + i} +0000\n` +
+      `data ${Buffer.byteLength(message)}\n${message}` +
+      (i === 0 ? `from refs/heads/${branch}^0\n` : "") +
+      "\n";
+  }
+  execFileSync("git", ["fast-import", "--quiet"], { cwd: repo.path, input: stream, windowsHide: true });
+  await page.addInitScript(() =>
+    localStorage.setItem("orvane.examples.v1", "installed"),
+  );
+  await page.goto("/");
+  await page.getByRole("button", { name: "Workspace options" }).click();
+  await page
+    .getByRole("button", { name: "Create Git viewer", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Choose a folder", exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Local folder path" })
+    .fill(repo.path);
+  await page.getByRole("button", { name: "Go", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Use this folder", exact: true })
+    .click();
+  const rows = page.locator(".git-commit-row");
+  await expect(rows).toHaveCount(150);
+  await expect(rows.filter({ hasText: "haystack" })).toHaveCount(0);
+  // Contains, case-insensitive, beyond the loaded page; only matches shown.
+  const search = page.getByRole("textbox", { name: "Search commits" });
+  await search.fill("HAYSTACK");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("Needle in an old haystack");
+  await expect(page.getByRole("button", { name: "1 matches" })).toBeVisible();
+  await search.fill("change 16");
+  await expect(rows).toHaveCount(11);
+  await search.fill("no such commit");
+  await expect(rows).toHaveCount(0);
+  await expect(page.locator(".git-viewer")).toContainText("No commit matches");
+  await search.fill("");
+  await expect(rows).toHaveCount(150);
+});
+test("dropdown lists scale with the canvas zoom like the app around them", async ({
+  page,
+}, info) => {
+  const repo = await repository(info.outputPath("Zoomed select"));
+  await page.addInitScript(() =>
+    localStorage.setItem("orvane.examples.v1", "installed"),
+  );
+  await page.goto("/");
+  await page.getByRole("button", { name: "Workspace options" }).click();
+  await page
+    .getByRole("button", { name: "Create Git viewer", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Choose a folder", exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Local folder path" })
+    .fill(repo.path);
+  await page.getByRole("button", { name: "Go", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Use this folder", exact: true })
+    .click();
+  const trigger = page.getByRole("combobox", { name: "Git history order" });
+  await expect(trigger).toBeVisible();
+  const scale = () =>
+    trigger.evaluate((el) => el.getBoundingClientRect().width / (el as HTMLElement).offsetWidth);
+  const box = await page.locator(".git-viewer").boundingBox();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, 600);
+  await page.keyboard.up("Control");
+  await expect.poll(scale).toBeLessThan(0.75);
+  await page.waitForTimeout(400);
+  const zoom = await scale();
+  await trigger.click();
+  const list = page.getByRole("listbox", { name: "Git history order" });
+  await expect(list).toBeVisible();
+  const sizes = await page.evaluate(() => {
+    const list = document.querySelector(".select-popover") as HTMLElement;
+    const trigger = document.querySelector('[role=combobox][aria-label="Git history order"]') as HTMLElement;
+    const option = list.querySelector("button")!;
+    return {
+      option: option.getBoundingClientRect().height,
+      optionCss: option.offsetHeight,
+      listWidth: list.getBoundingClientRect().width,
+      listCss: list.offsetWidth,
+      listTop: list.getBoundingClientRect().top,
+      triggerBottom: trigger.getBoundingClientRect().bottom,
+    };
+  });
+  // On screen, the list is as zoomed out as the app.
+  expect(sizes.option / sizes.optionCss).toBeCloseTo(zoom, 1);
+  expect(sizes.listWidth / sizes.listCss).toBeCloseTo(zoom, 1);
+  // And still opens right under its trigger.
+  expect(Math.abs(sizes.listTop - sizes.triggerBottom)).toBeLessThan(10);
+  const placement = () =>
+    page.evaluate(() => {
+      const list = document.querySelector(".select-popover")!.getBoundingClientRect();
+      const trigger = document
+        .querySelector('[role=combobox][aria-label="Git history order"]')!
+        .getBoundingClientRect();
+      return {
+        dx: Math.round(list.left - trigger.left),
+        dy: Math.round(list.top - trigger.bottom),
+        right: list.right,
+        width: innerWidth,
+      };
+    });
+  const at = await placement();
+  expect(Math.abs(at.dx)).toBeLessThan(2);
+  // Panning the canvas while it is open: the list moves with its trigger.
+  const middle = await trigger.boundingBox();
+  await page.mouse.move(middle!.x - 40, middle!.y + 80);
+  await page.mouse.down({ button: "middle" });
+  await page.mouse.move(middle!.x + 60, middle!.y + 140, { steps: 5 });
+  await page.mouse.up({ button: "middle" });
+  await expect(list).toBeVisible();
+  await expect.poll(async () => (await trigger.boundingBox())!.x).not.toBeCloseTo(middle!.x, 0);
+  await expect.poll(async () => {
+    const now = await placement();
+    return Math.abs(now.dx) < 2 && Math.abs(now.dy - at.dy) < 2;
+  }).toBe(true);
+  await page.keyboard.press("Escape");
+  // Zoomed in so far that the trigger runs past the window's right edge:
+  // the list starts under it and stays inside the window.
+  const near = await trigger.boundingBox();
+  await page.mouse.move(near!.x + near!.width / 2, near!.y + near!.height / 2);
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, -1500);
+  await page.keyboard.up("Control");
+  await expect.poll(scale).toBeGreaterThan(2);
+  await page.waitForTimeout(400);
+  const wide = await trigger.boundingBox();
+  const width = page.viewportSize()!.width;
+  if (wide!.x + wide!.width <= width) {
+    // Push it past the edge.
+    await page.mouse.move(wide!.x + 5, wide!.y + 60);
+    await page.mouse.down({ button: "middle" });
+    await page.mouse.move(wide!.x + 5 + (width - wide!.x - wide!.width / 2), wide!.y + 60, { steps: 5 });
+    await page.mouse.up({ button: "middle" });
+  }
+  await expect.poll(async () => {
+    const b = (await trigger.boundingBox())!;
+    return b.x > 0 && b.x < width - 40 && b.x + b.width > width;
+  }).toBe(true);
+  await trigger.click({ position: { x: 4, y: 4 } });
+  await expect(list).toBeVisible();
+  const edge = await placement();
+  const visible = width - (await trigger.boundingBox())!.x;
+  // Under the trigger when its visible part fits the list's minimum width
+  // (150px at this zoom); otherwise flush with the window's right edge.
+  if (visible - 8 >= 150 * (await scale())) expect(Math.abs(edge.dx)).toBeLessThan(2);
+  else expect(Math.round(edge.width - 8 - edge.right)).toBe(0);
+  expect(edge.right).toBeLessThanOrEqual(edge.width);
 });
 test("folder picker saves a local Git workspace and preserves selection across reloads", async ({
   page,
@@ -659,4 +826,39 @@ test("real MCP tools register repositories and create a live Git viewer with wor
     await transport?.close();
     await vite.close();
   }
+});
+
+
+test("current branch separates committed history from staged and unstaged versions", async ({ page }, info) => {
+  const repo = await repository(info.outputPath("worktree-repository"));
+  const tree = (await repo.git("rev-parse", "HEAD^{tree}")).trim();
+  const other = (await repo.git("commit-tree", tree, "-p", "HEAD", "-m", "Unrelated branch commit")).trim();
+  await repo.git("branch", "other-branch", other);
+  await writeFile(join(repo.path, "viewer.txt"), "A visual history.\nStaged improvement.\nUnstaged improvement.\n");
+  await page.route("**/inter-latin-wght-normal.woff2", route => route.fulfill({ path: resolve("node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2"), contentType: "font/woff2" }));
+  await page.goto("/tests/git-worktree.html");
+  await page.waitForFunction(() => typeof (window as any).mountGitWorktreeFixture === "function");
+  await page.evaluate(async (path) => {
+    const response = await fetch("/__orvane/git/git_workspace_add", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) });
+    const workspace = await response.json();
+    if (!response.ok) throw Error(workspace.error);
+    (window as any).gitWorktreeFixture = (window as any).mountGitWorktreeFixture(workspace.id);
+  }, repo.path);
+  const viewer = page.locator("#git-worktree-fixture");
+  await expect(viewer.locator(".git-commit-row")).toHaveCount(5);
+  await viewer.getByRole("combobox", { name: "Git branch filter" }).click();
+  await page.getByRole("option", { name: "Current branch", exact: true }).click();
+  await expect(viewer.locator(".git-commit-row")).toHaveCount(4);
+  await expect(viewer.locator(".git-commit-row")).not.toContainText(["Unrelated branch commit"]);
+  await viewer.getByRole("button", { name: /Changes/ }).click();
+  await expect(viewer.locator(".git-change-row")).toHaveCount(4);
+  const staged = viewer.getByRole("region", { name: "Staged changes", exact: true });
+  const unstaged = viewer.getByRole("region", { name: "Unstaged changes", exact: true });
+  await staged.locator(".git-change-row").filter({ hasText: "viewer.txt" }).click();
+  await expect(viewer.getByLabel("Git diff", { exact: true })).toContainText("+Staged improvement.");
+  await expect(viewer.getByLabel("Git diff", { exact: true })).not.toContainText("+Unstaged improvement.");
+  await unstaged.locator(".git-change-row").filter({ hasText: "viewer.txt" }).click();
+  await expect(viewer.getByLabel("Git diff", { exact: true })).toContainText("+Unstaged improvement.");
+  await viewer.screenshot({ path: info.outputPath("git-changes.png") });
+  await page.evaluate(() => (window as any).gitWorktreeFixture.unmount());
 });

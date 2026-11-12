@@ -136,6 +136,7 @@ const icons: Record<string, unknown> = {
   refresh: RefreshCw,
   file: FileText,
   key: KeyRound,
+  certificates: KeyRound,
   trash: Trash2,
 };
 const icon = computed(() => icons[props.name] || LayoutGrid);

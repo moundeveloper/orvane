@@ -22,6 +22,8 @@ import { dirname, join } from "node:path";
 import { setupPasswords } from "./passwords.mjs";
 import { setupNetSuite } from "./netsuite.mjs";
 import { setupProcessing } from "./processing.mjs";
+import { startNetSuiteBroker } from "./netsuite-broker.mjs";
+import { createNetSuiteSessionTracker } from "./netsuite-session-tracker.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.ORVANE_PORT || 5173);
@@ -132,6 +134,7 @@ async function running() {
 // The dev server runs on the system Node, not Electron's, so native modules
 // (better-sqlite3) stay built for the same Node the MCP server uses.
 let server;
+let desktopNetSuiteService, netSuiteBroker;
 async function startServer() {
   if (await running()) return;
   server = spawn(
@@ -153,8 +156,11 @@ async function startServer() {
   throw Error("The Orvane server did not answer within 60 seconds.");
 }
 function stopServer() {
+  const closing = netSuiteBroker?.close().catch(error => console.error("NetSuite broker close failed:", error.message));
+  netSuiteBroker = undefined;
   server?.kill();
   server = undefined;
+  return closing;
 }
 
 function secure() {
@@ -175,18 +181,23 @@ function secure() {
   );
 
   const processing = setupProcessing({ partition: sites, isOrvane });
-  setupNetSuite(isOrvane, sites, processing);
+  const sessions = createNetSuiteSessionTracker();
+  const netSuiteService = setupNetSuite(isOrvane, sites, processing, { sessionEpoch: sessions.current });
 
   // Saved logins: offered on sign-in forms, saved after a sign-in works.
   const trackPasswords = setupPasswords({
     partition: BROWSER_PARTITION,
     isOrvane,
+    isProcessing: processing.owns,
     folder: app.getPath("userData"),
   });
+  processing.onSignInReset(trackPasswords.resetAutoLogin);
+  desktopNetSuiteService = netSuiteService;
 
   app.on("web-contents-created", (_event, contents) => {
     if (contents.session === sites) trackPasswords(contents);
     if (contents.getType() === "webview") {
+      sessions.observe(contents);
       // Discovery follows the real Browser tab as login and navigation finish.
       // The host UI can update its environment list without a refresh button.
       let wasNetSuite = false, environmentHost;
@@ -706,13 +717,28 @@ else {
     window?.focus();
   });
   app.on("window-all-closed", () => app.quit());
-  app.on("will-quit", stopServer);
+  app.on("will-quit", event => {
+    if (netSuiteBroker) {
+      event.preventDefault();
+      void stopServer().finally(() => app.quit());
+    } else stopServer();
+  });
   app
     .whenReady()
     .then(async () => {
       secure();
       await startServer();
       createWindow();
+      try { netSuiteBroker = await startNetSuiteBroker({
+        directory: join(process.env.ORVANE_DATA_DIR || join(root, ".orvane"), "netsuite-broker"),
+        service: desktopNetSuiteService,
+        hosts: () => BrowserWindow.getAllWindows().map(window => window.webContents)
+          .filter(contents => !contents.isDestroyed() && isOrvane(contents.getURL())),
+        onExit: ({ expected, wasReady }) => { if (!expected && wasReady) console.error("NetSuite broker exited. Restart Desktop to restore MCP reads; no requests were replayed."); },
+      }); } catch (error) {
+        // A failed optional MCP journal/gateway must not close the user's UI.
+        console.error("NetSuite MCP unavailable; Desktop remains open:", error.code || "BROKER_START_FAILED", error.message);
+      }
     })
     .catch((error) => {
       console.error(error);

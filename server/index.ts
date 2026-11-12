@@ -15,6 +15,7 @@ import { BrowserBridge } from "./bridge.ts";
 import { OfflineWorkspace } from "./offline.ts";
 import { createProjectsService } from "./projects.ts";
 import { NotesService, notesSchema } from "./notes.ts";
+import { registerNetSuiteTools } from "./netsuite-tools.ts";
 import { parseWorkspace, referenceIssues } from "../src/validation.ts";
 import {
   GitService,
@@ -56,6 +57,7 @@ const notes = new NotesService(
   process.env.ORVANE_DATA_DIR ||
     fileURLToPath(new URL("../.orvane", import.meta.url)),
 );
+registerNetSuiteTools(server, process.env.ORVANE_DATA_DIR || fileURLToPath(new URL("../.orvane", import.meta.url)));
 server.registerTool(
   "notes_data",
   {

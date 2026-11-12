@@ -79,6 +79,12 @@ async function remove(id: string) {
   confirming.value = "";
   if (await props.api.remove(id).catch(() => false)) await refresh();
 }
+async function setAutoLogin(id: string, on: boolean) {
+  if (await props.api.setAutoLogin(id, on).catch(() => false)) {
+    await refresh();
+    tell(on ? "Auto sign-in turned on." : "Auto sign-in turned off.");
+  }
+}
 async function allow(origin: string) {
   if (await props.api.allow(origin).catch(() => false)) await refresh();
 }
@@ -124,6 +130,22 @@ async function allow(origin: string) {
             <strong :title="login.origin">{{ siteName(login.origin) }}</strong>
             <span>{{ login.username || "(no username)" }}</span>
           </div>
+          <button
+            v-if="login.autoLogin !== undefined"
+            type="button"
+            class="icon-button passwords-auto"
+            :class="{ on: login.autoLogin }"
+            :aria-pressed="login.autoLogin"
+            :aria-label="`Auto sign-in for ${login.username || siteName(login.origin)}`"
+            :title="
+              login.autoLogin
+                ? 'Auto sign-in on: fills and submits NetSuite sandbox login pages (and account 1964539). Click to turn off.'
+                : 'Auto sign-in off. Click to turn on.'
+            "
+            @click="setAutoLogin(login.id, !login.autoLogin)"
+          >
+            <Icon name="enter" :size="13" />
+          </button>
           <button
             type="button"
             class="icon-button"
@@ -260,6 +282,13 @@ h4 {
 .passwords-who span {
   font-size: 11px;
   color: #607482;
+}
+.passwords-auto {
+  color: #8597a2;
+}
+.passwords-auto.on {
+  color: #fff;
+  background: #4f7a68;
 }
 .icon-button.danger {
   color: #fff;

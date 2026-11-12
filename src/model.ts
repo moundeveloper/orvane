@@ -12,7 +12,9 @@ export type Kind =
   | "projects"
   | "notes"
   | "browser"
-  | "netsuite";
+  | "netsuite"
+  | "certificates"
+  | "claude";
 export type ActionKind =
   | "add-item"
   | "clear"
@@ -97,6 +99,10 @@ export interface CustomNode {
   graph?: ActionGraph;
 }
 export function appMinimum(app: CanvasApp) {
+  const claude = flatten(app.blocks).some((block) => block.kind === "claude");
+  const certificates = flatten(app.blocks).some(
+    (block) => block.kind === "certificates",
+  );
   const git = flatten(app.blocks).some((block) => block.kind === "git");
   const notes = flatten(app.blocks).some((block) => block.kind === "notes");
   const browser = flatten(app.blocks).some((block) => block.kind === "browser");
@@ -107,12 +113,32 @@ export function appMinimum(app: CanvasApp) {
     width: Math.max(
       180,
       app.minWidth ??
-        (projects ? 900 : git ? 720 : notes ? 640 : browser ? 480 : 180),
+        (claude ? 360 : certificates
+          ? 640
+          : projects
+            ? 900
+            : git
+              ? 720
+              : notes
+                ? 640
+                : browser
+                  ? 480
+                  : 180),
     ),
     height: Math.max(
       160,
       app.minHeight ??
-        (projects ? 580 : git ? 440 : notes ? 440 : browser ? 320 : 160),
+        (claude ? 440 : certificates
+          ? 480
+          : projects
+            ? 580
+            : git
+              ? 440
+              : notes
+                ? 440
+                : browser
+                  ? 320
+                  : 160),
     ),
   };
 }
@@ -184,6 +210,13 @@ export function validGraph(
   );
 }
 export const kinds: { kind: Kind; name: string; description: string }[] = [
+  {kind: "claude", name: "Claude sessions", description: "Local session chats with interactive visual explanations"},
+  {
+    kind: "certificates",
+    name: "Certificate manager",
+    description:
+      "Local certificate and private key pairs, organized by NetSuite environment",
+  },
   {
     kind: "notes",
     name: "Notes workspace",
@@ -225,7 +258,11 @@ export const kinds: { kind: Kind; name: string; description: string }[] = [
     name: "Web browser",
     description: "Tabs, an address bar and web pages",
   },
-  { kind: "netsuite", name: "NetSuite", description: "Query an open NetSuite session" },
+  {
+    kind: "netsuite",
+    name: "NetSuite",
+    description: "Query an open NetSuite session",
+  },
 ];
 export function makeBlock(kind: Kind): Block {
   return {
@@ -246,6 +283,8 @@ export function makeBlock(kind: Kind): Block {
       notes: "Notes workspace",
       browser: "Web browser",
       netsuite: "NetSuite",
+      certificates: "Certificate manager",
+      claude: "Claude sessions",
     }[kind],
     value: "",
     checked: false,
