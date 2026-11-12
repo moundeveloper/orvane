@@ -1,0 +1,123 @@
+{
+  "baseline": "a5143f4",
+  "context": "Node isolated diagnostic, not UI or network timing",
+  "node": "v24.16.0",
+  "scaling": [
+    {
+      "count": 5,
+      "blocksPerApp": 10,
+      "listItemsPerApp": 200,
+      "bytes": 107176,
+      "timingsMs": {
+        "serializeReactive": {
+          "p50": 2.976,
+          "max": 4.227
+        },
+        "parseValidate": {
+          "p50": 1.097,
+          "max": 1.812
+        },
+        "mutationSyncWatch": {
+          "p50": 11.712,
+          "max": 12.105
+        },
+        "mutationPausedWatch": {
+          "p50": 0.214,
+          "max": 0.411
+        },
+        "resumePausedWatch": {
+          "p50": 5.204,
+          "max": 10.125
+        },
+        "mutationPerAppWatch": {
+          "p50": 1.845,
+          "max": 1.958
+        }
+      },
+      "watcherCallbacksPer25Moves": {
+        "mutationSyncWatch": 50,
+        "mutationPausedWatch": 1,
+        "mutationPerAppWatch": 50
+      }
+    },
+    {
+      "count": 20,
+      "blocksPerApp": 10,
+      "listItemsPerApp": 200,
+      "bytes": 428385,
+      "timingsMs": {
+        "serializeReactive": {
+          "p50": 12.964,
+          "max": 13.682
+        },
+        "parseValidate": {
+          "p50": 3.122,
+          "max": 5.648
+        },
+        "mutationSyncWatch": {
+          "p50": 44.955,
+          "max": 50.05
+        },
+        "mutationPausedWatch": {
+          "p50": 0.862,
+          "max": 0.948
+        },
+        "resumePausedWatch": {
+          "p50": 21.479,
+          "max": 23.624
+        },
+        "mutationPerAppWatch": {
+          "p50": 1.964,
+          "max": 2.167
+        }
+      },
+      "watcherCallbacksPer25Moves": {
+        "mutationSyncWatch": 50,
+        "mutationPausedWatch": 1,
+        "mutationPerAppWatch": 50
+      }
+    },
+    {
+      "count": 50,
+      "blocksPerApp": 10,
+      "listItemsPerApp": 200,
+      "bytes": 1070835,
+      "timingsMs": {
+        "serializeReactive": {
+          "p50": 30.932,
+          "max": 35.929
+        },
+        "parseValidate": {
+          "p50": 6.046,
+          "max": 10.597
+        },
+        "mutationSyncWatch": {
+          "p50": 119.389,
+          "max": 126.624
+        },
+        "mutationPausedWatch": {
+          "p50": 2.304,
+          "max": 2.932
+        },
+        "resumePausedWatch": {
+          "p50": 57.511,
+          "max": 73.216
+        },
+        "mutationPerAppWatch": {
+          "p50": 1.86,
+          "max": 2.107
+        }
+      },
+      "watcherCallbacksPer25Moves": {
+        "mutationSyncWatch": 50,
+        "mutationPausedWatch": 1,
+        "mutationPerAppWatch": 50
+      }
+    }
+  ],
+  "notesDisposal": {
+    "storesCreatedAndDisposed": 50,
+    "retainedAfterDispose": 50,
+    "retainedAfterExplicitDelete": 0
+  }
+}

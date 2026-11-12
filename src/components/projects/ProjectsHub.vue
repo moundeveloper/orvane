@@ -27,6 +27,7 @@ import BaseSelect from "./BaseSelect.vue";
 import GroupActionModal from "./GroupActionModal.vue";
 import SuiteCloudUploadView from "./SuiteCloudUploadView.vue";
 import TerminalPanel from "./TerminalPanel.vue";
+import WindowedProjectRows from "./WindowedProjectRows.vue";
 import type {
   Group,
   Project,
@@ -2338,60 +2339,69 @@ onMounted(initializeWorkspace);
               <span>Path</span>
               <span></span>
             </div>
-            <div class="project-rows" aria-label="Project folders">
-              <button
-                v-for="project in filteredProjects"
-                :key="project.path"
-                class="project-row"
-                @dblclick="openInCode(project.path)"
-                @contextmenu="openProjectContextMenu($event, project.path)"
-              >
-                <span class="check-cell" @click.stop>
-                  <input
-                    type="checkbox"
-                    :checked="selectedProjectPaths.has(project.path)"
-                    @click.stop="
-                      handleProjectCheckboxClick($event, project.path)
-                    "
-                  />
-                </span>
-                <span
-                  class="project-name"
-                  @click="handleProjectSelectionClick($event, project.path)"
+            <WindowedProjectRows
+              :rows="filteredProjects"
+              :reset-key="
+                JSON.stringify([rootPath, activeGroupId, searchQuery])
+              "
+              aria-label="Project folders"
+            >
+              <template #default="{ row: project }">
+                <button
+                  :data-project-key="project.path"
+                  class="project-row"
+                  @dblclick="openInCode(project.path)"
+                  @contextmenu="openProjectContextMenu($event, project.path)"
                 >
-                  <FolderGit2 class="project-icon" aria-hidden="true" />{{
-                    project.name
-                  }}
-                </span>
-                <span>{{ formatDate(project.modifiedAt) }}</span>
-                <span class="path-cell">{{ project.path }}</span>
-                <span class="row-actions">
-                  <button
-                    class="mini-button"
-                    aria-label="Open in VS Code"
-                    @click.stop="openInCode(project.path)"
+                  <span class="check-cell" @click.stop>
+                    <input
+                      type="checkbox"
+                      :checked="selectedProjectPaths.has(project.path)"
+                      @click.stop="
+                        handleProjectCheckboxClick($event, project.path)
+                      "
+                    />
+                  </span>
+                  <span
+                    class="project-name"
+                    @click="handleProjectSelectionClick($event, project.path)"
                   >
-                    <Code2 aria-hidden="true" />
-                  </button>
-                  <button
-                    class="mini-button danger"
-                    aria-label="Delete project"
-                    :disabled="isLoading"
-                    @click.stop="deleteProject(project)"
-                  >
-                    <Trash2 aria-hidden="true" />
-                  </button>
-                </span>
-              </button>
-              <div v-if="filteredProjects.length === 0" class="empty-state">
-                <Square aria-hidden="true" />
-                <strong>{{
-                  activeGroup.id === ALL_PROJECTS_ID
-                    ? "No project folders in this root"
-                    : "No projects in this group"
-                }}</strong>
-              </div>
-            </div>
+                    <FolderGit2 class="project-icon" aria-hidden="true" />{{
+                      project.name
+                    }}
+                  </span>
+                  <span>{{ formatDate(project.modifiedAt) }}</span>
+                  <span class="path-cell">{{ project.path }}</span>
+                  <span class="row-actions">
+                    <button
+                      class="mini-button"
+                      aria-label="Open in VS Code"
+                      @click.stop="openInCode(project.path)"
+                    >
+                      <Code2 aria-hidden="true" />
+                    </button>
+                    <button
+                      class="mini-button danger"
+                      aria-label="Delete project"
+                      :disabled="isLoading"
+                      @click.stop="deleteProject(project)"
+                    >
+                      <Trash2 aria-hidden="true" />
+                    </button>
+                  </span>
+                </button>
+              </template>
+              <template #empty
+                ><div class="empty-state">
+                  <Square aria-hidden="true" />
+                  <strong>{{
+                    activeGroup.id === ALL_PROJECTS_ID
+                      ? "No project folders in this root"
+                      : "No projects in this group"
+                  }}</strong>
+                </div>
+              </template>
+            </WindowedProjectRows>
           </section>
 
           <aside class="detail-panel">

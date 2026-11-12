@@ -1,0 +1,5095 @@
+{
+  "sources": {
+    "baselineOverrides": {
+      "src/App.vue": {
+        "baselineSha256": "b86ea8684f247c45330aaaa6c48ea0752bcdcbfacf5f41ab1156b7c44f9e8160",
+        "candidateSha256": "b86ea8684f247c45330aaaa6c48ea0752bcdcbfacf5f41ab1156b7c44f9e8160"
+      },
+      "src/style.css": {
+        "baselineSha256": "df7ba9f66a5b8f15a73cde069820c72ffa0918ce842da6bfaf866447727c75bc",
+        "candidateSha256": "df7ba9f66a5b8f15a73cde069820c72ffa0918ce842da6bfaf866447727c75bc"
+      },
+      "src/components/projects/ProjectsHub.vue": {
+        "baselineSha256": "90af60084b60c404a63d025f246479149d6f8a863174ecbc3e7f8670072e8824",
+        "candidateSha256": "8bc1241c657d37806e61c2a4cc3ff900a5bb7c96a59c1f9d3df35732f53b08ab"
+      },
+      "src/components/projects/projects.css": {
+        "baselineSha256": "79b04240ea0f24ef97e08bed9e3b6959e3d5d14fb818de01285c961315f1679c",
+        "candidateSha256": "79b04240ea0f24ef97e08bed9e3b6959e3d5d14fb818de01285c961315f1679c"
+      }
+    },
+    "candidateNewModules": {
+      "src/components/projects/WindowedProjectRows.vue": "f8a646244c3bcda506d7d6779979b8a5307742cc8ccae7c4c3709c777f154ffe"
+    },
+    "baselineAppSha256": "b86ea8684f247c45330aaaa6c48ea0752bcdcbfacf5f41ab1156b7c44f9e8160",
+    "candidateAppSha256": "b86ea8684f247c45330aaaa6c48ea0752bcdcbfacf5f41ab1156b7c44f9e8160",
+    "baselineStyleSha256": "df7ba9f66a5b8f15a73cde069820c72ffa0918ce842da6bfaf866447727c75bc",
+    "candidateStyleSha256": "df7ba9f66a5b8f15a73cde069820c72ffa0918ce842da6bfaf866447727c75bc",
+    "commonFixedBaselineStoreSha256": "f4bfc88a07fc6a1a7b92a8f2508f8dca3f37143679e7f2bfd974dcf3420bac42",
+    "candidateStoreSha256": "f4bfc88a07fc6a1a7b92a8f2508f8dca3f37143679e7f2bfd974dcf3420bac42",
+    "commonPageViewSha256": "70c52a07d422564703bfe3c49ceebc06e2af7a65571b4d0865eb862a6aaa1aad"
+  },
+  "cohorts": [
+    {
+      "artifacts": "artifacts/performance/foreground/2026-11-03T14-23-24-052Z",
+      "contentProfile": "projects",
+      "cameraMode": "overview",
+      "appCount": 20,
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "transform": "matrix(0.2, 0, 0, 0.2, 96, 104)",
+        "appRects": [
+          {
+            "x": 104,
+            "y": 122,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 352,
+            "y": 122,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 600,
+            "y": 122,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 848,
+            "y": 122,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 1096,
+            "y": 122,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 104,
+            "y": 282,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 352,
+            "y": 282,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 600,
+            "y": 282,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 848,
+            "y": 282,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 1096,
+            "y": 282,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 104,
+            "y": 442,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 352,
+            "y": 442,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 600,
+            "y": 442,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 848,
+            "y": 442,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 1096,
+            "y": 442,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 104,
+            "y": 602,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 352,
+            "y": 602,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 600,
+            "y": 602,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 848,
+            "y": 602,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 1096,
+            "y": 602,
+            "width": 240,
+            "height": 152
+          }
+        ],
+        "visibleApps": 20
+      },
+      "heldPayload": {
+        "pages": 500,
+        "folders": 1000,
+        "projectsPerRoot": 100,
+        "savedTerminals": 20,
+        "blocksPerDocument": 100,
+        "scripts": 1000,
+        "commits": 150,
+        "terminalLines": 200
+      },
+      "environment": {
+        "electron": {
+          "versions": {
+            "node": "24.22.1",
+            "acorn": "8.18.0",
+            "ada": "4.0.0",
+            "amaro": "1.1.11",
+            "ares": "1.34.9",
+            "brotli": "1.2.0",
+            "cldr": "48.0",
+            "icu": "78.2",
+            "llhttp": "9.4.3",
+            "merve": "1.2.2",
+            "modules": "150",
+            "napi": "10",
+            "nbytes": "0.1.4",
+            "ncrypto": "0.0.1",
+            "nghttp2": "1.70.0",
+            "nghttp3": "",
+            "ngtcp2": "",
+            "openssl": "0.0.0",
+            "simdjson": "4.6.11",
+            "simdutf": "7.7.0",
+            "sqlite": "3.53.4",
+            "tz": "2026e",
+            "undici": "7.30.1",
+            "unicode": "17.0",
+            "uv": "1.52.1",
+            "uvwasi": "0.0.23",
+            "v8": "15.6.75.19-electron.0",
+            "zlib": "1.3.2.1-motley",
+            "zstd": "1.6.0",
+            "electron": "45.1.0",
+            "chrome": "156.0.8078.49"
+          },
+          "display": {
+            "bounds": {
+              "x": 0,
+              "y": 0,
+              "width": 1920,
+              "height": 1080
+            },
+            "workArea": {
+              "x": 0,
+              "y": 0,
+              "width": 1920,
+              "height": 1032
+            },
+            "scaleFactor": 1,
+            "refreshRate": 60
+          },
+          "contentSize": {
+            "width": 1440,
+            "height": 952
+          },
+          "gpu": {
+            "auxAttributes": {
+              "amdSwitchable": false,
+              "canSupportThreadedTextureMailbox": false,
+              "directMLFeatureLevel": "Not supported",
+              "dx12FeatureLevel": "Not supported",
+              "glImplementationParts": "(gl=none,angle=none)",
+              "glResetNotificationStrategy": 0,
+              "inProcessGpu": true,
+              "initializationTime": 0,
+              "isAsan": false,
+              "isClangCoverage": false,
+              "jpegDecodeAcceleratorSupported": false,
+              "optimus": false,
+              "overlayInfo": {
+                "bgra8OverlaySupport": "NONE",
+                "directComposition": false,
+                "nv12OverlaySupport": "NONE",
+                "p010OverlaySupport": "NONE",
+                "rgb10a2OverlaySupport": "NONE",
+                "supportsOverlays": false,
+                "yuy2OverlaySupport": "NONE"
+              },
+              "passthroughCmdDecoder": false,
+              "sandboxed": false,
+              "skiaBackendType": "None",
+              "subpixelFontRendering": true,
+              "supportsD3dSharedImages": false,
+              "supportsDirectML": false,
+              "supportsDx12": false,
+              "supportsVulkan": false,
+              "targetCpuBits": 64,
+              "visibilityCallbackCallCount": 0,
+              "vulkanVersion": "Not supported"
+            },
+            "gpuDevice": [
+              {
+                "active": false,
+                "deviceId": 42785,
+                "deviceString": "Intel(R) UHD Graphics",
+                "driverVersion": "32.0.101.7088",
+                "gpuPreference": 0,
+                "revision": 4,
+                "subSysId": -1954803652,
+                "vendorId": 32902
+              },
+              {
+                "active": false,
+                "deviceId": 140,
+                "deviceString": "Microsoft Basic Render Driver",
+                "driverVersion": "10.0.22621.5415",
+                "gpuPreference": 0,
+                "revision": 0,
+                "subSysId": 0,
+                "vendorId": 5140
+              }
+            ]
+          },
+          "gpuFeatures": {
+            "2d_canvas": "enabled",
+            "direct_rendering_display_compositor": "disabled_off_ok",
+            "gpu_compositing": "enabled",
+            "multiple_raster_threads": "enabled_on",
+            "opengl": "enabled_on",
+            "rasterization": "enabled",
+            "raw_draw": "disabled_off_ok",
+            "skia_graphite": "disabled_off",
+            "trees_in_viz": "disabled_off",
+            "video_decode": "enabled",
+            "video_encode": "enabled",
+            "webgl": "enabled",
+            "webgpu": "enabled",
+            "webnn": "disabled_off"
+          },
+          "onBatteryPower": false,
+          "webPreferences": {
+            "contextIsolation": true,
+            "nodeIntegration": false,
+            "sandbox": true,
+            "webviewTag": true
+          },
+          "profileIsolated": true,
+          "gpuComplete": {
+            "auxAttributes": {
+              "amdSwitchable": false,
+              "canSupportThreadedTextureMailbox": false,
+              "directMLFeatureLevel": "Not supported",
+              "displayType": "ANGLE_D3D11",
+              "dx12FeatureLevel": "Not supported",
+              "glExtensions": "GL_AMD_performance_monitor GL_ANGLE_base_vertex_base_instance_shader_builtin GL_ANGLE_blob_cache GL_ANGLE_client_arrays GL_ANGLE_clip_cull_distance GL_ANGLE_copy_texture_3d GL_ANGLE_depth_texture GL_ANGLE_framebuffer_blit GL_ANGLE_framebuffer_multisample GL_ANGLE_get_serialized_context_string GL_ANGLE_get_tex_level_parameter GL_ANGLE_instanced_arrays GL_ANGLE_memory_size GL_ANGLE_multiview_multisample GL_ANGLE_pack_reverse_row_order GL_ANGLE_polygon_mode GL_ANGLE_program_binary_readiness_query GL_ANGLE_program_cache_control GL_ANGLE_provoking_vertex GL_ANGLE_renderability_validation GL_ANGLE_request_extension GL_ANGLE_robust_client_memory GL_ANGLE_shader_pixel_local_storage GL_ANGLE_shader_pixel_local_storage_coherent GL_ANGLE_stencil_texturing GL_ANGLE_texture_compression_dxt3 GL_ANGLE_texture_compression_dxt5 GL_ANGLE_texture_multisample GL_ANGLE_texture_usage GL_ANGLE_translated_shader_source GL_APPLE_clip_distance GL_ARM_rgba8 GL_CHROMIUM_bind_generates_resource GL_CHROMIUM_bind_uniform_location GL_CHROMIUM_copy_compressed_texture GL_CHROMIUM_copy_texture GL_CHROMIUM_lose_context GL_EXT_EGL_image_external_wrap_modes GL_EXT_base_instance GL_EXT_blend_func_extended GL_EXT_blend_minmax GL_EXT_clip_control GL_EXT_clip_cull_distance GL_EXT_color_buffer_float GL_EXT_color_buffer_half_float GL_EXT_conservative_depth GL_EXT_debug_label GL_EXT_debug_marker GL_EXT_depth_clamp GL_EXT_discard_framebuffer GL_EXT_disjoint_timer_query GL_EXT_draw_buffers GL_EXT_draw_buffers_indexed GL_EXT_draw_elements_base_vertex GL_EXT_float_blend GL_EXT_frag_depth GL_EXT_instanced_arrays GL_EXT_map_buffer_range GL_EXT_occlusion_query_boolean GL_EXT_polygon_offset_clamp GL_EXT_read_format_bgra GL_EXT_render_snorm GL_EXT_robustness GL_EXT_sRGB GL_EXT_shader_texture_lod GL_EXT_texture_border_clamp GL_EXT_texture_compression_bptc GL_EXT_texture_compression_dxt1 GL_EXT_texture_compression_rgtc GL_EXT_texture_compression_s3tc_srgb GL_EXT_texture_filter_anisotropic GL_EXT_texture_format_BGRA8888 GL_EXT_texture_mirror_clamp_to_edge GL_EXT_texture_norm16 GL_EXT_texture_rg GL_EXT_texture_storage GL_EXT_texture_type_2_10_10_10_REV GL_EXT_unpack_subimage GL_KHR_debug GL_KHR_parallel_shader_compile GL_KHR_robustness GL_NV_EGL_stream_consumer_external GL_NV_fence GL_NV_framebuffer_blit GL_NV_pack_subimage GL_NV_pixel_buffer_object GL_NV_shader_noperspective_interpolation GL_OES_EGL_image GL_OES_EGL_image_external GL_OES_EGL_image_external_essl3 GL_OES_depth24 GL_OES_depth32 GL_OES_draw_buffers_indexed GL_OES_draw_elements_base_vertex GL_OES_element_index_uint GL_OES_fbo_render_mipmap GL_OES_get_program_binary GL_OES_mapbuffer GL_OES_packed_depth_stencil GL_OES_required_internalformat GL_OES_rgb8_rgba8 GL_OES_sample_variables GL_OES_shader_multisample_interpolation GL_OES_standard_derivatives GL_OES_surfaceless_context GL_OES_texture_border_clamp GL_OES_texture_float GL_OES_texture_float_linear GL_OES_texture_half_float GL_OES_texture_half_float_linear GL_OES_texture_npot GL_OES_texture_stencil8 GL_OES_texture_storage_multisample_2d_array GL_OES_vertex_array_object GL_OVR_multiview GL_OVR_multiview2 ",
+              "glImplementationParts": "(gl=egl-angle,angle=d3d11)",
+              "glRenderer": "ANGLE (Intel, Intel(R) UHD Graphics (0x0000A721) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.101.7088)",
+              "glResetNotificationStrategy": 33362,
+              "glVendor": "Google Inc. (Intel)",
+              "glVersion": "OpenGL ES 3.0 (ANGLE 2.1.28973 git hash: 3b89d84e9d59)",
+              "glWsExtensions": "EGL_EXT_create_context_robustness EGL_ANGLE_d3d_share_handle_client_buffer EGL_ANGLE_d3d_texture_client_buffer EGL_ANGLE_surface_d3d_texture_2d_share_handle EGL_ANGLE_query_surface_pointer EGL_ANGLE_window_fixed_size EGL_ANGLE_keyed_mutex EGL_ANGLE_surface_orientation EGL_ANGLE_direct_composition EGL_NV_post_sub_buffer EGL_KHR_create_context EGL_KHR_image EGL_KHR_image_base EGL_KHR_gl_texture_2D_image EGL_KHR_gl_texture_cubemap_image EGL_KHR_gl_renderbuffer_image EGL_KHR_get_all_proc_addresses EGL_KHR_stream EGL_KHR_stream_consumer_gltexture EGL_NV_stream_consumer_gltexture_yuv EGL_ANGLE_stream_producer_d3d_texture EGL_ANGLE_create_context_webgl_compatibility EGL_CHROMIUM_create_context_bind_generates_resource EGL_CHROMIUM_sync_control EGL_EXT_pixel_format_float EGL_KHR_surfaceless_context EGL_ANGLE_display_texture_share_group EGL_ANGLE_display_semaphore_share_group EGL_ANGLE_create_context_client_arrays EGL_ANGLE_program_cache_control EGL_ANGLE_robust_resource_initialization EGL_ANGLE_create_context_extensions_enabled EGL_ANDROID_blob_cache EGL_ANDROID_recordable EGL_ANGLE_image_d3d11_texture EGL_ANGLE_create_context_backwards_compatible EGL_KHR_no_config_context EGL_KHR_create_context_no_error EGL_KHR_reusable_sync EGL_ANGLE_memory_usage_report ",
+              "glWsVendor": "Google Inc. (Intel)",
+              "glWsVersion": "1.5 (ANGLE 2.1.28973 git hash: 3b89d84e9d59)",
+              "inProcessGpu": false,
+              "initializationTime": 168.118,
+              "isAsan": false,
+              "isClangCoverage": false,
+              "jpegDecodeAcceleratorSupported": false,
+              "maxMsaaSamples": "8",
+              "optimus": false,
+              "overlayInfo": {
+                "bgra8OverlaySupport": "SCALING",
+                "directComposition": true,
+                "nv12OverlaySupport": "SCALING",
+                "p010OverlaySupport": "SOFTWARE",
+                "rgb10a2OverlaySupport": "SCALING",
+                "supportsOverlays": true,
+                "yuy2OverlaySupport": "SCALING"
+              },
+              "passthroughCmdDecoder": true,
+              "pixelShaderVersion": "5.0",
+              "sandboxed": true,
+              "skiaBackendType": "GaneshGL",
+              "subpixelFontRendering": true,
+              "supportsD3dSharedImages": true,
+              "supportsDirectML": false,
+              "supportsDx12": false,
+              "supportsVulkan": false,
+              "targetCpuBits": 64,
+              "vertexShaderVersion": "5.0",
+              "videoDecodeAcceleratorSupportedProfile": {
+                "encrypted_only": false,
+                "maxResolutionHeight": 16384,
+                "maxResolutionWidth": 16384,
+                "minResolutionHeight": 64,
+                "minResolutionWidth": 64,
+                "profile": 29
+              },
+              "visibilityCallbackCallCount": 0,
+              "vulkanVersion": "Not supported"
+            },
+            "gpuDevice": [
+              {
+                "active": true,
+                "deviceId": 42785,
+                "deviceString": "Intel(R) UHD Graphics",
+                "driverVendor": "Intel",
+                "driverVersion": "32.0.101.7088",
+                "gpuPreference": 0,
+                "revision": 4,
+                "subSysId": -1954803652,
+                "vendorId": 32902
+              },
+              {
+                "active": false,
+                "deviceId": 140,
+                "deviceString": "Microsoft Basic Render Driver",
+                "driverVersion": "10.0.22621.5415",
+                "gpuPreference": 0,
+                "revision": 0,
+                "subSysId": 0,
+                "vendorId": 5140
+              }
+            ]
+          },
+          "hardwareAccelerationEnabled": true,
+          "windowBounds": {
+            "x": 10,
+            "y": 10,
+            "width": 1456,
+            "height": 991
+          },
+          "commandSwitches": {
+            "disableGpu": false,
+            "disableGpuCompositing": false
+          }
+        },
+        "browserVersion": "156.0.8078.49"
+      },
+      "repetitions": 5,
+      "baselineCommit": "c7c638e",
+      "candidateBaseCommit": "cb728284269ab1f98fa44e74afa1648660d025da",
+      "rejectedAttempts": [],
+      "variants": {
+        "baseline": {
+          "continuousMedianMs": {
+            "median": 299.79999999998836,
+            "min": 266.5,
+            "max": 333.1999999999971
+          },
+          "continuousWorstMs": {
+            "median": 432.8999999999942,
+            "min": 300,
+            "max": 499.8999999999942
+          },
+          "startWorstMs": {
+            "median": 332.8999999999942,
+            "min": 249.59999999999854,
+            "max": 433.1999999999971
+          },
+          "stopWorstMs": {
+            "median": 283.1000000000058,
+            "min": 250,
+            "max": 349.90000000000873
+          },
+          "primary": [
+            {
+              "index": 0,
+              "counts": {
+                "apps": 20,
+                "notes": 0,
+                "projects": 20,
+                "git": 0,
+                "scripts": 0,
+                "cabinets": 0,
+                "queryViews": 0,
+                "terminals": 20,
+                "elements": 55954,
+                "notesBlocks": 0,
+                "gitCommits": 0,
+                "scriptRows": 0,
+                "projectRows": 2000,
+                "windowedProjectLists": 0,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 3,
+                  "maxInterval": 433.1999999999971,
+                  "medianInterval": 349.90000000000146
+                },
+                "continuous": {
+                  "samples": 63,
+                  "maxInterval": 432.8999999999942,
+                  "medianInterval": 316.6000000000058
+                },
+                "stop": {
+                  "samples": 4,
+                  "maxInterval": 349.90000000000873,
+                  "medianInterval": 16.69999999999709
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 71
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 115448,
+                    "peakWorkingSetSize": 121556,
+                    "privateBytes": 82468
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 306400,
+                    "peakWorkingSetSize": 311740,
+                    "privateBytes": 269244
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 57660,
+                    "peakWorkingSetSize": 58260,
+                    "privateBytes": 17916
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1170712,
+                    "peakWorkingSetSize": 1183236,
+                    "privateBytes": 1115556
+                  }
+                }
+              ]
+            },
+            {
+              "index": 1,
+              "counts": {
+                "apps": 20,
+                "notes": 0,
+                "projects": 20,
+                "git": 0,
+                "scripts": 0,
+                "cabinets": 0,
+                "queryViews": 0,
+                "terminals": 20,
+                "elements": 55954,
+                "notesBlocks": 0,
+                "gitCommits": 0,
+                "scriptRows": 0,
+                "projectRows": 2000,
+                "windowedProjectLists": 0,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 2,
+                  "maxInterval": 249.59999999999854,
+                  "medianInterval": 16.80000000000291
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 399.59999999999854,
+                  "medianInterval": 283.09999999999854
+                },
+                "stop": {
+                  "samples": 4,
+                  "maxInterval": 283.1000000000058,
+                  "medianInterval": 16.69999999999709
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 69
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 115852,
+                    "peakWorkingSetSize": 121636,
+                    "privateBytes": 83896
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 265212,
+                    "peakWorkingSetSize": 287676,
+                    "privateBytes": 229244
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 57840,
+                    "peakWorkingSetSize": 58300,
+                    "privateBytes": 18000
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1228600,
+                    "peakWorkingSetSize": 1239764,
+                    "privateBytes": 1177456
+                  }
+                }
+              ]
+            },
+            {
+              "index": 2,
+              "counts": {
+                "apps": 20,
+                "notes": 0,
+                "projects": 20,
+                "git": 0,
+                "scripts": 0,
+                "cabinets": 0,
+                "queryViews": 0,
+                "terminals": 20,
+                "elements": 55954,
+                "notesBlocks": 0,
+                "gitCommits": 0,
+                "scriptRows": 0,
+                "projectRows": 2000,
+                "windowedProjectLists": 0,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 3,
+                  "maxInterval": 332.8999999999942,
+                  "medianInterval": 16.80000000000291
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 499.8999999999942,
+                  "medianInterval": 299.79999999998836
+                },
+                "stop": {
+                  "samples": 3,
+                  "maxInterval": 266.5,
+                  "medianInterval": 16.80000000000291
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 69
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 113292,
+                    "peakWorkingSetSize": 117812,
+                    "privateBytes": 80976
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 296516,
+                    "peakWorkingSetSize": 299892,
+                    "privateBytes": 259696
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 57636,
+                    "peakWorkingSetSize": 58100,
+                    "privateBytes": 17968
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1178172,
+                    "peakWorkingSetSize": 1194756,
+                    "privateBytes": 1121904
+                  }
+                }
+              ]
+            },
+            {
+              "index": 3,
+              "counts": {
+                "apps": 20,
+                "notes": 0,
+                "projects": 20,
+                "git": 0,
+                "scripts": 0,
+                "cabinets": 0,
+                "queryViews": 0,
+                "terminals": 20,
+                "elements": 55954,
+                "notesBlocks": 0,
+                "gitCommits": 0,
+                "scriptRows": 0,
+                "projectRows": 2000,
+                "windowedProjectLists": 0,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 6,
+                  "maxInterval": 300,
+                  "medianInterval": 249.8000000000029
+                },
+                "continuous": {
+                  "samples": 63,
+                  "maxInterval": 300,
+                  "medianInterval": 266.5
+                },
+                "stop": {
+                  "samples": 4,
+                  "maxInterval": 250,
+                  "medianInterval": 16.5
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 74
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 113140,
+                    "peakWorkingSetSize": 118360,
+                    "privateBytes": 80880
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 299500,
+                    "peakWorkingSetSize": 300692,
+                    "privateBytes": 261708
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 57664,
+                    "peakWorkingSetSize": 58180,
+                    "privateBytes": 17956
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1226348,
+                    "peakWorkingSetSize": 1245856,
+                    "privateBytes": 1172276
+                  }
+                }
+              ]
+            },
+            {
+              "index": 4,
+              "counts": {
+                "apps": 20,
+                "notes": 0,
+                "projects": 20,
+                "git": 0,
+                "scripts": 0,
+                "cabinets": 0,
+                "queryViews": 0,
+                "terminals": 20,
+                "elements": 55954,
+                "notesBlocks": 0,
+                "gitCommits": 0,
+                "scriptRows": 0,
+                "projectRows": 2000,
+                "windowedProjectLists": 0,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 3,
+                  "maxInterval": 416.6000000000058,
+                  "medianInterval": 282.93399999999383
+                },
+                "continuous": {
+                  "samples": 63,
+                  "maxInterval": 466.5,
+                  "medianInterval": 333.1999999999971
+                },
+                "stop": {
+                  "samples": 3,
+                  "maxInterval": 283.1000000000058,
+                  "medianInterval": 66.59999999999127
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 70
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 116256,
+                    "peakWorkingSetSize": 120432,
+                    "privateBytes": 84040
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 285352,
+                    "peakWorkingSetSize": 294776,
+                    "privateBytes": 249552
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 57788,
+                    "peakWorkingSetSize": 58324,
+                    "privateBytes": 17856
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1245892,
+                    "peakWorkingSetSize": 1258796,
+                    "privateBytes": 1189672
+                  }
+                }
+              ]
+            }
+          ],
+          "diagnostic": {
+            "counts": {
+              "apps": 20,
+              "notes": 0,
+              "projects": 20,
+              "git": 0,
+              "scripts": 0,
+              "cabinets": 0,
+              "queryViews": 0,
+              "terminals": 20,
+              "elements": 55954,
+              "notesBlocks": 0,
+              "gitCommits": 0,
+              "scriptRows": 0,
+              "projectRows": 2000,
+              "windowedProjectLists": 0,
+              "blur": "blur(8px) saturate(1.2)",
+              "dotsVisibility": "visible"
+            },
+            "traceWork": {
+              "Layerize": {
+                "count": 64,
+                "aggregateMs": 19085.216,
+                "maxMs": 415.418
+              },
+              "Paint": {
+                "count": 1280,
+                "aggregateMs": 1014.532,
+                "maxMs": 27.741
+              },
+              "RasterTask": {
+                "count": 2446,
+                "aggregateMs": 399.332,
+                "maxMs": 3.378
+              },
+              "Layout": {
+                "count": 0,
+                "aggregateMs": 0,
+                "maxMs": 0
+              },
+              "UpdateLayoutTree": {
+                "count": 60,
+                "aggregateMs": 3.779,
+                "maxMs": 0.31
+              },
+              "FunctionCall": {
+                "count": 362,
+                "aggregateMs": 17.855,
+                "maxMs": 0.731
+              }
+            },
+            "validity": {
+              "focused": true,
+              "visible": true,
+              "focusLosses": 0,
+              "hidden": 0,
+              "samples": 76
+            },
+            "appearance": {
+              "pan": {
+                "before": {
+                  "x": 96,
+                  "y": 104,
+                  "scale": 0.2,
+                  "blur": "blur(8px) saturate(1.2)"
+                },
+                "during": {
+                  "projectRows": [
+                    {
+                      "app": "app-0",
+                      "x": 187.35000610351562,
+                      "y": 148.35000610351562,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-1",
+                      "x": 435.3500061035156,
+                      "y": 148.35000610351562,
+                      "width": 153.99996948242188,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-2",
+                      "x": 683.3499755859375,
+                      "y": 148.35000610351562,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-3",
+                      "x": 931.3499755859375,
+                      "y": 148.35000610351562,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-4",
+                      "x": 1179.3499755859375,
+                      "y": 148.35000610351562,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-5",
+                      "x": 187.35000610351562,
+                      "y": 308.3500061035156,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-6",
+                      "x": 435.3500061035156,
+                      "y": 308.3500061035156,
+                      "width": 153.99996948242188,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-7",
+                      "x": 683.3499755859375,
+                      "y": 308.3500061035156,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-8",
+                      "x": 931.3499755859375,
+                      "y": 308.3500061035156,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-9",
+                      "x": 1179.3499755859375,
+                      "y": 308.3500061035156,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-10",
+                      "x": 187.35000610351562,
+                      "y": 468.3500061035156,
+                      "width": 154,
+                      "height": 54.999969482421875,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-11",
+                      "x": 435.3500061035156,
+                      "y": 468.3500061035156,
+                      "width": 153.99996948242188,
+                      "height": 54.999969482421875,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-12",
+                      "x": 683.3499755859375,
+                      "y": 468.3500061035156,
+                      "width": 154,
+                      "height": 54.999969482421875,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-13",
+                      "x": 931.3499755859375,
+                      "y": 468.3500061035156,
+                      "width": 154,
+                      "height": 54.999969482421875,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-14",
+                      "x": 1179.3499755859375,
+                      "y": 468.3500061035156,
+                      "width": 154,
+                      "height": 54.999969482421875,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-15",
+                      "x": 187.35000610351562,
+                      "y": 628.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-16",
+                      "x": 435.3500061035156,
+                      "y": 628.3499755859375,
+                      "width": 153.99996948242188,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-17",
+                      "x": 683.3499755859375,
+                      "y": 628.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-18",
+                      "x": 931.3499755859375,
+                      "y": 628.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-19",
+                      "x": 1179.3499755859375,
+                      "y": 628.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    }
+                  ],
+                  "x": 133.35,
+                  "y": 81.35,
+                  "cursor": "grabbing",
+                  "blur": "blur(8px) saturate(1.2)"
+                },
+                "after": {
+                  "x": 96,
+                  "y": 104,
+                  "scale": 0.2,
+                  "blur": "blur(8px) saturate(1.2)",
+                  "pointerEvents": "none"
+                },
+                "note": "Active-gesture and restored snapshots, not evidence of physical frame presentation."
+              },
+              "returned": {
+                "scale": 1.0307977294921875,
+                "willChange": "auto",
+                "blur": "blur(8px) saturate(1.2)"
+              }
+            }
+          }
+        },
+        "candidate": {
+          "continuousMedianMs": {
+            "median": 99.90000000000146,
+            "min": 83.20000000000073,
+            "max": 100
+          },
+          "continuousWorstMs": {
+            "median": 150,
+            "min": 133.29999999999927,
+            "max": 150.10000000000036
+          },
+          "startWorstMs": {
+            "median": 116.70000000000073,
+            "min": 116.5,
+            "max": 133.5
+          },
+          "stopWorstMs": {
+            "median": 83.40000000000146,
+            "min": 66.59999999999854,
+            "max": 100.09999999999854
+          },
+          "primary": [
+            {
+              "index": 0,
+              "counts": {
+                "apps": 20,
+                "notes": 0,
+                "projects": 20,
+                "git": 0,
+                "scripts": 0,
+                "cabinets": 0,
+                "queryViews": 0,
+                "terminals": 20,
+                "elements": 14214,
+                "notesBlocks": 0,
+                "gitCommits": 0,
+                "scriptRows": 0,
+                "projectRows": 260,
+                "windowedProjectLists": 20,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 4,
+                  "maxInterval": 133.5,
+                  "medianInterval": 99.70000000000073
+                },
+                "continuous": {
+                  "samples": 63,
+                  "maxInterval": 150.10000000000036,
+                  "medianInterval": 100
+                },
+                "stop": {
+                  "samples": 4,
+                  "maxInterval": 66.59999999999854,
+                  "medianInterval": 16.599999999998545
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 72
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 119176,
+                    "peakWorkingSetSize": 126092,
+                    "privateBytes": 87424
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 312444,
+                    "peakWorkingSetSize": 336996,
+                    "privateBytes": 276640
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 57880,
+                    "peakWorkingSetSize": 58076,
+                    "privateBytes": 18124
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 547260,
+                    "peakWorkingSetSize": 548804,
+                    "privateBytes": 485760
+                  }
+                }
+              ]
+            },
+            {
+              "index": 1,
+              "counts": {
+                "apps": 20,
+                "notes": 0,
+                "projects": 20,
+                "git": 0,
+                "scripts": 0,
+                "cabinets": 0,
+                "queryViews": 0,
+                "terminals": 20,
+                "elements": 14214,
+                "notesBlocks": 0,
+                "gitCommits": 0,
+                "scriptRows": 0,
+                "projectRows": 260,
+                "windowedProjectLists": 20,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 3,
+                  "maxInterval": 116.60000000000036,
+                  "medianInterval": 99.89999999999964
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 133.3000000000011,
+                  "medianInterval": 100
+                },
+                "stop": {
+                  "samples": 3,
+                  "maxInterval": 83.5,
+                  "medianInterval": 16.900000000001455
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 69
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 116116,
+                    "peakWorkingSetSize": 116396,
+                    "privateBytes": 85184
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 267772,
+                    "peakWorkingSetSize": 303720,
+                    "privateBytes": 229408
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 57976,
+                    "peakWorkingSetSize": 58172,
+                    "privateBytes": 18172
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 524112,
+                    "peakWorkingSetSize": 525680,
+                    "privateBytes": 459928
+                  }
+                }
+              ]
+            },
+            {
+              "index": 2,
+              "counts": {
+                "apps": 20,
+                "notes": 0,
+                "projects": 20,
+                "git": 0,
+                "scripts": 0,
+                "cabinets": 0,
+                "queryViews": 0,
+                "terminals": 20,
+                "elements": 14214,
+                "notesBlocks": 0,
+                "gitCommits": 0,
+                "scriptRows": 0,
+                "projectRows": 260,
+                "windowedProjectLists": 20,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 3,
+                  "maxInterval": 116.70000000000073,
+                  "medianInterval": 82.70600000000013
+                },
+                "continuous": {
+                  "samples": 64,
+                  "maxInterval": 133.29999999999927,
+                  "medianInterval": 83.29999999999927
+                },
+                "stop": {
+                  "samples": 4,
+                  "maxInterval": 100.09999999999854,
+                  "medianInterval": 16.600000000002183
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 72
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 115312,
+                    "peakWorkingSetSize": 115976,
+                    "privateBytes": 84368
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 268648,
+                    "peakWorkingSetSize": 305264,
+                    "privateBytes": 229828
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 58204,
+                    "peakWorkingSetSize": 58344,
+                    "privateBytes": 18508
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 526196,
+                    "peakWorkingSetSize": 527748,
+                    "privateBytes": 460880
+                  }
+                }
+              ]
+            },
+            {
+              "index": 3,
+              "counts": {
+                "apps": 20,
+                "notes": 0,
+                "projects": 20,
+                "git": 0,
+                "scripts": 0,
+                "cabinets": 0,
+                "queryViews": 0,
+                "terminals": 20,
+                "elements": 14214,
+                "notesBlocks": 0,
+                "gitCommits": 0,
+                "scriptRows": 0,
+                "projectRows": 260,
+                "windowedProjectLists": 20,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 3,
+                  "maxInterval": 116.89999999999964,
+                  "medianInterval": 116.69999999999891
+                },
+                "continuous": {
+                  "samples": 63,
+                  "maxInterval": 150,
+                  "medianInterval": 99.90000000000146
+                },
+                "stop": {
+                  "samples": 3,
+                  "maxInterval": 83.40000000000146,
+                  "medianInterval": 16.799999999999272
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 70
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 115856,
+                    "peakWorkingSetSize": 116524,
+                    "privateBytes": 84852
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 267892,
+                    "peakWorkingSetSize": 312732,
+                    "privateBytes": 232300
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 57848,
+                    "peakWorkingSetSize": 58164,
+                    "privateBytes": 18192
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 538132,
+                    "peakWorkingSetSize": 539676,
+                    "privateBytes": 478244
+                  }
+                }
+              ]
+            },
+            {
+              "index": 4,
+              "counts": {
+                "apps": 20,
+                "notes": 0,
+                "projects": 20,
+                "git": 0,
+                "scripts": 0,
+                "cabinets": 0,
+                "queryViews": 0,
+                "terminals": 20,
+                "elements": 14214,
+                "notesBlocks": 0,
+                "gitCommits": 0,
+                "scriptRows": 0,
+                "projectRows": 260,
+                "windowedProjectLists": 20,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 3,
+                  "maxInterval": 116.5,
+                  "medianInterval": 100.20000000000073
+                },
+                "continuous": {
+                  "samples": 63,
+                  "maxInterval": 150,
+                  "medianInterval": 83.20000000000073
+                },
+                "stop": {
+                  "samples": 3,
+                  "maxInterval": 66.59999999999854,
+                  "medianInterval": 16.700000000000728
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 70
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 115912,
+                    "peakWorkingSetSize": 116264,
+                    "privateBytes": 85012
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 268292,
+                    "peakWorkingSetSize": 312748,
+                    "privateBytes": 231200
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 58112,
+                    "peakWorkingSetSize": 58220,
+                    "privateBytes": 18272
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 547144,
+                    "peakWorkingSetSize": 548672,
+                    "privateBytes": 487236
+                  }
+                }
+              ]
+            }
+          ],
+          "diagnostic": {
+            "counts": {
+              "apps": 20,
+              "notes": 0,
+              "projects": 20,
+              "git": 0,
+              "scripts": 0,
+              "cabinets": 0,
+              "queryViews": 0,
+              "terminals": 20,
+              "elements": 14214,
+              "notesBlocks": 0,
+              "gitCommits": 0,
+              "scriptRows": 0,
+              "projectRows": 260,
+              "windowedProjectLists": 20,
+              "blur": "blur(8px) saturate(1.2)",
+              "dotsVisibility": "visible"
+            },
+            "traceWork": {
+              "Layerize": {
+                "count": 63,
+                "aggregateMs": 5407.532,
+                "maxMs": 139.082
+              },
+              "Paint": {
+                "count": 1280,
+                "aggregateMs": 360.938,
+                "maxMs": 8.37
+              },
+              "RasterTask": {
+                "count": 2448,
+                "aggregateMs": 491.221,
+                "maxMs": 6.2
+              },
+              "Layout": {
+                "count": 0,
+                "aggregateMs": 0,
+                "maxMs": 0
+              },
+              "UpdateLayoutTree": {
+                "count": 59,
+                "aggregateMs": 4.541,
+                "maxMs": 0.224
+              },
+              "FunctionCall": {
+                "count": 342,
+                "aggregateMs": 16.528,
+                "maxMs": 1.424
+              }
+            },
+            "validity": {
+              "focused": true,
+              "visible": true,
+              "focusLosses": 0,
+              "hidden": 0,
+              "samples": 71
+            },
+            "appearance": {
+              "pan": {
+                "before": {
+                  "x": 96,
+                  "y": 104,
+                  "scale": 0.2,
+                  "blur": "blur(8px) saturate(1.2)"
+                },
+                "during": {
+                  "projectRows": [
+                    {
+                      "app": "app-0",
+                      "x": 187.35000610351562,
+                      "y": 148.35000610351562,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-1",
+                      "x": 435.3500061035156,
+                      "y": 148.35000610351562,
+                      "width": 153.99996948242188,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-2",
+                      "x": 683.3499755859375,
+                      "y": 148.35000610351562,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-3",
+                      "x": 931.3499755859375,
+                      "y": 148.35000610351562,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-4",
+                      "x": 1179.3499755859375,
+                      "y": 148.35000610351562,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-5",
+                      "x": 187.35000610351562,
+                      "y": 308.3500061035156,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-6",
+                      "x": 435.3500061035156,
+                      "y": 308.3500061035156,
+                      "width": 153.99996948242188,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-7",
+                      "x": 683.3499755859375,
+                      "y": 308.3500061035156,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-8",
+                      "x": 931.3499755859375,
+                      "y": 308.3500061035156,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-9",
+                      "x": 1179.3499755859375,
+                      "y": 308.3500061035156,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-10",
+                      "x": 187.35000610351562,
+                      "y": 468.3500061035156,
+                      "width": 154,
+                      "height": 54.999969482421875,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-11",
+                      "x": 435.3500061035156,
+                      "y": 468.3500061035156,
+                      "width": 153.99996948242188,
+                      "height": 54.999969482421875,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-12",
+                      "x": 683.3499755859375,
+                      "y": 468.3500061035156,
+                      "width": 154,
+                      "height": 54.999969482421875,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-13",
+                      "x": 931.3499755859375,
+                      "y": 468.3500061035156,
+                      "width": 154,
+                      "height": 54.999969482421875,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-14",
+                      "x": 1179.3499755859375,
+                      "y": 468.3500061035156,
+                      "width": 154,
+                      "height": 54.999969482421875,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-15",
+                      "x": 187.35000610351562,
+                      "y": 628.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-16",
+                      "x": 435.3500061035156,
+                      "y": 628.3499755859375,
+                      "width": 153.99996948242188,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-17",
+                      "x": 683.3499755859375,
+                      "y": 628.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-18",
+                      "x": 931.3499755859375,
+                      "y": 628.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-19",
+                      "x": 1179.3499755859375,
+                      "y": 628.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    }
+                  ],
+                  "x": 133.35,
+                  "y": 81.35,
+                  "cursor": "grabbing",
+                  "blur": "blur(8px) saturate(1.2)"
+                },
+                "after": {
+                  "x": 96,
+                  "y": 104,
+                  "scale": 0.2,
+                  "blur": "blur(8px) saturate(1.2)",
+                  "pointerEvents": "none"
+                },
+                "note": "Active-gesture and restored snapshots, not evidence of physical frame presentation."
+              },
+              "returned": {
+                "scale": 1.0307977294921875,
+                "willChange": "auto",
+                "blur": "blur(8px) saturate(1.2)"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "artifacts": "artifacts/performance/foreground/2026-11-03T14-34-10-272Z",
+      "contentProfile": "mixed",
+      "cameraMode": "normal",
+      "appCount": 50,
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 1.0307977294921875,
+        "transform": "matrix(1.0308, 0, 0, 1.0308, 60.2895, -17.178)",
+        "appRects": [
+          {
+            "x": 101.5213851928711,
+            "y": 75.59375,
+            "width": 1236.957275390625,
+            "height": 783.40625
+          },
+          {
+            "x": 1503.40625,
+            "y": 75.59375,
+            "width": 1236.957275390625,
+            "height": 783.40625
+          },
+          {
+            "x": 2781.595458984375,
+            "y": 75.59375,
+            "width": 1236.957275390625,
+            "height": 783.40625
+          },
+          {
+            "x": 4059.78466796875,
+            "y": 75.59375,
+            "width": 1236.95751953125,
+            "height": 783.40625
+          },
+          {
+            "x": 5337.97412109375,
+            "y": 75.59375,
+            "width": 1236.95703125,
+            "height": 783.40625
+          },
+          {
+            "x": 6616.1630859375,
+            "y": 75.59375,
+            "width": 1236.95703125,
+            "height": 783.40625
+          },
+          {
+            "x": 7894.35205078125,
+            "y": 75.59375,
+            "width": 1236.95654296875,
+            "height": 783.40625
+          },
+          {
+            "x": 9172.541015625,
+            "y": 75.59375,
+            "width": 1236.95703125,
+            "height": 783.40625
+          },
+          {
+            "x": 1503.40625,
+            "y": 900.23193359375,
+            "width": 1236.957275390625,
+            "height": 783.40625
+          },
+          {
+            "x": 2781.595458984375,
+            "y": 900.23193359375,
+            "width": 1236.957275390625,
+            "height": 783.40625
+          },
+          {
+            "x": 4059.78466796875,
+            "y": 900.23193359375,
+            "width": 1236.95751953125,
+            "height": 783.40625
+          },
+          {
+            "x": 5337.97412109375,
+            "y": 900.23193359375,
+            "width": 1236.95703125,
+            "height": 783.40625
+          },
+          {
+            "x": 6616.1630859375,
+            "y": 900.23193359375,
+            "width": 1236.95703125,
+            "height": 783.40625
+          },
+          {
+            "x": 7894.35205078125,
+            "y": 900.23193359375,
+            "width": 1236.95654296875,
+            "height": 783.40625
+          },
+          {
+            "x": 9172.541015625,
+            "y": 900.23193359375,
+            "width": 1236.95703125,
+            "height": 783.40625
+          },
+          {
+            "x": 1503.40625,
+            "y": 1724.8699951171875,
+            "width": 1236.957275390625,
+            "height": 783.4063720703125
+          },
+          {
+            "x": 2781.595458984375,
+            "y": 1724.8699951171875,
+            "width": 1236.957275390625,
+            "height": 783.4063720703125
+          },
+          {
+            "x": 4059.78466796875,
+            "y": 1724.8699951171875,
+            "width": 1236.95751953125,
+            "height": 783.4063720703125
+          },
+          {
+            "x": 5337.97412109375,
+            "y": 1724.8699951171875,
+            "width": 1236.95703125,
+            "height": 783.4063720703125
+          },
+          {
+            "x": 6616.1630859375,
+            "y": 1724.8699951171875,
+            "width": 1236.95703125,
+            "height": 783.4063720703125
+          },
+          {
+            "x": 7894.35205078125,
+            "y": 1724.8699951171875,
+            "width": 1236.95654296875,
+            "height": 783.4063720703125
+          },
+          {
+            "x": 9172.541015625,
+            "y": 1724.8699951171875,
+            "width": 1236.95703125,
+            "height": 783.4063720703125
+          },
+          {
+            "x": 1503.40625,
+            "y": 2549.50830078125,
+            "width": 1236.957275390625,
+            "height": 783.40625
+          },
+          {
+            "x": 2781.595458984375,
+            "y": 2549.50830078125,
+            "width": 1236.957275390625,
+            "height": 783.40625
+          },
+          {
+            "x": 4059.78466796875,
+            "y": 2549.50830078125,
+            "width": 1236.95751953125,
+            "height": 783.40625
+          },
+          {
+            "x": 5337.97412109375,
+            "y": 2549.50830078125,
+            "width": 1236.95703125,
+            "height": 783.40625
+          },
+          {
+            "x": 6616.1630859375,
+            "y": 2549.50830078125,
+            "width": 1236.95703125,
+            "height": 783.40625
+          },
+          {
+            "x": 7894.35205078125,
+            "y": 2549.50830078125,
+            "width": 1236.95654296875,
+            "height": 783.40625
+          },
+          {
+            "x": 9172.541015625,
+            "y": 2549.50830078125,
+            "width": 1236.95703125,
+            "height": 783.40625
+          },
+          {
+            "x": 1503.40625,
+            "y": 3374.146484375,
+            "width": 1236.957275390625,
+            "height": 783.40625
+          },
+          {
+            "x": 2781.595458984375,
+            "y": 3374.146484375,
+            "width": 1236.957275390625,
+            "height": 783.40625
+          },
+          {
+            "x": 4059.78466796875,
+            "y": 3374.146484375,
+            "width": 1236.95751953125,
+            "height": 783.40625
+          },
+          {
+            "x": 5337.97412109375,
+            "y": 3374.146484375,
+            "width": 1236.95703125,
+            "height": 783.40625
+          },
+          {
+            "x": 6616.1630859375,
+            "y": 3374.146484375,
+            "width": 1236.95703125,
+            "height": 783.40625
+          },
+          {
+            "x": 7894.35205078125,
+            "y": 3374.146484375,
+            "width": 1236.95654296875,
+            "height": 783.40625
+          },
+          {
+            "x": 9172.541015625,
+            "y": 3374.146484375,
+            "width": 1236.95703125,
+            "height": 783.40625
+          },
+          {
+            "x": 1503.40625,
+            "y": 4198.78466796875,
+            "width": 1236.957275390625,
+            "height": 783.40625
+          },
+          {
+            "x": 2781.595458984375,
+            "y": 4198.78466796875,
+            "width": 1236.957275390625,
+            "height": 783.40625
+          },
+          {
+            "x": 4059.78466796875,
+            "y": 4198.78466796875,
+            "width": 1236.95751953125,
+            "height": 783.40625
+          },
+          {
+            "x": 5337.97412109375,
+            "y": 4198.78466796875,
+            "width": 1236.95703125,
+            "height": 783.40625
+          },
+          {
+            "x": 6616.1630859375,
+            "y": 4198.78466796875,
+            "width": 1236.95703125,
+            "height": 783.40625
+          },
+          {
+            "x": 7894.35205078125,
+            "y": 4198.78466796875,
+            "width": 1236.95654296875,
+            "height": 783.40625
+          },
+          {
+            "x": 9172.541015625,
+            "y": 4198.78466796875,
+            "width": 1236.95703125,
+            "height": 783.40625
+          },
+          {
+            "x": 1503.40625,
+            "y": 5023.4228515625,
+            "width": 1236.957275390625,
+            "height": 783.40625
+          },
+          {
+            "x": 2781.595458984375,
+            "y": 5023.4228515625,
+            "width": 1236.957275390625,
+            "height": 783.40625
+          },
+          {
+            "x": 4059.78466796875,
+            "y": 5023.4228515625,
+            "width": 1236.95751953125,
+            "height": 783.40625
+          },
+          {
+            "x": 5337.97412109375,
+            "y": 5023.4228515625,
+            "width": 1236.95703125,
+            "height": 783.40625
+          },
+          {
+            "x": 6616.1630859375,
+            "y": 5023.4228515625,
+            "width": 1236.95703125,
+            "height": 783.40625
+          },
+          {
+            "x": 7894.35205078125,
+            "y": 5023.4228515625,
+            "width": 1236.95654296875,
+            "height": 783.40625
+          },
+          {
+            "x": 9172.541015625,
+            "y": 5023.4228515625,
+            "width": 1236.95703125,
+            "height": 783.40625
+          }
+        ],
+        "visibleApps": 1
+      },
+      "heldPayload": {
+        "pages": 500,
+        "folders": 1000,
+        "projectsPerRoot": 100,
+        "savedTerminals": 20,
+        "blocksPerDocument": 100,
+        "scripts": 1000,
+        "commits": 150,
+        "terminalLines": 200
+      },
+      "environment": {
+        "electron": {
+          "versions": {
+            "node": "24.22.1",
+            "acorn": "8.18.0",
+            "ada": "4.0.0",
+            "amaro": "1.1.11",
+            "ares": "1.34.9",
+            "brotli": "1.2.0",
+            "cldr": "48.0",
+            "icu": "78.2",
+            "llhttp": "9.4.3",
+            "merve": "1.2.2",
+            "modules": "150",
+            "napi": "10",
+            "nbytes": "0.1.4",
+            "ncrypto": "0.0.1",
+            "nghttp2": "1.70.0",
+            "nghttp3": "",
+            "ngtcp2": "",
+            "openssl": "0.0.0",
+            "simdjson": "4.6.11",
+            "simdutf": "7.7.0",
+            "sqlite": "3.53.4",
+            "tz": "2026e",
+            "undici": "7.30.1",
+            "unicode": "17.0",
+            "uv": "1.52.1",
+            "uvwasi": "0.0.23",
+            "v8": "15.6.75.19-electron.0",
+            "zlib": "1.3.2.1-motley",
+            "zstd": "1.6.0",
+            "electron": "45.1.0",
+            "chrome": "156.0.8078.49"
+          },
+          "display": {
+            "bounds": {
+              "x": 0,
+              "y": 0,
+              "width": 1920,
+              "height": 1080
+            },
+            "workArea": {
+              "x": 0,
+              "y": 0,
+              "width": 1920,
+              "height": 1032
+            },
+            "scaleFactor": 1,
+            "refreshRate": 60
+          },
+          "contentSize": {
+            "width": 1440,
+            "height": 952
+          },
+          "gpu": {
+            "auxAttributes": {
+              "amdSwitchable": false,
+              "canSupportThreadedTextureMailbox": false,
+              "directMLFeatureLevel": "Not supported",
+              "dx12FeatureLevel": "Not supported",
+              "glImplementationParts": "(gl=none,angle=none)",
+              "glResetNotificationStrategy": 0,
+              "inProcessGpu": true,
+              "initializationTime": 0,
+              "isAsan": false,
+              "isClangCoverage": false,
+              "jpegDecodeAcceleratorSupported": false,
+              "optimus": false,
+              "overlayInfo": {
+                "bgra8OverlaySupport": "NONE",
+                "directComposition": false,
+                "nv12OverlaySupport": "NONE",
+                "p010OverlaySupport": "NONE",
+                "rgb10a2OverlaySupport": "NONE",
+                "supportsOverlays": false,
+                "yuy2OverlaySupport": "NONE"
+              },
+              "passthroughCmdDecoder": false,
+              "sandboxed": false,
+              "skiaBackendType": "None",
+              "subpixelFontRendering": true,
+              "supportsD3dSharedImages": false,
+              "supportsDirectML": false,
+              "supportsDx12": false,
+              "supportsVulkan": false,
+              "targetCpuBits": 64,
+              "visibilityCallbackCallCount": 0,
+              "vulkanVersion": "Not supported"
+            },
+            "gpuDevice": [
+              {
+                "active": false,
+                "deviceId": 42785,
+                "deviceString": "Intel(R) UHD Graphics",
+                "driverVersion": "32.0.101.7088",
+                "gpuPreference": 0,
+                "revision": 4,
+                "subSysId": -1954803652,
+                "vendorId": 32902
+              },
+              {
+                "active": false,
+                "deviceId": 140,
+                "deviceString": "Microsoft Basic Render Driver",
+                "driverVersion": "10.0.22621.5415",
+                "gpuPreference": 0,
+                "revision": 0,
+                "subSysId": 0,
+                "vendorId": 5140
+              }
+            ]
+          },
+          "gpuFeatures": {
+            "2d_canvas": "enabled",
+            "direct_rendering_display_compositor": "disabled_off_ok",
+            "gpu_compositing": "enabled",
+            "multiple_raster_threads": "enabled_on",
+            "opengl": "enabled_on",
+            "rasterization": "enabled",
+            "raw_draw": "disabled_off_ok",
+            "skia_graphite": "disabled_off",
+            "trees_in_viz": "disabled_off",
+            "video_decode": "enabled",
+            "video_encode": "enabled",
+            "webgl": "enabled",
+            "webgpu": "enabled",
+            "webnn": "disabled_off"
+          },
+          "onBatteryPower": false,
+          "webPreferences": {
+            "contextIsolation": true,
+            "nodeIntegration": false,
+            "sandbox": true,
+            "webviewTag": true
+          },
+          "profileIsolated": true,
+          "gpuComplete": {
+            "auxAttributes": {
+              "amdSwitchable": false,
+              "canSupportThreadedTextureMailbox": false,
+              "directMLFeatureLevel": "Not supported",
+              "displayType": "ANGLE_D3D11",
+              "dx12FeatureLevel": "Not supported",
+              "glExtensions": "GL_AMD_performance_monitor GL_ANGLE_base_vertex_base_instance_shader_builtin GL_ANGLE_blob_cache GL_ANGLE_client_arrays GL_ANGLE_clip_cull_distance GL_ANGLE_copy_texture_3d GL_ANGLE_depth_texture GL_ANGLE_framebuffer_blit GL_ANGLE_framebuffer_multisample GL_ANGLE_get_serialized_context_string GL_ANGLE_get_tex_level_parameter GL_ANGLE_instanced_arrays GL_ANGLE_memory_size GL_ANGLE_multiview_multisample GL_ANGLE_pack_reverse_row_order GL_ANGLE_polygon_mode GL_ANGLE_program_binary_readiness_query GL_ANGLE_program_cache_control GL_ANGLE_provoking_vertex GL_ANGLE_renderability_validation GL_ANGLE_request_extension GL_ANGLE_robust_client_memory GL_ANGLE_shader_pixel_local_storage GL_ANGLE_shader_pixel_local_storage_coherent GL_ANGLE_stencil_texturing GL_ANGLE_texture_compression_dxt3 GL_ANGLE_texture_compression_dxt5 GL_ANGLE_texture_multisample GL_ANGLE_texture_usage GL_ANGLE_translated_shader_source GL_APPLE_clip_distance GL_ARM_rgba8 GL_CHROMIUM_bind_generates_resource GL_CHROMIUM_bind_uniform_location GL_CHROMIUM_copy_compressed_texture GL_CHROMIUM_copy_texture GL_CHROMIUM_lose_context GL_EXT_EGL_image_external_wrap_modes GL_EXT_base_instance GL_EXT_blend_func_extended GL_EXT_blend_minmax GL_EXT_clip_control GL_EXT_clip_cull_distance GL_EXT_color_buffer_float GL_EXT_color_buffer_half_float GL_EXT_conservative_depth GL_EXT_debug_label GL_EXT_debug_marker GL_EXT_depth_clamp GL_EXT_discard_framebuffer GL_EXT_disjoint_timer_query GL_EXT_draw_buffers GL_EXT_draw_buffers_indexed GL_EXT_draw_elements_base_vertex GL_EXT_float_blend GL_EXT_frag_depth GL_EXT_instanced_arrays GL_EXT_map_buffer_range GL_EXT_occlusion_query_boolean GL_EXT_polygon_offset_clamp GL_EXT_read_format_bgra GL_EXT_render_snorm GL_EXT_robustness GL_EXT_sRGB GL_EXT_shader_texture_lod GL_EXT_texture_border_clamp GL_EXT_texture_compression_bptc GL_EXT_texture_compression_dxt1 GL_EXT_texture_compression_rgtc GL_EXT_texture_compression_s3tc_srgb GL_EXT_texture_filter_anisotropic GL_EXT_texture_format_BGRA8888 GL_EXT_texture_mirror_clamp_to_edge GL_EXT_texture_norm16 GL_EXT_texture_rg GL_EXT_texture_storage GL_EXT_texture_type_2_10_10_10_REV GL_EXT_unpack_subimage GL_KHR_debug GL_KHR_parallel_shader_compile GL_KHR_robustness GL_NV_EGL_stream_consumer_external GL_NV_fence GL_NV_framebuffer_blit GL_NV_pack_subimage GL_NV_pixel_buffer_object GL_NV_shader_noperspective_interpolation GL_OES_EGL_image GL_OES_EGL_image_external GL_OES_EGL_image_external_essl3 GL_OES_depth24 GL_OES_depth32 GL_OES_draw_buffers_indexed GL_OES_draw_elements_base_vertex GL_OES_element_index_uint GL_OES_fbo_render_mipmap GL_OES_get_program_binary GL_OES_mapbuffer GL_OES_packed_depth_stencil GL_OES_required_internalformat GL_OES_rgb8_rgba8 GL_OES_sample_variables GL_OES_shader_multisample_interpolation GL_OES_standard_derivatives GL_OES_surfaceless_context GL_OES_texture_border_clamp GL_OES_texture_float GL_OES_texture_float_linear GL_OES_texture_half_float GL_OES_texture_half_float_linear GL_OES_texture_npot GL_OES_texture_stencil8 GL_OES_texture_storage_multisample_2d_array GL_OES_vertex_array_object GL_OVR_multiview GL_OVR_multiview2 ",
+              "glImplementationParts": "(gl=egl-angle,angle=d3d11)",
+              "glRenderer": "ANGLE (Intel, Intel(R) UHD Graphics (0x0000A721) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.101.7088)",
+              "glResetNotificationStrategy": 33362,
+              "glVendor": "Google Inc. (Intel)",
+              "glVersion": "OpenGL ES 3.0 (ANGLE 2.1.28973 git hash: 3b89d84e9d59)",
+              "glWsExtensions": "EGL_EXT_create_context_robustness EGL_ANGLE_d3d_share_handle_client_buffer EGL_ANGLE_d3d_texture_client_buffer EGL_ANGLE_surface_d3d_texture_2d_share_handle EGL_ANGLE_query_surface_pointer EGL_ANGLE_window_fixed_size EGL_ANGLE_keyed_mutex EGL_ANGLE_surface_orientation EGL_ANGLE_direct_composition EGL_NV_post_sub_buffer EGL_KHR_create_context EGL_KHR_image EGL_KHR_image_base EGL_KHR_gl_texture_2D_image EGL_KHR_gl_texture_cubemap_image EGL_KHR_gl_renderbuffer_image EGL_KHR_get_all_proc_addresses EGL_KHR_stream EGL_KHR_stream_consumer_gltexture EGL_NV_stream_consumer_gltexture_yuv EGL_ANGLE_stream_producer_d3d_texture EGL_ANGLE_create_context_webgl_compatibility EGL_CHROMIUM_create_context_bind_generates_resource EGL_CHROMIUM_sync_control EGL_EXT_pixel_format_float EGL_KHR_surfaceless_context EGL_ANGLE_display_texture_share_group EGL_ANGLE_display_semaphore_share_group EGL_ANGLE_create_context_client_arrays EGL_ANGLE_program_cache_control EGL_ANGLE_robust_resource_initialization EGL_ANGLE_create_context_extensions_enabled EGL_ANDROID_blob_cache EGL_ANDROID_recordable EGL_ANGLE_image_d3d11_texture EGL_ANGLE_create_context_backwards_compatible EGL_KHR_no_config_context EGL_KHR_create_context_no_error EGL_KHR_reusable_sync EGL_ANGLE_memory_usage_report ",
+              "glWsVendor": "Google Inc. (Intel)",
+              "glWsVersion": "1.5 (ANGLE 2.1.28973 git hash: 3b89d84e9d59)",
+              "inProcessGpu": false,
+              "initializationTime": 170.595,
+              "isAsan": false,
+              "isClangCoverage": false,
+              "jpegDecodeAcceleratorSupported": false,
+              "maxMsaaSamples": "8",
+              "optimus": false,
+              "overlayInfo": {
+                "bgra8OverlaySupport": "SCALING",
+                "directComposition": true,
+                "nv12OverlaySupport": "SCALING",
+                "p010OverlaySupport": "SOFTWARE",
+                "rgb10a2OverlaySupport": "SCALING",
+                "supportsOverlays": true,
+                "yuy2OverlaySupport": "SCALING"
+              },
+              "passthroughCmdDecoder": true,
+              "pixelShaderVersion": "5.0",
+              "sandboxed": true,
+              "skiaBackendType": "GaneshGL",
+              "subpixelFontRendering": true,
+              "supportsD3dSharedImages": true,
+              "supportsDirectML": false,
+              "supportsDx12": false,
+              "supportsVulkan": false,
+              "targetCpuBits": 64,
+              "vertexShaderVersion": "5.0",
+              "videoDecodeAcceleratorSupportedProfile": {
+                "encrypted_only": false,
+                "maxResolutionHeight": 16384,
+                "maxResolutionWidth": 16384,
+                "minResolutionHeight": 64,
+                "minResolutionWidth": 64,
+                "profile": 29
+              },
+              "visibilityCallbackCallCount": 0,
+              "vulkanVersion": "Not supported"
+            },
+            "gpuDevice": [
+              {
+                "active": true,
+                "deviceId": 42785,
+                "deviceString": "Intel(R) UHD Graphics",
+                "driverVendor": "Intel",
+                "driverVersion": "32.0.101.7088",
+                "gpuPreference": 0,
+                "revision": 4,
+                "subSysId": -1954803652,
+                "vendorId": 32902
+              },
+              {
+                "active": false,
+                "deviceId": 140,
+                "deviceString": "Microsoft Basic Render Driver",
+                "driverVersion": "10.0.22621.5415",
+                "gpuPreference": 0,
+                "revision": 0,
+                "subSysId": 0,
+                "vendorId": 5140
+              }
+            ]
+          },
+          "hardwareAccelerationEnabled": true,
+          "windowBounds": {
+            "x": 10,
+            "y": 10,
+            "width": 1456,
+            "height": 991
+          },
+          "commandSwitches": {
+            "disableGpu": false,
+            "disableGpuCompositing": false
+          }
+        },
+        "browserVersion": "156.0.8078.49"
+      },
+      "repetitions": 5,
+      "baselineCommit": "c7c638e",
+      "candidateBaseCommit": "cb728284269ab1f98fa44e74afa1648660d025da",
+      "rejectedAttempts": [],
+      "variants": {
+        "baseline": {
+          "continuousMedianMs": {
+            "median": 16.69999999999891,
+            "min": 16.600000000000364,
+            "max": 16.69999999999891
+          },
+          "continuousWorstMs": {
+            "median": 17,
+            "min": 16.80000000000109,
+            "max": 133.1999999999989
+          },
+          "startWorstMs": {
+            "median": 16.700000000000728,
+            "min": 16.69999999999891,
+            "max": 17.5
+          },
+          "stopWorstMs": {
+            "median": 16.700000000000728,
+            "min": 16.700000000000728,
+            "max": 16.80000000000109
+          },
+          "primary": [
+            {
+              "index": 0,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 94658,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 800,
+                "windowedProjectLists": 0,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 4,
+                  "maxInterval": 16.69999999999891,
+                  "medianInterval": 16.600000000000364
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 16.899999999999636,
+                  "medianInterval": 16.600000000000364
+                },
+                "stop": {
+                  "samples": 2,
+                  "maxInterval": 16.700000000000728,
+                  "medianInterval": 16.69999999999891
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 86
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 124564,
+                    "peakWorkingSetSize": 131316,
+                    "privateBytes": 91252
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 403208,
+                    "peakWorkingSetSize": 416536,
+                    "privateBytes": 398292
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 58092,
+                    "peakWorkingSetSize": 58256,
+                    "privateBytes": 18168
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1598000,
+                    "peakWorkingSetSize": 1599304,
+                    "privateBytes": 1589860
+                  }
+                }
+              ]
+            },
+            {
+              "index": 1,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 94658,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 800,
+                "windowedProjectLists": 0,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 4,
+                  "maxInterval": 16.700000000000728,
+                  "medianInterval": 16.600000000000364
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 133.1999999999989,
+                  "medianInterval": 16.600000000000364
+                },
+                "stop": {
+                  "samples": 3,
+                  "maxInterval": 16.700000000000728,
+                  "medianInterval": 16.700000000000728
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 88
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 120832,
+                    "peakWorkingSetSize": 121752,
+                    "privateBytes": 88152
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 355448,
+                    "peakWorkingSetSize": 379220,
+                    "privateBytes": 341668
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 58060,
+                    "peakWorkingSetSize": 58552,
+                    "privateBytes": 18136
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1574248,
+                    "peakWorkingSetSize": 1581140,
+                    "privateBytes": 1535072
+                  }
+                }
+              ]
+            },
+            {
+              "index": 2,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 94658,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 800,
+                "windowedProjectLists": 0,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 4,
+                  "maxInterval": 17.5,
+                  "medianInterval": 16.600000000000364
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 16.80000000000109,
+                  "medianInterval": 16.69999999999891
+                },
+                "stop": {
+                  "samples": 3,
+                  "maxInterval": 16.700000000000728,
+                  "medianInterval": 16.69999999999891
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 89
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 121172,
+                    "peakWorkingSetSize": 121968,
+                    "privateBytes": 88404
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 374200,
+                    "peakWorkingSetSize": 397888,
+                    "privateBytes": 371228
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 58312,
+                    "peakWorkingSetSize": 58720,
+                    "privateBytes": 18336
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1581212,
+                    "peakWorkingSetSize": 1622964,
+                    "privateBytes": 1586980
+                  }
+                }
+              ]
+            },
+            {
+              "index": 3,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 94658,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 800,
+                "windowedProjectLists": 0,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 4,
+                  "maxInterval": 16.700000000000728,
+                  "medianInterval": 16.600000000000364
+                },
+                "continuous": {
+                  "samples": 63,
+                  "maxInterval": 17,
+                  "medianInterval": 16.69999999999891
+                },
+                "stop": {
+                  "samples": 3,
+                  "maxInterval": 16.700000000000728,
+                  "medianInterval": 16.69999999999891
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 91
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 125232,
+                    "peakWorkingSetSize": 125632,
+                    "privateBytes": 91032
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 376656,
+                    "peakWorkingSetSize": 400792,
+                    "privateBytes": 363820
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 58288,
+                    "peakWorkingSetSize": 58676,
+                    "privateBytes": 18444
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1650744,
+                    "peakWorkingSetSize": 1651860,
+                    "privateBytes": 1598212
+                  }
+                }
+              ]
+            },
+            {
+              "index": 4,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 94658,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 800,
+                "windowedProjectLists": 0,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 4,
+                  "maxInterval": 17,
+                  "medianInterval": 16.600000000000364
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 17,
+                  "medianInterval": 16.69999999999891
+                },
+                "stop": {
+                  "samples": 2,
+                  "maxInterval": 16.80000000000109,
+                  "medianInterval": 16.5
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 85
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 121344,
+                    "peakWorkingSetSize": 121948,
+                    "privateBytes": 88428
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 342864,
+                    "peakWorkingSetSize": 366588,
+                    "privateBytes": 333736
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 58200,
+                    "peakWorkingSetSize": 58776,
+                    "privateBytes": 18316
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1521028,
+                    "peakWorkingSetSize": 1521832,
+                    "privateBytes": 1469448
+                  }
+                }
+              ]
+            }
+          ],
+          "diagnostic": {
+            "counts": {
+              "apps": 50,
+              "notes": 12,
+              "projects": 8,
+              "git": 10,
+              "scripts": 7,
+              "cabinets": 7,
+              "queryViews": 6,
+              "terminals": 8,
+              "elements": 94658,
+              "notesBlocks": 1200,
+              "gitCommits": 1500,
+              "scriptRows": 140,
+              "projectRows": 800,
+              "windowedProjectLists": 0,
+              "blur": "blur(8px) saturate(1.2)",
+              "dotsVisibility": "visible"
+            },
+            "traceWork": {
+              "Layerize": {
+                "count": 62,
+                "aggregateMs": 63.755,
+                "maxMs": 1.57
+              },
+              "Paint": {
+                "count": 172,
+                "aggregateMs": 320.191,
+                "maxMs": 6.705
+              },
+              "RasterTask": {
+                "count": 234,
+                "aggregateMs": 46.867,
+                "maxMs": 0.702
+              },
+              "Layout": {
+                "count": 0,
+                "aggregateMs": 0,
+                "maxMs": 0
+              },
+              "UpdateLayoutTree": {
+                "count": 58,
+                "aggregateMs": 7.569,
+                "maxMs": 0.203
+              },
+              "FunctionCall": {
+                "count": 304,
+                "aggregateMs": 31.19,
+                "maxMs": 0.586
+              }
+            },
+            "validity": {
+              "focused": true,
+              "visible": true,
+              "focusLosses": 0,
+              "hidden": 0,
+              "samples": 89
+            }
+          }
+        },
+        "candidate": {
+          "continuousMedianMs": {
+            "median": 16.69999999999891,
+            "min": 16.600000000000364,
+            "max": 16.69999999999891
+          },
+          "continuousWorstMs": {
+            "median": 16.900000000001455,
+            "min": 16.899999999999636,
+            "max": 17.299999999999272
+          },
+          "startWorstMs": {
+            "median": 16.700000000000728,
+            "min": 16.700000000000728,
+            "max": 16.80000000000109
+          },
+          "stopWorstMs": {
+            "median": 16.799999999999272,
+            "min": 16.700000000000728,
+            "max": 16.80000000000109
+          },
+          "primary": [
+            {
+              "index": 0,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 77962,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 104,
+                "windowedProjectLists": 8,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 4,
+                  "maxInterval": 16.80000000000109,
+                  "medianInterval": 16.599999999998545
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 16.899999999999636,
+                  "medianInterval": 16.69999999999891
+                },
+                "stop": {
+                  "samples": 3,
+                  "maxInterval": 16.700000000000728,
+                  "medianInterval": 16.69999999999891
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 87
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 122316,
+                    "peakWorkingSetSize": 128984,
+                    "privateBytes": 88664
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 399656,
+                    "peakWorkingSetSize": 406604,
+                    "privateBytes": 386296
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 58188,
+                    "peakWorkingSetSize": 58728,
+                    "privateBytes": 18432
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1505244,
+                    "peakWorkingSetSize": 1510744,
+                    "privateBytes": 1448732
+                  }
+                }
+              ]
+            },
+            {
+              "index": 1,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 77962,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 104,
+                "windowedProjectLists": 8,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 4,
+                  "maxInterval": 16.799999999999272,
+                  "medianInterval": 16.600000000000364
+                },
+                "continuous": {
+                  "samples": 63,
+                  "maxInterval": 17.299999999999272,
+                  "medianInterval": 16.600000000000364
+                },
+                "stop": {
+                  "samples": 3,
+                  "maxInterval": 16.80000000000109,
+                  "medianInterval": 16.600000000000364
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 91
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 123976,
+                    "peakWorkingSetSize": 124676,
+                    "privateBytes": 91052
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 388920,
+                    "peakWorkingSetSize": 412380,
+                    "privateBytes": 386556
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 58200,
+                    "peakWorkingSetSize": 58608,
+                    "privateBytes": 18508
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1496548,
+                    "peakWorkingSetSize": 1497264,
+                    "privateBytes": 1437820
+                  }
+                }
+              ]
+            },
+            {
+              "index": 2,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 77962,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 104,
+                "windowedProjectLists": 8,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 4,
+                  "maxInterval": 16.700000000000728,
+                  "medianInterval": 16.600000000000364
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 16.899999999999636,
+                  "medianInterval": 16.69999999999891
+                },
+                "stop": {
+                  "samples": 3,
+                  "maxInterval": 16.799999999999272,
+                  "medianInterval": 16.600000000000364
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 89
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 121104,
+                    "peakWorkingSetSize": 121980,
+                    "privateBytes": 88468
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 359132,
+                    "peakWorkingSetSize": 382956,
+                    "privateBytes": 355024
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 58124,
+                    "peakWorkingSetSize": 58748,
+                    "privateBytes": 18340
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1515632,
+                    "peakWorkingSetSize": 1516528,
+                    "privateBytes": 1460140
+                  }
+                }
+              ]
+            },
+            {
+              "index": 3,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 77962,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 104,
+                "windowedProjectLists": 8,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 4,
+                  "maxInterval": 16.700000000000728,
+                  "medianInterval": 16.600000000000364
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 17,
+                  "medianInterval": 16.69999999999891
+                },
+                "stop": {
+                  "samples": 3,
+                  "maxInterval": 16.700000000000728,
+                  "medianInterval": 16.600000000000364
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 87
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 120764,
+                    "peakWorkingSetSize": 121904,
+                    "privateBytes": 87700
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 387412,
+                    "peakWorkingSetSize": 411376,
+                    "privateBytes": 383092
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 58100,
+                    "peakWorkingSetSize": 58596,
+                    "privateBytes": 18312
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1502648,
+                    "peakWorkingSetSize": 1503548,
+                    "privateBytes": 1445148
+                  }
+                }
+              ]
+            },
+            {
+              "index": 4,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 77962,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 104,
+                "windowedProjectLists": 8,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 4,
+                  "maxInterval": 16.700000000000728,
+                  "medianInterval": 16.69999999999891
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 16.900000000001455,
+                  "medianInterval": 16.69999999999891
+                },
+                "stop": {
+                  "samples": 3,
+                  "maxInterval": 16.799999999999272,
+                  "medianInterval": 16.600000000000364
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 88
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 120552,
+                    "peakWorkingSetSize": 121856,
+                    "privateBytes": 88692
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 314536,
+                    "peakWorkingSetSize": 388056,
+                    "privateBytes": 276828
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 58260,
+                    "peakWorkingSetSize": 58996,
+                    "privateBytes": 18220
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1480028,
+                    "peakWorkingSetSize": 1480932,
+                    "privateBytes": 1424380
+                  }
+                }
+              ]
+            }
+          ],
+          "diagnostic": {
+            "counts": {
+              "apps": 50,
+              "notes": 12,
+              "projects": 8,
+              "git": 10,
+              "scripts": 7,
+              "cabinets": 7,
+              "queryViews": 6,
+              "terminals": 8,
+              "elements": 77962,
+              "notesBlocks": 1200,
+              "gitCommits": 1500,
+              "scriptRows": 140,
+              "projectRows": 104,
+              "windowedProjectLists": 8,
+              "blur": "blur(8px) saturate(1.2)",
+              "dotsVisibility": "visible"
+            },
+            "traceWork": {
+              "Layerize": {
+                "count": 62,
+                "aggregateMs": 46.493,
+                "maxMs": 0.998
+              },
+              "Paint": {
+                "count": 172,
+                "aggregateMs": 270.434,
+                "maxMs": 5.127
+              },
+              "RasterTask": {
+                "count": 234,
+                "aggregateMs": 33.622,
+                "maxMs": 2.405
+              },
+              "Layout": {
+                "count": 0,
+                "aggregateMs": 0,
+                "maxMs": 0
+              },
+              "UpdateLayoutTree": {
+                "count": 58,
+                "aggregateMs": 6.256,
+                "maxMs": 0.285
+              },
+              "FunctionCall": {
+                "count": 304,
+                "aggregateMs": 23.925,
+                "maxMs": 0.538
+              }
+            },
+            "validity": {
+              "focused": true,
+              "visible": true,
+              "focusLosses": 0,
+              "hidden": 0,
+              "samples": 90
+            }
+          }
+        }
+      }
+    },
+    {
+      "artifacts": "artifacts/performance/foreground/2026-11-03T14-34-10-272Z",
+      "contentProfile": "mixed",
+      "cameraMode": "overview",
+      "appCount": 50,
+      "view": {
+        "width": 1440,
+        "height": 952,
+        "scale": 0.2,
+        "transform": "matrix(0.2, 0, 0, 0.2, -288, -136)",
+        "appRects": [
+          {
+            "x": -280,
+            "y": -118,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": -8,
+            "y": -118,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 240,
+            "y": -118,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 488,
+            "y": -118,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 736,
+            "y": -118,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 984,
+            "y": -118,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 1232,
+            "y": -118,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 1480,
+            "y": -118,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": -8,
+            "y": 42,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 240,
+            "y": 42,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 488,
+            "y": 42,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 736,
+            "y": 42,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 984,
+            "y": 42,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 1232,
+            "y": 42,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 1480,
+            "y": 42,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": -8,
+            "y": 202,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 240,
+            "y": 202,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 488,
+            "y": 202,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 736,
+            "y": 202,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 984,
+            "y": 202,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 1232,
+            "y": 202,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 1480,
+            "y": 202,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": -8,
+            "y": 362,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 240,
+            "y": 362,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 488,
+            "y": 362,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 736,
+            "y": 362,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 984,
+            "y": 362,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 1232,
+            "y": 362,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 1480,
+            "y": 362,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": -8,
+            "y": 522,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 240,
+            "y": 522,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 488,
+            "y": 522,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 736,
+            "y": 522,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 984,
+            "y": 522,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 1232,
+            "y": 522,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 1480,
+            "y": 522,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": -8,
+            "y": 682,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 240,
+            "y": 682,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 488,
+            "y": 682,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 736,
+            "y": 682,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 984,
+            "y": 682,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 1232,
+            "y": 682,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 1480,
+            "y": 682,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": -8,
+            "y": 842,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 240,
+            "y": 842,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 488,
+            "y": 842,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 736,
+            "y": 842,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 984,
+            "y": 842,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 1232,
+            "y": 842,
+            "width": 240,
+            "height": 152
+          },
+          {
+            "x": 1480,
+            "y": 842,
+            "width": 240,
+            "height": 152
+          }
+        ],
+        "visibleApps": 42
+      },
+      "heldPayload": {
+        "pages": 500,
+        "folders": 1000,
+        "projectsPerRoot": 100,
+        "savedTerminals": 20,
+        "blocksPerDocument": 100,
+        "scripts": 1000,
+        "commits": 150,
+        "terminalLines": 200
+      },
+      "environment": {
+        "electron": {
+          "versions": {
+            "node": "24.22.1",
+            "acorn": "8.18.0",
+            "ada": "4.0.0",
+            "amaro": "1.1.11",
+            "ares": "1.34.9",
+            "brotli": "1.2.0",
+            "cldr": "48.0",
+            "icu": "78.2",
+            "llhttp": "9.4.3",
+            "merve": "1.2.2",
+            "modules": "150",
+            "napi": "10",
+            "nbytes": "0.1.4",
+            "ncrypto": "0.0.1",
+            "nghttp2": "1.70.0",
+            "nghttp3": "",
+            "ngtcp2": "",
+            "openssl": "0.0.0",
+            "simdjson": "4.6.11",
+            "simdutf": "7.7.0",
+            "sqlite": "3.53.4",
+            "tz": "2026e",
+            "undici": "7.30.1",
+            "unicode": "17.0",
+            "uv": "1.52.1",
+            "uvwasi": "0.0.23",
+            "v8": "15.6.75.19-electron.0",
+            "zlib": "1.3.2.1-motley",
+            "zstd": "1.6.0",
+            "electron": "45.1.0",
+            "chrome": "156.0.8078.49"
+          },
+          "display": {
+            "bounds": {
+              "x": 0,
+              "y": 0,
+              "width": 1920,
+              "height": 1080
+            },
+            "workArea": {
+              "x": 0,
+              "y": 0,
+              "width": 1920,
+              "height": 1032
+            },
+            "scaleFactor": 1,
+            "refreshRate": 60
+          },
+          "contentSize": {
+            "width": 1440,
+            "height": 952
+          },
+          "gpu": {
+            "auxAttributes": {
+              "amdSwitchable": false,
+              "canSupportThreadedTextureMailbox": false,
+              "directMLFeatureLevel": "Not supported",
+              "dx12FeatureLevel": "Not supported",
+              "glImplementationParts": "(gl=none,angle=none)",
+              "glResetNotificationStrategy": 0,
+              "inProcessGpu": true,
+              "initializationTime": 0,
+              "isAsan": false,
+              "isClangCoverage": false,
+              "jpegDecodeAcceleratorSupported": false,
+              "optimus": false,
+              "overlayInfo": {
+                "bgra8OverlaySupport": "NONE",
+                "directComposition": false,
+                "nv12OverlaySupport": "NONE",
+                "p010OverlaySupport": "NONE",
+                "rgb10a2OverlaySupport": "NONE",
+                "supportsOverlays": false,
+                "yuy2OverlaySupport": "NONE"
+              },
+              "passthroughCmdDecoder": false,
+              "sandboxed": false,
+              "skiaBackendType": "None",
+              "subpixelFontRendering": true,
+              "supportsD3dSharedImages": false,
+              "supportsDirectML": false,
+              "supportsDx12": false,
+              "supportsVulkan": false,
+              "targetCpuBits": 64,
+              "visibilityCallbackCallCount": 0,
+              "vulkanVersion": "Not supported"
+            },
+            "gpuDevice": [
+              {
+                "active": false,
+                "deviceId": 42785,
+                "deviceString": "Intel(R) UHD Graphics",
+                "driverVersion": "32.0.101.7088",
+                "gpuPreference": 0,
+                "revision": 4,
+                "subSysId": -1954803652,
+                "vendorId": 32902
+              },
+              {
+                "active": false,
+                "deviceId": 140,
+                "deviceString": "Microsoft Basic Render Driver",
+                "driverVersion": "10.0.22621.5415",
+                "gpuPreference": 0,
+                "revision": 0,
+                "subSysId": 0,
+                "vendorId": 5140
+              }
+            ]
+          },
+          "gpuFeatures": {
+            "2d_canvas": "enabled",
+            "direct_rendering_display_compositor": "disabled_off_ok",
+            "gpu_compositing": "enabled",
+            "multiple_raster_threads": "enabled_on",
+            "opengl": "enabled_on",
+            "rasterization": "enabled",
+            "raw_draw": "disabled_off_ok",
+            "skia_graphite": "disabled_off",
+            "trees_in_viz": "disabled_off",
+            "video_decode": "enabled",
+            "video_encode": "enabled",
+            "webgl": "enabled",
+            "webgpu": "enabled",
+            "webnn": "disabled_off"
+          },
+          "onBatteryPower": false,
+          "webPreferences": {
+            "contextIsolation": true,
+            "nodeIntegration": false,
+            "sandbox": true,
+            "webviewTag": true
+          },
+          "profileIsolated": true,
+          "gpuComplete": {
+            "auxAttributes": {
+              "amdSwitchable": false,
+              "canSupportThreadedTextureMailbox": false,
+              "directMLFeatureLevel": "Not supported",
+              "displayType": "ANGLE_D3D11",
+              "dx12FeatureLevel": "Not supported",
+              "glExtensions": "GL_AMD_performance_monitor GL_ANGLE_base_vertex_base_instance_shader_builtin GL_ANGLE_blob_cache GL_ANGLE_client_arrays GL_ANGLE_clip_cull_distance GL_ANGLE_copy_texture_3d GL_ANGLE_depth_texture GL_ANGLE_framebuffer_blit GL_ANGLE_framebuffer_multisample GL_ANGLE_get_serialized_context_string GL_ANGLE_get_tex_level_parameter GL_ANGLE_instanced_arrays GL_ANGLE_memory_size GL_ANGLE_multiview_multisample GL_ANGLE_pack_reverse_row_order GL_ANGLE_polygon_mode GL_ANGLE_program_binary_readiness_query GL_ANGLE_program_cache_control GL_ANGLE_provoking_vertex GL_ANGLE_renderability_validation GL_ANGLE_request_extension GL_ANGLE_robust_client_memory GL_ANGLE_shader_pixel_local_storage GL_ANGLE_shader_pixel_local_storage_coherent GL_ANGLE_stencil_texturing GL_ANGLE_texture_compression_dxt3 GL_ANGLE_texture_compression_dxt5 GL_ANGLE_texture_multisample GL_ANGLE_texture_usage GL_ANGLE_translated_shader_source GL_APPLE_clip_distance GL_ARM_rgba8 GL_CHROMIUM_bind_generates_resource GL_CHROMIUM_bind_uniform_location GL_CHROMIUM_copy_compressed_texture GL_CHROMIUM_copy_texture GL_CHROMIUM_lose_context GL_EXT_EGL_image_external_wrap_modes GL_EXT_base_instance GL_EXT_blend_func_extended GL_EXT_blend_minmax GL_EXT_clip_control GL_EXT_clip_cull_distance GL_EXT_color_buffer_float GL_EXT_color_buffer_half_float GL_EXT_conservative_depth GL_EXT_debug_label GL_EXT_debug_marker GL_EXT_depth_clamp GL_EXT_discard_framebuffer GL_EXT_disjoint_timer_query GL_EXT_draw_buffers GL_EXT_draw_buffers_indexed GL_EXT_draw_elements_base_vertex GL_EXT_float_blend GL_EXT_frag_depth GL_EXT_instanced_arrays GL_EXT_map_buffer_range GL_EXT_occlusion_query_boolean GL_EXT_polygon_offset_clamp GL_EXT_read_format_bgra GL_EXT_render_snorm GL_EXT_robustness GL_EXT_sRGB GL_EXT_shader_texture_lod GL_EXT_texture_border_clamp GL_EXT_texture_compression_bptc GL_EXT_texture_compression_dxt1 GL_EXT_texture_compression_rgtc GL_EXT_texture_compression_s3tc_srgb GL_EXT_texture_filter_anisotropic GL_EXT_texture_format_BGRA8888 GL_EXT_texture_mirror_clamp_to_edge GL_EXT_texture_norm16 GL_EXT_texture_rg GL_EXT_texture_storage GL_EXT_texture_type_2_10_10_10_REV GL_EXT_unpack_subimage GL_KHR_debug GL_KHR_parallel_shader_compile GL_KHR_robustness GL_NV_EGL_stream_consumer_external GL_NV_fence GL_NV_framebuffer_blit GL_NV_pack_subimage GL_NV_pixel_buffer_object GL_NV_shader_noperspective_interpolation GL_OES_EGL_image GL_OES_EGL_image_external GL_OES_EGL_image_external_essl3 GL_OES_depth24 GL_OES_depth32 GL_OES_draw_buffers_indexed GL_OES_draw_elements_base_vertex GL_OES_element_index_uint GL_OES_fbo_render_mipmap GL_OES_get_program_binary GL_OES_mapbuffer GL_OES_packed_depth_stencil GL_OES_required_internalformat GL_OES_rgb8_rgba8 GL_OES_sample_variables GL_OES_shader_multisample_interpolation GL_OES_standard_derivatives GL_OES_surfaceless_context GL_OES_texture_border_clamp GL_OES_texture_float GL_OES_texture_float_linear GL_OES_texture_half_float GL_OES_texture_half_float_linear GL_OES_texture_npot GL_OES_texture_stencil8 GL_OES_texture_storage_multisample_2d_array GL_OES_vertex_array_object GL_OVR_multiview GL_OVR_multiview2 ",
+              "glImplementationParts": "(gl=egl-angle,angle=d3d11)",
+              "glRenderer": "ANGLE (Intel, Intel(R) UHD Graphics (0x0000A721) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.101.7088)",
+              "glResetNotificationStrategy": 33362,
+              "glVendor": "Google Inc. (Intel)",
+              "glVersion": "OpenGL ES 3.0 (ANGLE 2.1.28973 git hash: 3b89d84e9d59)",
+              "glWsExtensions": "EGL_EXT_create_context_robustness EGL_ANGLE_d3d_share_handle_client_buffer EGL_ANGLE_d3d_texture_client_buffer EGL_ANGLE_surface_d3d_texture_2d_share_handle EGL_ANGLE_query_surface_pointer EGL_ANGLE_window_fixed_size EGL_ANGLE_keyed_mutex EGL_ANGLE_surface_orientation EGL_ANGLE_direct_composition EGL_NV_post_sub_buffer EGL_KHR_create_context EGL_KHR_image EGL_KHR_image_base EGL_KHR_gl_texture_2D_image EGL_KHR_gl_texture_cubemap_image EGL_KHR_gl_renderbuffer_image EGL_KHR_get_all_proc_addresses EGL_KHR_stream EGL_KHR_stream_consumer_gltexture EGL_NV_stream_consumer_gltexture_yuv EGL_ANGLE_stream_producer_d3d_texture EGL_ANGLE_create_context_webgl_compatibility EGL_CHROMIUM_create_context_bind_generates_resource EGL_CHROMIUM_sync_control EGL_EXT_pixel_format_float EGL_KHR_surfaceless_context EGL_ANGLE_display_texture_share_group EGL_ANGLE_display_semaphore_share_group EGL_ANGLE_create_context_client_arrays EGL_ANGLE_program_cache_control EGL_ANGLE_robust_resource_initialization EGL_ANGLE_create_context_extensions_enabled EGL_ANDROID_blob_cache EGL_ANDROID_recordable EGL_ANGLE_image_d3d11_texture EGL_ANGLE_create_context_backwards_compatible EGL_KHR_no_config_context EGL_KHR_create_context_no_error EGL_KHR_reusable_sync EGL_ANGLE_memory_usage_report ",
+              "glWsVendor": "Google Inc. (Intel)",
+              "glWsVersion": "1.5 (ANGLE 2.1.28973 git hash: 3b89d84e9d59)",
+              "inProcessGpu": false,
+              "initializationTime": 156.908,
+              "isAsan": false,
+              "isClangCoverage": false,
+              "jpegDecodeAcceleratorSupported": false,
+              "maxMsaaSamples": "8",
+              "optimus": false,
+              "overlayInfo": {
+                "bgra8OverlaySupport": "SCALING",
+                "directComposition": true,
+                "nv12OverlaySupport": "SCALING",
+                "p010OverlaySupport": "SOFTWARE",
+                "rgb10a2OverlaySupport": "SCALING",
+                "supportsOverlays": true,
+                "yuy2OverlaySupport": "SCALING"
+              },
+              "passthroughCmdDecoder": true,
+              "pixelShaderVersion": "5.0",
+              "sandboxed": true,
+              "skiaBackendType": "GaneshGL",
+              "subpixelFontRendering": true,
+              "supportsD3dSharedImages": true,
+              "supportsDirectML": false,
+              "supportsDx12": false,
+              "supportsVulkan": false,
+              "targetCpuBits": 64,
+              "vertexShaderVersion": "5.0",
+              "videoDecodeAcceleratorSupportedProfile": {
+                "encrypted_only": false,
+                "maxResolutionHeight": 16384,
+                "maxResolutionWidth": 16384,
+                "minResolutionHeight": 64,
+                "minResolutionWidth": 64,
+                "profile": 29
+              },
+              "visibilityCallbackCallCount": 0,
+              "vulkanVersion": "Not supported"
+            },
+            "gpuDevice": [
+              {
+                "active": true,
+                "deviceId": 42785,
+                "deviceString": "Intel(R) UHD Graphics",
+                "driverVendor": "Intel",
+                "driverVersion": "32.0.101.7088",
+                "gpuPreference": 0,
+                "revision": 4,
+                "subSysId": -1954803652,
+                "vendorId": 32902
+              },
+              {
+                "active": false,
+                "deviceId": 140,
+                "deviceString": "Microsoft Basic Render Driver",
+                "driverVersion": "10.0.22621.5415",
+                "gpuPreference": 0,
+                "revision": 0,
+                "subSysId": 0,
+                "vendorId": 5140
+              }
+            ]
+          },
+          "hardwareAccelerationEnabled": true,
+          "windowBounds": {
+            "x": 10,
+            "y": 10,
+            "width": 1456,
+            "height": 991
+          },
+          "commandSwitches": {
+            "disableGpu": false,
+            "disableGpuCompositing": false
+          }
+        },
+        "browserVersion": "156.0.8078.49"
+      },
+      "repetitions": 5,
+      "baselineCommit": "c7c638e",
+      "candidateBaseCommit": "cb728284269ab1f98fa44e74afa1648660d025da",
+      "rejectedAttempts": [],
+      "variants": {
+        "baseline": {
+          "continuousMedianMs": {
+            "median": 66.60000000000218,
+            "min": 66.60000000000218,
+            "max": 66.70000000000073
+          },
+          "continuousWorstMs": {
+            "median": 100,
+            "min": 83.59999999999854,
+            "max": 100.29999999999927
+          },
+          "startWorstMs": {
+            "median": 33.29999999999927,
+            "min": 33.20000000000073,
+            "max": 50.10000000000218
+          },
+          "stopWorstMs": {
+            "median": 33.29999999999927,
+            "min": 33.20000000000073,
+            "max": 33.29999999999927
+          },
+          "primary": [
+            {
+              "index": 0,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 94658,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 800,
+                "windowedProjectLists": 0,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 4,
+                  "maxInterval": 33.29999999999927,
+                  "medianInterval": 16.599999999998545
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 100.29999999999927,
+                  "medianInterval": 66.60000000000218
+                },
+                "stop": {
+                  "samples": 4,
+                  "maxInterval": 33.20000000000073,
+                  "medianInterval": 16.599999999998545
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 71
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 118560,
+                    "peakWorkingSetSize": 125032,
+                    "privateBytes": 83840
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 387816,
+                    "peakWorkingSetSize": 402020,
+                    "privateBytes": 346060
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 58200,
+                    "peakWorkingSetSize": 58640,
+                    "privateBytes": 18368
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1709384,
+                    "peakWorkingSetSize": 1726972,
+                    "privateBytes": 1648160
+                  }
+                }
+              ]
+            },
+            {
+              "index": 1,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 94658,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 800,
+                "windowedProjectLists": 0,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 5,
+                  "maxInterval": 50.10000000000218,
+                  "medianInterval": 16.600000000002183
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 83.59999999999854,
+                  "medianInterval": 66.60000000000218
+                },
+                "stop": {
+                  "samples": 3,
+                  "maxInterval": 33.29999999999927,
+                  "medianInterval": 16.700000000000728
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 71
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 120612,
+                    "peakWorkingSetSize": 124504,
+                    "privateBytes": 86856
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 354080,
+                    "peakWorkingSetSize": 412972,
+                    "privateBytes": 312992
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 58072,
+                    "peakWorkingSetSize": 58660,
+                    "privateBytes": 18336
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1793088,
+                    "peakWorkingSetSize": 1799812,
+                    "privateBytes": 1743972
+                  }
+                }
+              ]
+            },
+            {
+              "index": 2,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 94658,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 800,
+                "windowedProjectLists": 0,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 4,
+                  "maxInterval": 33.29999999999927,
+                  "medianInterval": 16.799999999999272
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 100,
+                  "medianInterval": 66.60000000000218
+                },
+                "stop": {
+                  "samples": 4,
+                  "maxInterval": 33.20000000000073,
+                  "medianInterval": 16.700000000000728
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 71
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 118276,
+                    "peakWorkingSetSize": 121644,
+                    "privateBytes": 84368
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 302776,
+                    "peakWorkingSetSize": 396408,
+                    "privateBytes": 262104
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 58100,
+                    "peakWorkingSetSize": 58676,
+                    "privateBytes": 18248
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1675744,
+                    "peakWorkingSetSize": 1691748,
+                    "privateBytes": 1612772
+                  }
+                }
+              ]
+            },
+            {
+              "index": 3,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 94658,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 800,
+                "windowedProjectLists": 0,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 4,
+                  "maxInterval": 33.20000000000073,
+                  "medianInterval": 16.5
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 100.10000000000218,
+                  "medianInterval": 66.60000000000218
+                },
+                "stop": {
+                  "samples": 3,
+                  "maxInterval": 33.29999999999927,
+                  "medianInterval": 16.600000000002183
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 70
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 118252,
+                    "peakWorkingSetSize": 121856,
+                    "privateBytes": 84292
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 383432,
+                    "peakWorkingSetSize": 409492,
+                    "privateBytes": 343072
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 57968,
+                    "peakWorkingSetSize": 58628,
+                    "privateBytes": 18244
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1697272,
+                    "peakWorkingSetSize": 1727524,
+                    "privateBytes": 1634432
+                  }
+                }
+              ]
+            },
+            {
+              "index": 4,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 94658,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 800,
+                "windowedProjectLists": 0,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 4,
+                  "maxInterval": 34.20000000000073,
+                  "medianInterval": 16.700000000000728
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 100,
+                  "medianInterval": 66.70000000000073
+                },
+                "stop": {
+                  "samples": 4,
+                  "maxInterval": 33.29999999999927,
+                  "medianInterval": 16.700000000000728
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 71
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 118656,
+                    "peakWorkingSetSize": 122528,
+                    "privateBytes": 84484
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 344100,
+                    "peakWorkingSetSize": 410232,
+                    "privateBytes": 304880
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 57964,
+                    "peakWorkingSetSize": 58840,
+                    "privateBytes": 18160
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1660400,
+                    "peakWorkingSetSize": 1667148,
+                    "privateBytes": 1615008
+                  }
+                }
+              ]
+            }
+          ],
+          "diagnostic": {
+            "counts": {
+              "apps": 50,
+              "notes": 12,
+              "projects": 8,
+              "git": 10,
+              "scripts": 7,
+              "cabinets": 7,
+              "queryViews": 6,
+              "terminals": 8,
+              "elements": 94658,
+              "notesBlocks": 1200,
+              "gitCommits": 1500,
+              "scriptRows": 140,
+              "projectRows": 800,
+              "windowedProjectLists": 0,
+              "blur": "blur(8px) saturate(1.2)",
+              "dotsVisibility": "visible"
+            },
+            "traceWork": {
+              "Layerize": {
+                "count": 63,
+                "aggregateMs": 2145.122,
+                "maxMs": 47.243
+              },
+              "Paint": {
+                "count": 2261,
+                "aggregateMs": 2929.27,
+                "maxMs": 40.953
+              },
+              "RasterTask": {
+                "count": 4307,
+                "aggregateMs": 869.178,
+                "maxMs": 2.007
+              },
+              "Layout": {
+                "count": 0,
+                "aggregateMs": 0,
+                "maxMs": 0
+              },
+              "UpdateLayoutTree": {
+                "count": 59,
+                "aggregateMs": 5.096,
+                "maxMs": 0.406
+              },
+              "FunctionCall": {
+                "count": 339,
+                "aggregateMs": 16.242,
+                "maxMs": 1.188
+              }
+            },
+            "validity": {
+              "focused": true,
+              "visible": true,
+              "focusLosses": 0,
+              "hidden": 0,
+              "samples": 72
+            },
+            "appearance": {
+              "pan": {
+                "before": {
+                  "x": -288,
+                  "y": -136,
+                  "scale": 0.2,
+                  "blur": "blur(8px) saturate(1.2)"
+                },
+                "during": {
+                  "projectRows": [
+                    {
+                      "app": "app-42",
+                      "x": 1563.3499755859375,
+                      "y": 708.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-43",
+                      "x": 75.35000610351562,
+                      "y": 868.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-44",
+                      "x": 323.3500061035156,
+                      "y": 868.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-45",
+                      "x": 571.3499755859375,
+                      "y": 868.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-46",
+                      "x": 819.3499755859375,
+                      "y": 868.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-47",
+                      "x": 1067.3499755859375,
+                      "y": 868.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-48",
+                      "x": 1315.3499755859375,
+                      "y": 868.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-49",
+                      "x": 1563.3499755859375,
+                      "y": 868.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    }
+                  ],
+                  "x": -250.65,
+                  "y": -158.65,
+                  "cursor": "grabbing",
+                  "blur": "blur(8px) saturate(1.2)"
+                },
+                "after": {
+                  "x": -288,
+                  "y": -136,
+                  "scale": 0.2,
+                  "blur": "blur(8px) saturate(1.2)",
+                  "pointerEvents": "none"
+                },
+                "note": "Active-gesture and restored snapshots, not evidence of physical frame presentation."
+              },
+              "returned": {
+                "scale": 1.0307977294921875,
+                "willChange": "auto",
+                "blur": "blur(8px) saturate(1.2)"
+              }
+            }
+          }
+        },
+        "candidate": {
+          "continuousMedianMs": {
+            "median": 66.59999999999854,
+            "min": 50.20000000000073,
+            "max": 66.59999999999854
+          },
+          "continuousWorstMs": {
+            "median": 99.89999999999782,
+            "min": 66.79999999999927,
+            "max": 100.39999999999782
+          },
+          "startWorstMs": {
+            "median": 33.400000000001455,
+            "min": 33.29999999999927,
+            "max": 50.10000000000218
+          },
+          "stopWorstMs": {
+            "median": 33.29999999999927,
+            "min": 33.29999999999927,
+            "max": 33.39999999999782
+          },
+          "primary": [
+            {
+              "index": 0,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 77962,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 104,
+                "windowedProjectLists": 8,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 5,
+                  "maxInterval": 50.10000000000218,
+                  "medianInterval": 16.69999999999709
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 83.40000000000146,
+                  "medianInterval": 66.5
+                },
+                "stop": {
+                  "samples": 3,
+                  "maxInterval": 33.29999999999927,
+                  "medianInterval": 16.80000000000291
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 71
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 119632,
+                    "peakWorkingSetSize": 127060,
+                    "privateBytes": 85184
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 383200,
+                    "peakWorkingSetSize": 436596,
+                    "privateBytes": 340544
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 57984,
+                    "peakWorkingSetSize": 58384,
+                    "privateBytes": 18408
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1544492,
+                    "peakWorkingSetSize": 1580380,
+                    "privateBytes": 1477776
+                  }
+                }
+              ]
+            },
+            {
+              "index": 1,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 77962,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 104,
+                "windowedProjectLists": 8,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 4,
+                  "maxInterval": 33.30000000000291,
+                  "medianInterval": 16.5
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 66.79999999999927,
+                  "medianInterval": 50.20000000000073
+                },
+                "stop": {
+                  "samples": 3,
+                  "maxInterval": 33.29999999999927,
+                  "medianInterval": 17.100000000002183
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 70
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 118416,
+                    "peakWorkingSetSize": 121160,
+                    "privateBytes": 85616
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 353092,
+                    "peakWorkingSetSize": 439564,
+                    "privateBytes": 312176
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 58084,
+                    "peakWorkingSetSize": 58788,
+                    "privateBytes": 18296
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1569308,
+                    "peakWorkingSetSize": 1600272,
+                    "privateBytes": 1503100
+                  }
+                }
+              ]
+            },
+            {
+              "index": 2,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 77962,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 104,
+                "windowedProjectLists": 8,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 4,
+                  "maxInterval": 33.400000000001455,
+                  "medianInterval": 16.64600000000064
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 100.39999999999782,
+                  "medianInterval": 66.59999999999854
+                },
+                "stop": {
+                  "samples": 4,
+                  "maxInterval": 33.29999999999927,
+                  "medianInterval": 16.600000000002183
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 71
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 121444,
+                    "peakWorkingSetSize": 124328,
+                    "privateBytes": 88348
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 301932,
+                    "peakWorkingSetSize": 419292,
+                    "privateBytes": 255548
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 58176,
+                    "peakWorkingSetSize": 58688,
+                    "privateBytes": 18312
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1652812,
+                    "peakWorkingSetSize": 1658380,
+                    "privateBytes": 1593888
+                  }
+                }
+              ]
+            },
+            {
+              "index": 3,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 77962,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 104,
+                "windowedProjectLists": 8,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 6,
+                  "maxInterval": 33.29999999999927,
+                  "medianInterval": 16.64600000000064
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 99.89999999999782,
+                  "medianInterval": 66.59999999999854
+                },
+                "stop": {
+                  "samples": 3,
+                  "maxInterval": 33.29999999999927,
+                  "medianInterval": 16.600000000002183
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 72
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 121416,
+                    "peakWorkingSetSize": 124304,
+                    "privateBytes": 88060
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 350204,
+                    "peakWorkingSetSize": 410412,
+                    "privateBytes": 303392
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 58624,
+                    "peakWorkingSetSize": 59400,
+                    "privateBytes": 18364
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1532564,
+                    "peakWorkingSetSize": 1587484,
+                    "privateBytes": 1459664
+                  }
+                }
+              ]
+            },
+            {
+              "index": 4,
+              "counts": {
+                "apps": 50,
+                "notes": 12,
+                "projects": 8,
+                "git": 10,
+                "scripts": 7,
+                "cabinets": 7,
+                "queryViews": 6,
+                "terminals": 8,
+                "elements": 77962,
+                "notesBlocks": 1200,
+                "gitCommits": 1500,
+                "scriptRows": 140,
+                "projectRows": 104,
+                "windowedProjectLists": 8,
+                "blur": "blur(8px) saturate(1.2)",
+                "dotsVisibility": "visible"
+              },
+              "panPhases": {
+                "start": {
+                  "samples": 4,
+                  "maxInterval": 34.31200000000172,
+                  "medianInterval": 16.80000000000291
+                },
+                "continuous": {
+                  "samples": 62,
+                  "maxInterval": 100,
+                  "medianInterval": 66.59999999999854
+                },
+                "stop": {
+                  "samples": 3,
+                  "maxInterval": 33.39999999999782,
+                  "medianInterval": 17.100000000002183
+                }
+              },
+              "validity": {
+                "focused": true,
+                "visible": true,
+                "focusLosses": 0,
+                "hidden": 0,
+                "samples": 70
+              },
+              "processMemoryAfterKB": [
+                {
+                  "type": "Browser",
+                  "memory": {
+                    "workingSetSize": 121088,
+                    "peakWorkingSetSize": 124188,
+                    "privateBytes": 88076
+                  }
+                },
+                {
+                  "type": "GPU",
+                  "memory": {
+                    "workingSetSize": 357844,
+                    "peakWorkingSetSize": 419200,
+                    "privateBytes": 313348
+                  }
+                },
+                {
+                  "type": "Utility",
+                  "memory": {
+                    "workingSetSize": 57888,
+                    "peakWorkingSetSize": 58492,
+                    "privateBytes": 18204
+                  }
+                },
+                {
+                  "type": "Tab",
+                  "memory": {
+                    "workingSetSize": 1643084,
+                    "peakWorkingSetSize": 1648744,
+                    "privateBytes": 1587296
+                  }
+                }
+              ]
+            }
+          ],
+          "diagnostic": {
+            "counts": {
+              "apps": 50,
+              "notes": 12,
+              "projects": 8,
+              "git": 10,
+              "scripts": 7,
+              "cabinets": 7,
+              "queryViews": 6,
+              "terminals": 8,
+              "elements": 77962,
+              "notesBlocks": 1200,
+              "gitCommits": 1500,
+              "scriptRows": 140,
+              "projectRows": 104,
+              "windowedProjectLists": 8,
+              "blur": "blur(8px) saturate(1.2)",
+              "dotsVisibility": "visible"
+            },
+            "traceWork": {
+              "Layerize": {
+                "count": 62,
+                "aggregateMs": 1725.377,
+                "maxMs": 43.224
+              },
+              "Paint": {
+                "count": 2259,
+                "aggregateMs": 2603.158,
+                "maxMs": 32.87
+              },
+              "RasterTask": {
+                "count": 4336,
+                "aggregateMs": 852.897,
+                "maxMs": 1.447
+              },
+              "Layout": {
+                "count": 0,
+                "aggregateMs": 0,
+                "maxMs": 0
+              },
+              "UpdateLayoutTree": {
+                "count": 59,
+                "aggregateMs": 5.143,
+                "maxMs": 0.409
+              },
+              "FunctionCall": {
+                "count": 344,
+                "aggregateMs": 14.733,
+                "maxMs": 0.852
+              }
+            },
+            "validity": {
+              "focused": true,
+              "visible": true,
+              "focusLosses": 0,
+              "hidden": 0,
+              "samples": 70
+            },
+            "appearance": {
+              "pan": {
+                "before": {
+                  "x": -288,
+                  "y": -136,
+                  "scale": 0.2,
+                  "blur": "blur(8px) saturate(1.2)"
+                },
+                "during": {
+                  "projectRows": [
+                    {
+                      "app": "app-42",
+                      "x": 1563.3499755859375,
+                      "y": 708.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-43",
+                      "x": 75.35000610351562,
+                      "y": 868.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-44",
+                      "x": 323.3500061035156,
+                      "y": 868.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-45",
+                      "x": 571.3499755859375,
+                      "y": 868.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-46",
+                      "x": 819.3499755859375,
+                      "y": 868.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-47",
+                      "x": 1067.3499755859375,
+                      "y": 868.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-48",
+                      "x": 1315.3499755859375,
+                      "y": 868.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    },
+                    {
+                      "app": "app-49",
+                      "x": 1563.3499755859375,
+                      "y": 868.3499755859375,
+                      "width": 154,
+                      "height": 55,
+                      "scrollTop": 0,
+                      "scrollHeight": 4000,
+                      "clientHeight": 275
+                    }
+                  ],
+                  "x": -250.65,
+                  "y": -158.65,
+                  "cursor": "grabbing",
+                  "blur": "blur(8px) saturate(1.2)"
+                },
+                "after": {
+                  "x": -288,
+                  "y": -136,
+                  "scale": 0.2,
+                  "blur": "blur(8px) saturate(1.2)",
+                  "pointerEvents": "none"
+                },
+                "note": "Active-gesture and restored snapshots, not evidence of physical frame presentation."
+              },
+              "returned": {
+                "scale": 1.0307977294921875,
+                "willChange": "auto",
+                "blur": "blur(8px) saturate(1.2)"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "limits": [
+    "Alternating baseline/candidate production builds with identical populated payloads. External operations are mocked; SQLite and the native Electron shell are real and isolated.",
+    "Median/min/max summarize per-run callback statistics, not physical presented FPS, input latency or stable tail percentiles.",
+    "Separate traces add overhead; nested paint and parallel raster event sums are not exclusive CPU or wall time.",
+    "Overview app intersections and geometry are reported explicitly; the mixed fixture does not fit all fifty large apps onscreen.",
+    "No forced GC, heap stabilization, 100-cycle or thirty-minute soak claim. Process memory is separate working/private/peak values in Electron kilobytes.",
+    "Terminal output is prepopulated before pan and stays static during timing. Query outputs, expanded deployments and large diffs are not included.",
+    "Potentially wrapping names and horizontally overflowing lists use the original full-list rendering path; native Find sees only mounted text in windowed lists."
+  ]
+}
