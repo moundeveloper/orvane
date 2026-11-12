@@ -8,6 +8,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  nativeImage,
   screen,
   session,
   shell,
@@ -15,6 +16,7 @@ import {
   webFrameMain,
 } from "electron";
 import { spawn } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { setupPasswords } from "./passwords.mjs";
@@ -58,6 +60,45 @@ const CANVAS_GESTURES = `(() => {
     if (moved) stop(event);
   }, true);
   addEventListener("auxclick", (event) => { if (event.button === 1 && moved) stop(event); }, true);
+  // Any press in the page tells the Browser which pane is in use.
+  addEventListener("pointerdown", () => send({ kind: "focus" }), true);
+  // Links: Shift-click previews in a Peek, Alt-click opens beside this page,
+  // and a pinned page previews links that leave its site instead of leaving.
+  const site = (host) => host.replace(/^www[.]/, "").split(".").slice(-2).join(".");
+  addEventListener("click", (event) => {
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.defaultPrevented) return;
+    const link = event.target instanceof Element && event.target.closest("a[href]");
+    if (!link || !/^https?:/.test(link.href)) return;
+    let kind = event.shiftKey ? "peek" : event.altKey ? "split" : "";
+    if (!kind && window.__orvanePinned && link.target !== "_blank" && !link.hasAttribute("download")) {
+      try { if (site(new URL(link.href).hostname) !== site(location.hostname)) kind = "peek"; } catch {}
+    }
+    if (!kind) return;
+    stop(event);
+    send({ kind, url: link.href });
+  }, true);
+  // Browser shortcuts pressed while the page has focus.
+  addEventListener("keydown", (event) => {
+    const key = event.key.toLowerCase();
+    const mod = event.ctrlKey || event.metaKey;
+    let name;
+    if (event.altKey && key === "arrowleft") name = mod ? "space-back" : "history-back";
+    else if (event.altKey && key === "arrowright") name = mod ? "space-next" : "history-forward";
+    else if (key === "escape") {
+      send({ kind: "key", name: "escape" });
+      return;
+    } else if (mod && !event.altKey) {
+      if (key === "tab") name = event.shiftKey ? "tab-back" : "tab-next";
+      else if (event.shiftKey) name = ({ a: "search", c: "copy-url", t: "reopen-tab" })[key];
+      else if (/^[1-9]$/.test(key)) name = "tab-" + key;
+      else name = ({ k: "search", l: "address", t: "new-tab", w: "close-tab", b: "library",
+        o: "promote-peek", [String.fromCharCode(92)]: "sidebar" })[key];
+    }
+    if (!name) return;
+    stop(event);
+    send({ kind: "key", name });
+  }, true);
+  addEventListener("keyup", (event) => { if (event.key === "Control" || event.key === "Meta") send({ kind: "key", name: "release" }); }, true);
 })();`;
 // Separate profile (sessions, cookies) for tests or a second setup.
 if (process.env.ORVANE_USER_DATA)
@@ -172,9 +213,13 @@ function secure() {
       // that only this process reads.
       contents.on("dom-ready", () => {
         contents
-          .executeJavaScriptInIsolatedWorld(CANVAS_WORLD, [{ code: CANVAS_GESTURES }])
+          .executeJavaScriptInIsolatedWorld(CANVAS_WORLD, [
+            { code: `window.__orvanePinned = ${pinnedGuests.has(contents.id)};` },
+            { code: CANVAS_GESTURES },
+          ])
           .catch(() => undefined);
       });
+      contents.on("destroyed", () => pinnedGuests.delete(contents.id));
       // Iframes (NetSuite's Setup Manager…) get their own input, so they need
       // the listener too; Electron can only run it in their main world there.
       contents.on("did-frame-finish-load", (_event, isMainFrame, processId, routingId) => {
@@ -220,6 +265,18 @@ function secure() {
         }
         if (input?.kind === "pan-start") return startPan();
         if (input?.kind === "pan-end") return stopPan();
+        if (input?.kind === "focus")
+          return void contents.hostWebContents?.send("orvane:guest-input", { from: contents.id, kind: "focus" });
+        if (input?.kind === "peek" || input?.kind === "split") {
+          if (typeof input.url === "string" && web(input.url) && !isOrvane(input.url))
+            contents.hostWebContents?.send("orvane:guest-input", { from: contents.id, kind: input.kind, url: input.url });
+          return;
+        }
+        if (input?.kind === "key") {
+          if (typeof input.name === "string" && /^(?:[a-z-]{1,16}|tab-[1-9])$/.test(input.name))
+            contents.hostWebContents?.send("orvane:guest-input", { from: contents.id, kind: "key", name: input.name });
+          return;
+        }
         const finite = (...values) => values.every((v) => Number.isFinite(v) && Math.abs(v) < 1e5);
         if (input?.kind !== "zoom" || !finite(input.x, input.y, input.deltaY)) return;
         let relay = { kind: "zoom", x: input.x, y: input.y, deltaY: input.deltaY };
@@ -244,6 +301,8 @@ function secure() {
       contents.on("context-menu", (_event, params) => {
         const items = [];
         if (web(params.linkURL) && !isOrvane(params.linkURL)) items.push(
+          { label: "Open link in Peek View", click: () => contents.hostWebContents?.send("orvane:guest-input", { from: contents.id, kind: "peek", url: params.linkURL }) },
+          { label: "Open link as Split", click: () => contents.hostWebContents?.send("orvane:guest-input", { from: contents.id, kind: "split", url: params.linkURL }) },
           { label: "Open link in new tab", click: () => contents.hostWebContents?.send("orvane:open-tab", { from: contents.id, url: params.linkURL, background: true }) },
           { label: "Copy link address", click: () => clipboard.writeText(params.linkURL) },
           { type: "separator" },
@@ -323,6 +382,110 @@ ipcMain.handle("orvane:page-density", (event, id, density) => {
     viewSize: { width: 0, height: 0 },
     scale: 1,
   });
+});
+
+// Which monitor Orvane opens on. The choice is kept by the display's id in
+// the profile folder; if that monitor is gone, the primary one is used and
+// the choice is kept for when it returns.
+const windowSettings = () => join(app.getPath("userData"), "window.json");
+function chosenDisplayId() {
+  try {
+    const id = JSON.parse(readFileSync(windowSettings(), "utf8")).displayId;
+    return typeof id === "number" ? id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+function chosenDisplay() {
+  const id = chosenDisplayId();
+  return (
+    screen.getAllDisplays().find((display) => display.id === id) ||
+    screen.getPrimaryDisplay()
+  );
+}
+function placeOn(window, display) {
+  if (window.isFullScreen()) window.setFullScreen(false);
+  if (window.isMaximized()) window.unmaximize();
+  window.setBounds(display.workArea);
+  window.maximize();
+}
+ipcMain.handle("orvane:displays", (event) => {
+  if (!isOrvane(event.senderFrame?.url || "")) return [];
+  const chosen = chosenDisplayId();
+  const primary = screen.getPrimaryDisplay().id;
+  return screen.getAllDisplays().map((display, index) => ({
+    id: display.id,
+    label: `${display.label || `Monitor ${index + 1}`} · ${display.size.width}×${display.size.height}${display.id === primary ? " · primary" : ""}`,
+    chosen: display.id === chosen,
+  }));
+});
+ipcMain.handle("orvane:display-set", (event, id) => {
+  if (!isOrvane(event.senderFrame?.url || "")) return false;
+  const display = screen.getAllDisplays().find((item) => item.id === id);
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!display || !window) return false;
+  try {
+    writeFileSync(windowSettings(), JSON.stringify({ displayId: display.id }));
+  } catch {
+    // The window still moves; the choice just is not remembered.
+  }
+  placeOn(window, display);
+  return true;
+});
+
+// Pinned Browser pages preview links that leave their site (see
+// CANVAS_GESTURES); the flag lives in the isolated world, unseen by the page.
+const pinnedGuests = new Set();
+ipcMain.handle("orvane:page-pinned", (event, id, pinned) => {
+  const guest = ownGuest(event, id);
+  if (!guest || typeof pinned !== "boolean") return;
+  if (pinned) pinnedGuests.add(guest.id);
+  else pinnedGuests.delete(guest.id);
+  guest
+    .executeJavaScriptInIsolatedWorld(CANVAS_WORLD, [{ code: `window.__orvanePinned = ${pinned};` }])
+    .catch(() => undefined);
+});
+
+// A picture of a Browser page as a PNG data URL, for Orvane to copy: what
+// is visible, an area of it, or the whole page (through a short debugger
+// session, skipped when the page is paused or another debugger owns it).
+ipcMain.handle("orvane:page-capture", async (event, id, mode, rect) => {
+  const guest = ownGuest(event, id);
+  if (!guest) return "";
+  let image;
+  try {
+    if (mode === "full" && !guest.debugger.isAttached()) {
+      guest.debugger.attach("1.3");
+      try {
+        const { cssContentSize: size } = await guest.debugger.sendCommand("Page.getLayoutMetrics", {});
+        const { data } = await guest.debugger.sendCommand("Page.captureScreenshot", {
+          format: "png",
+          captureBeyondViewport: true,
+          clip: { x: 0, y: 0, width: Math.min(size.width, 8000), height: Math.min(size.height, 16000), scale: 1 },
+        });
+        image = nativeImage.createFromBuffer(Buffer.from(data, "base64"));
+      } finally {
+        try { guest.debugger.detach(); } catch {}
+      }
+    } else {
+      const area =
+        mode === "area" && rect && [rect.x, rect.y, rect.width, rect.height].every((n) => Number.isFinite(n) && n >= 0 && n < 1e5) && rect.width >= 2 && rect.height >= 2
+          ? { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
+          : undefined;
+      // An explicit undefined is rejected as a rectangle.
+      image = await (area ? guest.capturePage(area) : guest.capturePage());
+    }
+  } catch {
+    return "";
+  }
+  return !image || image.isEmpty() ? "" : image.toDataURL();
+});
+
+// The close button in Orvane's top bar. Only Orvane's own window may ask,
+// and closing goes through the unsaved-changes guard in createWindow.
+ipcMain.handle("orvane:window-close", (event) => {
+  if (!isOrvane(event.senderFrame?.url || "")) return;
+  BrowserWindow.fromWebContents(event.sender)?.close();
 });
 
 /** A <webview> guest of the window that sent this IPC message, or nothing. */
@@ -445,13 +608,21 @@ ipcMain.handle("orvane:page-snapshot", async (event, id, picture) => {
 });
 
 function createWindow() {
+  const area = chosenDisplay().workArea;
   const window = new BrowserWindow({
-    width: 1440,
-    height: 900,
+    // Start on the chosen monitor so maximizing fills that one.
+    x: area.x,
+    y: area.y,
+    width: Math.min(1440, area.width),
+    height: Math.min(900, area.height),
     minWidth: 800,
     minHeight: 560,
     title: "Orvane",
     backgroundColor: "#e9eef1",
+    // No system title bar: Orvane's own top bar carries the drag area and
+    // the close button. Shown once maximized, so it never flashes small.
+    frame: false,
+    show: false,
     webPreferences: {
       preload: join(root, "electron/preload.cjs"),
       contextIsolation: true,
@@ -514,6 +685,8 @@ function createWindow() {
     // Already confirmed above; let the page unload (and release its lease).
     if (leaveAnyway || closing) event.preventDefault();
   });
+  window.maximize();
+  window.show();
   void window.loadURL(origin);
   return window;
 }

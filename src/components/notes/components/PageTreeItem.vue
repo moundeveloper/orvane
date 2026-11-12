@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useNotesPortal } from "../portal";
 import { computed, inject, ref, type ComputedRef } from "vue";
+import { TREE_EXPANDED } from "../pageTree";
 import { useNotesWorkspace } from "../stores/workspace";
 import type { Page } from "../types";
 
@@ -11,7 +12,16 @@ const openPageTab =
   inject<(id: string, activate?: boolean) => void>("openPageTab");
 const navigatePage = inject<(id: string) => void>("navigatePage");
 
-const expanded = ref(false);
+// One row. The sidebar owns which pages are expanded and renders the
+// children as further rows, so only the rows in view need to exist.
+const expandedPages = inject(TREE_EXPANDED, undefined);
+const expanded = computed({
+  get: () => !!expandedPages?.has(props.page.id),
+  set: (open) => {
+    if (open) expandedPages?.add(props.page.id);
+    else expandedPages?.delete(props.page.id);
+  },
+});
 const menuPos = ref<{ x: number; y: number } | null>(null);
 const portal = useNotesPortal();
 const dragOver = ref<"inside" | "above" | null>(null);
@@ -178,15 +188,6 @@ function onDrop(e: DragEvent) {
         </button>
       </span>
     </div>
-
-    <template v-if="expanded && !flat">
-      <PageTreeItem
-        v-for="c in children"
-        :key="c.id"
-        :page="c"
-        :depth="depth + 1"
-      />
-    </template>
 
     <Teleport :to="portal.target.value ?? 'body'">
       <div

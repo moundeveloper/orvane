@@ -1,5 +1,21 @@
 <script setup lang="ts">
-import { inject, ref, type Ref } from "vue";
+import {
+  computed,
+  inject,
+  onBeforeUnmount,
+  onMounted,
+  provide,
+  reactive,
+  ref,
+  watch,
+  type Ref,
+} from "vue";
+import {
+  TREE_EXPANDED,
+  TREE_ROW_HEIGHT,
+  flattenTree,
+  treeWindow,
+} from "../pageTree";
 import { useNotesWorkspace } from "../stores/workspace";
 import PageTreeItem from "./PageTreeItem.vue";
 import TrashPanel from "./TrashPanel.vue";
@@ -16,6 +32,46 @@ const openPageTab =
   inject<(id: string, activate?: boolean) => void>("openPageTab")!;
 
 const trashOpen = ref(false);
+
+// The page tree is flattened and only the rows near the viewport are
+// mounted; a spacer keeps the full scroll extent. Rows have one height.
+const expandedPages = reactive(new Set<string>());
+provide(TREE_EXPANDED, expandedPages);
+const rows = computed(() =>
+  flattenTree((parentId) => ws.childrenOf(parentId), expandedPages),
+);
+const scroller = ref<HTMLElement>(),
+  list = ref<HTMLElement>();
+const view = reactive({ top: 0, height: 0, listTop: 0 });
+let measureFrame = 0;
+function measure() {
+  measureFrame = 0;
+  const el = scroller.value;
+  if (!el) return;
+  view.top = el.scrollTop;
+  view.height = el.clientHeight;
+  view.listTop = list.value?.offsetTop ?? 0;
+}
+function scheduleMeasure() {
+  measureFrame ||= requestAnimationFrame(measure);
+}
+const mounted = computed(() =>
+  treeWindow(rows.value.length, view.top, view.height, view.listTop),
+);
+const resized =
+  typeof ResizeObserver === "undefined"
+    ? undefined
+    : new ResizeObserver(scheduleMeasure);
+onMounted(() => {
+  measure();
+  if (scroller.value) resized?.observe(scroller.value);
+});
+// Favorites above the tree move where it starts.
+watch(() => ws.favorites.length, scheduleMeasure, { flush: "post" });
+onBeforeUnmount(() => {
+  cancelAnimationFrame(measureFrame);
+  resized?.disconnect();
+});
 
 async function newPage(type: "page" | "database" = "page") {
   const p = await ws.createPage(null, "", type);
@@ -53,7 +109,7 @@ function onRootDrop(e: DragEvent) {
       <Icon name="box" :size="14" /> New database
     </button>
 
-    <div class="sb-scroll">
+    <div ref="scroller" class="sb-scroll" @scroll.passive="scheduleMeasure">
       <template v-if="ws.favorites.length">
         <div class="sb-label">Favorites</div>
         <PageTreeItem
@@ -66,16 +122,23 @@ function onRootDrop(e: DragEvent) {
       </template>
 
       <div class="sb-label">Pages</div>
-      <div @dragover.prevent @drop="onRootDrop">
+      <div
+        ref="list"
+        class="sb-tree"
+        :style="{
+          height: rows.length ? rows.length * TREE_ROW_HEIGHT + 'px' : undefined,
+          paddingTop: mounted.start * TREE_ROW_HEIGHT + 'px',
+        }"
+        @dragover.prevent
+        @drop="onRootDrop"
+      >
         <PageTreeItem
-          v-for="p in ws.childrenOf(null)"
-          :key="p.id"
-          :page="p"
-          :depth="0"
+          v-for="row in rows.slice(mounted.start, mounted.end)"
+          :key="row.page.id"
+          :page="row.page"
+          :depth="row.depth"
         />
-        <div v-if="!ws.childrenOf(null).length" class="sb-empty">
-          No pages yet
-        </div>
+        <div v-if="!rows.length" class="sb-empty">No pages yet</div>
       </div>
     </div>
 
@@ -150,6 +213,11 @@ function onRootDrop(e: DragEvent) {
   flex: 1;
   overflow-y: auto;
   padding: 4px 0 12px;
+  /* The tree measures its offset from this box. */
+  position: relative;
+}
+.sb-tree {
+  box-sizing: border-box;
 }
 .sb-label {
   padding: 12px 16px 4px;

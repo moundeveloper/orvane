@@ -113,6 +113,11 @@ const current = computed(() =>
   blocks.value.find((b) => b.id === selected.value),
 );
 const root = computed(() => props.app.blocks);
+// Browser pages must attach, load and keep their sessions while off screen,
+// so their app is never skipped from rendering.
+const hasLivePage = computed(() =>
+  blocks.value.some((block) => block.kind === "browser"),
+);
 const codeFills = computed(
   () =>
     current.value?.kind === "code" &&
@@ -490,6 +495,7 @@ defineExpose({
     :class="{
       'is-editing': editing,
       'app-headerless': app.showName === false && !editing,
+      'has-live-page': hasLivePage,
     }"
     :style="{
       '--app-accent': app.accent,

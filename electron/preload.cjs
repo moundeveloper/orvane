@@ -5,6 +5,12 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("orvaneDesktop", {
   webview: true,
+  /** The window has no system title bar; Orvane draws its own controls. */
+  frameless: true,
+  closeWindow: () => ipcRenderer.invoke("orvane:window-close"),
+  /** Monitors as [{ id, label, chosen }], and moving the window to one. */
+  displays: () => ipcRenderer.invoke("orvane:displays"),
+  setDisplay: (id) => ipcRenderer.invoke("orvane:display-set", id),
   partition: "persist:orvane-browser",
   /** Render a Browser page at this many device pixels per CSS pixel. */
   setPageDensity(webContentsId, density) {
@@ -21,6 +27,14 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
   /** Keep a picture of a page now on screen, shown if it is discarded. */
   rememberPage(webContentsId) {
     return ipcRenderer.invoke("orvane:page-remember", webContentsId);
+  },
+  /** A pinned page previews links that leave its site in a Peek. */
+  setPagePinned(webContentsId, pinned) {
+    return ipcRenderer.invoke("orvane:page-pinned", webContentsId, pinned);
+  },
+  /** A PNG data URL of a page: "visible", "full", or "area" with a rect. */
+  capturePage(webContentsId, mode, rect) {
+    return ipcRenderer.invoke("orvane:page-capture", webContentsId, mode, rect);
   },
   /** Canvas zoom/pan gestures made over a Browser page. */
   onGuestInput(callback) {

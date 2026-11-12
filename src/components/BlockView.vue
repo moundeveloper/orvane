@@ -16,6 +16,7 @@ const ProjectsHub = defineAsyncComponent(
 import { uid, type Block } from "../model";
 import Icon from "./Icon.vue";
 import { vMotion } from "../motion";
+import { APP_RUNTIME } from "../appRuntime";
 const props = defineProps<{
   block: Block;
   editing: boolean;
@@ -42,16 +43,40 @@ function addItem(b: Block, e: Event) {
 }
 const frame = ref<HTMLIFrameElement>();
 const frameError = ref("");
+// The longest stall a code app reported; shown to its author in Build mode.
+const frameSlow = ref(0);
 function onMessage(event: MessageEvent) {
-  if (
-    frame.value &&
-    event.source === frame.value.contentWindow &&
-    typeof event.data?.orvaneCodeError === "string"
-  )
+  if (!frame.value || event.source !== frame.value.contentWindow) return;
+  if (typeof event.data?.orvaneCodeError === "string")
     frameError.value = event.data.orvaneCodeError.slice(0, 240);
+  else if (Number.isFinite(event.data?.orvaneCodeSlow))
+    frameSlow.value = Math.max(frameSlow.value, event.data.orvaneCodeSlow);
 }
-onMounted(() => window.addEventListener("message", onMessage));
-onBeforeUnmount(() => window.removeEventListener("message", onMessage));
+// A code app is told when it is on screen, so its runtime can idle its
+// timers while nobody can see it (see appRuntimeSource.js).
+let frameVisible: boolean | undefined;
+const frameWatch =
+  props.block.kind === "code"
+    ? new IntersectionObserver((entries) => {
+        frameVisible = entries.at(-1)?.isIntersecting;
+        announceFrame();
+      })
+    : undefined;
+function announceFrame() {
+  if (frameVisible !== undefined)
+    frame.value?.contentWindow?.postMessage(
+      { orvaneVisible: frameVisible },
+      "*",
+    );
+}
+onMounted(() => {
+  window.addEventListener("message", onMessage);
+  if (frame.value) frameWatch?.observe(frame.value);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener("message", onMessage);
+  frameWatch?.disconnect();
+});
 const runningCode = ref(props.block.code);
 let codeTimer: ReturnType<typeof setTimeout>;
 watch(
@@ -61,6 +86,7 @@ watch(
     codeTimer = setTimeout(() => {
       runningCode.value = code;
       frameError.value = "";
+      frameSlow.value = 0;
     }, 450);
   },
 );
@@ -68,7 +94,7 @@ onBeforeUnmount(() => clearTimeout(codeTimer));
 const sandboxDocument = (code: string) => {
   const scrollbars = `<style>:root{color-scheme:light;scrollbar-width:thin;scrollbar-color:#b8cbd6 transparent}*{scrollbar-width:thin;scrollbar-color:#b8cbd6 transparent}::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#b8cbd6;border-radius:3px}::-webkit-scrollbar-button{display:none;width:0;height:0}</style>`;
   const gutter = `<style>html.orvane-scroll-y{box-sizing:border-box;padding-inline-end:10px}</style><script>(()=>{let pending=false;const update=()=>{pending=false;const root=document.documentElement;const needed=root.scrollHeight>innerHeight+1;if(root.classList.contains('orvane-scroll-y')!==needed)root.classList.toggle('orvane-scroll-y',needed)};const schedule=()=>{if(!pending){pending=true;requestAnimationFrame(update)}};addEventListener('DOMContentLoaded',()=>{new ResizeObserver(schedule).observe(document.body);new MutationObserver(schedule).observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true});schedule()});addEventListener('resize',schedule)})();<\/script>`;
-  return `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">${scrollbars}${gutter}<script>window.onerror=(message)=>parent.postMessage({orvaneCodeError:String(message)},'*');window.onunhandledrejection=(e)=>parent.postMessage({orvaneCodeError:String(e.reason?.message||e.reason)},'*');<\/script>${code}`;
+  return `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">${scrollbars}${gutter}<script>window.onerror=(message)=>parent.postMessage({orvaneCodeError:String(message)},'*');window.onunhandledrejection=(e)=>parent.postMessage({orvaneCodeError:String(e.reason?.message||e.reason)},'*');<\/script>${APP_RUNTIME}${code}`;
 };
 </script>
 <template>
@@ -245,6 +271,7 @@ const sandboxDocument = (code: string) => {
         sandbox="allow-scripts"
         :srcdoc="sandboxDocument(runningCode)"
         class="custom-frame"
+        @load="announceFrame"
         :style="
           !fillHeight && block.height
             ? { height: block.height + 'px' }
@@ -258,6 +285,10 @@ const sandboxDocument = (code: string) => {
         v-motion="{ kind: 'fade', state: frameError }"
       >
         {{ frameError }}
+      </p>
+      <p v-if="editing && frameSlow" class="field-help" role="status">
+        This app froze for {{ frameSlow }} ms. Move heavy work into
+        orvane.idle, or draw long lists with orvane.list.
       </p></template
     >
   </div>
