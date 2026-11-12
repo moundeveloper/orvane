@@ -321,7 +321,7 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
     await addressBar.click();
     posts.length = 0;
-    await browser.getByRole("button", { name: "New tab" }).click();
+    await browser.getByRole("button", { name: "New tab", exact: true }).click();
     await expect(tabs).toHaveCount(2);
     await addressBar.fill("https://system.netsuite.com/pages/customerlogin.jsp?country=US");
     await addressBar.focus();
