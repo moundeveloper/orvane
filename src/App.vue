@@ -660,6 +660,23 @@ function placeFiles(paths: string[], at: { x: number; y: number }, offset: numbe
     offset += 28;
   }
 }
+// Ctrl+V with nothing text-like focused: an image on the clipboard (a
+// screenshot, a copied picture or an image address) becomes a widget at the
+// pointer, or in the middle of the view.
+let lastPointer: { x: number; y: number } | null = null;
+function trackPointer(event: PointerEvent) {
+  lastPointer = { x: event.clientX, y: event.clientY };
+}
+function pasteImage(event: ClipboardEvent) {
+  const target = event.target as Element | null;
+  if (!canEdit.value || importBusy.value || !event.clipboardData) return;
+  if (target?.closest?.("input, textarea, [contenteditable], .code-editor, .app-surface, .node-workspace")) return;
+  const { jobs } = importDrop(event.clipboardData);
+  if (!jobs.length) return;
+  event.preventDefault();
+  const point = lastPointer ?? { x: viewport.width / 2, y: viewport.height / 2 };
+  void placeImages(jobs, { x: (point.x - camera.x) / camera.zoom, y: (point.y - camera.y) / camera.zoom }, 0);
+}
 function placeFileEvent(event: Event) {
   const path = (event as CustomEvent<{ path?: string }>).detail?.path;
   if (!path || !canEdit.value || importBusy.value) return;
@@ -2212,6 +2229,8 @@ onMounted(() => {
   window.addEventListener("wheel", wheel, { passive: false });
   window.addEventListener("orvane-canvas-pan", embeddedPan);
   window.addEventListener("orvane:place-file", placeFileEvent);
+  window.addEventListener("paste", pasteImage);
+  window.addEventListener("pointermove", trackPointer, { passive: true });
 });
 onBeforeUnmount(() => {
   window.removeEventListener("beforeunload", beforeUnload);
@@ -2221,6 +2240,8 @@ onBeforeUnmount(() => {
   mcpBridge?.close();
   window.removeEventListener("orvane-canvas-pan", embeddedPan);
   window.removeEventListener("orvane:place-file", placeFileEvent);
+  window.removeEventListener("paste", pasteImage);
+  window.removeEventListener("pointermove", trackPointer);
   clearTimeout(dropNoticeTimer);
   stopPan();
   stopZoom();

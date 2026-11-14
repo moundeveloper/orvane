@@ -80,6 +80,7 @@ import {
   PanelRight,
   Save,
   ArrowUpDown,
+  Crop,
 } from "@lucide/vue";
 const props = withDefaults(defineProps<{ name: string; size?: number }>(), {
   size: 16,
@@ -167,6 +168,7 @@ const icons: Record<string, unknown> = {
   "panel-right": PanelRight,
   save: Save,
   sort: ArrowUpDown,
+  crop: Crop,
 };
 const icon = computed(() => icons[props.name] || LayoutGrid);
 </script>
