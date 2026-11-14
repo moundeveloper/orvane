@@ -70,6 +70,7 @@ const block: z.ZodType<Block> = z.lazy(() =>
       "browser",
       "netsuite",
       "files",
+      "image",
     ]),
     label: z.string(),
     value: z.string(),

@@ -101,6 +101,7 @@ async function loadRoots() {
   try {
     roots.value = await api<Roots>("roots");
     ctx.home = roots.value.home;
+    ctx.token = roots.value.token;
     rootError.value = "";
     if (!layout.tabs.length) {
       const pane = makePane(roots.value.home);
@@ -265,6 +266,7 @@ function treeDropped(event: DragEvent, path: string) {
 // ---- Context shared with panes ---------------------------------------------------
 const ctx: ExplorerContext = reactive({
   home: "",
+  token: "",
   hidden: saved.hidden === true,
   clip: null,
   signal: { stamp: 0, dirs: [] as string[] },
@@ -295,6 +297,10 @@ const ctx: ExplorerContext = reactive({
   },
   transfer,
   dropPaths,
+  // The canvas (App.vue) owns app creation; it listens for this event.
+  addToCanvas(path: string) {
+    window.dispatchEvent(new CustomEvent("orvane:place-image", { detail: { path } }));
+  },
 });
 async function refreshNode(key: string) {
   const node = tree.value.find((n) => n.path.toLowerCase() === key);

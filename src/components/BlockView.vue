@@ -10,6 +10,7 @@ const GitViewer = defineAsyncComponent(() => import("./GitViewer.vue"));
 const NotesView = defineAsyncComponent(() => import("./notes/NotesView.vue"));
 const NetSuiteView = defineAsyncComponent(() => import("./NetSuiteView.vue"));
 const BrowserView = defineAsyncComponent(() => import("./BrowserView.vue"));
+const ImageBlock = defineAsyncComponent(() => import("./ImageBlock.vue"));
 const FileExplorer = defineAsyncComponent(
   () => import("./files/FileExplorer.vue"),
 );
@@ -128,6 +129,11 @@ const sandboxDocument = (code: string) => {
     />
     <NetSuiteView v-else-if="block.kind === 'netsuite'" :block="block" />
     <FileExplorer v-else-if="block.kind === 'files'" :block="block" />
+    <ImageBlock
+      v-else-if="block.kind === 'image'"
+      :block="block"
+      :editing="editing"
+    />
     <BrowserView
       v-else-if="block.kind === 'browser'"
       :block="block"

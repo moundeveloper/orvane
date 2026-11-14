@@ -2,6 +2,7 @@
 // absolute and normalized here; the HTTP layer (files-api.ts) only accepts
 // same-origin loopback requests.
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { constants, existsSync } from "node:fs";
 import {
   copyFile,
@@ -16,6 +17,8 @@ import {
 } from "node:fs/promises";
 import { homedir, platform } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, parse, resolve, sep } from "node:path";
+import { readSheet } from "./sheets.ts";
+import { createImageStore } from "./images.ts";
 
 export type FileEntry = {
   name: string;
@@ -263,9 +266,21 @@ async function search(root: string, query: string, hidden: boolean) {
   return { root, query, entries: results, complete, visited };
 }
 
-export function createFilesService() {
+function baseNameOfUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    return decodeURIComponent(basename(parsed.pathname, extname(parsed.pathname))) || parsed.hostname;
+  } catch {
+    return "Image";
+  }
+}
+export function createFilesService(directory: string) {
+  // Media elements cannot send JSON or custom headers, so raw file reads are
+  // GET requests that carry this per-server token, handed out by "roots".
+  const token = randomBytes(18).toString("hex");
+  const images = createImageStore(directory);
   const operations: Record<string, (args: Record<string, unknown>) => Promise<unknown> | unknown> = {
-    roots: () => ({ home: homedir(), separator: sep, platform: platform(), places: places(), drives: drives() }),
+    roots: () => ({ token, home: homedir(), separator: sep, platform: platform(), places: places(), drives: drives() }),
     list: (a) => list(absolute(a.path)),
     preview: (a) => preview(absolute(a.path)),
     mkdir: async (a) => {
@@ -311,6 +326,21 @@ export function createFilesService() {
       else launch("x-terminal-emulator", ["--working-directory", path]);
       return { ok: true };
     },
+    sheet: (a) => readSheet(absolute(a.path), Number(a.index) || 0),
+    "import-image": async (a) => {
+      if (typeof a.path === "string") return images.fromPath(absolute(a.path));
+      if (typeof a.dataUrl === "string") return images.fromDataUrl(a.dataUrl, typeof a.name === "string" ? a.name : "Image");
+      if (typeof a.url === "string") {
+        if (a.url.startsWith("data:")) return images.fromDataUrl(a.url, "Image");
+        try {
+          return await images.fromUrl(a.url);
+        } catch (error) {
+          // Keep the web address so the widget still shows the picture.
+          return { url: a.url, name: baseNameOfUrl(a.url), warning: error instanceof Error ? error.message : String(error) };
+        }
+      }
+      throw new Error("Nothing to import.");
+    },
     search: (a) => {
       const query = typeof a.query === "string" ? a.query.trim() : "";
       if (!query) throw new Error("Type something to search for.");
@@ -318,6 +348,9 @@ export function createFilesService() {
     },
   };
   return {
+    token,
+    images,
+    resolve: absolute,
     async invoke(operation: string, args: unknown) {
       const run = operations[operation];
       if (!run) throw new Error("Unknown File Explorer operation.");

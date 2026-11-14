@@ -22,7 +22,10 @@ export default defineConfig({
         compilerOptions: { isCustomElement: (tag) => tag === "webview" },
       },
     }),
-    filesApi(),
+    filesApi(
+      process.env.ORVANE_DATA_DIR ||
+        fileURLToPath(new URL("./.orvane", import.meta.url)),
+    ),
     notesApi(
       process.env.ORVANE_DATA_DIR ||
         fileURLToPath(new URL("./.orvane", import.meta.url)),

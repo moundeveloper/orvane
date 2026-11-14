@@ -22,6 +22,7 @@ export type PaneState = {
 };
 export type Place = { name: string; path: string; icon?: string };
 export type Roots = {
+  token: string;
   home: string;
   separator: string;
   platform: string;
@@ -35,6 +36,7 @@ export type MenuItem =
 // What the shell shares with every pane.
 export type ExplorerContext = {
   home: string;
+  token: string;
   hidden: boolean;
   clip: Clip;
   signal: { stamp: number; dirs: string[] };
@@ -53,6 +55,7 @@ export type ExplorerContext = {
   togglePin(path: string): void;
   transfer(paths: string[], destination: string, mode: "copy" | "move"): Promise<void>;
   dropPaths(event: DragEvent, destination: string): void;
+  addToCanvas(path: string): void;
 };
 export const DRAG_MIME = "application/x-orvane-files";
 
@@ -181,4 +184,36 @@ export function sortEntries(entries: FileEntry[], sort: Sort) {
     else if (key === "type") r = collator.compare(a.ext, b.ext);
     return (r || collator.compare(a.name, b.name)) * (key === "name" || r ? dir : 1);
   });
+}
+
+// ---- Peek ----------------------------------------------------------------------
+export type PeekKind = "image" | "video" | "audio" | "pdf" | "sheet" | "text";
+const PEEK_IMAGE = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif"]);
+const PEEK_VIDEO = new Set(["mp4", "m4v", "webm", "ogv", "mov", "mkv"]);
+const PEEK_AUDIO = new Set(["mp3", "wav", "ogg", "oga", "flac", "m4a", "aac", "opus"]);
+const PEEK_SHEET = new Set(["xlsx", "xlsm", "csv", "tsv"]);
+// Everything else is tried as text; the server reports binary files.
+export function peekKind(entry: FileEntry): PeekKind {
+  if (PEEK_IMAGE.has(entry.ext)) return "image";
+  if (PEEK_VIDEO.has(entry.ext)) return "video";
+  if (PEEK_AUDIO.has(entry.ext)) return "audio";
+  if (PEEK_SHEET.has(entry.ext)) return "sheet";
+  if (entry.ext === "pdf") return "pdf";
+  return "text";
+}
+export function isImage(path: string) {
+  return PEEK_IMAGE.has(path.split(".").pop()?.toLowerCase() ?? "");
+}
+export function rawUrl(path: string, token: string) {
+  return `/__orvane/files/raw?path=${encodeURIComponent(path)}&t=${token}`;
+}
+export type CodeLanguage = "javascript" | "typescript" | "jsx" | "html" | "xml" | "sql" | "plain";
+export function languageOf(ext: string): CodeLanguage {
+  if (["js", "mjs", "cjs", "json", "jsonc", "json5"].includes(ext)) return "javascript";
+  if (["ts", "mts", "cts"].includes(ext)) return "typescript";
+  if (["jsx", "tsx"].includes(ext)) return "jsx";
+  if (["html", "htm", "vue", "svelte", "astro"].includes(ext)) return "html";
+  if (["xml", "xaml", "xsd", "xsl", "xslt", "svg", "plist", "csproj", "vbproj", "props", "targets", "config", "resx", "rss", "atom", "wsdl", "kml", "gpx"].includes(ext)) return "xml";
+  if (ext === "sql") return "sql";
+  return "plain";
 }

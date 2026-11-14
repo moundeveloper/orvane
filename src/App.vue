@@ -24,6 +24,7 @@ import CustomSelect from "./components/CustomSelect.vue";
 import CustomNumber from "./components/CustomNumber.vue";
 import { migrateGroups, groupBounds } from "./groups";
 import { vMotion } from "./motion";
+import { importDrop, importPath, mayHoldImage, measure, type PlacedImage } from "./imageDrop";
 import {
   emptyWorkspace,
   appMinimum,
@@ -555,6 +556,89 @@ function createGitViewer(kind: keyof typeof toolApps = "git") {
   panel.value = null;
   void focusApp(app);
 }
+// ---- Image widgets: drops on empty canvas and "Place on canvas" ----
+const dropNotice = ref("");
+let dropNoticeTimer: ReturnType<typeof setTimeout> | undefined;
+function notifyDrop(text: string) {
+  clearTimeout(dropNoticeTimer);
+  dropNotice.value = text;
+  dropNoticeTimer = setTimeout(() => (dropNotice.value = ""), 4500);
+}
+function onCanvas(target: EventTarget | null) {
+  return (
+    target instanceof Element &&
+    (target.classList.contains("canvas-background") || target.classList.contains("workspace"))
+  );
+}
+function canvasDragOver(event: DragEvent) {
+  if (!canEdit.value || importBusy.value || !onCanvas(event.target) || !mayHoldImage(event.dataTransfer)) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+}
+function canvasDrop(event: DragEvent) {
+  if (!canEdit.value || importBusy.value || !onCanvas(event.target) || !event.dataTransfer) return;
+  event.preventDefault();
+  const { jobs, skipped } = importDrop(event.dataTransfer);
+  if (!jobs.length) return notifyDrop("Only images can be dropped on the canvas.");
+  if (skipped) notifyDrop(`${skipped} item${skipped === 1 ? " is" : "s are"} not an image and was skipped.`);
+  void placeImages(jobs, {
+    x: (event.clientX - camera.x) / camera.zoom,
+    y: (event.clientY - camera.y) / camera.zoom,
+  });
+}
+async function placeImages(jobs: Promise<PlacedImage>[], at: { x: number; y: number }) {
+  let offset = 0;
+  for (const job of jobs) {
+    let placed: PlacedImage;
+    try {
+      placed = await job;
+    } catch (error) {
+      notifyDrop(error instanceof Error ? error.message : "The image could not be placed.");
+      continue;
+    }
+    if (!placed.value || !canEdit.value) continue;
+    // Fit the picture into 480 px on its longer side, keeping its shape.
+    const size = await measure(placed.value);
+    const scale = Math.min(1, 480 / Math.max(size.width, size.height));
+    const width = Math.max(180, Math.round(size.width * scale)),
+      height = Math.max(160, Math.round(size.height * scale) + 36);
+    const appId = uid();
+    const result = applyCommands(workspace, [
+      {
+        operation: "app_create",
+        args: {
+          id: appId,
+          properties: {
+            name: placed.name || "Image",
+            icon: "image",
+            width,
+            height,
+            x: at.x - width / 2 + offset,
+            y: at.y - height / 2 + offset,
+            padding: 0,
+            gap: 0,
+          },
+        },
+      },
+      {
+        operation: "component_create",
+        args: { appId, kind: "image", properties: { label: placed.name || "Image", value: placed.value, sizing: "fill" } },
+      },
+    ]);
+    workspace.apps.push(result.workspace.apps.find((a) => a.id === appId)!);
+    createdAppId.value = appId;
+    offset += 28;
+  }
+}
+function placeImageEvent(event: Event) {
+  const path = (event as CustomEvent<{ path?: string }>).detail?.path;
+  if (!path || !canEdit.value || importBusy.value) return;
+  void placeImages([importPath(path)], {
+    x: (viewport.width / 2 - camera.x) / camera.zoom,
+    y: (viewport.height / 2 - camera.y) / camera.zoom,
+  });
+}
+
 let navigationSequence = 0;
 function stopPan() {
   navigationSequence++;
@@ -2098,6 +2182,7 @@ onMounted(() => {
   window.addEventListener("pagehide", hidePage);
   window.addEventListener("wheel", wheel, { passive: false });
   window.addEventListener("orvane-canvas-pan", embeddedPan);
+  window.addEventListener("orvane:place-image", placeImageEvent);
 });
 onBeforeUnmount(() => {
   window.removeEventListener("beforeunload", beforeUnload);
@@ -2106,6 +2191,8 @@ onBeforeUnmount(() => {
   window.removeEventListener("online", persist);
   mcpBridge?.close();
   window.removeEventListener("orvane-canvas-pan", embeddedPan);
+  window.removeEventListener("orvane:place-image", placeImageEvent);
+  clearTimeout(dropNoticeTimer);
   stopPan();
   stopZoom();
   document.removeEventListener("pointerdown", dismissOutside, true);
@@ -2140,6 +2227,8 @@ onBeforeUnmount(() => {
     @pointerup="pointerUp"
     @pointercancel="pointerUp"
     @lostpointercapture="pointerUp"
+    @dragover="canvasDragOver"
+    @drop="canvasDrop"
     @click="
       !dragging &&
       (($event.target as HTMLElement).classList.contains('canvas-background') ||
@@ -2148,6 +2237,7 @@ onBeforeUnmount(() => {
     "
   >
     <div class="canvas-background"></div>
+    <div v-if="dropNotice" class="drop-notice" role="status">{{ dropNotice }}</div>
     <ActionStudio
       v-if="actionStudio"
       :workspace="workspace"

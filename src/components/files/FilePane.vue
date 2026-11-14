@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import Icon from "../Icon.vue";
+import FilePeek from "./FilePeek.vue";
 import {
   api,
   baseName,
@@ -9,6 +10,7 @@ import {
   formatDate,
   formatSize,
   iconOf,
+  isImage,
   label,
   samePath,
   sortEntries,
@@ -300,6 +302,14 @@ function itemMenu(event: MouseEvent, entry: FileEntry) {
   const menu: MenuItem[] = [
     { label: "Open", icon: one?.dir ? "folder-open" : "external", run: openSelection },
   ];
+  if (one && !one.dir) menu.push({ label: "Peek", icon: "eye", hint: "Space", run: () => peek(one) });
+  const images = items.filter((e) => !e.dir && isImage(e.path));
+  if (images.length)
+    menu.push({
+      label: images.length === 1 ? "Place on canvas" : `Place ${images.length} images on canvas`,
+      icon: "image",
+      run: () => images.forEach((e) => props.ctx.addToCanvas(e.path)),
+    });
   if (one?.dir)
     menu.push(
       { label: "Open in new tab", icon: "plus", run: () => props.ctx.openTab(one.path) },
@@ -378,6 +388,33 @@ function drop(event: DragEvent, target: string) {
   props.ctx.dropPaths(event, target);
 }
 
+// ---- Peek -------------------------------------------------------------------
+const peekPath = ref("");
+const peekFiles = computed(() => shown.value.filter((e) => !e.dir));
+const peekIndex = computed(() => peekFiles.value.findIndex((e) => e.path === peekPath.value));
+const peekEntry = computed(() => peekFiles.value[peekIndex.value] ?? null);
+function peek(entry?: FileEntry) {
+  const target = entry ?? shown.value.find((e) => e.path === cursor.value) ?? selection.value[0];
+  if (!target || target.dir) return;
+  select(target, false);
+  peekPath.value = target.path;
+}
+function stepPeek(delta: number) {
+  const list = peekFiles.value;
+  if (!list.length) return;
+  const next = list[(peekIndex.value + delta + list.length) % list.length]!;
+  peekPath.value = next.path;
+  select(next, false);
+  reveal(next.path);
+}
+function closePeek() {
+  peekPath.value = "";
+  focusPane();
+}
+watch(peekEntry, (entry) => {
+  if (!entry && peekPath.value) peekPath.value = "";
+});
+
 // ---- Keyboard ---------------------------------------------------------------
 const root = ref<HTMLElement>();
 const filterInput = ref<HTMLInputElement>();
@@ -427,6 +464,7 @@ function keydown(event: KeyboardEvent) {
   else if (key === "PageDown") (handled(), move(cols * pageRows(), event.shiftKey));
   else if (key === "PageUp") (handled(), move(-cols * pageRows(), event.shiftKey));
   else if (key === "Enter") (handled(), openSelection());
+  else if (key === " " && !ctrl) (handled(), peek());
   else if (key === "F2") (handled(), startRename());
   else if (key === "Delete") (handled(), void remove());
   else if (key === "Escape") selected.value = new Set();
@@ -710,6 +748,13 @@ const relative = (entry: FileEntry) => {
         <Icon name="copy" :size="14" /></button
       ><button aria-label="Paste" title="Paste (Ctrl+V)" :disabled="!ctx.clip || !!results" @click="paste()">
         <Icon name="paste" :size="14" /></button
+      ><button
+        aria-label="Peek"
+        title="Peek (Space)"
+        :disabled="selection.length !== 1 || selection[0]!.dir"
+        @click="peek()"
+      >
+        <Icon name="eye" :size="14" /></button
       ><button aria-label="Rename" title="Rename (F2)" :disabled="selection.length !== 1" @click="startRename()">
         <Icon name="edit" :size="14" /></button
       ><button aria-label="Delete" title="Delete (Del)" :disabled="!selection.length" @click="remove()">
@@ -746,6 +791,15 @@ const relative = (entry: FileEntry) => {
       </button>
     </div>
     <div class="fx-main">
+      <FilePeek
+        v-if="peekEntry"
+        :entry="peekEntry"
+        :position="peekIndex"
+        :total="peekFiles.length"
+        :ctx="ctx"
+        @close="closePeek"
+        @step="stepPeek"
+      />
       <div class="fx-listing">
         <div v-if="results" class="fx-note">
           <Icon name="search" :size="12" />{{ searchNote || "Searching…" }}
@@ -1078,6 +1132,7 @@ button:disabled {
   }
 }
 .fx-main {
+  position: relative;
   display: flex;
   flex: 1;
   min-height: 0;

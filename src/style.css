@@ -2138,3 +2138,18 @@ kbd {
     border-bottom: 1px solid var(--line);
   }
 }
+/* Feedback for images dropped on the canvas. */
+.drop-notice {
+  position: fixed;
+  left: 50%;
+  bottom: 86px;
+  z-index: 60;
+  transform: translateX(-50%);
+  max-width: 420px;
+  padding: 7px 13px;
+  border-radius: 6px;
+  background: #344f5e;
+  color: #fff;
+  font-size: 12px;
+  pointer-events: none;
+}

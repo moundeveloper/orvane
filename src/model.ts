@@ -13,7 +13,8 @@ export type Kind =
   | "notes"
   | "browser"
   | "netsuite"
-  | "files";
+  | "files"
+  | "image";
 export type ActionKind =
   | "add-item"
   | "clear"
@@ -233,6 +234,11 @@ export const kinds: { kind: Kind; name: string; description: string }[] = [
     name: "File Explorer",
     description: "Browse local folders in tabs and split views",
   },
+  {
+    kind: "image",
+    name: "Image",
+    description: "A picture, dropped in or chosen from a file",
+  },
 ];
 export function makeBlock(kind: Kind): Block {
   return {
@@ -254,6 +260,7 @@ export function makeBlock(kind: Kind): Block {
       browser: "Web browser",
       netsuite: "NetSuite",
       files: "File Explorer",
+      image: "Image",
     }[kind],
     value: "",
     checked: false,
