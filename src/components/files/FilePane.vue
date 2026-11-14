@@ -16,6 +16,7 @@ import {
   sortEntries,
   toneOf,
   typeName,
+  watchFolder,
   type ExplorerContext,
   type FileEntry,
   type MenuItem,
@@ -51,6 +52,8 @@ async function load(quiet = false) {
     const alive = new Set(data.entries.map((e) => e.path));
     selected.value = new Set([...selected.value].filter((x) => alive.has(x)));
     props.ctx.remember(data.path, data.entries);
+    void loadGit(data.path);
+    if (props.ctx.sizes) void loadSizes();
   } catch (e) {
     if (seq !== loadSeq) return;
     error.value = e instanceof Error ? e.message : String(e);
@@ -105,6 +108,123 @@ watch(
   },
 );
 onMounted(() => void load());
+
+// ---- Live: reload when something changes in this folder on disk ----
+let unwatch: (() => void) | undefined;
+let liveTimer: ReturnType<typeof setTimeout> | undefined;
+watch(
+  () => [p.path, props.ctx.live, props.visible] as const,
+  ([path, live, visible]) => {
+    unwatch?.();
+    unwatch = undefined;
+    // Hidden tabs do not watch; they reload when shown.
+    if (!live || visible === false) return;
+    unwatch = watchFolder(path, () => {
+      clearTimeout(liveTimer);
+      liveTimer = setTimeout(() => void load(true), 120);
+    });
+  },
+  { immediate: true },
+);
+watch(
+  () => props.visible,
+  (visible, was) => {
+    if (visible && was === false) void load(true);
+  },
+);
+onBeforeUnmount(() => {
+  unwatch?.();
+  clearTimeout(liveTimer);
+});
+
+// ---- Git status badges (only inside a repository) ----
+const gitBadges = shallowRef<Record<string, string>>({});
+let gitSeq = 0;
+async function loadGit(path: string) {
+  const seq = ++gitSeq;
+  try {
+    const data = await api<{ repo: boolean; entries: Record<string, string> }>("git-status", { path });
+    if (seq === gitSeq && samePath(path, p.path)) gitBadges.value = data.entries;
+  } catch {
+    if (seq === gitSeq) gitBadges.value = {};
+  }
+}
+const GIT_LABEL: Record<string, string> = {
+  M: "Modified",
+  A: "Added",
+  D: "Deleted",
+  R: "Renamed",
+  U: "Untracked",
+  C: "Conflict",
+};
+
+// ---- Folder sizes (on request; computed in the background) ----
+const sizes = shallowRef<Record<string, { bytes: number; complete: boolean } | "pending">>({});
+let sizeSeq = 0;
+async function loadSizes() {
+  const seq = ++sizeSeq;
+  const dirs = entries.value.filter((e) => e.dir).map((e) => e.path).slice(0, 200);
+  if (!dirs.length) return;
+  sizes.value = Object.fromEntries(dirs.map((d) => [d, sizes.value[d] && sizes.value[d] !== "pending" ? sizes.value[d] : "pending"]));
+  // Small batches so the first sizes appear quickly.
+  for (let i = 0; i < dirs.length; i += 8) {
+    try {
+      const data = await api<Record<string, { bytes: number; complete: boolean }>>("folder-size", { paths: dirs.slice(i, i + 8) });
+      if (seq !== sizeSeq) return;
+      sizes.value = { ...sizes.value, ...data };
+    } catch {
+      return;
+    }
+  }
+}
+watch(
+  () => props.ctx.sizes,
+  (on) => (on ? void loadSizes() : ((sizeSeq++), (sizes.value = {}))),
+);
+function sizeOf(entry: FileEntry) {
+  if (!entry.dir) return formatSize(entry.size);
+  const size = sizes.value[entry.path];
+  if (!size) return "";
+  if (size === "pending") return "…";
+  return (size.complete ? "" : "≥ ") + formatSize(size.bytes);
+}
+// With sizes on, sorting by size uses folder totals too.
+function sizeValue(entry: FileEntry) {
+  const size = sizes.value[entry.path];
+  return entry.dir && size && size !== "pending" ? size.bytes : entry.size;
+}
+
+// ---- Zip ----
+async function compress(items = selection.value) {
+  if (!items.length) return;
+  props.ctx.toast(`Compressing ${items.length === 1 ? `“${items[0]!.name}”` : `${items.length} items`}…`);
+  try {
+    const result = await api<{ path: string; count: number }>("zip", { paths: items.map((e) => e.path) });
+    await load(true);
+    props.ctx.changed([p.path]);
+    const hit = shown.value.find((e) => samePath(e.path, result.path));
+    if (hit) (select(hit, false), reveal(hit.path));
+    props.ctx.toast(`Created ${baseName(result.path)} (${result.count} file${result.count === 1 ? "" : "s"}).`);
+  } catch (e) {
+    props.ctx.toast(e instanceof Error ? e.message : String(e), true);
+  }
+}
+async function extract(entry: FileEntry) {
+  try {
+    const result = await api<{ path: string; count: number }>("unzip", { path: entry.path });
+    await load(true);
+    props.ctx.changed([p.path]);
+    const hit = shown.value.find((e) => samePath(e.path, result.path));
+    if (hit) (select(hit, false), reveal(hit.path));
+    props.ctx.toast(`Extracted ${result.count} file${result.count === 1 ? "" : "s"} to ${baseName(result.path)}.`);
+  } catch (e) {
+    props.ctx.toast(e instanceof Error ? e.message : String(e), true);
+  }
+}
+function batchRename(items = selection.value) {
+  if (!items.length) return;
+  props.ctx.batchRename(items, () => focusPane());
+}
 // Mouse side buttons (3 = back, 4 = forward) act on the pane under the pointer.
 function mouseHistory(event: MouseEvent) {
   if (event.button === 3) (event.preventDefault(), goBack());
@@ -162,6 +282,14 @@ const shown = computed(() => {
   if (!props.ctx.hidden) list = list.filter((e) => !e.hidden);
   const f = filter.value.trim().toLowerCase();
   if (f) list = list.filter((e) => e.name.toLowerCase().includes(f));
+  if (p.sort.key === "size" && props.ctx.sizes) {
+    const order = sortEntries(
+      list.map((e) => (e.dir ? { ...e, size: sizeValue(e) } : e)),
+      p.sort,
+    ).map((e) => e.path);
+    const byPath = new Map(list.map((e) => [e.path, e]));
+    return order.map((path) => byPath.get(path)!);
+  }
   return sortEntries(list, p.sort);
 });
 function sortBy(key: SortKey) {
@@ -342,10 +470,14 @@ function itemMenu(event: MouseEvent, entry: FileEntry) {
     { label: "Copy", icon: "copy", hint: "Ctrl+C", run: () => copy("copy", items) },
   );
   if (one?.dir && props.ctx.clip) menu.push({ label: "Paste into folder", icon: "paste", run: () => paste(one.path) });
+  menu.push({ label: "Copy path", icon: "link", run: () => copyPath(items) }, "sep");
+  if (one && !one.dir && one.ext === "zip") menu.push({ label: "Extract here", icon: "archive2", run: () => extract(one) });
   menu.push(
-    { label: "Copy path", icon: "link", run: () => copyPath(items) },
+    { label: items.length === 1 ? "Compress to ZIP" : `Compress ${items.length} items to ZIP`, icon: "archive2", run: () => compress(items) },
     "sep",
-    { label: "Rename", icon: "edit", hint: "F2", disabled: !one, run: () => startRename(one!) },
+    one
+      ? { label: "Rename", icon: "edit", hint: "F2", run: () => startRename(one) }
+      : { label: `Rename ${items.length} items…`, icon: "edit", hint: "F2", run: () => batchRename(items) },
     { label: "Delete", icon: "trash", hint: "Del", danger: true, run: () => remove(items) },
   );
   props.ctx.menu(event, menu);
@@ -477,7 +609,7 @@ function keydown(event: KeyboardEvent) {
   else if (key === "PageUp") (handled(), move(-cols * pageRows(), event.shiftKey));
   else if (key === "Enter") (handled(), openSelection());
   else if (key === " " && !ctrl) (handled(), peek());
-  else if (key === "F2") (handled(), startRename());
+  else if (key === "F2") (handled(), selection.value.length > 1 ? batchRename() : startRename());
   else if (key === "Delete") (handled(), void remove());
   else if (key === "Escape") selected.value = new Set();
   else if (ctrl && key.toLowerCase() === "a") (handled(), selectAll());
@@ -775,7 +907,12 @@ const relative = (entry: FileEntry) => {
         @click="peek()"
       >
         <Icon name="eye" :size="14" /></button
-      ><button aria-label="Rename" title="Rename (F2)" :disabled="selection.length !== 1" @click="startRename()">
+      ><button
+        aria-label="Rename"
+        title="Rename (F2); several items open batch rename"
+        :disabled="!selection.length"
+        @click="selection.length > 1 ? batchRename() : startRename()"
+      >
         <Icon name="edit" :size="14" /></button
       ><button aria-label="Delete" title="Delete (Del)" :disabled="!selection.length" @click="remove()">
         <Icon name="trash" :size="14" />
@@ -792,6 +929,20 @@ const relative = (entry: FileEntry) => {
         @keydown.down.prevent="focusPane(), move(0, false)"
       />
       <button
+        aria-label="Live updates"
+        :title="ctx.live ? 'Live: refreshes when files change on disk' : 'Live updates are off'"
+        :aria-pressed="ctx.live"
+        @click="ctx.toggleLive()"
+      >
+        <Icon name="refresh" :size="14" :class="{ 'fx-off': !ctx.live }" /></button
+      ><button
+        aria-label="Folder sizes"
+        :title="ctx.sizes ? 'Hide folder sizes' : 'Calculate folder sizes'"
+        :aria-pressed="ctx.sizes"
+        @click="ctx.toggleSizes()"
+      >
+        <Icon name="sort" :size="14" /></button
+      ><button
         :aria-label="ctx.hidden ? 'Hide hidden items' : 'Show hidden items'"
         :title="ctx.hidden ? 'Hide hidden items' : 'Show hidden items'"
         :aria-pressed="ctx.hidden"
@@ -902,13 +1053,20 @@ const relative = (entry: FileEntry) => {
                     @blur="commitRename"
                   />
                   <span v-else>{{ entry.name }}</span>
+                  <b
+                    v-if="gitBadges[entry.name] && !results"
+                    class="fx-git"
+                    :class="`git-${gitBadges[entry.name]}`"
+                    :title="`Git: ${GIT_LABEL[gitBadges[entry.name]!]}${entry.dir ? ' (inside)' : ''}`"
+                    >{{ gitBadges[entry.name] }}</b
+                  >
                   <Icon v-if="entry.link" name="link" :size="10" class="fx-link" />
                 </span>
                 <template v-if="pane.view === 'list'">
                   <span v-if="results" class="fx-dim">{{ relative(entry) }}</span>
                   <span class="fx-dim">{{ formatDate(entry.mtime) }}</span>
                   <span class="fx-dim">{{ typeName(entry) }}</span>
-                  <span class="fx-dim num">{{ entry.dir ? "" : formatSize(entry.size) }}</span>
+                  <span class="fx-dim num">{{ sizeOf(entry) }}</span>
                 </template>
               </div>
             </div>
@@ -1506,5 +1664,26 @@ button:disabled {
   .fx-spinner {
     animation-duration: 2.4s;
   }
+}
+</style>
+<style scoped>
+.fx-git {
+  flex: none;
+  min-width: 15px;
+  padding: 0 3px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+.git-M { background: #f4ead2; color: #9a6b12; }
+.git-A { background: #dcefe2; color: #2f7a4c; }
+.git-U { background: #dcefe2; color: #2f7a4c; }
+.git-D { background: #f6dfda; color: #a5503d; }
+.git-R { background: #e3e7f6; color: #4f5fa5; }
+.git-C { background: #f6dfda; color: #a5503d; }
+.fx-off {
+  opacity: 0.45;
 }
 </style>

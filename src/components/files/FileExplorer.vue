@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowReactive } 
 import Icon from "../Icon.vue";
 import SplitTabs from "../SplitTabs.vue";
 import FilePane from "./FilePane.vue";
+import BatchRename from "./BatchRename.vue";
 import { uid, type Block } from "../../model";
 import {
   addTab,
@@ -39,6 +40,8 @@ type Saved = {
   panes?: Partial<PaneState>[];
   pins?: string[];
   hidden?: boolean;
+  live?: boolean;
+  sizes?: boolean;
   sidebar?: number;
   collapsed?: boolean;
 };
@@ -89,6 +92,8 @@ function persist() {
       }),
       pins: pins.value,
       hidden: ctx.hidden,
+      live: ctx.live,
+      sizes: ctx.sizes,
       sidebar: Math.round(sidebarWidth.value),
       collapsed: collapsed.value,
     } satisfies Saved);
@@ -292,8 +297,21 @@ const ctx: ExplorerContext = reactive({
   home: "",
   token: "",
   hidden: saved.hidden === true,
+  live: saved.live !== false,
+  sizes: saved.sizes === true,
   clip: null,
   signal: { stamp: 0, dirs: [] as string[] },
+  toggleLive() {
+    ctx.live = !ctx.live;
+    persist();
+  },
+  toggleSizes() {
+    ctx.sizes = !ctx.sizes;
+    persist();
+  },
+  batchRename(items: FileEntry[], done: () => void) {
+    renaming.value = { items, done };
+  },
   toggleHidden() {
     ctx.hidden = !ctx.hidden;
     children.clear();
@@ -343,6 +361,21 @@ function changed(dirs: string[]) {
     if (expanded.has(key)) void refreshNode(key);
     else children.delete(key);
   }
+}
+
+// ---- Batch rename ----------------------------------------------------------------
+const renaming = ref<{ items: FileEntry[]; done: () => void } | null>(null);
+async function applyRename(items: { path: string; name: string }[]) {
+  const current = renaming.value;
+  renaming.value = null;
+  try {
+    await api("rename-many", { items });
+    toast(`Renamed ${items.length} item${items.length === 1 ? "" : "s"}.`);
+    changed([...new Set(items.map((i) => crumbs(i.path).at(-2)?.path ?? i.path))]);
+  } catch (e) {
+    toast(e instanceof Error ? e.message : String(e), true);
+  }
+  current?.done();
 }
 
 // ---- Toasts, confirm and menus -----------------------------------------------------
@@ -631,6 +664,12 @@ const placeIcon: Record<string, string> = {
         </div>
       </div>
     </div>
+    <BatchRename
+      v-if="renaming"
+      :items="renaming.items"
+      @cancel="renaming = null"
+      @apply="applyRename"
+    />
     <div class="fx-toasts" aria-live="polite">
       <div v-if="busy" class="fx-toast"><span class="fx-spinner" />{{ busy }}</div>
       <div v-for="t in toasts" :key="t.id" class="fx-toast" :class="{ error: t.error }">{{ t.text }}</div>

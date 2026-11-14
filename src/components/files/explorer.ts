@@ -38,9 +38,14 @@ export type ExplorerContext = {
   home: string;
   token: string;
   hidden: boolean;
+  live: boolean;
+  sizes: boolean;
   clip: Clip;
   signal: { stamp: number; dirs: string[] };
   toggleHidden(): void;
+  toggleLive(): void;
+  toggleSizes(): void;
+  batchRename(items: FileEntry[], done: () => void): void;
   remember(path: string, entries: FileEntry[]): void;
   changed(dirs: string[]): void;
   toast(text: string, error?: boolean): void;

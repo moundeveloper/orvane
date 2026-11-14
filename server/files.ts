@@ -19,6 +19,99 @@ import { homedir, platform } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, parse, resolve, sep } from "node:path";
 import { readSheet } from "./sheets.ts";
 import { createImageStore } from "./images.ts";
+import { unzip, zip } from "./archive.ts";
+
+// ---- Git status badges ---------------------------------------------------------
+// One `git status` per repository, cached briefly; folders inherit the most
+// notable state of anything changed inside them.
+function git(args: string[], cwd: string) {
+  return new Promise<string>((resolveGit, reject) => {
+    const child = spawn("git", args, { cwd, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
+    const chunks: Buffer[] = [];
+    let size = 0;
+    child.stdout.on("data", (d: Buffer) => {
+      size += d.length;
+      if (size < 20_000_000) chunks.push(d);
+    });
+    const timer = setTimeout(() => child.kill(), 8000);
+    child.on("error", reject);
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      code === 0 ? resolveGit(Buffer.concat(chunks).toString("utf8")) : reject(new Error("git failed"));
+    });
+  });
+}
+const gitCache = new Map<string, { at: number; root: string; files: Map<string, string> } | null>();
+async function gitStatus(folder: string) {
+  const key = folder.toLowerCase();
+  const cached = gitCache.get(key);
+  if (cached !== undefined && cached && Date.now() - cached.at < 2000) return cached;
+  let root: string;
+  try {
+    root = resolve((await git(["rev-parse", "--show-toplevel"], folder)).trim());
+  } catch {
+    gitCache.set(key, null);
+    return null;
+  }
+  const files = new Map<string, string>();
+  const out = await git(["status", "--porcelain=v1", "-z", "--untracked-files=normal"], root);
+  const parts = out.split("\0");
+  for (let i = 0; i < parts.length; i++) {
+    const line = parts[i]!;
+    if (line.length < 4) continue;
+    const code = line.slice(0, 2);
+    files.set(resolve(root, line.slice(3)).toLowerCase(), code);
+    if (code[0] === "R" || code[0] === "C") i++; // the original name follows
+  }
+  const result = { at: Date.now(), root, files };
+  gitCache.set(key, result);
+  return result;
+}
+function badge(code: string) {
+  if (code === "??") return "U";
+  if (code.includes("U") || code === "AA" || code === "DD") return "C";
+  if (code.includes("D")) return "D";
+  if (code.includes("A")) return "A";
+  if (code.includes("R")) return "R";
+  return "M";
+}
+const RANK: Record<string, number> = { C: 5, M: 4, A: 3, D: 3, R: 2, U: 1 };
+
+// ---- Folder sizes ----------------------------------------------------------------
+async function folderSize(path: string, deadline: number) {
+  let bytes = 0,
+    files = 0,
+    complete = true;
+  const queue = [path];
+  while (queue.length) {
+    if (Date.now() > deadline) {
+      complete = false;
+      break;
+    }
+    const dir = queue.pop()!;
+    let dirents;
+    try {
+      dirents = await readdir(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    await Promise.all(
+      dirents.map(async (d) => {
+        const child = join(dir, d.name);
+        if (d.isDirectory()) queue.push(child);
+        else if (d.isFile()) {
+          try {
+            bytes += (await stat(child)).size;
+            files++;
+          } catch {
+            // Unreadable files are left out.
+          }
+        }
+      }),
+    );
+  }
+  return { bytes, files, complete };
+}
 
 export type FileEntry = {
   name: string;
@@ -327,6 +420,74 @@ export function createFilesService(directory: string) {
       return { ok: true };
     },
     sheet: (a) => readSheet(absolute(a.path), Number(a.index) || 0),
+    zip: async (a) => {
+      const items = paths(a.paths);
+      const folder = dirname(items[0]!);
+      const name = items.length === 1 ? `${parse(items[0]!).name || basename(items[0]!)}.zip` : `${basename(folder) || "Archive"}.zip`;
+      return zip(items, await unique(folder, name));
+    },
+    unzip: async (a) => {
+      const path = absolute(a.path);
+      return unzip(path, await unique(dirname(path), parse(path).name));
+    },
+    "git-status": async (a) => {
+      const folder = absolute(a.path);
+      const status = await gitStatus(folder).catch(() => null);
+      if (!status) return { repo: false, entries: {} };
+      // Badges for this folder's direct children only.
+      const prefix = folder.toLowerCase().replace(/[\\/]+$/, "") + sep;
+      const entries: Record<string, string> = {};
+      for (const [file, code] of status.files) {
+        if (!file.startsWith(prefix)) continue;
+        const child = file.slice(prefix.length).split(/[\\/]/)[0]!;
+        if (!child) continue;
+        const nested = file.slice(prefix.length).replace(/[\\/]+$/, "").includes(sep);
+        const letter = badge(code);
+        const value = nested ? (letter === "U" ? "U" : "M") : letter;
+        const current = entries[child];
+        if (!current || RANK[value]! > RANK[current]!) entries[child] = value;
+      }
+      return { repo: true, root: status.root, entries };
+    },
+    "folder-size": async (a) => {
+      const deadline = Date.now() + 8000;
+      const results: Record<string, { bytes: number; files: number; complete: boolean }> = {};
+      for (const path of paths(a.paths).slice(0, 200)) results[path] = await folderSize(path, deadline);
+      return results;
+    },
+    // Renames several items as one step. Each first moves to a temporary
+    // name, so swaps (a→b, b→a) and case-only changes work.
+    "rename-many": async (a) => {
+      if (!Array.isArray(a.items) || !a.items.length || a.items.length > 5000) throw new Error("Nothing to rename.");
+      const plan = a.items.map((item: { path?: unknown; name?: unknown }) => {
+        const path = absolute(item?.path);
+        return { path, to: join(dirname(path), validName(item?.name)) };
+      });
+      const targets = new Set<string>();
+      for (const step of plan) {
+        const key = step.to.toLowerCase();
+        if (targets.has(key)) throw new Error(`Two items would be named “${basename(step.to)}”.`);
+        targets.add(key);
+      }
+      const sources = new Set(plan.map((s: { path: string }) => s.path.toLowerCase()));
+      for (const step of plan)
+        if (existsSync(step.to) && !sources.has(step.to.toLowerCase()))
+          throw new Error(`“${basename(step.to)}” already exists.`);
+      const moved: { from: string; temp: string; to: string }[] = [];
+      try {
+        for (const step of plan) {
+          const temp = join(dirname(step.path), `.orvane-rename-${randomBytes(6).toString("hex")}`);
+          await rename(step.path, temp);
+          moved.push({ from: step.path, temp, to: step.to });
+        }
+        for (const step of moved) await rename(step.temp, step.to);
+      } catch (error) {
+        // Put back whatever is still at its temporary name.
+        for (const step of moved) if (existsSync(step.temp)) await rename(step.temp, step.from).catch(() => undefined);
+        throw error;
+      }
+      return { paths: plan.map((s: { to: string }) => s.to) };
+    },
     "import-image": async (a) => {
       if (typeof a.path === "string") return images.fromPath(absolute(a.path));
       if (typeof a.dataUrl === "string") return images.fromDataUrl(a.dataUrl, typeof a.name === "string" ? a.name : "Image");
