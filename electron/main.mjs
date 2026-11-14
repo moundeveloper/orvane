@@ -106,6 +106,22 @@ const CANVAS_GESTURES = `(() => {
     send({ kind: "key", name });
   }, true);
   addEventListener("keyup", (event) => { if (event.key === "Control" || event.key === "Meta") send({ kind: "key", name: "release" }); }, true);
+  // Holding Space (outside text fields) pans Orvane's canvas: moving the
+  // pointer while it is held moves the view.
+  const editable = (t) => t instanceof Element && !!t.closest("input,textarea,select,[contenteditable]:not([contenteditable=false])");
+  let spaceHeld = false;
+  addEventListener("keydown", (event) => {
+    if (event.code !== "Space" || event.ctrlKey || event.metaKey || event.altKey || editable(event.target)) return;
+    stop(event);
+    if (!spaceHeld) { spaceHeld = true; send({ kind: "key", name: "space-down" }); }
+  }, true);
+  addEventListener("keyup", (event) => {
+    if (event.code !== "Space" || !spaceHeld) return;
+    stop(event);
+    spaceHeld = false;
+    send({ kind: "key", name: "space-up" });
+  }, true);
+  addEventListener("blur", () => { if (spaceHeld) { spaceHeld = false; send({ kind: "key", name: "space-up" }); } });
 })();`;
 // Separate profile (sessions, cookies) for tests or a second setup.
 if (process.env.ORVANE_USER_DATA)

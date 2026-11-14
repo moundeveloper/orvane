@@ -58,6 +58,8 @@ function onMessage(event: MessageEvent) {
   else if (Number.isFinite(event.data?.orvaneCodeSlow))
     frameSlow.value = Math.max(frameSlow.value, event.data.orvaneCodeSlow);
   else if (event.data?.orvaneActivate === true) activateApp(appOf(frame.value));
+  else if (typeof event.data?.orvaneSpace === "boolean")
+    window.dispatchEvent(new CustomEvent("orvane:space", { detail: event.data.orvaneSpace }));
   else if (event.data?.orvaneWheel) {
     const { dx, dy, shift } = event.data.orvaneWheel;
     passWheel(Number(dx), Number(dy), !!shift);

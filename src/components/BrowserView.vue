@@ -2547,6 +2547,9 @@ function openPeekPrompt() {
     placeholder: "Paste a link or search the web", action: "Preview", submit: previewInput });
 }
 function shortcut(name: string) {
+  // Space held in a page pans the canvas (see App.vue hoverPan).
+  if (name === "space-down" || name === "space-up")
+    return void window.dispatchEvent(new CustomEvent("orvane:space", { detail: name === "space-down" }));
   // Orvane's Ctrl+K search and Ctrl+Shift+P commands, pressed inside a page.
   if (name === "palette" || name === "commands")
     return void window.dispatchEvent(new CustomEvent("orvane:palette", { detail: name === "commands" ? ">" : "" }));

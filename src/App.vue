@@ -1178,6 +1178,79 @@ watch(
   },
   { flush: "sync" },
 );
+// Hold Space and move the pointer: the canvas follows in any direction,
+// over empty space, apps and web pages alike (the pan shield covers them
+// while Space is held). Space is taken before apps see it, except while
+// typing; a quick tap without moving is passed on to the app (Peek etc.).
+let hoverLast: { x: number; y: number } | null = null;
+let spaceMoved = false;
+let spaceTarget: EventTarget | null = null;
+let replayingSpace = false;
+const editable = (target: EventTarget | null) =>
+  target instanceof Element &&
+  !!target.closest("input,textarea,select,[contenteditable]:not([contenteditable=false]),.cm-editor,.code-editor,.xterm");
+function armSpace(target: EventTarget | null) {
+  if (space.value) return;
+  space.value = true;
+  spaceMoved = false;
+  spaceTarget = target;
+  hoverLast = null;
+}
+function releaseSpace() {
+  if (!space.value) return;
+  space.value = false;
+  hoverLast = null;
+  const target = spaceTarget;
+  spaceTarget = null;
+  // A tap, not a pan: let the app have its Space after all.
+  if (!spaceMoved && target instanceof Element && target.closest(".canvas-app")) {
+    replayingSpace = true;
+    try {
+      target.dispatchEvent(new KeyboardEvent("keydown", { key: " ", code: "Space", bubbles: true, cancelable: true }));
+    } finally {
+      replayingSpace = false;
+    }
+  }
+}
+function spaceDown(e: KeyboardEvent) {
+  if (replayingSpace || e.code !== "Space" || e.ctrlKey || e.metaKey || e.altKey || !ready.value) return;
+  if (editable(e.target) || wheelOpen.value) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (!e.repeat) armSpace(e.target);
+}
+function spaceUp(e: KeyboardEvent) {
+  if (e.code !== "Space" || !space.value) return;
+  e.preventDefault();
+  e.stopPropagation();
+  releaseSpace();
+}
+function hoverPan(e: PointerEvent) {
+  if (!space.value || e.buttons || gesture) {
+    hoverLast = null;
+    return;
+  }
+  if (hoverLast) {
+    const dx = e.clientX - hoverLast.x,
+      dy = e.clientY - hoverLast.y;
+    if (dx || dy) {
+      spaceMoved = true;
+      stopPan();
+      camera.x += dx;
+      camera.y += dy;
+    }
+  }
+  hoverLast = { x: e.clientX, y: e.clientY };
+}
+// Space held inside a web page or code app arrives as this event.
+function spaceEvent(event: Event) {
+  const down = (event as CustomEvent<boolean>).detail;
+  if (down) armSpace(null);
+  else if (space.value) {
+    spaceMoved = true; // the page already had its key; never replay it
+    releaseSpace();
+  }
+}
 const touches = new Map<number, { x: number; y: number }>();
 let pinch: {
   distance: number;
@@ -2548,6 +2621,10 @@ onMounted(() => {
   window.addEventListener("orvane-canvas-pan", embeddedPan);
   window.addEventListener("orvane:place-file", placeFileEvent);
   window.addEventListener("keydown", paletteKeys, true);
+  window.addEventListener("keydown", spaceDown, true);
+  window.addEventListener("keyup", spaceUp, true);
+  window.addEventListener("pointermove", hoverPan, { passive: true });
+  window.addEventListener("orvane:space", spaceEvent);
   window.addEventListener(WHEEL_EVENT, passedWheel);
   window.addEventListener(ACTIVATE_EVENT, activatedApp);
   window.addEventListener("orvane:palette", paletteEvent);
@@ -2563,6 +2640,10 @@ onBeforeUnmount(() => {
   window.removeEventListener("orvane-canvas-pan", embeddedPan);
   window.removeEventListener("orvane:place-file", placeFileEvent);
   window.removeEventListener("keydown", paletteKeys, true);
+  window.removeEventListener("keydown", spaceDown, true);
+  window.removeEventListener("keyup", spaceUp, true);
+  window.removeEventListener("pointermove", hoverPan);
+  window.removeEventListener("orvane:space", spaceEvent);
   window.removeEventListener(WHEEL_EVENT, passedWheel);
   window.removeEventListener(ACTIVATE_EVENT, activatedApp);
   window.removeEventListener("orvane:palette", paletteEvent);

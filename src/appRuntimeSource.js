@@ -89,6 +89,31 @@
     { capture: true, passive: false },
   );
   addEventListener("pointerdown", () => parent.postMessage({ orvaneActivate: true }, "*"), true);
+  // Holding Space (outside text fields) pans the canvas; the host follows
+  // the pointer while it is held.
+  let spaceHeld = false;
+  const editable = (t) =>
+    t instanceof Element && !!t.closest("input,textarea,select,[contenteditable]:not([contenteditable=false])");
+  addEventListener(
+    "keydown",
+    (event) => {
+      if (event.code !== "Space" || event.ctrlKey || event.metaKey || event.altKey || editable(event.target)) return;
+      if (!spaceHeld) {
+        spaceHeld = true;
+        parent.postMessage({ orvaneSpace: true }, "*");
+      }
+    },
+    true,
+  );
+  addEventListener(
+    "keyup",
+    (event) => {
+      if (event.code !== "Space" || !spaceHeld) return;
+      spaceHeld = false;
+      parent.postMessage({ orvaneSpace: false }, "*");
+    },
+    true,
+  );
 
   addEventListener("message", (event) => {
     if (
