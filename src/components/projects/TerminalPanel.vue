@@ -236,6 +236,42 @@ const handleData = (tab: TerminalTab, data: string) => {
   }
 };
 
+// Files dragged from the File Explorer (or the system, in the desktop app)
+// are typed at the prompt as quoted paths; nothing runs until Enter.
+const FILES_MIME = "application/x-orvane-files";
+const dropOver = ref(false);
+const droppedPaths = (event: DragEvent): string[] => {
+  const internal = event.dataTransfer?.getData(FILES_MIME);
+  if (internal) {
+    try {
+      return JSON.parse(internal).paths ?? [];
+    } catch {
+      return [];
+    }
+  }
+  const desktop = (window as unknown as { orvaneDesktop?: { pathForFile?: (f: File) => string } }).orvaneDesktop;
+  return [...(event.dataTransfer?.files ?? [])].map((file) => desktop?.pathForFile?.(file) ?? "").filter(Boolean);
+};
+const onTerminalDragOver = (event: DragEvent) => {
+  const types = event.dataTransfer?.types ?? [];
+  if (!types.includes(FILES_MIME) && !types.includes("Files")) return;
+  event.preventDefault();
+  event.stopPropagation();
+  dropOver.value = true;
+};
+const onTerminalDrop = (event: DragEvent) => {
+  dropOver.value = false;
+  const tab = tabs.value.find((t) => t.id === activeTabId.value);
+  const paths = droppedPaths(event);
+  if (!tab || !paths.length) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const text = paths.map((p) => (/[\s'"&()]/.test(p) ? `"${p.replace(/"/g, '\\"')}"` : p)).join(" ");
+  const spaced = (tab.input && !tab.input.endsWith(" ") ? " " : "") + text + " ";
+  handleData(tab, spaced);
+  tab.terminal?.focus();
+};
+
 const initTerminal = (tab: TerminalTab) => {
   const host = terminalHosts.get(tab.id);
   if (!host || tab.terminal) return;
@@ -495,7 +531,13 @@ defineExpose({ addTab });
         </button>
       </div>
     </div>
-    <div class="terminal-body">
+    <div
+      class="terminal-body"
+      :class="{ 'terminal-drop': dropOver }"
+      @dragover="onTerminalDragOver"
+      @dragleave.self="dropOver = false"
+      @drop="onTerminalDrop"
+    >
       <div
         v-for="tab in tabs"
         v-show="tab.id === activeTabId"
