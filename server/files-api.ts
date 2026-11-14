@@ -1,6 +1,6 @@
 import type { Plugin, Connect } from "vite";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { createReadStream } from "node:fs";
+import { createReadStream, watch, type FSWatcher } from "node:fs";
 import { stat } from "node:fs/promises";
 import { extname } from "node:path";
 import { timingSafeEqual } from "node:crypto";
@@ -72,6 +72,53 @@ async function send(req: IncomingMessage, res: ServerResponse, path: string, typ
   stream.pipe(res);
 }
 
+// Server-sent events for one folder: "change" (debounced) whenever an entry
+// in it is added, removed, renamed or written.
+let watching = 0;
+function watchFolder(req: IncomingMessage, res: ServerResponse, path: string) {
+  if (watching >= 200) {
+    res.statusCode = 503;
+    return res.end();
+  }
+  let watcher: FSWatcher;
+  try {
+    watcher = watch(path, { persistent: false });
+  } catch {
+    res.statusCode = 404;
+    return res.end();
+  }
+  watching++;
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-store",
+    Connection: "keep-alive",
+  });
+  res.write("retry: 3000\n\n");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const names = new Set<string>();
+  watcher.on("change", (_type, name) => {
+    if (name) names.add(String(name));
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      res.write(`event: change\ndata: ${JSON.stringify([...names].slice(0, 200))}\n\n`);
+      names.clear();
+    }, 150);
+  });
+  watcher.on("error", () => close());
+  const ping = setInterval(() => res.write(": ping\n\n"), 25_000);
+  let closed = false;
+  function close() {
+    if (closed) return;
+    closed = true;
+    watching--;
+    clearTimeout(timer);
+    clearInterval(ping);
+    watcher.close();
+    res.end();
+  }
+  req.on("close", close);
+}
+
 // File Explorer HTTP API: /__orvane/files/<operation>, POST JSON only, and
 // only from a same-origin page on this machine (like the Projects Hub API).
 // GET /__orvane/files/raw?path=…&t=<token> streams a file for peek; GET
@@ -100,6 +147,12 @@ export function filesApi(directory: string): Plugin {
           const path = service.resolve(url.searchParams.get("path"));
           const type = MEDIA_MIME[extname(path).slice(1).toLowerCase()] ?? "application/octet-stream";
           return await send(req, res, path, type, "no-store");
+        }
+        if (operation === "watch") {
+          const given = Buffer.from(url.searchParams.get("t") ?? "");
+          if (given.length !== tokenBytes.length || !timingSafeEqual(given, tokenBytes))
+            return reply(403, { error: "A valid token is required." });
+          return watchFolder(req, res, service.resolve(url.searchParams.get("path")));
         }
         if (operation.startsWith("image/")) {
           const id = decodeURIComponent(operation.slice("image/".length));

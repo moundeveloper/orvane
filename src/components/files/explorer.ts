@@ -217,3 +217,56 @@ export function languageOf(ext: string): CodeLanguage {
   if (ext === "sql") return "sql";
   return "plain";
 }
+
+// The token for raw/watch URLs, fetched once per page.
+let tokenPromise: Promise<string> | null = null;
+export function fileToken() {
+  tokenPromise ??= api<{ token: string }>("roots").then(
+    (r) => r.token,
+    (error) => {
+      tokenPromise = null;
+      throw error;
+    },
+  );
+  return tokenPromise;
+}
+// One event stream per folder, shared by every listener on it. The callback
+// receives the names that changed (may be empty when the OS does not say).
+const watchers = new Map<string, { source: EventSource; listeners: Set<(names: string[]) => void> }>();
+export function watchFolder(dir: string, listener: (names: string[]) => void) {
+  const key = dir.toLowerCase();
+  let entry = watchers.get(key);
+  let stopped = false;
+  const start = async () => {
+    const token = await fileToken().catch(() => "");
+    if (stopped || !token) return;
+    entry = watchers.get(key);
+    if (!entry) {
+      const source = new EventSource(`/__orvane/files/watch?path=${encodeURIComponent(dir)}&t=${token}`);
+      entry = { source, listeners: new Set() };
+      const current = entry;
+      source.addEventListener("change", (event) => {
+        let names: string[] = [];
+        try {
+          names = JSON.parse((event as MessageEvent).data);
+        } catch {
+          // Treat as "something changed".
+        }
+        for (const fn of current.listeners) fn(names);
+      });
+      watchers.set(key, entry);
+    }
+    entry.listeners.add(listener);
+  };
+  void start();
+  return () => {
+    stopped = true;
+    const current = watchers.get(key);
+    if (!current) return;
+    current.listeners.delete(listener);
+    if (!current.listeners.size) {
+      current.source.close();
+      watchers.delete(key);
+    }
+  };
+}

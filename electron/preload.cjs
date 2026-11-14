@@ -1,7 +1,7 @@
 // Orvane window only (never websites): tells the Browser app it can use
 // <webview>, relays links that a page wants opened in a new tab, and manages
 // saved logins (sites and usernames only; passwords never reach this window).
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("orvaneDesktop", {
   webview: true,
@@ -12,6 +12,14 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
   displays: () => ipcRenderer.invoke("orvane:displays"),
   setDisplay: (id) => ipcRenderer.invoke("orvane:display-set", id),
   partition: "persist:orvane-browser",
+  /** The local path of a file dropped from the system, or "" if it has none. */
+  pathForFile(file) {
+    try {
+      return webUtils.getPathForFile(file) || "";
+    } catch {
+      return "";
+    }
+  },
   /** Render a Browser page at this many device pixels per CSS pixel. */
   setPageDensity(webContentsId, density) {
     return ipcRenderer.invoke("orvane:page-density", webContentsId, density);

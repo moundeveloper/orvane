@@ -315,12 +315,12 @@ function itemMenu(event: MouseEvent, entry: FileEntry) {
     { label: "Open", icon: one?.dir ? "folder-open" : "external", run: openSelection },
   ];
   if (one && !one.dir) menu.push({ label: "Peek", icon: "eye", hint: "Space", run: () => peek(one) });
-  const images = items.filter((e) => !e.dir && isImage(e.path));
-  if (images.length)
+  const placeable = items.filter((e) => !e.dir);
+  if (placeable.length)
     menu.push({
-      label: images.length === 1 ? "Place on canvas" : `Place ${images.length} images on canvas`,
-      icon: "image",
-      run: () => images.forEach((e) => props.ctx.addToCanvas(e.path)),
+      label: placeable.length === 1 ? "Place on canvas" : `Place ${placeable.length} files on canvas`,
+      icon: placeable.every((e) => isImage(e.path)) ? "image" : "app",
+      run: () => placeable.slice(0, 20).forEach((e) => props.ctx.addToCanvas(e.path)),
     });
   if (one?.dir)
     menu.push(

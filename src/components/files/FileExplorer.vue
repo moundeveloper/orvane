@@ -323,7 +323,7 @@ const ctx: ExplorerContext = reactive({
   dropPaths,
   // The canvas (App.vue) owns app creation; it listens for this event.
   addToCanvas(path: string) {
-    window.dispatchEvent(new CustomEvent("orvane:place-image", { detail: { path } }));
+    window.dispatchEvent(new CustomEvent("orvane:place-file", { detail: { path } }));
   },
 });
 async function refreshNode(key: string) {

@@ -11,6 +11,7 @@ const NotesView = defineAsyncComponent(() => import("./notes/NotesView.vue"));
 const NetSuiteView = defineAsyncComponent(() => import("./NetSuiteView.vue"));
 const BrowserView = defineAsyncComponent(() => import("./BrowserView.vue"));
 const ImageBlock = defineAsyncComponent(() => import("./ImageBlock.vue"));
+const FileBlock = defineAsyncComponent(() => import("./FileBlock.vue"));
 const FileExplorer = defineAsyncComponent(
   () => import("./files/FileExplorer.vue"),
 );
@@ -131,6 +132,11 @@ const sandboxDocument = (code: string) => {
     <FileExplorer v-else-if="block.kind === 'files'" :block="block" />
     <ImageBlock
       v-else-if="block.kind === 'image'"
+      :block="block"
+      :editing="editing"
+    />
+    <FileBlock
+      v-else-if="block.kind === 'file'"
       :block="block"
       :editing="editing"
     />

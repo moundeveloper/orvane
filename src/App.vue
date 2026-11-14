@@ -25,6 +25,7 @@ import CustomNumber from "./components/CustomNumber.vue";
 import { migrateGroups, groupBounds } from "./groups";
 import { vMotion } from "./motion";
 import { importDrop, importPath, mayHoldImage, measure, type PlacedImage } from "./imageDrop";
+import { isImage, peekKind } from "./components/files/explorer";
 import {
   emptyWorkspace,
   appMinimum,
@@ -578,16 +579,48 @@ function canvasDragOver(event: DragEvent) {
 function canvasDrop(event: DragEvent) {
   if (!canEdit.value || importBusy.value || !onCanvas(event.target) || !event.dataTransfer) return;
   event.preventDefault();
-  const { jobs, skipped } = importDrop(event.dataTransfer);
-  if (!jobs.length) return notifyDrop("Only images can be dropped on the canvas.");
-  if (skipped) notifyDrop(`${skipped} item${skipped === 1 ? " is" : "s are"} not an image and was skipped.`);
-  void placeImages(jobs, {
-    x: (event.clientX - camera.x) / camera.zoom,
-    y: (event.clientY - camera.y) / camera.zoom,
-  });
+  const { jobs, files, skipped } = importDrop(event.dataTransfer);
+  if (!jobs.length && !files.length)
+    return notifyDrop(
+      skipped ? "Folders cannot be placed on the canvas." : "Drop images or files from the File Explorer here.",
+    );
+  if (skipped) notifyDrop(`${skipped} folder${skipped === 1 ? " was" : "s were"} skipped.`);
+  const at = { x: (event.clientX - camera.x) / camera.zoom, y: (event.clientY - camera.y) / camera.zoom };
+  void placeImages(jobs, at, 0);
+  placeFiles(files, at, jobs.length * 28);
 }
-async function placeImages(jobs: Promise<PlacedImage>[], at: { x: number; y: number }) {
-  let offset = 0;
+// Creates a one-component app (image or file widget) centred on `at`.
+function placeWidget(
+  kind: "image" | "file",
+  value: string,
+  name: string,
+  size: { width: number; height: number },
+  at: { x: number; y: number },
+) {
+  const appId = uid();
+  const result = applyCommands(workspace, [
+    {
+      operation: "app_create",
+      args: {
+        id: appId,
+        properties: {
+          name,
+          icon: kind === "image" ? "image" : "file",
+          width: size.width,
+          height: size.height,
+          x: at.x - size.width / 2,
+          y: at.y - size.height / 2,
+          padding: 0,
+          gap: 0,
+        },
+      },
+    },
+    { operation: "component_create", args: { appId, kind, properties: { label: name, value, sizing: "fill" } } },
+  ]);
+  workspace.apps.push(result.workspace.apps.find((a) => a.id === appId)!);
+  createdAppId.value = appId;
+}
+async function placeImages(jobs: Promise<PlacedImage>[], at: { x: number; y: number }, offset: number) {
   for (const job of jobs) {
     let placed: PlacedImage;
     try {
@@ -600,43 +633,39 @@ async function placeImages(jobs: Promise<PlacedImage>[], at: { x: number; y: num
     // Fit the picture into 480 px on its longer side, keeping its shape.
     const size = await measure(placed.value);
     const scale = Math.min(1, 480 / Math.max(size.width, size.height));
-    const width = Math.max(180, Math.round(size.width * scale)),
-      height = Math.max(160, Math.round(size.height * scale) + 36);
-    const appId = uid();
-    const result = applyCommands(workspace, [
-      {
-        operation: "app_create",
-        args: {
-          id: appId,
-          properties: {
-            name: placed.name || "Image",
-            icon: "image",
-            width,
-            height,
-            x: at.x - width / 2 + offset,
-            y: at.y - height / 2 + offset,
-            padding: 0,
-            gap: 0,
-          },
-        },
-      },
-      {
-        operation: "component_create",
-        args: { appId, kind: "image", properties: { label: placed.name || "Image", value: placed.value, sizing: "fill" } },
-      },
-    ]);
-    workspace.apps.push(result.workspace.apps.find((a) => a.id === appId)!);
-    createdAppId.value = appId;
+    placeWidget(
+      "image",
+      placed.value,
+      placed.name || "Image",
+      { width: Math.max(180, Math.round(size.width * scale)), height: Math.max(160, Math.round(size.height * scale) + 36) },
+      { x: at.x + offset, y: at.y + offset },
+    );
     offset += 28;
   }
 }
-function placeImageEvent(event: Event) {
+// File widgets link to the file on disk; size follows what it shows.
+const FILE_SIZES: Record<string, { width: number; height: number }> = {
+  video: { width: 640, height: 400 },
+  pdf: { width: 540, height: 700 },
+  sheet: { width: 680, height: 440 },
+  audio: { width: 380, height: 220 },
+  text: { width: 600, height: 460 },
+};
+function placeFiles(paths: string[], at: { x: number; y: number }, offset: number) {
+  for (const path of paths.slice(0, 20)) {
+    const name = path.split(/[\\/]/).pop() ?? path;
+    const ext = name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
+    const kind = peekKind({ name, path, dir: false, size: 0, mtime: 0, ext, hidden: false, link: false });
+    placeWidget("file", path, name, FILE_SIZES[kind] ?? FILE_SIZES.text!, { x: at.x + offset, y: at.y + offset });
+    offset += 28;
+  }
+}
+function placeFileEvent(event: Event) {
   const path = (event as CustomEvent<{ path?: string }>).detail?.path;
   if (!path || !canEdit.value || importBusy.value) return;
-  void placeImages([importPath(path)], {
-    x: (viewport.width / 2 - camera.x) / camera.zoom,
-    y: (viewport.height / 2 - camera.y) / camera.zoom,
-  });
+  const at = { x: (viewport.width / 2 - camera.x) / camera.zoom, y: (viewport.height / 2 - camera.y) / camera.zoom };
+  if (isImage(path)) void placeImages([importPath(path)], at, 0);
+  else placeFiles([path], at, 0);
 }
 
 let navigationSequence = 0;
@@ -2182,7 +2211,7 @@ onMounted(() => {
   window.addEventListener("pagehide", hidePage);
   window.addEventListener("wheel", wheel, { passive: false });
   window.addEventListener("orvane-canvas-pan", embeddedPan);
-  window.addEventListener("orvane:place-image", placeImageEvent);
+  window.addEventListener("orvane:place-file", placeFileEvent);
 });
 onBeforeUnmount(() => {
   window.removeEventListener("beforeunload", beforeUnload);
@@ -2191,7 +2220,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("online", persist);
   mcpBridge?.close();
   window.removeEventListener("orvane-canvas-pan", embeddedPan);
-  window.removeEventListener("orvane:place-image", placeImageEvent);
+  window.removeEventListener("orvane:place-file", placeFileEvent);
   clearTimeout(dropNoticeTimer);
   stopPan();
   stopZoom();

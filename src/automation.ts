@@ -36,6 +36,7 @@ const kind = z.enum([
   "netsuite",
   "files",
   "image",
+  "file",
 ]);
 const componentPatch = z
   .object({

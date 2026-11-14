@@ -31,28 +31,43 @@ async function place(args: Record<string, unknown>): Promise<PlacedImage> {
 export function importPath(path: string) {
   return place({ path });
 }
-// The data must be read synchronously inside the drop handler; the returned
-// promises do the slow part afterwards.
-export function importDrop(dt: DataTransfer): { jobs: Promise<PlacedImage>[]; skipped: number } {
+// The local path of a file dropped from the system (desktop app only).
+function systemPath(file: File) {
+  const desktop = (window as unknown as { orvaneDesktop?: { pathForFile?: (f: File) => string } }).orvaneDesktop;
+  return desktop?.pathForFile?.(file) ?? "";
+}
+// Images become image jobs; other files (videos, PDFs, code…) are returned
+// as paths for live file widgets. Folders are skipped. The data must be read
+// synchronously inside the drop handler; the jobs do the slow part later.
+export function importDrop(dt: DataTransfer): { jobs: Promise<PlacedImage>[]; files: string[]; skipped: number } {
   const jobs: Promise<PlacedImage>[] = [];
+  const files: string[] = [];
   let skipped = 0;
   const internal = dt.getData(DRAG_MIME);
   if (internal) {
     try {
-      const paths: string[] = JSON.parse(internal).paths ?? [];
-      for (const path of paths) isImage(path) ? jobs.push(importPath(path)) : skipped++;
+      const data = JSON.parse(internal);
+      const dirs = new Set<string>(data.dirs ?? []);
+      for (const path of (data.paths ?? []) as string[])
+        if (dirs.has(path)) skipped++;
+        else if (isImage(path)) jobs.push(importPath(path));
+        else files.push(path);
     } catch {
       // Not ours after all.
     }
-    return { jobs, skipped };
+    return { jobs, files, skipped };
   }
-  const files = [...dt.files];
-  if (files.length) {
-    for (const file of files)
+  const dropped = [...dt.files];
+  if (dropped.length) {
+    for (const file of dropped) {
+      const path = systemPath(file);
       if (file.type.startsWith("image/"))
-        jobs.push(readDataUrl(file).then((dataUrl) => place({ dataUrl, name: file.name.replace(/\.[^.]+$/, "") })));
+        jobs.push(path ? importPath(path) : readDataUrl(file).then((dataUrl) => place({ dataUrl, name: file.name.replace(/\.[^.]+$/, "") })));
+      // A dropped folder has no type and no size; anything else is a file.
+      else if (path && (file.type || file.size)) files.push(path);
       else skipped++;
-    if (jobs.length) return { jobs, skipped };
+    }
+    if (jobs.length || files.length) return { jobs, files, skipped };
   }
   // A web image: its address is in the HTML fragment or the URI list.
   const html = dt.getData("text/html");
@@ -63,7 +78,7 @@ export function importDrop(dt: DataTransfer): { jobs: Promise<PlacedImage>[]; sk
     .find((line) => line && !line.startsWith("#"));
   const url = fromHtml || uri;
   if (url && (/^https?:\/\//i.test(url) || /^data:image\//i.test(url))) jobs.push(place({ url }));
-  return { jobs, skipped };
+  return { jobs, files, skipped };
 }
 // Natural size, for sizing the new widget to the picture.
 export function measure(value: string) {

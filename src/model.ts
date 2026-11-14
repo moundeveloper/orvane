@@ -14,7 +14,8 @@ export type Kind =
   | "browser"
   | "netsuite"
   | "files"
-  | "image";
+  | "image"
+  | "file";
 export type ActionKind =
   | "add-item"
   | "clear"
@@ -239,6 +240,11 @@ export const kinds: { kind: Kind; name: string; description: string }[] = [
     name: "Image",
     description: "A picture, dropped in or chosen from a file",
   },
+  {
+    kind: "file",
+    name: "File",
+    description: "A live view of a video, PDF, spreadsheet or code file",
+  },
 ];
 export function makeBlock(kind: Kind): Block {
   return {
@@ -261,6 +267,7 @@ export function makeBlock(kind: Kind): Block {
       netsuite: "NetSuite",
       files: "File Explorer",
       image: "Image",
+      file: "File",
     }[kind],
     value: "",
     checked: false,
