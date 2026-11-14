@@ -29,6 +29,9 @@ import { isImage, peekKind } from "./components/files/explorer";
 import { isBackup, makeBackup, restoreImages } from "./backup";
 import { registerCommands } from "./commands";
 import CommandPalette from "./components/CommandPalette.vue";
+import BoardLayer from "./components/BoardLayer.vue";
+import BoardTools from "./components/BoardTools.vue";
+import { BOARD_COLORS, ensureBoard, type Tool } from "./board";
 import {
   emptyWorkspace,
   appMinimum,
@@ -584,6 +587,46 @@ function focusAppById(appId: string) {
   void focusApp(app);
 }
 
+// ---- Board: sticky notes, arrows and drawings on the canvas ----
+const boardTool = ref<Tool>("select");
+const boardColor = ref(BOARD_COLORS[0]!);
+const boardSelected = ref("");
+const boardEditNote = ref("");
+const EMPTY_BOARD = { notes: [], arrows: [], strokes: [] };
+const boardView = computed(() => workspace.board ?? EMPTY_BOARD);
+// The board is created the first time a drawing tool is picked.
+watch(boardTool, (tool) => {
+  if (tool !== "select" && canEdit.value) ensureBoard(workspace);
+  if (tool !== "select") boardSelected.value = "";
+});
+function boardCreated(id: string, kind: "note" | "arrow" | "stroke") {
+  boardSelected.value = id;
+  if (kind === "note") boardEditNote.value = id;
+}
+function eraseBoardItem(id: string) {
+  const board = workspace.board;
+  if (!board || !canEdit.value) return;
+  board.strokes = board.strokes.filter((s) => s.id !== id);
+  board.notes = board.notes.filter((n) => n.id !== id);
+  board.arrows = board.arrows.filter((a) => a.id !== id && a.from.noteId !== id && a.to.noteId !== id);
+  if (boardSelected.value === id) boardSelected.value = "";
+}
+function addStickyNote() {
+  if (!canEdit.value) return;
+  const board = ensureBoard(workspace);
+  const note = {
+    id: uid(),
+    x: Math.round((viewport.width / 2 - camera.x) / camera.zoom - 100),
+    y: Math.round((viewport.height / 2 - camera.y) / camera.zoom - 80),
+    width: 200,
+    height: 160,
+    text: "",
+    color: "#fff4b8",
+  };
+  board.notes.push(note);
+  boardCreated(note.id, "note");
+}
+
 // ---- Layouts: named arrangements of the canvas ----
 const layouts = computed(() => workspace.layouts ?? []);
 const layoutName = ref("");
@@ -680,6 +723,17 @@ const stopCanvasCommands = registerCommands("canvas", () => {
       ? [
           { id: "layout-save", title: "Save current layout…", icon: "layers", detail: "Layouts", keywords: "workspace snapshot arrangement", run: () => openLayouts() },
           { id: "layout-show-all", title: "Show all apps", icon: "eye", detail: "Layouts", keywords: "unhide", run: () => showAllApps() },
+        ]
+      : []),
+    ...(writable
+      ? [
+          { id: "board-note", title: "Add sticky note", icon: "text", detail: "Board", keywords: "whiteboard postit", run: () => addStickyNote() },
+          { id: "board-arrow", title: "Draw an arrow between apps", icon: "forward", detail: "Board", keywords: "connect connector link whiteboard", run: () => (boardTool.value = "arrow") },
+          { id: "board-pen", title: "Draw on the canvas", icon: "edit", detail: "Board", keywords: "pen freehand sketch whiteboard", run: () => (boardTool.value = "pen") },
+          { id: "board-eraser", title: "Erase board items", icon: "trash", detail: "Board", keywords: "whiteboard delete", run: () => (boardTool.value = "eraser") },
+          ...(workspace.board?.strokes.length
+            ? [{ id: "board-clear", title: "Clear all drawings", icon: "trash", detail: "Board", keywords: "whiteboard pen erase", run: () => (workspace.board!.strokes = []) }]
+            : []),
         ]
       : []),
     { id: "canvas-home", title: "Center the canvas", icon: "home", hint: workspace.shortcuts.home.toUpperCase(), detail: "Canvas", run: () => home() },
@@ -1554,6 +1608,17 @@ function keydown(e: KeyboardEvent) {
       palette.value = key === "p" ? ">" : "";
       return;
     }
+  }
+  // Delete removes the selected sticky note, arrow or drawing.
+  if (
+    (e.key === "Delete" || e.key === "Backspace") &&
+    boardSelected.value &&
+    !boardEditNote.value &&
+    !(e.target instanceof Element && e.target.closest("input, textarea, [contenteditable], .app-surface"))
+  ) {
+    e.preventDefault();
+    eraseBoardItem(boardSelected.value);
+    return;
   }
   if (
     e.key === "Tab" &&
@@ -2453,11 +2518,21 @@ onBeforeUnmount(() => {
       !dragging &&
       (($event.target as HTMLElement).classList.contains('canvas-background') ||
         $event.target === $event.currentTarget) &&
-      (panel = null)
+      ((panel = null), (boardSelected = ''))
     "
   >
     <div class="canvas-background"></div>
     <div v-if="dropNotice" class="drop-notice" role="status">{{ dropNotice }}</div>
+    <BoardTools
+      v-if="ready && canEdit"
+      v-model:tool="boardTool"
+      v-model:color="boardColor"
+      :board="boardView"
+      :apps="apps"
+      :all-apps="workspace.apps"
+      :camera="camera"
+      @created="boardCreated"
+    />
     <CommandPalette
       v-if="palette !== null"
       :apps="workspace.apps"
@@ -2791,6 +2866,20 @@ onBeforeUnmount(() => {
         transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})`,
       }"
     >
+      <BoardLayer
+        v-if="workspace.board"
+        :board="workspace.board"
+        :apps="apps"
+        :all-apps="workspace.apps"
+        :zoom="camera.zoom"
+        :tool="boardTool"
+        :editable="canEdit && !importBusy"
+        :selected="boardSelected"
+        :edit-note="boardEditNote"
+        @select="boardSelected = $event"
+        @erase="eraseBoardItem"
+        @edit-note="boardEditNote = $event"
+      />
       <template v-for="group in spatialGroups" :key="group.id"
         ><div
           v-if="group.bounds"

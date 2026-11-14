@@ -12,7 +12,42 @@ Files support multi-selection (Ctrl/Shift, Ctrl+A, arrows, type-ahead), Enter to
 
 ### Image widgets
 
-Drop an image on empty canvas to create an image widget at that spot, sized to the picture: from the File Explorer, from the system's file manager, or dragged out of a web page (including the Browser app). File Explorer images can also be placed with right-click → **Place on canvas** or the Peek rail. Pictures are copied into `.orvane/images/` (content-addressed), so the widget keeps working when the original moves; a web image that cannot be downloaded (for example behind a sign-in) keeps its web address instead. Image widgets can also be added from the builder and filled by dropping or choosing a file. JSON workspace exports include only the image ids, not the pictures themselves.
+Drop an image on empty canvas to create an image widget at that spot, sized to the picture: from the File Explorer, from the system's file manager, or dragged out of a web page (including the Browser app). File Explorer images can also be placed with right-click → **Place on canvas** or the Peek rail. Pictures are copied into `.orvane/images/` (content-addressed), so the widget keeps working when the original moves; a web image that cannot be downloaded (for example behind a sign-in) keeps its web address instead. Image widgets can also be added from the builder and filled by dropping or choosing a file. Ctrl+V on empty canvas places a clipboard image (a screenshot, a copied picture or an image address) at the pointer.
+
+Hover an image widget for its tools: rotate left/right, flip, crop (drag the box or its corners; Enter applies, Esc cancels), caption, and a frame (mat border, polaroid, shadow, rounded). Rotate, flip and crop store a new picture and keep the original, so **Reset** returns to it. Pictures from a web address cannot be rotated or cropped.
+
+### File widgets
+
+Any other file dropped on the canvas — a video, PDF, spreadsheet, audio or code file, from the File Explorer or (in the desktop app) from the system — becomes a **file widget** that shows it with the same viewers as Peek. File widgets link to the file where it is, rather than copying it, and refresh as soon as the file changes on disk. Folders are skipped. **Place on canvas** in the File Explorer works for every file type.
+
+### More File Explorer tools
+
+- **Compress to ZIP** / **Extract here** (right-click). Archives are written and read with Node's zlib; entries that would land outside the target folder are refused, and ZIP64, encrypted and over-2 GB archives are not supported.
+- **Git badges**: inside a repository, files and folders show M (modified), A (added), D (deleted), R (renamed), U (untracked) or C (conflict). Folders show the most notable change inside them.
+- **Batch rename**: select several items and press F2 (or right-click → Rename). Use find & replace (optionally a regular expression, keeping extensions) or a numbered pattern such as `Photo {n}`; the preview flags duplicates and invalid names, and all items are renamed together.
+- **Folder sizes**: the size button computes folder totals in the background (≥ marks a total that stopped early in a very large folder); sorting by size then includes folders.
+- **Live updates** (on by default): visible tabs refresh the moment their folder changes on disk.
+- History survives reloads; mouse back/forward buttons work in each pane, and Alt+Left/Right/Up and Backspace act on the active pane even after a sidebar click.
+
+### Connections between apps
+
+Drag files from the File Explorer (or the system, in the desktop app) into **Notes**: images become image blocks, other files a 📎 link that opens the file. Drop files on the **Projects Hub terminal** to type their quoted paths at the prompt; nothing runs until Enter.
+
+### Search and commands (Ctrl+K)
+
+Ctrl+K opens one box that searches apps, commands, Notes pages and their text, Browser history, Git commit messages and hashes (across saved Git workspaces) and file names under your home folder. Enter opens the result in its app: a note page, a browser tab, the commit in a Git viewer, or the file selected in the File Explorer. Type `>` first, or press Ctrl+Shift+P, for commands only. Apps add their own commands (open a File Explorer place or pin, new note, new browser tab, run the SuiteQL query, refresh Git history), next to canvas commands such as new apps, layouts, board tools and backups. Inside Notes, Ctrl+K keeps opening the Notes search.
+
+### Layouts
+
+**Layouts** in the top bar saves the current arrangement under a name (Coding, Research, NetSuite…): every app's position, size and whether it is shown, plus the view. Click a layout to switch; switching never changes what is inside an app. Untick apps under "Shown in this view" to leave them out of a layout, update a layout with the save icon, and switch from Ctrl+K. Apps created after a layout was saved stay visible where they are.
+
+### Board
+
+The rail on the left of the canvas holds whiteboard tools: **sticky notes** (click to place; double-click to write; drag the top strip, resize from the corner, change colour), **arrows** (drag from one app or note to another; the arrow follows them as they move; double-click to label), **freehand drawing** and an **eraser**. The colour dot sets the colour for arrows and drawings. Select an item and press Delete to remove it; Esc returns to Select. Board items are saved with the workspace.
+
+### Backups
+
+**Export backup** includes the pictures used by image widgets, so restoring brings them back too; a picture whose content no longer matches its id is skipped. Plain workspace JSON from earlier exports still imports. File widgets link to files elsewhere on disk and are not included.
 
 ### Projects Hub
 

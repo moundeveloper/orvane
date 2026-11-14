@@ -133,6 +133,17 @@ export interface Workspace {
   actions?: WorkspaceAction[];
   layouts?: Layout[];
   activeLayout?: string;
+  board?: Board;
+}
+// Whiteboard items drawn on the canvas itself, in canvas coordinates.
+// An arrow end attached to an app or sticky note follows it; x/y is where
+// the end was when last attached, used if that item disappears.
+export type BoardEnd = { appId?: string; noteId?: string; x: number; y: number };
+export interface Board {
+  notes: { id: string; x: number; y: number; width: number; height: number; text: string; color: string }[];
+  arrows: { id: string; from: BoardEnd; to: BoardEnd; label?: string; color: string }[];
+  /** Freehand strokes; points are flat [x0, y0, x1, y1, …]. */
+  strokes: { id: string; points: number[]; color: string; width: number }[];
 }
 // A named arrangement of the canvas: where each app sits, whether it is
 // shown, and the camera. Switching layouts never changes app content.

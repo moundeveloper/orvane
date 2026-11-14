@@ -92,6 +92,7 @@ const block: z.ZodType<Block> = z.lazy(() =>
     gitWorkspaceId: id.optional(),
   }),
 );
+const boardEnd = z.object({ appId: z.string().optional(), noteId: z.string().optional(), x: number, y: number });
 const schema = z.object({
   version: z.literal(1),
   apps: z
@@ -181,6 +182,44 @@ const schema = z.object({
     .max(50)
     .optional(),
   activeLayout: z.string().optional(),
+  board: z
+    .object({
+      notes: z
+        .array(
+          z.object({
+            id,
+            x: number,
+            y: number,
+            width: number.min(60).max(4000),
+            height: number.min(40).max(4000),
+            text: z.string().max(20000),
+            color: z.string().regex(/^#[\da-f]{6}$/i),
+          }),
+        )
+        .max(500),
+      arrows: z
+        .array(
+          z.object({
+            id,
+            from: boardEnd,
+            to: boardEnd,
+            label: z.string().max(200).optional(),
+            color: z.string().regex(/^#[\da-f]{6}$/i),
+          }),
+        )
+        .max(1000),
+      strokes: z
+        .array(
+          z.object({
+            id,
+            points: z.array(number).max(8000),
+            color: z.string().regex(/^#[\da-f]{6}$/i),
+            width: number.min(0.5).max(40),
+          }),
+        )
+        .max(2000),
+    })
+    .optional(),
 });
 export const appPatchSchema = schema.shape.apps.element
   .omit({
