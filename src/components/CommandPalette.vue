@@ -279,9 +279,10 @@ watch(results, () => (active.value = Math.min(active.value, Math.max(0, results.
 watch(query, () => (active.value = 0));
 function run(result?: Result) {
   if (!result) return;
+  // Run while the palette is still mounted: its focusApp/focusBlock events
+  // only reach the canvas from a live component. Closing comes after.
+  void result.run();
   emit("close");
-  // After the palette closes, so the target app can take focus.
-  setTimeout(() => void result.run(), 0);
 }
 function keydown(event: KeyboardEvent) {
   event.stopPropagation();

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Peek: a quick look at a file in a panel over the folder, styled after the
 // Browser's Peek View. Arrow keys step through the folder's files.
-import { nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import Icon from "../Icon.vue";
 import FileViewer from "./FileViewer.vue";
 import {
@@ -18,6 +18,7 @@ import {
 const props = defineProps<{ entry: FileEntry; position: number; total: number; ctx: ExplorerContext }>();
 const emit = defineEmits<{ close: []; step: [number] }>();
 const root = ref<HTMLElement>();
+const folder = computed(() => props.entry.path.slice(0, Math.max(0, props.entry.path.length - props.entry.name.length)).replace(/[\\/]+$/, ""));
 
 // ---- Keyboard and actions ----
 function keydown(event: KeyboardEvent) {
@@ -57,12 +58,12 @@ watch(() => props.entry.path, () => void nextTick(() => {
     <div class="peek-title">
       <Icon :name="iconOf(entry)" :size="15" :class="toneOf(entry)" />
       <strong :title="entry.name">{{ entry.name }}</strong>
-      <span>{{ typeName(entry) }} · {{ formatSize(entry.size) }} · {{ formatDate(entry.mtime) }}</span>
+      <!-- The folder sits in the header, never over the content. -->
+      <span class="peek-path" :title="entry.path">{{ folder }}</span>
+      <span class="peek-meta">{{ typeName(entry) }} · {{ formatSize(entry.size) }} · {{ formatDate(entry.mtime) }}</span>
+      <b class="peek-count">{{ position + 1 }} / {{ total }}</b>
     </div>
     <FileViewer :path="entry.path" :token="ctx.token" :revision="entry.mtime" />
-  </div>
-  <div class="peek-address">
-    <Icon name="file" :size="12" /><span>{{ entry.path }}</span><b>{{ position + 1 }} / {{ total }}</b>
   </div>
   <div class="peek-rail" role="toolbar" aria-label="Peek">
     <button type="button" aria-label="Close Peek" title="Close (Esc or Space)" @click="emit('close')">
@@ -111,6 +112,7 @@ watch(() => props.entry.path, () => void nextTick(() => {
   left: 5%;
   width: calc(90% - 43px);
   height: 90%;
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   border-radius: 12px 0 0 12px;
@@ -138,11 +140,38 @@ watch(() => props.entry.path, () => void nextTick(() => {
   color: #2f4856;
   font-size: 13px;
 }
-.peek-title span {
+.peek-title strong {
   flex: none;
-  margin-left: auto;
+  max-width: 45%;
+}
+.peek-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
   color: #8798a3;
   font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Long paths lose their start, keeping the nearest folders visible. */
+  direction: rtl;
+  text-align: left;
+}
+.peek-meta,
+.peek-count {
+  flex: none;
+  color: #8798a3;
+  font-size: 11px;
+}
+.peek-count {
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: #edf3f6;
+  font-weight: 600;
+}
+@container (max-width: 620px) {
+  .peek-meta {
+    display: none;
+  }
 }
 .peek-rail {
   position: absolute;
@@ -188,35 +217,6 @@ watch(() => props.entry.path, () => void nextTick(() => {
   margin: 3px 0;
   background: #e2eaee;
 }
-.peek-address {
-  position: absolute;
-  z-index: 32;
-  left: calc(5% + 14px);
-  bottom: calc(5% + 12px);
-  max-width: 60%;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 9px;
-  border: 1px solid #e2eaee;
-  border-radius: 6px;
-  background: #f8fafbf0;
-  box-shadow: 0 2px 6px rgb(60 83 96 / 7%);
-  color: #607583;
-  font-size: 10px;
-  pointer-events: none;
-  animation: peek-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-.peek-address span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.peek-address b {
-  flex: none;
-  color: #8798a3;
-  font-weight: 600;
-}
 @keyframes peek-in {
   from {
     opacity: 0;
@@ -235,7 +235,6 @@ watch(() => props.entry.path, () => void nextTick(() => {
 @media (prefers-reduced-motion: reduce) {
   .peek-panel,
   .peek-rail,
-  .peek-address,
   .peek-backdrop {
     animation: none;
   }
