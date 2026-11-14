@@ -26,6 +26,7 @@ import { migrateGroups, groupBounds } from "./groups";
 import { vMotion } from "./motion";
 import { importDrop, importPath, mayHoldImage, measure, type PlacedImage } from "./imageDrop";
 import { isImage, peekKind } from "./components/files/explorer";
+import { isBackup, makeBackup, restoreImages } from "./backup";
 import {
   emptyWorkspace,
   appMinimum,
@@ -1562,6 +1563,18 @@ function moveDock(a: CanvasApp, direction: number) {
 }
 async function exportWorkspace(raw = false) {
   let data = JSON.stringify(workspace, null, 2);
+  if (!raw) {
+    // A full backup carries the pictures of image widgets too.
+    try {
+      const { backup, count, missing } = await makeBackup(JSON.parse(data));
+      data = JSON.stringify(backup);
+      status.value = count || missing
+        ? `Backup includes ${count} image${count === 1 ? "" : "s"}${missing ? `; ${missing} could not be read and were left out` : ""}.`
+        : status.value;
+    } catch {
+      // Fall back to the workspace alone.
+    }
+  }
   if (raw) {
     try {
       const stored = await store.read();
@@ -1620,9 +1633,23 @@ async function importWorkspace(e: Event) {
     file = el.files?.[0];
   if (!file || !canEdit.value) return;
   try {
-    if (file.size > 25_000_000)
-      throw Error("This backup is too large (maximum 25 MB).");
-    const value = parseWorkspace(JSON.parse(await file.text()));
+    if (file.size > 400_000_000)
+      throw Error("This backup is too large (maximum 400 MB).");
+    let raw: unknown = JSON.parse(await file.text());
+    let restoredNote = "";
+    if (isBackup(raw)) {
+      // Pictures go back into the image store first; they are content-
+      // addressed, so restoring them twice or merging is harmless.
+      const { restored, rejected } = await restoreImages(raw.images);
+      restoredNote = rejected
+        ? `${restored} images restored; ${rejected} were damaged and skipped.`
+        : restored
+          ? `${restored} image${restored === 1 ? "" : "s"} restored.`
+          : "";
+      raw = raw.workspace;
+    } else if ((raw as { version?: number })?.version === 1 && file.size > 25_000_000)
+      throw Error("This backup is too large (maximum 25 MB without images).");
+    const value = parseWorkspace(raw);
     upgradeExampleApps(value);
     migrateGroups(value);
     pendingImport.value = value;
@@ -1632,7 +1659,7 @@ async function importWorkspace(e: Event) {
         ?.focus(),
     );
     panel.value = "workspace";
-    status.value = "";
+    status.value = restoredNote;
   } catch (error) {
     status.value =
       error instanceof Error ? error.message : "This backup could not be read.";
