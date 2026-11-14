@@ -89,9 +89,9 @@ const CANVAS_GESTURES = `(() => {
       return;
     } else if (mod && !event.altKey) {
       if (key === "tab") name = event.shiftKey ? "tab-back" : "tab-next";
-      else if (event.shiftKey) name = ({ a: "search", c: "copy-url", t: "reopen-tab" })[key];
+      else if (event.shiftKey) name = ({ a: "search", c: "copy-url", t: "reopen-tab", p: "commands" })[key];
       else if (/^[1-9]$/.test(key)) name = "tab-" + key;
-      else name = ({ k: "search", l: "address", t: "new-tab", w: "close-tab", b: "library",
+      else name = ({ k: "palette", l: "address", t: "new-tab", w: "close-tab", b: "library",
         o: "promote-peek", [String.fromCharCode(92)]: "sidebar" })[key];
     }
     if (!name) return;

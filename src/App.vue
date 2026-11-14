@@ -575,6 +575,26 @@ function createGitViewer(kind: keyof typeof toolApps = "git") {
 }
 // ---- Command palette (Ctrl+K) ----
 const palette = ref<string | null>(null);
+// Ctrl+K (search and commands) and Ctrl+Shift+P (commands only) are caught
+// in the capture phase, before apps that keep keys to themselves. Notes
+// keeps Ctrl+K for its own search while you type in it.
+function paletteKeys(e: KeyboardEvent) {
+  if (!ready.value || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+  const key = e.key.toLowerCase();
+  const commands = key === "p" && e.shiftKey;
+  if (!commands && !(key === "k" && !e.shiftKey)) return;
+  if (!commands && e.target instanceof Element && e.target.closest(".block-notes")) return;
+  e.preventDefault();
+  e.stopPropagation();
+  openPalette(commands ? ">" : "");
+}
+function openPalette(initial: string) {
+  palette.value = palette.value === null ? initial : null;
+}
+// Web pages in the Browser app forward the same shortcuts.
+function paletteEvent(event: Event) {
+  openPalette(String((event as CustomEvent<string>).detail ?? ""));
+}
 function focusBlock(blockId: string) {
   const app = workspace.apps.find((a) => !a.archived && !a.deleted && flatten(a.blocks).some((b) => b.id === blockId));
   if (app) void focusApp(app);
@@ -1599,16 +1619,6 @@ function wheelRemove(id: string) {
 }
 function keydown(e: KeyboardEvent) {
   if (!ready.value) return;
-  // Ctrl+K: global search and commands; Ctrl+Shift+P: commands only. An app
-  // that uses Ctrl+K itself (Notes) handles it first and prevents this.
-  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.defaultPrevented) {
-    const key = e.key.toLowerCase();
-    if ((key === "k" && !e.shiftKey) || (key === "p" && e.shiftKey)) {
-      e.preventDefault();
-      palette.value = key === "p" ? ">" : "";
-      return;
-    }
-  }
   // Delete removes the selected sticky note, arrow or drawing.
   if (
     (e.key === "Delete" || e.key === "Backspace") &&
@@ -2464,6 +2474,8 @@ onMounted(() => {
   window.addEventListener("wheel", wheel, { passive: false });
   window.addEventListener("orvane-canvas-pan", embeddedPan);
   window.addEventListener("orvane:place-file", placeFileEvent);
+  window.addEventListener("keydown", paletteKeys, true);
+  window.addEventListener("orvane:palette", paletteEvent);
   window.addEventListener("paste", pasteImage);
   window.addEventListener("pointermove", trackPointer, { passive: true });
 });
@@ -2475,6 +2487,8 @@ onBeforeUnmount(() => {
   mcpBridge?.close();
   window.removeEventListener("orvane-canvas-pan", embeddedPan);
   window.removeEventListener("orvane:place-file", placeFileEvent);
+  window.removeEventListener("keydown", paletteKeys, true);
+  window.removeEventListener("orvane:palette", paletteEvent);
   window.removeEventListener("paste", pasteImage);
   window.removeEventListener("pointermove", trackPointer);
   clearTimeout(dropNoticeTimer);

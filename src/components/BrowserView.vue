@@ -802,7 +802,22 @@ onBeforeUnmount(() => (stopCommands(), stopOpen()));
 let stopOpenTab: (() => void) | undefined, stopGuestInput: (() => void) | undefined;
 onMounted(() => {
   stopOpenTab = desktop?.onOpenTab(({ from, url, background }) => {
-    if (webviewFor(from) && safeUrl(url)) void addTab(url, background);
+    const view = webviewFor(from);
+    const safe = safeUrl(url);
+    if (!view || !safe) return;
+    const source = state.value.tabs.find((item) => webviews.get(item.id) === view);
+    // In Split View a link meant for a new tab stays in the pane it was
+    // clicked in, as an ordinary navigation, so Back returns to the page.
+    // (Opening a tab there would replace the focused pane, which may be the
+    // other one, and the new tab would have no history.)
+    if (source && !background && state.value.split && inSplit(source.id)) {
+      focusPane(source.id);
+      delete discarded[source.id];
+      view.loadURL(safe).catch(() => undefined);
+      return;
+    }
+    // Otherwise it opens next to the tab it came from, like other browsers.
+    void addTab(safe, background, source?.id);
   });
   // Canvas gestures made over a page arrive from the main process; replay
   // them where the canvas listens, in canvas screen coordinates.
@@ -2510,6 +2525,9 @@ function openPeekPrompt() {
     placeholder: "Paste a link or search the web", action: "Preview", submit: previewInput });
 }
 function shortcut(name: string) {
+  // Orvane's Ctrl+K search and Ctrl+Shift+P commands, pressed inside a page.
+  if (name === "palette" || name === "commands")
+    return void window.dispatchEvent(new CustomEvent("orvane:palette", { detail: name === "commands" ? ">" : "" }));
   if (name === "address") focusAddress();
   else if (name === "new-tab") addTab();
   else if (name === "close-tab") {
@@ -2563,7 +2581,7 @@ function hostKey(event: KeyboardEvent) {
     if (key === "tab") name = event.shiftKey ? "tab-back" : "tab-next";
     else if (event.shiftKey) name = ({ a: "search", c: "copy-url", t: "reopen-tab" } as Record<string, string>)[key];
     else if (/^[1-9]$/.test(key)) name = "tab-" + key;
-    else name = ({ k: "search", l: "address", t: "new-tab", w: "close-tab", b: "library",
+    else name = ({ k: "palette", l: "address", t: "new-tab", w: "close-tab", b: "library",
       [String.fromCharCode(92)]: "sidebar", ...(peek.value ? { o: "promote-peek" } : {}) } as Record<string, string>)[key];
   }
   if (!name) return;

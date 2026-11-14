@@ -162,11 +162,29 @@ async function searchNotes(q: string) {
       },
     }));
 }
-let home = "";
+let roots: { home: string; places: { path: string }[] } | null = null;
+// Most likely places first: folders open or pinned in File Explorers, then
+// Quick access, then the rest of the home folder.
+function explorerFolders() {
+  const out: string[] = [];
+  for (const app of props.apps)
+    for (const block of flatten(app.blocks)) {
+      if (block.kind !== "files") continue;
+      try {
+        const state = JSON.parse(block.value || "{}");
+        for (const pin of state.pins ?? []) if (typeof pin === "string") out.push(pin);
+        for (const pane of state.panes ?? []) if (typeof pane?.path === "string") out.push(pane.path);
+      } catch {
+        // No saved state yet.
+      }
+    }
+  return out;
+}
 async function searchFiles(q: string) {
-  home ||= (await api<{ home: string }>("roots")).home;
-  const data = await api<{ entries: FileEntry[] }>("search", { path: home, query: q, budget: 1500, limit: 12 });
-  return data.entries.map((e) => ({
+  roots ??= await api<{ home: string; places: { path: string }[] }>("roots");
+  const order = [...explorerFolders(), ...roots.places.map((p) => p.path).filter((p) => p !== roots!.home), roots.home];
+  const data = await api<{ entries: FileEntry[] }>("search", { paths: [...new Set(order)], query: q, budget: 2500, limit: 60 });
+  return data.entries.slice(0, 12).map((e) => ({
     key: `file:${e.path}`,
     section: "Files",
     title: e.name,
@@ -233,7 +251,7 @@ watch(
       };
       run(searchNotes, notes);
       run(searchCommits, commits, 3);
-      run(searchFiles, files, 3);
+      run(searchFiles, files, 2);
     }, 180);
   },
   { immediate: true },

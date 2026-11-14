@@ -44,6 +44,9 @@ const drawing = ref<number[] | null>(null);
 const pending = ref<{ from: BoardEnd; x: number; y: number } | null>(null);
 let pointerId = -1;
 function down(event: PointerEvent) {
+  // The canvas pans on pointerdown and captures the pointer; keep this
+  // gesture here, or the stroke never sees the button go up.
+  event.stopPropagation();
   if (event.button !== 0) return;
   event.preventDefault();
   try {
@@ -63,13 +66,18 @@ function down(event: PointerEvent) {
   else if (props.tool === "eraser") erase(world);
 }
 function move(event: PointerEvent) {
+  event.stopPropagation();
   if (event.pointerId !== pointerId) return;
+  // Only ever draw while the button is held: if the release was missed
+  // (another window, a lost capture), finish here instead of following.
+  if ((drawing.value || pending.value) && !(event.buttons & 1)) return up(event);
   const world = toWorld(event.clientX, event.clientY);
   if (drawing.value) drawing.value.push(world.x, world.y);
   else if (pending.value) pending.value = { ...pending.value, x: event.clientX, y: event.clientY };
   else if (props.tool === "eraser" && event.buttons & 1) erase(world);
 }
 function up(event: PointerEvent) {
+  event.stopPropagation();
   if (event.pointerId !== pointerId) return;
   pointerId = -1;
   if (drawing.value) {
@@ -92,6 +100,12 @@ function up(event: PointerEvent) {
     props.board.arrows.push(arrow);
     emit("created", arrow.id, "arrow");
   }
+}
+function cancel(event: PointerEvent) {
+  event.stopPropagation();
+  pointerId = -1;
+  drawing.value = null;
+  pending.value = null;
 }
 function erase(p: { x: number; y: number }) {
   const tolerance = 10 / props.camera.zoom;
@@ -163,7 +177,8 @@ const colorIndex = computed(() => Math.max(0, BOARD_COLORS.indexOf(props.color))
     @pointerdown="down"
     @pointermove="move"
     @pointerup="up"
-    @pointercancel="up"
+    @pointercancel="cancel"
+    @lostpointercapture="up"
   >
     <svg v-if="preview" class="board-preview" aria-hidden="true">
       <path v-if="preview.kind === 'pen'" :d="preview.d" :stroke="color" :stroke-width="Math.max(1, 3 * Math.min(1, camera.zoom))" fill="none" stroke-linecap="round" stroke-linejoin="round" />

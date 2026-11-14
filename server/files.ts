@@ -326,19 +326,51 @@ function openPath(path: string, reveal: boolean) {
   else launch("xdg-open", [reveal ? dirname(path) : path]);
   return { ok: true };
 }
-async function search(root: string, query: string, hidden: boolean, budget = 6000, limit = 500) {
-  const needle = query.toLowerCase();
+// Folders that are huge, generated or system-owned: walking them costs the
+// whole time budget and rarely holds what someone is looking for. They are
+// still searched when the search starts inside them.
+const SKIP = new Set([
+  "node_modules", ".git", ".svn", ".hg", "appdata", "$recycle.bin", "system volume information",
+  "__pycache__", ".cache", ".venv", "venv", ".gradle", ".m2", ".nuget", ".npm", ".pnpm-store",
+  "windows", "program files", "program files (x86)", "programdata", "$windows.~bt", "$winreagent",
+]);
+// Every word must appear in the name; "_", "-" and "." count as spaces.
+function matcher(query: string) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  return (name: string) => {
+    const lower = name.toLowerCase();
+    const loose = lower.replace(/[_\-.]+/g, " ");
+    return words.every((w) => lower.includes(w) || loose.includes(w));
+  };
+}
+// Best first: exact name, then name starting with the query, then the rest;
+// shallower paths before deeper ones.
+function rank(entries: FileEntry[], query: string) {
+  const q = query.toLowerCase();
+  const score = (e: FileEntry) => {
+    const name = e.name.toLowerCase(),
+      stem = name.replace(/\.[^.]+$/, "");
+    return (name === q || stem === q ? 0 : name.startsWith(q) ? 1 : 2) * 1000 + e.path.split(/[\/]/).length;
+  };
+  return entries.sort((a, b) => score(a) - score(b));
+}
+// Breadth-first over the given roots in order (most likely first); folders
+// reached through more than one root are walked once.
+async function search(roots: string[], query: string, hidden: boolean, budget = 6000, limit = 500) {
+  const matches = matcher(query);
   const results: FileEntry[] = [];
+  const seen = new Set<string>();
   const started = Date.now();
-  const queue = [root];
+  const queue: string[] = [];
+  for (const root of roots) if (!seen.has(root.toLowerCase())) (seen.add(root.toLowerCase()), queue.push(root));
   let visited = 0;
   let complete = true;
-  while (queue.length) {
-    if (results.length >= limit || visited >= 40_000 || Date.now() - started > budget) {
+  for (let head = 0; head < queue.length; head++) {
+    if (results.length >= limit || visited >= 60_000 || Date.now() - started > budget) {
       complete = false;
       break;
     }
-    const dir = queue.shift()!;
+    const dir = queue[head]!;
     visited++;
     let dirents;
     try {
@@ -348,15 +380,19 @@ async function search(root: string, query: string, hidden: boolean, budget = 600
     }
     for (const d of dirents) {
       if (!hidden && d.name.startsWith(".")) continue;
-      if (d.isDirectory() && !d.isSymbolicLink()) queue.push(join(dir, d.name));
-      if (d.name.toLowerCase().includes(needle)) {
+      const path = join(dir, d.name);
+      if (d.isDirectory() && !d.isSymbolicLink() && !SKIP.has(d.name.toLowerCase()) && !seen.has(path.toLowerCase())) {
+        seen.add(path.toLowerCase());
+        queue.push(path);
+      }
+      if (matches(d.name)) {
         const item = await entry(dir, d.name);
         if (item) results.push(item);
         if (results.length >= limit) break;
       }
     }
   }
-  return { root, query, entries: results, complete, visited };
+  return { root: roots[0], query, entries: rank(results, query), complete, visited };
 }
 
 function baseNameOfUrl(url: string) {
@@ -505,7 +541,9 @@ export function createFilesService(directory: string) {
     search: (a) => {
       const query = typeof a.query === "string" ? a.query.trim() : "";
       if (!query) throw new Error("Type something to search for.");
-      return search(absolute(a.path), query, a.hidden === true, Math.min(6000, Math.max(300, Number(a.budget) || 6000)), Math.min(500, Math.max(1, Number(a.limit) || 500)));
+      // `paths` searches several roots in order (Ctrl+K); `path` searches one.
+      const roots = Array.isArray(a.paths) && a.paths.length ? paths(a.paths).slice(0, 40) : [absolute(a.path)];
+      return search(roots, query, a.hidden === true, Math.min(6000, Math.max(300, Number(a.budget) || 6000)), Math.min(500, Math.max(1, Number(a.limit) || 500)));
     },
   };
   return {
