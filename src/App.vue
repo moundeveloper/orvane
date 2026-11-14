@@ -1408,8 +1408,36 @@ function stopZoom() {
   zoomFrame = 0;
   zoomTarget = camera.zoom;
 }
+// Two-finger scroll (or the mouse wheel; Shift for sideways) over empty
+// canvas pans the view. Over an app, scrolling stays with the app.
+let wheelPanTimer: ReturnType<typeof setTimeout> | undefined;
+function wheelPan(e: WheelEvent) {
+  const target = e.target as Element | null;
+  if (
+    !ready.value ||
+    !target?.closest?.(".workspace") ||
+    target.closest(
+      ".canvas-app,.dock,.floating-panel,.topbar,.board-note,.board-rail,.cp-backdrop,.dock-context,.node-workspace",
+    )
+  )
+    return;
+  e.preventDefault();
+  stopPan();
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? viewport.height : 1;
+  let dx = e.deltaX * unit,
+    dy = e.deltaY * unit;
+  // A plain mouse wheel only scrolls vertically; Shift turns it sideways.
+  if (e.shiftKey && !dx) [dx, dy] = [dy, 0];
+  camera.x -= dx;
+  camera.y -= dy;
+  // Same light rendering as other camera motion while the scroll lasts.
+  movingCamera.value = true;
+  clearTimeout(wheelPanTimer);
+  wheelPanTimer = setTimeout(() => (movingCamera.value = false), 140);
+}
+onBeforeUnmount(() => clearTimeout(wheelPanTimer));
 function wheel(e: WheelEvent) {
-  if (!(e.ctrlKey || e.metaKey)) return;
+  if (!(e.ctrlKey || e.metaKey)) return wheelPan(e);
   if (
     (e.target as HTMLElement).closest(
       ".dock,.floating-panel,.node-workspace,.code-editor,.select-popover",
