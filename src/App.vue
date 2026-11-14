@@ -1431,13 +1431,29 @@ function panBy(dx: number, dy: number, shift: boolean) {
   stopPan();
   camera.x -= dx;
   camera.y -= dy;
-  // Same light rendering as other camera motion while the scroll lasts.
+  // Same light rendering as other camera motion while the scroll lasts,
+  // and the gesture stays with the canvas until it pauses.
   movingCamera.value = true;
+  panLatchUntil = performance.now() + PAN_LATCH_MS;
+  if (!canvasScroll.panning) canvasScroll.panning = true;
   clearTimeout(wheelPanTimer);
-  wheelPanTimer = setTimeout(() => (movingCamera.value = false), 140);
+  wheelPanTimer = setTimeout(() => {
+    movingCamera.value = false;
+    canvasScroll.panning = false;
+  }, PAN_LATCH_MS);
 }
+// Touchpads that report no gesture phases (common on Windows) let each
+// scroll event land on whatever is under the pointer as the canvas moves;
+// a pause this long ends the pan.
+const PAN_LATCH_MS = 220;
+let panLatchUntil = 0;
 function wheelPan(e: WheelEvent) {
   const target = e.target as Element | null;
+  if (ready.value && performance.now() < panLatchUntil) {
+    e.preventDefault();
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? viewport.height : 1;
+    return panBy(e.deltaX * unit, e.deltaY * unit, e.shiftKey);
+  }
   if (
     !ready.value ||
     !target?.closest?.(".workspace") ||

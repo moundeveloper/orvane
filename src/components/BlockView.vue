@@ -67,11 +67,14 @@ function onMessage(event: MessageEvent) {
 // app is the one being worked in.
 function announceScroll() {
   frame.value?.contentWindow?.postMessage(
-    { orvaneScrollOwner: !!canvasScroll.owner && canvasScroll.owner === appOf(frame.value) },
+    {
+      orvaneScrollOwner:
+        !canvasScroll.panning && !!canvasScroll.owner && canvasScroll.owner === appOf(frame.value),
+    },
     "*",
   );
 }
-watch(() => canvasScroll.owner, announceScroll);
+watch(() => [canvasScroll.owner, canvasScroll.panning], announceScroll);
 // A code app is told when it is on screen, so its runtime can idle its
 // timers while nobody can see it (see appRuntimeSource.js).
 let frameVisible: boolean | undefined;

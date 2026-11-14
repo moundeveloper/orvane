@@ -1146,7 +1146,9 @@ if (useWebview) {
 const root = ref<HTMLElement>();
 // Pages pass plain scroll to the canvas unless this app is the one being
 // worked in (see canvasScroll.ts); the flag lives in each page's process.
-const ownsScroll = computed(() => !!canvasScroll.owner && canvasScroll.owner === appOf(root.value));
+const ownsScroll = computed(
+  () => !canvasScroll.panning && !!canvasScroll.owner && canvasScroll.owner === appOf(root.value),
+);
 function syncScroll(view: WebviewElement) {
   try {
     void desktop?.setPageScrollPans?.(view.getWebContentsId(), !ownsScroll.value);

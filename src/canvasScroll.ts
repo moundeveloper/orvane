@@ -3,7 +3,10 @@
 // canvas or pressing Esc gives scrolling back to the canvas.
 import { reactive } from "vue";
 
-export const canvasScroll = reactive({ owner: "" });
+// `panning` is true while a scroll pan is in progress: until it pauses, all
+// scroll goes to the canvas, even over the app being worked in, so turning
+// mid-gesture keeps panning instead of switching to whatever is underneath.
+export const canvasScroll = reactive({ owner: "", panning: false });
 /** The canvas app an element belongs to, or "". */
 export function appOf(element: Element | null | undefined) {
   return element?.closest<HTMLElement>(".canvas-app")?.dataset.appId ?? "";
