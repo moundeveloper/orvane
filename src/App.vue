@@ -39,6 +39,7 @@ import {
   type CanvasApp,
   type Rule,
   type Workspace,
+  type Layout,
   type ActionGraph,
   type WorkspaceAction,
 } from "./model";
@@ -246,6 +247,10 @@ async function initialize() {
   }
 }
 const apps = computed(() =>
+  workspace.apps.filter((a) => !a.archived && !a.deleted && !a.layoutHidden),
+);
+// Every live app, including ones the current layout leaves out.
+const liveApps = computed(() =>
   workspace.apps.filter((a) => !a.archived && !a.deleted),
 );
 const active = ref(""),
@@ -280,7 +285,7 @@ function dismissHint() {
 const createdAppId = ref("");
 
 const panel = ref<
-    "search" | "workspace" | "help" | "geometry" | "groups" | null
+    "search" | "workspace" | "help" | "geometry" | "groups" | "layouts" | null
   >(null),
   query = ref(""),
   searchInput = ref<HTMLInputElement>(),
@@ -370,6 +375,11 @@ const spatialGroups = computed(() =>
     }))
     .map((group) => ({ ...group, bounds: groupBounds(group.members) })),
 );
+const layoutNameInput = ref<HTMLInputElement>();
+function openLayouts() {
+  panel.value = "layouts";
+  void nextTick(() => layoutNameInput.value?.focus());
+}
 function openGroups(id?: string) {
   selectedGroup.value = id || groups.value[0]?.id || "";
   panel.value = "groups";
@@ -568,7 +578,71 @@ function focusBlock(blockId: string) {
 }
 function focusAppById(appId: string) {
   const app = workspace.apps.find((a) => a.id === appId);
-  if (app) void focusApp(app);
+  if (!app) return;
+  // Asking for an app that the layout hides brings it back.
+  if (app.layoutHidden && canEdit.value) app.layoutHidden = false;
+  void focusApp(app);
+}
+
+// ---- Layouts: named arrangements of the canvas ----
+const layouts = computed(() => workspace.layouts ?? []);
+const layoutName = ref("");
+function captureLayout(id: string, name: string): Layout {
+  return {
+    id,
+    name: name.slice(0, 80) || "Layout",
+    apps: Object.fromEntries(
+      liveApps.value.map((a) => [a.id, { x: a.x, y: a.y, width: a.width, height: a.height, shown: !a.layoutHidden }]),
+    ),
+    camera: { x: camera.x, y: camera.y, zoom: camera.zoom },
+  };
+}
+function saveLayout(name = layoutName.value.trim()) {
+  if (!canEdit.value) return;
+  const layout = captureLayout(uid(), name || `Layout ${layouts.value.length + 1}`);
+  workspace.layouts = [...layouts.value, layout].slice(-50);
+  workspace.activeLayout = layout.id;
+  layoutName.value = "";
+}
+function updateLayout(id: string) {
+  const index = layouts.value.findIndex((l) => l.id === id);
+  if (index < 0 || !canEdit.value) return;
+  const next = [...layouts.value];
+  next[index] = captureLayout(id, next[index]!.name);
+  workspace.layouts = next;
+  workspace.activeLayout = id;
+}
+function renameLayout(id: string, name: string) {
+  const layout = layouts.value.find((l) => l.id === id);
+  if (layout && canEdit.value) layout.name = name.slice(0, 80);
+}
+function deleteLayout(id: string) {
+  if (!canEdit.value) return;
+  workspace.layouts = layouts.value.filter((l) => l.id !== id);
+  if (workspace.activeLayout === id) workspace.activeLayout = undefined;
+}
+// Apps created after the layout was saved stay where they are, shown.
+function applyLayout(id: string) {
+  const layout = layouts.value.find((l) => l.id === id);
+  if (!layout || !canEdit.value) return;
+  for (const app of liveApps.value) {
+    const place = layout.apps[app.id];
+    if (!place) {
+      app.layoutHidden = false;
+      continue;
+    }
+    app.x = place.x;
+    app.y = place.y;
+    app.width = Math.max(place.width, appMinimum(app).width);
+    app.height = Math.max(place.height, appMinimum(app).height);
+    app.layoutHidden = !place.shown;
+  }
+  workspace.activeLayout = id;
+  panTo(layout.camera.x, layout.camera.y, undefined, layout.camera.zoom);
+}
+function showAllApps() {
+  if (!canEdit.value) return;
+  for (const app of liveApps.value) app.layoutHidden = false;
 }
 const stopCanvasCommands = registerCommands("canvas", () => {
   const writable = canEdit.value && !importBusy.value;
@@ -592,6 +666,20 @@ const stopCanvasCommands = registerCommands("canvas", () => {
             keywords: "create add open",
             run: () => createGitViewer(kind),
           })),
+        ]
+      : []),
+    ...layouts.value.map((l) => ({
+      id: `layout:${l.id}`,
+      title: `Switch to layout: ${l.name}`,
+      icon: "layers",
+      detail: workspace.activeLayout === l.id ? "Current layout" : "Layouts",
+      keywords: "workspace snapshot arrangement",
+      run: () => applyLayout(l.id),
+    })),
+    ...(writable
+      ? [
+          { id: "layout-save", title: "Save current layout…", icon: "layers", detail: "Layouts", keywords: "workspace snapshot arrangement", run: () => openLayouts() },
+          { id: "layout-show-all", title: "Show all apps", icon: "eye", detail: "Layouts", keywords: "unhide", run: () => showAllApps() },
         ]
       : []),
     { id: "canvas-home", title: "Center the canvas", icon: "home", hint: workspace.shortcuts.home.toUpperCase(), detail: "Canvas", run: () => home() },
@@ -2653,6 +2741,15 @@ onBeforeUnmount(() => {
         >
           <Icon name="layers" :size="14" /><span>Groups</span>
         </button>
+        <button
+          class="subtle-button"
+          aria-label="Layouts"
+          @click="panel === 'layouts' ? (panel = null) : openLayouts()"
+        >
+          <Icon name="app" :size="14" /><span>{{
+            layouts.find((l) => l.id === workspace.activeLayout)?.name || "Layouts"
+          }}</span>
+        </button>
         <span v-if="ready && !canEdit" class="field-help">Read-only tab</span>
         <button
           class="subtle-button"
@@ -3169,6 +3266,74 @@ onBeforeUnmount(() => {
           ><span v-if="t.error" class="inline-error">{{ t.error }}</span>
         </div>
       </details>
+    </section>
+    <section
+      v-if="panel === 'layouts'"
+      class="groups-panel layouts-panel floating-panel"
+      :inert="!canEdit"
+      v-motion="{ kind: 'popover' }"
+      aria-label="Layouts"
+      @pointerdown.stop
+    >
+      <div class="panel-heading">
+        <h1>Layouts</h1>
+        <button class="icon-button" aria-label="Close layouts" @click="panel = null">
+          <Icon name="close" />
+        </button>
+      </div>
+      <p class="field-help">
+        A layout remembers where each app sits, which apps are shown and the
+        view. Switching never changes what is inside an app.
+      </p>
+      <div v-if="layouts.length" class="layout-list">
+        <div
+          v-for="l in layouts"
+          :key="l.id"
+          class="layout-row"
+          :class="{ current: l.id === workspace.activeLayout }"
+        >
+          <button class="layout-switch" :title="`Switch to ${l.name}`" @click="applyLayout(l.id)">
+            <Icon :name="l.id === workspace.activeLayout ? 'check' : 'app'" :size="13" />
+          </button>
+          <input
+            :value="l.name"
+            :aria-label="`Layout name: ${l.name}`"
+            maxlength="80"
+            @change="renameLayout(l.id, ($event.target as HTMLInputElement).value)"
+            @keydown.enter="applyLayout(l.id)"
+          />
+          <button class="icon-button" title="Save the current arrangement into this layout" :aria-label="`Update ${l.name}`" @click="updateLayout(l.id)">
+            <Icon name="download" :size="13" /></button
+          ><button class="icon-button" :aria-label="`Delete ${l.name}`" title="Delete layout" @click="deleteLayout(l.id)">
+            <Icon name="trash" :size="13" />
+          </button>
+        </div>
+      </div>
+      <form class="group-picker" @submit.prevent="saveLayout()">
+        <input
+          ref="layoutNameInput"
+          v-model="layoutName"
+          class="layout-name"
+          placeholder="Coding, Research, NetSuite…"
+          aria-label="New layout name"
+          maxlength="80"
+        /><button class="subtle-button" type="submit">
+          <Icon name="plus" :size="13" />Save current
+        </button>
+      </form>
+      <div class="section-line">
+        <span>Shown in this view</span><span>{{ apps.length }} / {{ liveApps.length }}</span>
+      </div>
+      <div class="group-members">
+        <label v-for="app in liveApps" :key="app.id" class="group-member"
+          ><input
+            type="checkbox"
+            :checked="!app.layoutHidden"
+            :aria-label="`Show ${app.name || 'Untitled'}`"
+            @change="app.layoutHidden = !($event.target as HTMLInputElement).checked"
+          /><Icon :name="app.icon" :size="13" /><span>{{ app.name || "Untitled" }}</span></label
+        >
+      </div>
     </section>
     <section
       v-if="panel === 'groups'"

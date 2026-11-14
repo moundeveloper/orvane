@@ -91,6 +91,8 @@ export interface CanvasApp {
   showName?: boolean;
   breakpoint?: number;
   editorWidth?: number;
+  /** Left out of the current layout (see Workspace.layouts); content is untouched. */
+  layoutHidden?: boolean;
 }
 export interface CustomNode {
   id: string;
@@ -129,6 +131,16 @@ export interface Workspace {
   groups?: { id: string; name: string }[];
   wheel?: WheelEntry[];
   actions?: WorkspaceAction[];
+  layouts?: Layout[];
+  activeLayout?: string;
+}
+// A named arrangement of the canvas: where each app sits, whether it is
+// shown, and the camera. Switching layouts never changes app content.
+export interface Layout {
+  id: string;
+  name: string;
+  apps: Record<string, { x: number; y: number; width: number; height: number; shown: boolean }>;
+  camera: { x: number; y: number; zoom: number };
 }
 export interface WorkspaceAction {
   id: string;

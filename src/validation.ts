@@ -119,6 +119,7 @@ const schema = z.object({
         showName: z.boolean().optional(),
         breakpoint: number.positive().optional(),
         editorWidth: number.positive().optional(),
+        layoutHidden: z.boolean().optional(),
       }),
     )
     .max(300),
@@ -165,6 +166,21 @@ const schema = z.object({
     )
     .max(500)
     .optional(),
+  layouts: z
+    .array(
+      z.object({
+        id,
+        name: z.string().max(80),
+        apps: z.record(
+          z.string(),
+          z.object({ x: number, y: number, width: number.min(180), height: number.min(160), shown: z.boolean() }),
+        ),
+        camera: z.object({ x: number, y: number, zoom: number.positive() }),
+      }),
+    )
+    .max(50)
+    .optional(),
+  activeLayout: z.string().optional(),
 });
 export const appPatchSchema = schema.shape.apps.element
   .omit({
