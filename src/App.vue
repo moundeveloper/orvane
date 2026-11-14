@@ -514,6 +514,7 @@ const toolApps = {
   notes: { name: "Notes", icon: "text" },
   browser: { name: "Browser", icon: "globe" },
   netsuite: { name: "NetSuite", icon: "globe" },
+  files: { name: "File Explorer", icon: "folder-open" },
 };
 function createGitViewer(kind: keyof typeof toolApps = "git") {
   if (!canEdit.value || importBusy.value) return;
@@ -2807,6 +2808,13 @@ onBeforeUnmount(() => {
       </button>
       <button class="subtle-button" :disabled="!canEdit || importBusy" @click="createGitViewer('netsuite')">
         <Icon name="globe" :size="14" />Create NetSuite app
+      </button>
+      <button
+        class="subtle-button"
+        :disabled="!canEdit || importBusy"
+        @click="createGitViewer('files')"
+      >
+        <Icon name="folder-open" :size="14" />Create File Explorer
       </button>
       <button
         class="subtle-button"

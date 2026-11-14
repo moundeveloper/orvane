@@ -12,7 +12,8 @@ export type Kind =
   | "projects"
   | "notes"
   | "browser"
-  | "netsuite";
+  | "netsuite"
+  | "files";
 export type ActionKind =
   | "add-item"
   | "clear"
@@ -100,6 +101,7 @@ export function appMinimum(app: CanvasApp) {
   const git = flatten(app.blocks).some((block) => block.kind === "git");
   const notes = flatten(app.blocks).some((block) => block.kind === "notes");
   const browser = flatten(app.blocks).some((block) => block.kind === "browser");
+  const files = flatten(app.blocks).some((block) => block.kind === "files");
   const projects = flatten(app.blocks).some(
     (block) => block.kind === "projects",
   );
@@ -107,12 +109,12 @@ export function appMinimum(app: CanvasApp) {
     width: Math.max(
       180,
       app.minWidth ??
-        (projects ? 900 : git ? 720 : notes ? 640 : browser ? 480 : 180),
+        (projects ? 900 : git ? 720 : notes ? 640 : files ? 560 : browser ? 480 : 180),
     ),
     height: Math.max(
       160,
       app.minHeight ??
-        (projects ? 580 : git ? 440 : notes ? 440 : browser ? 320 : 160),
+        (projects ? 580 : git ? 440 : notes ? 440 : files ? 360 : browser ? 320 : 160),
     ),
   };
 }
@@ -226,6 +228,11 @@ export const kinds: { kind: Kind; name: string; description: string }[] = [
     description: "Tabs, an address bar and web pages",
   },
   { kind: "netsuite", name: "NetSuite", description: "Query an open NetSuite session" },
+  {
+    kind: "files",
+    name: "File Explorer",
+    description: "Browse local folders in tabs and split views",
+  },
 ];
 export function makeBlock(kind: Kind): Block {
   return {
@@ -246,6 +253,7 @@ export function makeBlock(kind: Kind): Block {
       notes: "Notes workspace",
       browser: "Web browser",
       netsuite: "NetSuite",
+      files: "File Explorer",
     }[kind],
     value: "",
     checked: false,

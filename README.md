@@ -1,5 +1,13 @@
 # Orvane
 
+### File Explorer
+
+Create it from **Workspace options → Create File Explorer**, or add a **File Explorer** component in the builder. It browses this computer's folders through Orvane's local server (`/__orvane/files/*`, same-origin loopback only, implemented in `server/files.ts`).
+
+Each tab is a folder with its own back/forward history, sort, Details/Icons view and preview pane. Tabs use the same strip as the NetSuite apps: drag to reorder, drag a tab to the left or right edge to split, right-click for split/duplicate/close-others, Ctrl+Alt+N for a new tab and Ctrl+Alt+T to reopen one. Dragging folders onto the tab bar opens them as tabs. The sidebar has Quick access, pinned folders and a lazy folder tree of the drives; all of them accept drops.
+
+Files support multi-selection (Ctrl/Shift, Ctrl+A, arrows, type-ahead), Enter to open (folders navigate, files open in their default program), F2 inline rename, Ctrl+X/C/V, drag-and-drop between folders, tabs and split panes (same drive moves, another drive copies; Ctrl copies, Shift moves), Ctrl+Shift+N new folder, and Delete, which moves items to the Recycle Bin after an in-app confirmation; nothing is permanently deleted. Ctrl+L edits the path, Ctrl+F filters the folder, and the search box searches the folder and its subfolders by name (limited to 500 results). The preview pane shows images and text, and text files of up to 2 MB can be edited and saved with Ctrl+S; a save is refused if the file changed on disk since it was opened. Tabs, splits, views and pins are saved with the app.
+
 ### Projects Hub
 
 Projects Hub recreates the local project manager from `C:\Projects\UI` as an Orvane app. Create it from **Workspace options → Create Projects Hub**, or add a **Projects Hub** component in the builder. Choose an existing projects root using Browse or enter its absolute path and Open. The selected root is saved with the app. Existing `.projects-hub.json` groups and terminal state can be read from that root; new configuration writes go to Orvane's SQLite database, leaving the original metadata file unchanged.

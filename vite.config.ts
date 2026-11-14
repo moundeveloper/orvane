@@ -7,6 +7,7 @@ import { localStorageApi } from "./server/storage-api.ts";
 import { gitApi } from "./server/git-api.ts";
 import { projectsApi } from "./server/projects-api.ts";
 import { notesApi } from "./server/notes-api.ts";
+import { filesApi } from "./server/files-api.ts";
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -21,6 +22,7 @@ export default defineConfig({
         compilerOptions: { isCustomElement: (tag) => tag === "webview" },
       },
     }),
+    filesApi(),
     notesApi(
       process.env.ORVANE_DATA_DIR ||
         fileURLToPath(new URL("./.orvane", import.meta.url)),
