@@ -86,6 +86,7 @@ import { uid, type Block } from "../model";
 import { siteName, type PasswordPrompt, type PasswordsApi } from "../passwords";
 import { getDomain } from "tldts";
 import Icon from "./Icon.vue";
+import { onOpenRequest, registerCommands } from "../commands";
 import BrowserDrawer, {
   type Bookmark,
   type BrowserLayout as Layout,
@@ -786,6 +787,17 @@ onMounted(() => {
   });
 });
 onBeforeUnmount(() => stopPrompt?.());
+// Ctrl+K palette: commands, and opening a page from browser history.
+const stopCommands = registerCommands(`browser:${props.block.id}`, () => [
+  { id: `browser-tab:${props.block.id}`, title: "New browser tab", icon: "plus", blockId: props.block.id, keywords: "web", run: () => addTab() },
+  { id: `browser-library:${props.block.id}`, title: "Bookmarks and history", icon: "library", blockId: props.block.id, run: () => openDrawer("library") },
+]);
+const stopOpen = onOpenRequest((request) => {
+  if (request.kind !== "browser-url" || (request.blockId && request.blockId !== props.block.id)) return;
+  addTab(request.url);
+  return true;
+});
+onBeforeUnmount(() => (stopCommands(), stopOpen()));
 
 let stopOpenTab: (() => void) | undefined, stopGuestInput: (() => void) | undefined;
 onMounted(() => {

@@ -4,6 +4,7 @@ import Icon from "../Icon.vue";
 import SplitTabs from "../SplitTabs.vue";
 import FilePane from "./FilePane.vue";
 import BatchRename from "./BatchRename.vue";
+import { onOpenRequest, registerCommands } from "../../commands";
 import { uid, type Block } from "../../model";
 import {
   addTab,
@@ -473,6 +474,39 @@ function windowFocus() {
   const dirs = visible.map((id) => panes.get(id)?.path).filter((p): p is string => !!p);
   if (dirs.length) ctx.signal = { stamp: ctx.signal.stamp + 1, dirs };
 }
+// Ctrl+K palette: commands, and showing a file found by search.
+const stopCommands = registerCommands(`files:${props.block.id}`, () => [
+  { id: `files-tab:${props.block.id}`, title: "New File Explorer tab", icon: "plus", blockId: props.block.id, keywords: "folder", run: () => addPane(null) },
+  ...(roots.value?.places ?? []).map((place) => ({
+    id: `files-place:${props.block.id}:${place.path}`,
+    title: `Open ${place.name}`,
+    detail: "File Explorer",
+    icon: "folder-open",
+    blockId: props.block.id,
+    keywords: "folder go",
+    run: () => navigateActive(place.path),
+  })),
+  ...pins.value.map((pin) => ({
+    id: `files-pin:${props.block.id}:${pin}`,
+    title: `Open ${label(pin, roots.value?.home)}`,
+    detail: `Pinned · ${pin}`,
+    icon: "pin",
+    blockId: props.block.id,
+    keywords: "folder go",
+    run: () => navigateActive(pin),
+  })),
+  { id: `files-hidden:${props.block.id}`, title: ctx.hidden ? "Hide hidden files" : "Show hidden files", icon: "eye", blockId: props.block.id, run: () => ctx.toggleHidden() },
+  { id: `files-live:${props.block.id}`, title: ctx.live ? "Turn off live updates" : "Turn on live updates", icon: "refresh", blockId: props.block.id, keywords: "watch", run: () => ctx.toggleLive() },
+  { id: `files-sizes:${props.block.id}`, title: ctx.sizes ? "Hide folder sizes" : "Calculate folder sizes", icon: "sort", blockId: props.block.id, run: () => ctx.toggleSizes() },
+]);
+const stopOpen = onOpenRequest((request) => {
+  if (request.kind !== "explorer-path" || (request.blockId && request.blockId !== props.block.id)) return;
+  const pane = paneRefs.get(layout.active);
+  if (pane) pane.show(request.path, request.select);
+  else newPane(request.path);
+  return true;
+});
+onBeforeUnmount(() => (stopCommands(), stopOpen()));
 onMounted(() => {
   void loadRoots();
   document.addEventListener("pointerdown", outside, true);

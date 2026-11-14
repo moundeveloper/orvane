@@ -27,6 +27,8 @@ import { vMotion } from "./motion";
 import { importDrop, importPath, mayHoldImage, measure, type PlacedImage } from "./imageDrop";
 import { isImage, peekKind } from "./components/files/explorer";
 import { isBackup, makeBackup, restoreImages } from "./backup";
+import { registerCommands } from "./commands";
+import CommandPalette from "./components/CommandPalette.vue";
 import {
   emptyWorkspace,
   appMinimum,
@@ -558,6 +560,49 @@ function createGitViewer(kind: keyof typeof toolApps = "git") {
   panel.value = null;
   void focusApp(app);
 }
+// ---- Command palette (Ctrl+K) ----
+const palette = ref<string | null>(null);
+function focusBlock(blockId: string) {
+  const app = workspace.apps.find((a) => !a.archived && !a.deleted && flatten(a.blocks).some((b) => b.id === blockId));
+  if (app) void focusApp(app);
+}
+function focusAppById(appId: string) {
+  const app = workspace.apps.find((a) => a.id === appId);
+  if (app) void focusApp(app);
+}
+const stopCanvasCommands = registerCommands("canvas", () => {
+  const writable = canEdit.value && !importBusy.value;
+  const tools: [keyof typeof toolApps, string][] = [
+    ["files", "folder-open"],
+    ["notes", "text"],
+    ["browser", "globe"],
+    ["git", "git"],
+    ["projects", "folder"],
+    ["netsuite", "globe"],
+  ];
+  return [
+    ...(writable
+      ? [
+          { id: "app-new", title: "New app", icon: "plus", hint: workspace.shortcuts.create.toUpperCase(), detail: "Canvas", run: () => createApp() },
+          ...tools.map(([kind, icon]) => ({
+            id: `app-new-${kind}`,
+            title: `New ${toolApps[kind].name}`,
+            icon,
+            detail: "Canvas",
+            keywords: "create add open",
+            run: () => createGitViewer(kind),
+          })),
+        ]
+      : []),
+    { id: "canvas-home", title: "Center the canvas", icon: "home", hint: workspace.shortcuts.home.toUpperCase(), detail: "Canvas", run: () => home() },
+    { id: "backup-export", title: "Export backup", icon: "download", detail: "Workspace", keywords: "save download json images", run: () => exportWorkspace() },
+    ...(writable
+      ? [{ id: "backup-import", title: "Import backup…", icon: "upload", detail: "Workspace", keywords: "restore load", run: () => importInput.value?.click() }]
+      : []),
+  ];
+});
+onBeforeUnmount(stopCanvasCommands);
+
 // ---- Image widgets: drops on empty canvas and "Place on canvas" ----
 const dropNotice = ref("");
 let dropNoticeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1412,6 +1457,16 @@ function wheelRemove(id: string) {
 }
 function keydown(e: KeyboardEvent) {
   if (!ready.value) return;
+  // Ctrl+K: global search and commands; Ctrl+Shift+P: commands only. An app
+  // that uses Ctrl+K itself (Notes) handles it first and prevents this.
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.defaultPrevented) {
+    const key = e.key.toLowerCase();
+    if ((key === "k" && !e.shiftKey) || (key === "p" && e.shiftKey)) {
+      e.preventDefault();
+      palette.value = key === "p" ? ">" : "";
+      return;
+    }
+  }
   if (
     e.key === "Tab" &&
     !e.repeat &&
@@ -2315,6 +2370,14 @@ onBeforeUnmount(() => {
   >
     <div class="canvas-background"></div>
     <div v-if="dropNotice" class="drop-notice" role="status">{{ dropNotice }}</div>
+    <CommandPalette
+      v-if="palette !== null"
+      :apps="workspace.apps"
+      :initial="palette"
+      @close="palette = null"
+      @focus-app="focusAppById"
+      @focus-block="focusBlock"
+    />
     <ActionStudio
       v-if="actionStudio"
       :workspace="workspace"

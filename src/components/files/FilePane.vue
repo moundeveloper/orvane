@@ -237,6 +237,19 @@ defineExpose({
   goForward,
   goUp,
   focus: () => focusPane(),
+  // Opens a folder and selects one item in it (used by Ctrl+K results).
+  show(path: string, item?: string) {
+    if (samePath(path, p.path)) {
+      void load(true).then(() => {
+        const hit = item && shown.value.find((e) => samePath(e.path, item));
+        if (hit) (select(hit, false), reveal(hit.path));
+      });
+    } else {
+      navigate(path);
+      if (item) pendingSelect = item;
+    }
+    focusPane();
+  },
 });
 
 // ---- Search ---------------------------------------------------------------

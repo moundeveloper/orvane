@@ -17,6 +17,7 @@ import SuiteQLSchema from "./SuiteQLSchema.vue";
 import { format as formatSql } from "sql-formatter";
 import type { SuiteQLTracePlan } from "../suiteqlTrace";
 import Icon from "./Icon.vue";
+import { registerCommands } from "../commands";
 import type { Block } from "../model";
 import { uid } from "../model";
 import {
@@ -515,6 +516,24 @@ async function runTrace() {
     busy.value = false;
   }
 }
+// Ctrl+K palette: run the open query.
+const stopCommands = registerCommands(`suiteql:${props.block.id}:${props.stateKey}`, () =>
+  currentFile.value
+    ? [
+        {
+          id: `suiteql-run:${props.block.id}:${props.stateKey}`,
+          title: "Run SuiteQL query",
+          detail: currentFile.value?.name ? `NetSuite · ${currentFile.value.name}` : "NetSuite",
+          icon: "play",
+          keywords: "netsuite sql execute",
+          blockId: props.block.id,
+          run: () => runQuery(),
+        },
+      ]
+    : [],
+);
+onBeforeUnmount(stopCommands);
+
 async function runQuery(page?: number) {
   const request = generation,
     file = activeFile.value,

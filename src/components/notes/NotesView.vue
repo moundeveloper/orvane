@@ -21,6 +21,7 @@ import PageView from "./components/PageView.vue";
 import EmptyState from "./components/EmptyState.vue";
 import "./assets/main.css";
 import { provideNotesPortal } from "./portal";
+import { onOpenRequest, registerCommands } from "../../commands";
 
 const props = defineProps<{
   block: CanvasBlock;
@@ -127,6 +128,17 @@ async function newPage() {
   const p = await ws.createPage(null, "");
   openPageTab(p.id, true);
 }
+// Ctrl+K palette (outside Notes): commands and opening a page found by search.
+const stopCommands = registerCommands(`notes:${props.block.id}`, () => [
+  { id: `notes-new:${props.block.id}`, title: "New note", icon: "plus", blockId: props.block.id, keywords: "page notes create", run: () => newPage() },
+  { id: `notes-search:${props.block.id}`, title: "Search notes", icon: "search", blockId: props.block.id, keywords: "find pages", run: () => (searchOpen.value = true) },
+]);
+const stopOpen = onOpenRequest((request) => {
+  if (request.kind !== "notes-page" || (request.blockId && request.blockId !== props.block.id)) return;
+  openPageTab(request.pageId, true);
+  return true;
+});
+onBeforeUnmount(() => (stopCommands(), stopOpen()));
 
 function navigatePath(path: string, replace = false) {
   activePageId.value = path.startsWith("/notes/")

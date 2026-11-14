@@ -326,7 +326,7 @@ function openPath(path: string, reveal: boolean) {
   else launch("xdg-open", [reveal ? dirname(path) : path]);
   return { ok: true };
 }
-async function search(root: string, query: string, hidden: boolean) {
+async function search(root: string, query: string, hidden: boolean, budget = 6000, limit = 500) {
   const needle = query.toLowerCase();
   const results: FileEntry[] = [];
   const started = Date.now();
@@ -334,7 +334,7 @@ async function search(root: string, query: string, hidden: boolean) {
   let visited = 0;
   let complete = true;
   while (queue.length) {
-    if (results.length >= 500 || visited >= 40_000 || Date.now() - started > 6000) {
+    if (results.length >= limit || visited >= 40_000 || Date.now() - started > budget) {
       complete = false;
       break;
     }
@@ -352,7 +352,7 @@ async function search(root: string, query: string, hidden: boolean) {
       if (d.name.toLowerCase().includes(needle)) {
         const item = await entry(dir, d.name);
         if (item) results.push(item);
-        if (results.length >= 500) break;
+        if (results.length >= limit) break;
       }
     }
   }
@@ -505,7 +505,7 @@ export function createFilesService(directory: string) {
     search: (a) => {
       const query = typeof a.query === "string" ? a.query.trim() : "";
       if (!query) throw new Error("Type something to search for.");
-      return search(absolute(a.path), query, a.hidden === true);
+      return search(absolute(a.path), query, a.hidden === true, Math.min(6000, Math.max(300, Number(a.budget) || 6000)), Math.min(500, Math.max(1, Number(a.limit) || 500)));
     },
   };
   return {
