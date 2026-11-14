@@ -67,6 +67,29 @@
   window.clearInterval = clear(nativeClearInterval);
   window.clearTimeout = clear(nativeClearTimeout);
 
+  // Two-finger scroll pans the canvas unless this app is the one being
+  // worked in (the host says which); a press here makes it that app.
+  let ownsScroll = false;
+  addEventListener("message", (event) => {
+    if (event.source === parent && typeof event.data?.orvaneScrollOwner === "boolean")
+      ownsScroll = event.data.orvaneScrollOwner;
+  });
+  addEventListener(
+    "wheel",
+    (event) => {
+      if (ownsScroll || event.ctrlKey || event.metaKey) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? innerHeight : 1;
+      parent.postMessage(
+        { orvaneWheel: { dx: event.deltaX * unit, dy: event.deltaY * unit, shift: event.shiftKey } },
+        "*",
+      );
+    },
+    { capture: true, passive: false },
+  );
+  addEventListener("pointerdown", () => parent.postMessage({ orvaneActivate: true }, "*"), true);
+
   addEventListener("message", (event) => {
     if (
       event.source !== parent ||

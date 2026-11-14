@@ -37,9 +37,16 @@ const CANVAS_GESTURES = `(() => {
   const send = (data) => console.debug(${JSON.stringify(CANVAS_PREFIX)} + JSON.stringify(data));
   const stop = (event) => { event.preventDefault(); event.stopImmediatePropagation(); };
   addEventListener("wheel", (event) => {
-    if (!(event.ctrlKey || event.metaKey)) return;
-    stop(event);
     const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? innerHeight : 1;
+    // Plain scroll pans the canvas while this page's app is not the one
+    // being worked in (Orvane sets the flag); otherwise the page scrolls.
+    if (!(event.ctrlKey || event.metaKey)) {
+      if (window.__orvanePans !== true) return;
+      stop(event);
+      send({ kind: "scroll", dx: event.deltaX * unit, dy: event.deltaY * unit, shift: event.shiftKey });
+      return;
+    }
+    stop(event);
     send({ kind: "zoom", x: event.clientX, y: event.clientY, deltaY: event.deltaY * unit });
   }, { capture: true, passive: false });
   let pressed = false, moved = false, startX = 0, startY = 0;
@@ -214,12 +221,12 @@ function secure() {
       contents.on("dom-ready", () => {
         contents
           .executeJavaScriptInIsolatedWorld(CANVAS_WORLD, [
-            { code: `window.__orvanePinned = ${pinnedGuests.has(contents.id)};` },
+            { code: `window.__orvanePinned = ${pinnedGuests.has(contents.id)}; window.__orvanePans = ${panningGuests.has(contents.id)};` },
             { code: CANVAS_GESTURES },
           ])
           .catch(() => undefined);
       });
-      contents.on("destroyed", () => pinnedGuests.delete(contents.id));
+      contents.on("destroyed", () => (pinnedGuests.delete(contents.id), panningGuests.delete(contents.id)));
       // Iframes (NetSuite's Setup Manager…) get their own input, so they need
       // the listener too; Electron can only run it in their main world there.
       contents.on("did-frame-finish-load", (_event, isMainFrame, processId, routingId) => {
@@ -278,6 +285,11 @@ function secure() {
           return;
         }
         const finite = (...values) => values.every((v) => Number.isFinite(v) && Math.abs(v) < 1e5);
+        if (input?.kind === "scroll") {
+          if (finite(input.dx, input.dy))
+            contents.hostWebContents?.send("orvane:guest-input", { from: contents.id, kind: "scroll", dx: input.dx, dy: input.dy, shift: !!input.shift });
+          return;
+        }
         if (input?.kind !== "zoom" || !finite(input.x, input.y, input.deltaY)) return;
         let relay = { kind: "zoom", x: input.x, y: input.y, deltaY: input.deltaY };
         // Inside an iframe the position is the iframe's own: use the real
@@ -436,6 +448,18 @@ ipcMain.handle("orvane:display-set", (event, id) => {
 // Pinned Browser pages preview links that leave their site (see
 // CANVAS_GESTURES); the flag lives in the isolated world, unseen by the page.
 const pinnedGuests = new Set();
+// Pages whose plain scroll pans the canvas (their app is not the one being
+// worked in); also an isolated-world flag the page cannot see.
+const panningGuests = new Set();
+ipcMain.handle("orvane:page-scroll-pans", (event, id, pans) => {
+  const guest = ownGuest(event, id);
+  if (!guest || typeof pans !== "boolean") return;
+  if (pans) panningGuests.add(guest.id);
+  else panningGuests.delete(guest.id);
+  guest
+    .executeJavaScriptInIsolatedWorld(CANVAS_WORLD, [{ code: `window.__orvanePans = ${pans};` }])
+    .catch(() => undefined);
+});
 ipcMain.handle("orvane:page-pinned", (event, id, pinned) => {
   const guest = ownGuest(event, id);
   if (!guest || typeof pinned !== "boolean") return;

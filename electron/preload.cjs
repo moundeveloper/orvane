@@ -36,6 +36,10 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
   rememberPage(webContentsId) {
     return ipcRenderer.invoke("orvane:page-remember", webContentsId);
   },
+  /** Plain scroll over the page pans the canvas (true) or scrolls it. */
+  setPageScrollPans(webContentsId, pans) {
+    return ipcRenderer.invoke("orvane:page-scroll-pans", webContentsId, pans);
+  },
   /** A pinned page previews links that leave its site in a Peek. */
   setPagePinned(webContentsId, pinned) {
     return ipcRenderer.invoke("orvane:page-pinned", webContentsId, pinned);

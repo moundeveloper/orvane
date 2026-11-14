@@ -28,6 +28,7 @@ import { importDrop, importPath, mayHoldImage, measure, type PlacedImage } from 
 import { isImage, peekKind } from "./components/files/explorer";
 import { isBackup, makeBackup, restoreImages } from "./backup";
 import { registerCommands } from "./commands";
+import { ACTIVATE_EVENT, appOf, canvasScroll, WHEEL_EVENT } from "./canvasScroll";
 import CommandPalette from "./components/CommandPalette.vue";
 import BoardLayer from "./components/BoardLayer.vue";
 import BoardTools from "./components/BoardTools.vue";
@@ -1243,6 +1244,16 @@ function pointerDown(e: PointerEvent, app?: CanvasApp, edge = "") {
     document.activeElement instanceof HTMLElement
   )
     document.activeElement.blur();
+  // Pressing in an app hands it the scroll; pressing empty canvas takes it
+  // back. Pan gestures (middle button, Space) change neither.
+  if (e.button === 0 && !space.value) {
+    if (app) canvasScroll.owner = app.id;
+    else if (
+      e.target instanceof Element &&
+      (e.target.classList.contains("canvas-background") || e.target.classList.contains("workspace"))
+    )
+      canvasScroll.owner = "";
+  }
   if (gesture) return;
   if (app && (!canEdit.value || importBusy.value)) return;
   if (pinch) return;
@@ -1408,32 +1419,48 @@ function stopZoom() {
   zoomFrame = 0;
   zoomTarget = camera.zoom;
 }
-// Two-finger scroll (or the mouse wheel; Shift for sideways) over empty
-// canvas pans the view. Over an app, scrolling stays with the app.
+// Two-finger scroll (or the mouse wheel; Shift for sideways) pans the
+// canvas everywhere except over the app you are working in, whose content
+// scrolls as usual (see canvasScroll.ts). Frames and Browser pages pass
+// their scroll here when their app is not the one being worked in.
 let wheelPanTimer: ReturnType<typeof setTimeout> | undefined;
-function wheelPan(e: WheelEvent) {
-  const target = e.target as Element | null;
-  if (
-    !ready.value ||
-    !target?.closest?.(".workspace") ||
-    target.closest(
-      ".canvas-app,.dock,.floating-panel,.topbar,.board-note,.board-rail,.cp-backdrop,.dock-context,.node-workspace",
-    )
-  )
-    return;
-  e.preventDefault();
-  stopPan();
-  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? viewport.height : 1;
-  let dx = e.deltaX * unit,
-    dy = e.deltaY * unit;
+function panBy(dx: number, dy: number, shift: boolean) {
   // A plain mouse wheel only scrolls vertically; Shift turns it sideways.
-  if (e.shiftKey && !dx) [dx, dy] = [dy, 0];
+  if (shift && !dx) [dx, dy] = [dy, 0];
+  if (!Number.isFinite(dx) || !Number.isFinite(dy) || gesture || pinch) return;
+  stopPan();
   camera.x -= dx;
   camera.y -= dy;
   // Same light rendering as other camera motion while the scroll lasts.
   movingCamera.value = true;
   clearTimeout(wheelPanTimer);
   wheelPanTimer = setTimeout(() => (movingCamera.value = false), 140);
+}
+function wheelPan(e: WheelEvent) {
+  const target = e.target as Element | null;
+  if (
+    !ready.value ||
+    !target?.closest?.(".workspace") ||
+    target.closest(
+      ".dock,.floating-panel,.topbar,.board-rail,.cp-backdrop,.dock-context,.node-workspace",
+    )
+  )
+    return;
+  const app = appOf(target);
+  if (app && app === canvasScroll.owner) return;
+  e.preventDefault();
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? viewport.height : 1;
+  panBy(e.deltaX * unit, e.deltaY * unit, e.shiftKey);
+}
+function passedWheel(event: Event) {
+  const { dx, dy, shift } = (event as CustomEvent<{ dx: number; dy: number; shift?: boolean }>).detail ?? {};
+  if (ready.value) panBy(Number(dx), Number(dy), !!shift);
+}
+function activatedApp(event: Event) {
+  const appId = (event as CustomEvent<{ appId: string }>).detail?.appId;
+  if (!appId || !apps.value.some((a) => a.id === appId)) return;
+  canvasScroll.owner = appId;
+  active.value = appId;
 }
 onBeforeUnmount(() => clearTimeout(wheelPanTimer));
 function wheel(e: WheelEvent) {
@@ -1690,6 +1717,7 @@ function keydown(e: KeyboardEvent) {
   )
     return;
   if (e.key === "Escape") {
+    canvasScroll.owner = "";
     pendingImport.value = undefined;
     managedApp.value = undefined;
     dockContext.value = undefined;
@@ -2437,6 +2465,7 @@ async function run(app: CanvasApp, block: Block) {
 }
 function focusIn(e: FocusEvent, app: CanvasApp) {
   active.value = app.id;
+  canvasScroll.owner = app.id;
   if (e.target instanceof HTMLElement && typing(e.target))
     lastFocus.set(app.id, e.target);
 }
@@ -2503,6 +2532,8 @@ onMounted(() => {
   window.addEventListener("orvane-canvas-pan", embeddedPan);
   window.addEventListener("orvane:place-file", placeFileEvent);
   window.addEventListener("keydown", paletteKeys, true);
+  window.addEventListener(WHEEL_EVENT, passedWheel);
+  window.addEventListener(ACTIVATE_EVENT, activatedApp);
   window.addEventListener("orvane:palette", paletteEvent);
   window.addEventListener("paste", pasteImage);
   window.addEventListener("pointermove", trackPointer, { passive: true });
@@ -2516,6 +2547,8 @@ onBeforeUnmount(() => {
   window.removeEventListener("orvane-canvas-pan", embeddedPan);
   window.removeEventListener("orvane:place-file", placeFileEvent);
   window.removeEventListener("keydown", paletteKeys, true);
+  window.removeEventListener(WHEEL_EVENT, passedWheel);
+  window.removeEventListener(ACTIVATE_EVENT, activatedApp);
   window.removeEventListener("orvane:palette", paletteEvent);
   window.removeEventListener("paste", pasteImage);
   window.removeEventListener("pointermove", trackPointer);
@@ -2958,6 +2991,7 @@ onBeforeUnmount(() => {
         v-for="app in apps"
         :key="`${renderGeneration}:${app.id}`"
         class="canvas-app"
+        :class="{ 'scroll-owner': canvasScroll.owner === app.id }"
         :data-app-id="app.id"
         :style="{
           left: app.x + 'px',
