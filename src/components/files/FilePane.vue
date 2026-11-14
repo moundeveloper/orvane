@@ -105,7 +105,19 @@ watch(
   },
 );
 onMounted(() => void load());
-defineExpose({ reload: () => load(), navigate });
+// Mouse side buttons (3 = back, 4 = forward) act on the pane under the pointer.
+function mouseHistory(event: MouseEvent) {
+  if (event.button === 3) (event.preventDefault(), goBack());
+  else if (event.button === 4) (event.preventDefault(), goForward());
+}
+defineExpose({
+  reload: () => load(),
+  navigate,
+  goBack,
+  goForward,
+  goUp,
+  focus: () => focusPane(),
+});
 
 // ---- Search ---------------------------------------------------------------
 const query = ref("");
@@ -675,7 +687,15 @@ const relative = (entry: FileEntry) => {
 };
 </script>
 <template>
-  <div ref="root" class="fx-pane" tabindex="-1" :data-path="pane.path" @keydown="keydown">
+  <div
+    ref="root"
+    class="fx-pane"
+    tabindex="-1"
+    :data-path="pane.path"
+    @keydown="keydown"
+    @mousedown="($event.button === 3 || $event.button === 4) && $event.preventDefault()"
+    @mouseup="mouseHistory"
+  >
     <div class="fx-toolbar">
       <button aria-label="Back" title="Back (Alt+Left)" :disabled="!pane.back.length" @click="goBack">
         <Icon name="back" :size="14" /></button

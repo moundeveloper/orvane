@@ -52,12 +52,16 @@ function readSaved(): Saved {
 }
 const saved = readSaved();
 const panes = reactive(new Map<string, PaneState>());
+function strings(value: unknown) {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string" && !!v) : [];
+}
 function makePane(path: string, from?: Partial<PaneState>): PaneState {
   return {
     id: uid(),
     path,
-    back: [],
-    forward: [],
+    // History survives reloads; only the most recent steps are kept.
+    back: strings(from?.back).slice(-30),
+    forward: strings(from?.forward).slice(-30),
     view: from?.view === "grid" ? "grid" : "list",
     sort:
       from?.sort && ["name", "mtime", "type", "size"].includes(from.sort.key)
@@ -81,7 +85,7 @@ function persist() {
       layout,
       panes: layout.tabs.map((id) => {
         const p = panes.get(id)!;
-        return { id, path: p.path, view: p.view, sort: p.sort, preview: p.preview };
+        return { id, path: p.path, back: p.back.slice(-30), forward: p.forward.slice(-30), view: p.view, sort: p.sort, preview: p.preview };
       }),
       pins: pins.value,
       hidden: ctx.hidden,
@@ -205,9 +209,29 @@ function info(id: string) {
     ? { label: label(pane.path, roots.value?.home), icon: crumbs(pane.path).length === 1 ? "drive" : "folder", title: pane.path }
     : { label: "…" };
 }
+// History keys and mouse side buttons in the sidebar act on the active pane.
+function sideKeys(event: KeyboardEvent) {
+  const pane = paneRefs.get(layout.active);
+  if (!pane) return;
+  if (event.altKey && event.key === "ArrowLeft") pane.goBack();
+  else if (event.altKey && event.key === "ArrowRight") pane.goForward();
+  else if ((event.altKey && event.key === "ArrowUp") || event.key === "Backspace") pane.goUp();
+  else return;
+  event.preventDefault();
+  event.stopPropagation();
+}
+function sideMouse(event: MouseEvent) {
+  const pane = paneRefs.get(layout.active);
+  if (event.button === 3) pane?.goBack();
+  else if (event.button === 4) pane?.goForward();
+}
 function navigateActive(path: string) {
   const ref = paneRefs.get(layout.active);
-  if (ref) ref.navigate(path);
+  if (ref) {
+    ref.navigate(path);
+    // Keep keyboard history (Alt+Left, Backspace) working after a sidebar click.
+    ref.focus();
+  }
   else if (!layout.tabs.length) newPane(path);
 }
 function externalDrop(event: DragEvent, group: SplitSide | null) {
@@ -440,7 +464,14 @@ const placeIcon: Record<string, string> = {
 </script>
 <template>
   <section ref="root" class="fx-root" aria-label="File Explorer">
-    <aside v-if="!collapsed" class="fx-side" :style="{ width: sidebarWidth + 'px' }" aria-label="Locations">
+    <aside
+      v-if="!collapsed"
+      class="fx-side"
+      :style="{ width: sidebarWidth + 'px' }"
+      aria-label="Locations"
+      @keydown="sideKeys"
+      @mouseup="sideMouse"
+    >
       <div class="fx-side-head">
         <h2>Quick access</h2>
         <button aria-label="Hide sidebar" title="Hide sidebar" @click="(collapsed = true), persist()">
