@@ -1,9 +1,11 @@
 // Turns whatever was dropped (File Explorer items, files from the system,
 // images dragged out of a web page) into images stored by the local server.
 import { api, DRAG_MIME, isImage } from "./components/files/explorer";
+import { IMAGE_ID } from "./imageId";
+
+export { IMAGE_ID } from "./imageId";
 
 export type PlacedImage = { value: string; name: string };
-export const IMAGE_ID = /^[a-f\d]{40}\.(png|jpg|gif|webp|bmp|ico|svg|avif)$/;
 export function imageSource(value: string) {
   if (IMAGE_ID.test(value)) return `/__orvane/files/image/${value}`;
   return /^https?:\/\//i.test(value) ? value : "";
@@ -30,6 +32,12 @@ async function place(args: Record<string, unknown>): Promise<PlacedImage> {
 }
 export function importPath(path: string) {
   return place({ path });
+}
+export function importImageData(dataUrl: string, name: string) {
+  return place({ dataUrl, name });
+}
+export function importImageFile(file: File, name: string) {
+  return readDataUrl(file).then((dataUrl) => importImageData(dataUrl, name));
 }
 // The local path of a file dropped from the system (desktop app only).
 function systemPath(file: File) {
@@ -62,7 +70,7 @@ export function importDrop(dt: DataTransfer): { jobs: Promise<PlacedImage>[]; fi
     for (const file of dropped) {
       const path = systemPath(file);
       if (file.type.startsWith("image/"))
-        jobs.push(path ? importPath(path) : readDataUrl(file).then((dataUrl) => place({ dataUrl, name: file.name.replace(/\.[^.]+$/, "") })));
+        jobs.push(path ? importPath(path) : importImageFile(file, file.name.replace(/\.[^.]+$/, "")));
       // A dropped folder has no type and no size; anything else is a file.
       else if (path && (file.type || file.size)) files.push(path);
       else skipped++;

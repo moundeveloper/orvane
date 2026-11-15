@@ -8,6 +8,12 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
   /** The window has no system title bar; Orvane draws its own controls. */
   frameless: true,
   closeWindow: () => ipcRenderer.invoke("orvane:window-close"),
+  readInboxClipboard: () => ipcRenderer.invoke("orvane:inbox-clipboard"),
+  onInboxCapture(callback) {
+    const listener = () => callback();
+    ipcRenderer.on("orvane:inbox-capture", listener);
+    return () => ipcRenderer.removeListener("orvane:inbox-capture", listener);
+  },
   /** A system notification (calendar reminders); clicking it opens the app. */
   notify: (notification) => ipcRenderer.invoke("orvane:notify", notification),
   onNotificationClick(callback) {
@@ -34,6 +40,11 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
     }
   },
   /** Render a Browser page at this many device pixels per CSS pixel. */
+  // Runs a script in one of this window's Browser pages, even while it is
+  // still loading (the <webview> method waits for loading to finish).
+  runInPage(webContentsId, code) {
+    return ipcRenderer.invoke("orvane:page-run", webContentsId, code);
+  },
   setPageDensity(webContentsId, density) {
     return ipcRenderer.invoke("orvane:page-density", webContentsId, density);
   },
@@ -56,6 +67,9 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
   /** A PNG data URL of a page: "visible", "full", or "area" with a rect. */
   capturePage(webContentsId, mode, rect) {
     return ipcRenderer.invoke("orvane:page-capture", webContentsId, mode, rect);
+  },
+  captureClip(webContentsId, url, rect, fromViewport) {
+    return ipcRenderer.invoke("orvane:page-clip", webContentsId, url, rect, fromViewport);
   },
   /** Canvas zoom/pan gestures made over a Browser page. */
   onGuestInput(callback) {

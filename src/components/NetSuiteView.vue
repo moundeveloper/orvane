@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
+import { computed, inject, onMounted, onBeforeUnmount, ref, watch } from "vue";
 import CustomSelect from "./CustomSelect.vue";
 import NetSuiteDashboard from "./NetSuiteDashboard.vue";
 import NetSuiteHome from "./NetSuiteHome.vue";
@@ -21,8 +21,10 @@ import {
 import type { Block } from "../model";
 import { uid } from "../model";
 import { invalidateReads, sharedRead } from "../sharedReads";
+import { netSuiteCanvas, querySource } from "../netsuiteCanvas";
 
 const props = defineProps<{ block: Block }>();
+const canvas = inject(netSuiteCanvas);
 type Tab = { id: string; label: string; status: string; count: number };
 type Row = Record<string, unknown>;
 type AppId = "scripts" | "files" | "query";
@@ -418,6 +420,8 @@ watch(selected, () => {
   generation++;
   error.value = "";
   userInfo.value = null;
+  for (const file of files.value)
+    canvas?.selections.delete(querySource(props.block.id, file.id));
 });
 let stopProcessing: (() => void) | undefined;
 onMounted(() => {

@@ -9,7 +9,7 @@
 // move between panes · Ctrl+Shift+F find · Ctrl+= / Ctrl+- / Ctrl+0 text
 // size · Ctrl+C copies a selection (else interrupts) · Ctrl+V pastes ·
 // right-click copies a selection or pastes · Ctrl+click opens a link or path.
-import { computed, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from "vue";
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from "vue";
 import Icon from "../Icon.vue";
 import TerminalSplit from "./TerminalSplit.vue";
 import { TERMINAL, type PaneHandle, type TerminalController } from "./controller";
@@ -17,6 +17,7 @@ import { usePopover } from "../pickers/usePopover";
 import { registerCommands } from "../../commands";
 import { uid, type Block } from "../../model";
 import { terminal as client, terminalProfiles, type TerminalProfileInfo } from "../../terminalClient";
+import { addWorkbenchWidget, workbenchEditable } from "../../workbenchWidgets";
 import {
   panes,
   readTerminal,
@@ -28,6 +29,7 @@ import {
 } from "../../terminalLayout";
 
 const props = defineProps<{ block: Block }>();
+const editable = inject(workbenchEditable);
 const DEFAULT_FONT = 13;
 const state = reactive<TerminalState>(readTerminal(props.block.value));
 function save() {
@@ -39,6 +41,11 @@ const defaultProfile = computed(
   () => profiles.value.find((p) => p.id === state.defaultProfile) ?? profiles.value[0],
 );
 const activeTab = computed(() => state.tabs.find((t) => t.id === state.active));
+function openTestResults() {
+  const tab = activeTab.value;
+  const cwd = tab && panes(tab.root).find((pane) => pane.id === tab.focus)?.cwd;
+  addWorkbenchWidget("test-results", { cwd: cwd ?? "" });
+}
 const fontSize = ref(state.fontSize ?? DEFAULT_FONT);
 
 // Live, not saved: shell titles, activity and bells.
@@ -380,6 +387,8 @@ const kindIcon = (kind?: string) => (kind === "wsl" ? "desktop" : "terminal");
         </button>
       </div>
       <div class="terminal-actions">
+        <button v-if="editable?.()" type="button" class="terminal-icon-button" aria-label="Pin Playwright results"
+          title="Pin Playwright results" @click="openTestResults"><Icon name="play" :size="14" /></button>
         <button
           type="button"
           class="terminal-icon-button"

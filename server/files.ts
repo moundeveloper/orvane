@@ -20,6 +20,8 @@ import { basename, dirname, extname, isAbsolute, join, parse, resolve, sep } fro
 import { readSheet } from "./sheets.ts";
 import { createImageStore } from "./images.ts";
 import { unzip, zip } from "./archive.ts";
+import { compareFolders, copyComparedFile, diffComparedFile } from "./folderCompare.ts";
+import { importPlaywrightReport, runPlaywright } from "./playwrightResults.ts";
 
 // ---- Git status badges ---------------------------------------------------------
 // One `git status` per repository, cached briefly; folders inherit the most
@@ -444,6 +446,17 @@ export function createFilesService(directory: string) {
       return { path: to };
     },
     copy: (a) => transfer(paths(a.paths), absolute(a.destination, "destination"), "copy"),
+    "compare-folders": (a) => compareFolders(absolute(a.left), absolute(a.right)),
+    "compare-file-diff": (a) => diffComparedFile(absolute(a.left), absolute(a.right), String(a.path ?? "")),
+    "compare-file-copy": (a) => copyComparedFile(
+      absolute(a.from), absolute(a.to), String(a.path ?? ""), String(a.source ?? ""),
+      typeof a.target === "string" ? a.target : undefined,
+    ),
+    "playwright-run": (a) => runPlaywright(absolute(a.cwd), a.file === undefined ? undefined : {
+      file: absolute(a.file), line: Number(a.line), project: typeof a.project === "string" ? a.project : undefined,
+      testTitle: typeof a.testTitle === "string" ? a.testTitle : undefined,
+    }),
+    "playwright-report": (a) => importPlaywrightReport(absolute(a.cwd), absolute(a.path)),
     move: (a) => transfer(paths(a.paths), absolute(a.destination, "destination"), "move"),
     trash: (a) => trash(paths(a.paths)),
     open: (a) => openPath(absolute(a.path), false),

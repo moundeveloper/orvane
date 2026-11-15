@@ -10,6 +10,9 @@ export function appOf(element: Element | null | undefined) {
 // Sent by content that runs elsewhere (code-app frames, Browser pages):
 // a press inside it (detail: { appId }).
 export const ACTIVATE_EVENT = "orvane:activate-app";
+// A Browser shortcut pressed while its app is in use but focus is on the
+// canvas (detail: { blockId, name }).
+export const BROWSER_SHORTCUT = "orvane:browser-shortcut";
 export function activateApp(appId: string) {
   if (appId) window.dispatchEvent(new CustomEvent(ACTIVATE_EVENT, { detail: { appId } }));
 }

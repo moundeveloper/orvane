@@ -6,6 +6,7 @@ import {
   BrowserWindow,
   clipboard,
   dialog,
+  globalShortcut,
   ipcMain,
   Menu,
   nativeImage,
@@ -244,15 +245,44 @@ function secure() {
       // clicks stay with the page. A small listener runs in an isolated world
       // (invisible to page scripts) and reports through console messages
       // that only this process reads.
+      // Electron runs isolated-world scripts only once the page has finished
+      // loading, which streaming sites (YouTube…) can put off for minutes:
+      // their shortcuts and gestures would not work until then. A page still
+      // loading shortly after its document is ready gets the listener in its
+      // main world instead (as iframes do below), once per document.
+      let pendingGestures;
       contents.on("dom-ready", () => {
-        contents
-          .executeJavaScriptInIsolatedWorld(CANVAS_WORLD, [
-            { code: `window.__orvanePinned = ${pinnedGuests.has(contents.id)};` },
-            { code: CANVAS_GESTURES },
-          ])
-          .catch(() => undefined);
+        pendingGestures?.();
+        mainWorldGuests.delete(contents.id);
+        let done = false;
+        const pinned = `window.__orvanePinned = ${pinnedGuests.has(contents.id)};`;
+        const isolated = () => {
+          if (done || contents.isDestroyed()) return;
+          done = true;
+          pendingGestures?.();
+          contents
+            .executeJavaScriptInIsolatedWorld(CANVAS_WORLD, [{ code: pinned }, { code: CANVAS_GESTURES }])
+            .catch(() => undefined);
+        };
+        if (!contents.isLoadingMainFrame()) return isolated();
+        const timer = setTimeout(() => {
+          if (done || contents.isDestroyed()) return;
+          done = true;
+          pendingGestures?.();
+          mainWorldGuests.add(contents.id);
+          contents.mainFrame.executeJavaScript(pinned + CANVAS_GESTURES).catch(() => undefined);
+        }, 1500);
+        contents.once("did-stop-loading", isolated);
+        pendingGestures = () => {
+          pendingGestures = undefined;
+          clearTimeout(timer);
+          contents.off("did-stop-loading", isolated);
+        };
       });
-      contents.on("destroyed", () => pinnedGuests.delete(contents.id));
+      contents.on("destroyed", () => {
+        pinnedGuests.delete(contents.id);
+        mainWorldGuests.delete(contents.id);
+      });
       // Iframes (NetSuite's Setup Manager…) get their own input, so they need
       // the listener too; Electron can only run it in their main world there.
       contents.on("did-frame-finish-load", (_event, isMainFrame, processId, routingId) => {
@@ -403,6 +433,14 @@ function secure() {
 // density would be stretched and blurry. Orvane asks for its own webviews to
 // render at the on-screen density instead (per page, unlike site zoom, so
 // popups and layout are unaffected).
+// Scripts the window runs in its own Browser pages (live clips). Unlike
+// <webview>.executeJavaScript, the main frame runs them at once: a page can
+// stay "loading" for minutes (streaming sites), which would hold them back.
+ipcMain.handle("orvane:page-run", async (event, id, code) => {
+  const guest = ownGuest(event, id);
+  if (!guest || typeof code !== "string" || code.length > 100_000) throw Error("No such page.");
+  return guest.mainFrame.executeJavaScript(code, false);
+});
 ipcMain.handle("orvane:page-density", (event, id, density) => {
   const guest = ownGuest(event, id);
   if (!guest || typeof density !== "number" || !Number.isFinite(density))
@@ -469,14 +507,18 @@ ipcMain.handle("orvane:display-set", (event, id) => {
 // Pinned Browser pages preview links that leave their site (see
 // CANVAS_GESTURES); the flag lives in the isolated world, unseen by the page.
 const pinnedGuests = new Set();
+/** Pages whose current document got the listener in its main world. */
+const mainWorldGuests = new Set();
 ipcMain.handle("orvane:page-pinned", (event, id, pinned) => {
   const guest = ownGuest(event, id);
   if (!guest || typeof pinned !== "boolean") return;
   if (pinned) pinnedGuests.add(guest.id);
   else pinnedGuests.delete(guest.id);
-  guest
-    .executeJavaScriptInIsolatedWorld(CANVAS_WORLD, [{ code: `window.__orvanePinned = ${pinned};` }])
-    .catch(() => undefined);
+  const code = `window.__orvanePinned = ${pinned};`;
+  (mainWorldGuests.has(guest.id)
+    ? guest.mainFrame.executeJavaScript(code)
+    : guest.executeJavaScriptInIsolatedWorld(CANVAS_WORLD, [{ code }])
+  ).catch(() => undefined);
 });
 
 // A picture of a Browser page as a PNG data URL, for Orvane to copy: what
@@ -514,6 +556,34 @@ ipcMain.handle("orvane:page-capture", async (event, id, mode, rect) => {
   return !image || image.isEmpty() ? "" : image.toDataURL();
 });
 
+ipcMain.handle("orvane:page-clip", async (event, id, url, rect, fromViewport) => {
+  const guest = ownGuest(event, id);
+  if (!guest || typeof url !== "string" || !web(url) || guest.getURL() !== url)
+    throw Error("Open the clip’s original page in Orvane Browser.");
+  if (!rect || ![rect.x, rect.y, rect.width, rect.height].every((n) => Number.isFinite(n) && n >= 0) ||
+      rect.width < 4 || rect.height < 4 || rect.width > 4096 || rect.height > 4096)
+    throw Error("Choose a page area between 4 and 4096 pixels per side.");
+  if (guest.debugger.isAttached()) throw Error("Close the page debugger before capturing a clip.");
+  guest.debugger.attach("1.3");
+  try {
+    const { cssVisualViewport: viewport, cssContentSize: content } = await guest.debugger.sendCommand("Page.getLayoutMetrics");
+    const unit = fromViewport ? guest.getZoomFactor() : 1;
+    const x = Math.round(rect.x / unit + (fromViewport ? viewport.pageX : 0));
+    const y = Math.round(rect.y / unit + (fromViewport ? viewport.pageY : 0));
+    const width = Math.min(Math.round(rect.width / unit), Math.floor(content.width - x));
+    const height = Math.min(Math.round(rect.height / unit), Math.floor(content.height - y));
+    if (width < 4 || height < 4) throw Error("The selected area is outside the page.");
+    const clip = { x, y, width, height };
+    const { data } = await guest.debugger.sendCommand("Page.captureScreenshot", {
+      format: "png", captureBeyondViewport: true, clip: { ...clip, scale: 1 },
+    });
+    if (guest.getURL() !== url || !data) throw Error("The page changed while capturing.");
+    return { image: `data:image/png;base64,${data}`, rect: clip };
+  } finally {
+    if (!guest.isDestroyed() && guest.debugger.isAttached()) guest.debugger.detach();
+  }
+});
+
 // The close button in Orvane's top bar. Only Orvane's own window may ask,
 // and closing goes through the unsaved-changes guard in createWindow.
 // Calendar reminders. Kept referenced until clicked or closed, so the click
@@ -540,6 +610,21 @@ ipcMain.handle("orvane:notify", (event, data) => {
 ipcMain.handle("orvane:window-close", (event) => {
   if (!isOrvane(event.senderFrame?.url || "")) return;
   BrowserWindow.fromWebContents(event.sender)?.close();
+});
+ipcMain.handle("orvane:inbox-clipboard", (event) => {
+  if (
+    event.sender.getType() !== "window" ||
+    event.senderFrame !== event.sender.mainFrame ||
+    !isOrvane(event.senderFrame?.url || "")
+  ) return null;
+  const image = clipboard.readImage();
+  if (!image.isEmpty()) {
+    const png = image.toPNG();
+    if (png.length > 30_000_000) throw Error("Clipboard images can be up to 30 MB.");
+    return { kind: "image", value: `data:image/png;base64,${png.toString("base64")}` };
+  }
+  const text = clipboard.readText().trim();
+  return text ? { kind: "text", value: text } : null;
 });
 
 /** A <webview> guest of the window that sent this IPC message, or nothing. */
@@ -685,9 +770,19 @@ function quitOrvane() {
   quitting = true;
   app.quit();
 }
+function captureClipboard() {
+  const [window] = BrowserWindow.getAllWindows();
+  if (!window) return;
+  showWindow();
+  const contents = window.webContents;
+  const send = () => contents.send("orvane:inbox-capture");
+  if (contents.isLoadingMainFrame()) contents.once("did-finish-load", send);
+  else send();
+}
 function trayMenu() {
   return Menu.buildFromTemplate([
     { label: "Show Orvane", click: showWindow },
+    { label: "Capture clipboard", click: captureClipboard },
     {
       label: "Launch at login",
       type: "checkbox",
@@ -822,6 +917,8 @@ else {
       await startServer();
       createWindow();
       createTray();
+      globalShortcut.register("CommandOrControl+Alt+I", captureClipboard);
+      app.on("will-quit", () => globalShortcut.unregisterAll());
       // Free-direction two-finger panning from the touchpad's own fingers.
       app.on("will-quit", setupTouchpad(root));
     })

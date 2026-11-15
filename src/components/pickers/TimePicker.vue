@@ -64,8 +64,7 @@ function nowTime() {
   close(true);
 }
 function key(e: KeyboardEvent) {
-  if (e.key === "Escape" || e.key === "Enter") {
-    e.stopPropagation();
+  if (e.key === "Escape" || (e.key === "Enter" && e.target === popover.value)) {
     e.preventDefault();
     close(true);
   }

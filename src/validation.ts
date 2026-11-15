@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { captureSchema, INBOX_LIMIT } from "./inbox.ts";
 import {
   flatten,
   appMinimum,
@@ -69,6 +70,10 @@ const block: z.ZodType<Block> = z.lazy(() =>
       "notes",
       "browser",
       "netsuite",
+      "netsuite-record",
+      "browser-clip",
+      "folder-compare",
+      "test-results",
       "files",
       "image",
       "file",
@@ -127,6 +132,7 @@ const schema = z.object({
     )
     .max(300),
   library: z.array(z.object({ id, name: z.string(), block })),
+  inbox: z.array(captureSchema).max(INBOX_LIMIT).optional(),
   customNodes: z.array(
     z.object({
       id,

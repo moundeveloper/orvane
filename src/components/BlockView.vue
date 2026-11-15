@@ -9,6 +9,10 @@ import {
 const GitViewer = defineAsyncComponent(() => import("./GitViewer.vue"));
 const NotesView = defineAsyncComponent(() => import("./notes/NotesView.vue"));
 const NetSuiteView = defineAsyncComponent(() => import("./NetSuiteView.vue"));
+const NetSuiteRecordPreview = defineAsyncComponent(() => import("./NetSuiteRecordPreview.vue"));
+const BrowserClip = defineAsyncComponent(() => import("./BrowserClip.vue"));
+const FolderCompare = defineAsyncComponent(() => import("./files/FolderCompare.vue"));
+const TestResults = defineAsyncComponent(() => import("./terminal/TestResults.vue"));
 const BrowserView = defineAsyncComponent(() => import("./BrowserView.vue"));
 const ImageBlock = defineAsyncComponent(() => import("./ImageBlock.vue"));
 const FileBlock = defineAsyncComponent(() => import("./FileBlock.vue"));
@@ -159,6 +163,10 @@ const sandboxDocument = (code: string) => {
       :editing="editing"
     />
     <NetSuiteView v-else-if="block.kind === 'netsuite'" :block="block" />
+    <NetSuiteRecordPreview v-else-if="block.kind === 'netsuite-record'" :block="block" />
+    <BrowserClip v-else-if="block.kind === 'browser-clip'" :block="block" />
+    <FolderCompare v-else-if="block.kind === 'folder-compare'" :block="block" />
+    <TestResults v-else-if="block.kind === 'test-results'" :block="block" />
     <FileExplorer v-else-if="block.kind === 'files'" :block="block" />
     <CalendarView v-else-if="block.kind === 'calendar'" :block="block" />
     <TerminalView v-else-if="block.kind === 'terminal'" :block="block" />

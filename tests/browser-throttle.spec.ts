@@ -181,7 +181,7 @@ test("Desktop Browser pauses pages nobody sees and resumes them at once", async 
 
     // A background tab is paused as well; selecting it resumes it.
     const browser = page.locator(".browser-view");
-    await browser.getByRole("button", { name: "New tab" }).click();
+    await browser.getByRole("button", { name: "New tab", exact: true }).click();
     const address = browser.getByRole("textbox", { name: "Address" });
     await address.fill(`${origin}/two`);
     await submit(address);
@@ -217,7 +217,7 @@ test("Desktop Browser discards long-unseen pages beyond the live limit", async (
     const address = browser.getByRole("textbox", { name: "Address" });
     const tabs = browser.locator(".browser-tab");
     const openInNewTab = async (path: string) => {
-      await browser.getByRole("button", { name: "New tab" }).click();
+      await browser.getByRole("button", { name: "New tab", exact: true }).click();
       await address.fill(`${origin}${path}`);
       await submit(address);
       await expect(browser.locator(".browser-tab.active")).toContainText(`Fixture ${path.slice(1)}`, {

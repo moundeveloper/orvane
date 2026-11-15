@@ -75,6 +75,7 @@ function addLivePage(page: LivePage) {
 <script setup lang="ts">
 import {
   computed,
+  inject,
   nextTick,
   onBeforeUnmount,
   onMounted,
@@ -86,7 +87,7 @@ import { uid, type Block } from "../model";
 import { siteName, type PasswordPrompt, type PasswordsApi } from "../passwords";
 import { getDomain } from "tldts";
 import Icon from "./Icon.vue";
-import { activateApp, appOf } from "../canvasScroll";
+import { activateApp, appOf, BROWSER_SHORTCUT } from "../canvasScroll";
 import { onOpenRequest, PAGE_DRAG_MIME, registerCommands } from "../commands";
 import BrowserDrawer, {
   type Bookmark,
@@ -97,8 +98,12 @@ import BrowserDrawer, {
   type SearchEngine,
 } from "./BrowserDrawer.vue";
 import PasswordsPanel from "./PasswordsPanel.vue";
+import { importImageData } from "../imageDrop";
+import { addWorkbenchWidget, REFRESH_BROWSER_CLIP, workbenchEditable, type BrowserClipRequest, type ClipRect } from "../workbenchWidgets";
+import { CANCEL_PICK, PICK_ELEMENT, readPicked, readRect, readSize, runInPage } from "../liveClip";
 
 const props = defineProps<{ block: Block; editing: boolean }>();
+const canPinClip = inject(workbenchEditable);
 
 interface BrowserTab {
   id: string;
@@ -169,6 +174,7 @@ interface OrvaneDesktop {
     mode: "visible" | "full" | "area",
     rect?: { x: number; y: number; width: number; height: number },
   ): Promise<string>;
+  captureClip?(id: number, url: string, rect: ClipRect, fromViewport: boolean): Promise<{ image: string; rect: ClipRect }>;
   rememberPage?(webContentsId: number): Promise<void>;
   snapshotPage?(
     webContentsId: number,
@@ -795,7 +801,9 @@ const stopCommands = registerCommands(`browser:${props.block.id}`, () => [
 ]);
 const stopOpen = onOpenRequest((request) => {
   if (request.kind !== "browser-url" || (request.blockId && request.blockId !== props.block.id)) return;
-  addTab(request.url);
+  const existing = request.reuse && state.value.tabs.find((tab) => tab.url === request.url);
+  if (existing) goToTab(existing);
+  else addTab(request.url);
   return true;
 });
 onBeforeUnmount(() => (stopCommands(), stopOpen()));
@@ -2385,6 +2393,107 @@ const cropping = ref<{ x0: number; y0: number; x: number; y: number } | null>(
   null,
 );
 const cropArming = ref(false);
+const cropPurpose = ref<"copy" | "clip" | "live">("copy");
+const cropSurface = ref<Record<string, string>>();
+function armCrop(purpose: "copy" | "clip" | "live") {
+  cropSurface.value = undefined;
+  if (purpose !== "copy") {
+    const box = pageBox.value;
+    const view = webviews.get(activeTab.value.id);
+    if (!box?.offsetWidth || !view) return say("Open the page you want to clip first.");
+    const area = box.getBoundingClientRect();
+    const guest = view.getBoundingClientRect();
+    const scale = area.width / box.offsetWidth;
+    if (!guest.width || !guest.height || !scale) return say("Open the page you want to clip first.");
+    cropSurface.value = {
+      left: (guest.left - area.left) / scale + "px",
+      top: (guest.top - area.top) / scale + "px",
+      width: guest.width / scale + "px",
+      height: guest.height / scale + "px",
+      right: "auto",
+      bottom: "auto",
+    };
+  }
+  cropPurpose.value = purpose;
+  cropArming.value = true;
+}
+async function pinClip(rect: ClipRect) {
+  if (!canPinClip?.()) return;
+  const tab = activeTab.value;
+  const view = webviews.get(tab.id);
+  try {
+    if (!view || !desktop?.captureClip) throw Error("Pinning a clip requires a page in Orvane Desktop.");
+    const captured = await desktop.captureClip(view.getWebContentsId(), tab.url, rect, true);
+    const title = label(tab);
+    const image = await importImageData(captured.image, title);
+    addWorkbenchWidget("browser-clip", { url: tab.url, rect: captured.rect, image: image.value, blockId: props.block.id, tabId: tab.id }, `Clip · ${title}`);
+  } catch (error) {
+    say(error instanceof Error ? error.message : "The clip could not be captured.");
+  }
+}
+// Live clips show the page itself through a cropped window (LiveClip.vue):
+// pinning records where the part is on the page and the page's size.
+async function pinLive(rect: ClipRect) {
+  if (!canPinClip?.()) return;
+  const tab = activeTab.value;
+  const view = webviews.get(tab.id);
+  try {
+    if (!view) throw Error("Pinning a live clip requires a page in Orvane Desktop.");
+    const page = (await runInPage(view, "({ x: scrollX, y: scrollY, width: innerWidth, height: innerHeight })")) as
+      { x: number; y: number; width: number; height: number };
+    const viewport = readSize(page);
+    const zoom = viewport && view.offsetWidth ? view.offsetWidth / page.width : 1;
+    const area = readRect({ x: rect.x / zoom + page.x, y: rect.y / zoom + page.y, width: rect.width / zoom, height: rect.height / zoom });
+    if (!viewport || !area) throw Error("Choose a larger area of the page.");
+    addWorkbenchWidget("browser-clip", { mode: "live", pick: "area", url: tab.url, rect: area, viewport, blockId: props.block.id, tabId: tab.id }, `Live clip · ${label(tab)}`);
+  } catch (error) {
+    say(error instanceof Error ? error.message : "The live clip could not be pinned.");
+  }
+}
+let picking: WebviewElement | undefined;
+async function pickElement() {
+  if (!canPinClip?.()) return;
+  const tab = activeTab.value;
+  const view = webviews.get(tab.id);
+  if (!view) return say("Open the page you want to clip first.");
+  picking = view;
+  // The page takes the pointer and keys while picking.
+  focusFrame();
+  try {
+    const picked = readPicked(await runInPage(view, PICK_ELEMENT));
+    if (!picked || picking !== view) return;
+    addWorkbenchWidget(
+      "browser-clip",
+      { mode: "live", pick: "element", selector: picked.selector, url: tab.url, rect: picked.rect, viewport: picked.viewport, blockId: props.block.id, tabId: tab.id },
+      `Live clip · ${label(tab)}`,
+    );
+  } catch {
+    say("The element could not be picked.");
+  } finally {
+    if (picking === view) picking = undefined;
+  }
+}
+// Clicking outside the page, or another tab, ends picking.
+watch([interacting, () => state.value.active], () => {
+  if (!picking || (interacting.value && webviews.get(state.value.active) === picking)) return;
+  runInPage(picking, CANCEL_PICK).catch(() => undefined);
+  picking = undefined;
+});
+function refreshClip(event: Event) {
+  const request = (event as CustomEvent<BrowserClipRequest>).detail;
+  if (!request || request.respond || (!request.anySource && request.blockId !== props.block.id) || !desktop?.captureClip) return;
+  const liveTabs = state.value.tabs.filter((item) => item.url === request.url && webviews.get(item.id)?.isConnected);
+  const tab = liveTabs.find((item) => item.id === request.tabId) ?? liveTabs[0];
+  const view = tab && webviews.get(tab.id);
+  if (!view || !view.isConnected) return;
+  request.respond = (async () => {
+    const captured = await desktop.captureClip!(view.getWebContentsId(), request.url, request.rect, false);
+    const image = await importImageData(captured.image, "Browser clip");
+    return image.value;
+  })();
+}
+onMounted(() => window.addEventListener(REFRESH_BROWSER_CLIP, refreshClip));
+onBeforeUnmount(() => window.removeEventListener(REFRESH_BROWSER_CLIP, refreshClip));
 async function capture(
   mode: "visible" | "full" | "area",
   rect?: { x: number; y: number; width: number; height: number },
@@ -2413,12 +2522,12 @@ async function capture(
   say(ok ? "Screenshot copied to the clipboard." : "The page could not be captured.");
 }
 function pagePoint(event: PointerEvent) {
-  const box = pageBox.value!;
+  const box = event.currentTarget as HTMLElement;
   const rect = box.getBoundingClientRect();
   const scale = box.offsetWidth ? rect.width / box.offsetWidth : 1;
   return {
-    x: (event.clientX - rect.left) / scale,
-    y: (event.clientY - rect.top) / scale,
+    x: Math.max(0, Math.min(box.offsetWidth, (event.clientX - rect.left) / scale)),
+    y: Math.max(0, Math.min(box.offsetHeight, (event.clientY - rect.top) / scale)),
   };
 }
 function cropDown(event: PointerEvent) {
@@ -2429,18 +2538,19 @@ function cropDown(event: PointerEvent) {
 function cropMove(event: PointerEvent) {
   if (cropping.value) Object.assign(cropping.value, pagePoint(event));
 }
-function cropUp() {
+function cropUp(event?: PointerEvent) {
   const drag = cropping.value;
   cropping.value = null;
   cropArming.value = false;
-  if (!drag) return;
+  if (!drag || event?.type === "pointercancel") return;
   const rect = {
     x: Math.min(drag.x0, drag.x),
     y: Math.min(drag.y0, drag.y),
     width: Math.abs(drag.x - drag.x0),
     height: Math.abs(drag.y - drag.y0),
   };
-  if (rect.width > 4 && rect.height > 4) void capture("area", rect);
+  if (rect.width > 4 && rect.height > 4)
+    void (cropPurpose.value === "clip" ? pinClip(rect) : cropPurpose.value === "live" ? pinLive(rect) : capture("area", rect));
 }
 const cropBox = computed(() => {
   const drag = cropping.value;
@@ -2480,7 +2590,10 @@ function browserTools(): MenuItem[] {
     {},
     { label: "Screenshot: visible page", icon: "download", run: () => void capture("visible") },
     { label: "Screenshot: full page", icon: "download", run: () => void capture("full") },
-    { label: "Screenshot: select an area", icon: "resize", run: () => (cropArming.value = true) },
+    { label: "Screenshot: select an area", icon: "resize", run: () => armCrop("copy") },
+    { label: "Pin a snapshot clip", icon: "image", disabled: !canPinClip?.() || !desktop?.captureClip || !activeTab.value.url || !!peek.value, run: () => armCrop("clip") },
+    { label: "Pin a live area", icon: "crop", disabled: !canPinClip?.() || !useWebview || !activeTab.value.url || !!peek.value, run: () => armCrop("live") },
+    { label: "Pin a live element", icon: "box", disabled: !canPinClip?.() || !useWebview || !activeTab.value.url || !!peek.value, run: () => void pickElement() },
   ];
 }
 function moreMenu(event: MouseEvent) {
@@ -2576,7 +2689,10 @@ function hostKey(event: KeyboardEvent) {
     else if (dialog.value) dismissDialog();
     else if (switcher.value) switcher.value = null;
     else if (drawer.value) closeDrawer();
-    else if (cropArming.value) cropUp();
+    else if (cropArming.value) {
+      cropping.value = null;
+      cropArming.value = false;
+    }
     else closePeek();
     return;
   }
@@ -2598,6 +2714,13 @@ function hostKey(event: KeyboardEvent) {
   event.stopPropagation();
   shortcut(name);
 }
+function canvasShortcut(event: Event) {
+  const detail = (event as CustomEvent<{ blockId?: string; name?: string }>).detail;
+  if (detail?.blockId !== props.block.id || props.editing) return;
+  if (detail.name === "new-tab" || detail.name === "reopen-tab") shortcut(detail.name);
+}
+onMounted(() => window.addEventListener(BROWSER_SHORTCUT, canvasShortcut));
+onBeforeUnmount(() => window.removeEventListener(BROWSER_SHORTCUT, canvasShortcut));
 function hostKeyUp(event: KeyboardEvent) {
   if (event.key === "Control" || event.key === "Meta") shortcut("release");
 }
@@ -3341,6 +3464,7 @@ function browserWheel(event: WheelEvent) {
       <div
         v-if="cropArming"
         class="browser-crop"
+        :style="cropSurface"
         aria-label="Drag to choose the area to capture"
         @pointerdown.prevent="cropDown"
         @pointermove="cropMove"

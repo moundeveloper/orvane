@@ -4,13 +4,20 @@
 import { flatten, type Workspace } from "./model";
 import { IMAGE_ID } from "./imageDrop";
 import { api } from "./components/files/explorer";
+import { readWidget, type BrowserClip } from "./workbenchWidgets";
 
 export type Backup = { orvaneBackup: 1; created: string; workspace: Workspace; images: Record<string, string> };
 
 export function imageIds(workspace: Workspace) {
   const ids = new Set<string>();
+  for (const capture of workspace.inbox ?? [])
+    if (capture.kind === "image") ids.add(capture.value);
   const blocks = [...workspace.apps.flatMap((a) => flatten(a.blocks)), ...workspace.library.flatMap((l) => flatten([l.block]))];
   for (const block of blocks) {
+    if (block.kind === "browser-clip") {
+      const { image } = readWidget<BrowserClip>(block.value);
+      if (typeof image === "string" && IMAGE_ID.test(image)) ids.add(image);
+    }
     if (block.kind !== "image") continue;
     if (IMAGE_ID.test(block.value)) ids.add(block.value);
     try {

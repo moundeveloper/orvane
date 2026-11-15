@@ -13,6 +13,10 @@ export type Kind =
   | "notes"
   | "browser"
   | "netsuite"
+  | "netsuite-record"
+  | "browser-clip"
+  | "folder-compare"
+  | "test-results"
   | "files"
   | "image"
   | "file"
@@ -138,6 +142,7 @@ export interface Workspace {
   layouts?: Layout[];
   activeLayout?: string;
   board?: Board;
+  inbox?: import("./inbox").InboxCapture[];
 }
 // Whiteboard items drawn on the canvas itself, in canvas coordinates.
 // An arrow end attached to an app or sticky note follows it; x/y is where
@@ -318,6 +323,10 @@ export function makeBlock(kind: Kind): Block {
       notes: "Notes workspace",
       browser: "Web browser",
       netsuite: "NetSuite",
+      "netsuite-record": "NetSuite record preview",
+      "browser-clip": "Browser clip",
+      "folder-compare": "Folder comparison",
+      "test-results": "Playwright test results",
       files: "File Explorer",
       image: "Image",
       file: "File",

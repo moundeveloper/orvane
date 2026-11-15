@@ -4,8 +4,10 @@ import {
   nextTick,
   onBeforeUnmount,
   onMounted,
+  provide,
   reactive,
   ref,
+  shallowReactive,
   watch,
   defineAsyncComponent,
 } from "vue";
@@ -24,12 +26,17 @@ import CustomSelect from "./components/CustomSelect.vue";
 import CustomNumber from "./components/CustomNumber.vue";
 import { migrateGroups, groupBounds } from "./groups";
 import { vMotion } from "./motion";
-import { importDrop, importPath, mayHoldImage, measure, type PlacedImage } from "./imageDrop";
+import { importDrop, importImageData, importImageFile, importPath, mayHoldImage, measure, type PlacedImage } from "./imageDrop";
 import { isImage, peekKind } from "./components/files/explorer";
 import { isBackup, makeBackup, restoreImages } from "./backup";
 import { OPEN_EVENT, registerCommands, type OpenRequest } from "./commands";
-import { ACTIVATE_EVENT, canvasScroll } from "./canvasScroll";
-import { dueAt, formatDay, readCalendar, type CalendarItem } from "./calendar";
+import { ACTIVATE_EVENT, BROWSER_SHORTCUT, canvasScroll } from "./canvasScroll";
+import { dayKey, dueAt, formatDay, readCalendar, type CalendarItem } from "./calendar";
+import { captureLink, CAPTURE_TEXT_LIMIT, INBOX_LIMIT, type ClipboardCapture, type InboxCapture } from "./inbox";
+import WorkspaceInbox from "./components/WorkspaceInbox.vue";
+import { netSuiteCanvas, querySource, readRecordPreview, RECORD_PREVIEW_MIME, type RecordPreviewLink, type SuiteQLSelection } from "./netsuiteCanvas";
+import { WORKBENCH_WIDGET, workbenchEditable, type WorkbenchKind } from "./workbenchWidgets";
+import { DRAG_MIME } from "./components/files/explorer";
 import CommandPalette from "./components/CommandPalette.vue";
 import BoardLayer from "./components/BoardLayer.vue";
 import BoardTools from "./components/BoardTools.vue";
@@ -57,6 +64,8 @@ const desktopWindow = (
     orvaneDesktop?: {
       frameless?: boolean;
       closeWindow?: () => void;
+      readInboxClipboard?: () => Promise<ClipboardCapture | null>;
+      onInboxCapture?: (callback: () => void) => () => void;
       displays?: () => Promise<
         { id: number; label: string; chosen: boolean }[]
       >;
@@ -197,6 +206,7 @@ const store = new WorkspaceStorage(async () => {
 });
 function replaceWorkspace(value: Workspace) {
   applying = true;
+  suiteQLSelections.clear();
   // Workspaces from before the focus shortcut get F, or a free key.
   if (value.shortcuts && !value.shortcuts.focus) {
     const used = Object.values(value.shortcuts);
@@ -269,6 +279,42 @@ const apps = computed(() =>
 const liveApps = computed(() =>
   workspace.apps.filter((a) => !a.archived && !a.deleted),
 );
+const suiteQLSelections = shallowReactive(new Map<string, SuiteQLSelection>());
+const netSuiteSources = computed(() => {
+  const sources = new Map<string, { app: CanvasApp; block: Block }>();
+  for (const app of liveApps.value)
+    for (const block of flatten(app.blocks))
+      if (block.kind === "netsuite") sources.set(block.id, { app, block });
+  return sources;
+});
+const recordPreviews = computed(() => {
+  const previews = new Map<string, CanvasApp>();
+  for (const app of liveApps.value)
+    for (const block of flatten(app.blocks)) {
+      if (block.kind !== "netsuite-record") continue;
+      const link = readRecordPreview(block.value);
+      if (link) previews.set(querySource(link.sourceBlockId, link.queryId), app);
+    }
+  return previews;
+});
+function querySourceExists(blockId: string, queryId: string) {
+  const source = netSuiteSources.value.get(blockId);
+  if (!source) return false;
+  try {
+    const files: unknown = JSON.parse(source.block.value).queries;
+    return Array.isArray(files) && files.some((file) => file?.id === queryId);
+  } catch {
+    return false;
+  }
+}
+provide(netSuiteCanvas, {
+  editable: () => canEdit.value && !importBusy.value,
+  sourceExists: querySourceExists,
+  hasPreview: (source) => recordPreviews.value.has(source),
+  selections: suiteQLSelections,
+  addPreview: addRecordPreview,
+});
+provide(workbenchEditable, () => canEdit.value && !importBusy.value);
 const active = ref(""),
   camera = reactive({ x: 0, y: 0, zoom: 1 }),
   movingCamera = ref(false);
@@ -708,7 +754,7 @@ const toolApps = {
   calendar: { name: "Calendar", icon: "calendar", width: 780, height: 520 },
   terminal: { name: "Terminal", icon: "terminal", width: 940, height: 560 },
 };
-function createGitViewer(kind: keyof typeof toolApps = "git") {
+function createGitViewer(kind: keyof typeof toolApps = "git", value?: string) {
   if (!canEdit.value || importBusy.value) return;
   const appId = uid();
   const { name, icon, width = 1160, height = 740 } = toolApps[kind] as {
@@ -742,6 +788,7 @@ function createGitViewer(kind: keyof typeof toolApps = "git") {
         properties: {
           label: name,
           sizing: "fill",
+          ...(value === undefined ? {} : { value }),
         },
       },
     },
@@ -758,7 +805,7 @@ const palette = ref<string | null>(null);
 // in the capture phase, before apps that keep keys to themselves. Notes
 // keeps Ctrl+K for its own search while you type in it.
 function paletteKeys(e: KeyboardEvent) {
-  if (!ready.value || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+  if (!ready.value || inboxOpen.value || !(e.ctrlKey || e.metaKey) || e.altKey) return;
   const key = e.key.toLowerCase();
   const commands = key === "p" && e.shiftKey;
   if (!commands && !(key === "k" && !e.shiftKey)) return;
@@ -780,10 +827,13 @@ function focusBlock(blockId: string) {
 }
 // A sticky note's link opens in the File Explorer (files and folders) or
 // the Browser (pages), like the same results in Ctrl+K.
-async function openNoteLink(link: NoteLink, external = false) {
+async function openNoteLink(link: NoteLink, external = false, sourceBlockId?: string) {
   const kind = link.kind === "page" ? "browser" : "files";
-  const app = liveApps.value.find((a) => flatten(a.blocks).some((b) => b.kind === kind));
-  const block = app && flatten(app.blocks).find((b) => b.kind === kind);
+  const source = kind === "browser" && sourceBlockId
+    ? liveApps.value.find((a) => flatten(a.blocks).some((b) => b.kind === kind && b.id === sourceBlockId))
+    : undefined;
+  const app = source ?? liveApps.value.find((a) => flatten(a.blocks).some((b) => b.kind === kind));
+  const block = app && flatten(app.blocks).find((b) => b.kind === kind && (!source || b.id === sourceBlockId));
   if ((!app || !block) && external && link.kind === "page") {
     window.open(link.target, "_blank", "noopener");
     return;
@@ -797,7 +847,7 @@ async function openNoteLink(link: NoteLink, external = false) {
   const folder = link.target.replace(/[\\/][^\\/]*$/, "");
   const request: OpenRequest =
     link.kind === "page"
-      ? { kind: "browser-url", blockId: block.id, url: link.target }
+      ? { kind: "browser-url", blockId: block.id, url: link.target, reuse: !!sourceBlockId }
       : link.kind === "folder"
         ? { kind: "explorer-path", blockId: block.id, path: link.target }
         : { kind: "explorer-path", blockId: block.id, path: folder, select: link.target };
@@ -811,11 +861,11 @@ async function openNoteLink(link: NoteLink, external = false) {
 }
 // Ctrl+click on a link or path in the Terminal app.
 function openLinkEvent(event: Event) {
-  const detail = (event as CustomEvent<{ link?: NoteLink; external?: boolean }>).detail;
+  const detail = (event as CustomEvent<{ link?: NoteLink; external?: boolean; sourceBlockId?: string }>).detail;
   const link = detail?.link;
   if (!link || !["file", "folder", "page"].includes(link.kind) || typeof link.target !== "string") return;
   if (link.kind === "page" && !/^https?:\/\//i.test(link.target)) return;
-  void openNoteLink(link, !!detail.external);
+  void openNoteLink(link, !!detail.external, detail.sourceBlockId);
 }
 function focusAppById(appId: string) {
   const app = workspace.apps.find((a) => a.id === appId);
@@ -849,7 +899,7 @@ function eraseBoardItem(id: string) {
   board.arrows = board.arrows.filter((a) => a.id !== id && a.from.noteId !== id && a.to.noteId !== id);
   if (boardSelected.value === id) boardSelected.value = "";
 }
-function addStickyNote() {
+function addStickyNote(text = "", link?: NoteLink) {
   if (!canEdit.value) return;
   const board = ensureBoard(workspace);
   const note = {
@@ -858,11 +908,138 @@ function addStickyNote() {
     y: Math.round((viewport.height / 2 - camera.y) / camera.zoom - 80),
     width: 200,
     height: 160,
-    text: "",
+    text,
     color: "#fff4b8",
+    ...(link ? { link } : {}),
   };
   board.notes.push(note);
-  boardCreated(note.id, "note");
+  if (text) boardSelected.value = note.id;
+  else boardCreated(note.id, "note");
+}
+
+const inboxOpen = ref(false);
+const inboxBusy = ref(false);
+const inboxMessage = ref("");
+const inboxDraft = ref("");
+const canChangeInbox = computed(() => ready.value && canEdit.value && !importBusy.value);
+function openInbox() {
+  if (!inboxOpen.value) inboxMessage.value = "";
+  panel.value = null;
+  palette.value = null;
+  inboxOpen.value = true;
+}
+async function saveCapture(read: () => Promise<ClipboardCapture | null>) {
+  if (inboxBusy.value) return false;
+  if (!canChangeInbox.value) {
+    inboxMessage.value = "Open the inbox in the editing window to capture.";
+    return false;
+  }
+  if ((workspace.inbox?.length ?? 0) >= INBOX_LIMIT) {
+    inboxMessage.value = "The inbox is full. Move or discard a capture first.";
+    return false;
+  }
+  const apps = workspace.apps;
+  inboxBusy.value = true;
+  try {
+    const data = await read();
+    if (!data?.value) {
+      inboxMessage.value = "Copy text, a link or an image first.";
+      return false;
+    }
+    if (data.kind === "text" && data.value.length > CAPTURE_TEXT_LIMIT) {
+      inboxMessage.value = "Captures can contain up to 20,000 characters.";
+      return false;
+    }
+    if (workspace.apps !== apps || !canChangeInbox.value) {
+      inboxMessage.value = "The workspace changed. Capture again.";
+      return false;
+    }
+    workspace.inbox = [{ ...data, id: uid(), capturedAt: Date.now() }, ...(workspace.inbox ?? [])];
+    inboxMessage.value = "Saved to inbox.";
+    return true;
+  } catch (error) {
+    inboxMessage.value = error instanceof Error ? error.message : "The capture could not be saved.";
+    return false;
+  } finally {
+    inboxBusy.value = false;
+  }
+}
+async function saveInboxDraft() {
+  const value = inboxDraft.value.trim();
+  if (await saveCapture(async () => ({ kind: "text", value }))) inboxDraft.value = "";
+}
+function saveInboxImage(file: File) {
+  return saveCapture(async () => ({
+    kind: "image",
+    value: (await importImageFile(file, "Clipboard image")).value,
+  }));
+}
+function readInboxClipboard() {
+  void saveCapture(async () => {
+    const input = await desktopWindow?.readInboxClipboard?.();
+    return input?.kind === "image"
+      ? { kind: "image", value: (await importImageData(input.value, "Clipboard image")).value }
+      : input ?? null;
+  });
+}
+const pendingInboxShortcut = ref(false);
+const stopInboxCapture = desktopWindow?.onInboxCapture?.(() => {
+  openInbox();
+  pendingInboxShortcut.value = true;
+});
+watch([ready, pendingInboxShortcut], ([loaded, pending]) => {
+  if (!loaded || !pending) return;
+  pendingInboxShortcut.value = false;
+  readInboxClipboard();
+});
+onBeforeUnmount(() => stopInboxCapture?.());
+
+type CaptureDestination = "note" | "calendar" | "image" | "discard";
+async function moveCapture(capture: InboxCapture, destination: CaptureDestination) {
+  if (inboxBusy.value || !canChangeInbox.value || !workspace.inbox?.includes(capture)) return;
+  inboxBusy.value = true;
+  try {
+    if (destination === "note" && capture.kind === "text") {
+      if ((workspace.board?.notes.length ?? 0) >= 500) throw Error("The board is full.");
+      exitFocus();
+      boardTool.value = "select";
+      const url = captureLink(capture.value);
+      addStickyNote(capture.value, url ? { kind: "page", target: capture.value, label: url.hostname } : undefined);
+    } else if (destination === "calendar" && capture.kind === "text") {
+      const calendar = liveApps.value.flatMap((a) => flatten(a.blocks)).find((b) => b.kind === "calendar");
+      const data = readCalendar(calendar?.value ?? "");
+      data.items.push({
+        id: uid(),
+        title: capture.value.split(/\r?\n/, 1)[0]!.slice(0, 200),
+        date: dayKey(new Date()),
+      });
+      if (calendar) calendar.value = JSON.stringify(data);
+      else {
+        if (workspace.apps.length >= 300) throw Error("The workspace has reached its app limit.");
+        createGitViewer("calendar", JSON.stringify(data));
+      }
+    } else if (destination === "image" && capture.kind === "image") {
+      const size = await imageWidgetSize(capture.value);
+      if (!canChangeInbox.value || !workspace.inbox?.includes(capture)) return;
+      if (workspace.apps.length >= 300) throw Error("The workspace has reached its app limit.");
+      exitFocus();
+      placeWidget("image", capture.value, "Clipboard image", size, {
+        x: (viewport.width / 2 - camera.x) / camera.zoom,
+        y: (viewport.height / 2 - camera.y) / camera.zoom,
+      });
+    } else if (destination !== "discard") return;
+    workspace.inbox = workspace.inbox?.filter((item) => item.id !== capture.id);
+    inboxMessage.value = {
+      note: "Moved to a sticky note.",
+      calendar: "Added to Calendar for today.",
+      image: "Placed on the canvas.",
+      discard: "Capture discarded.",
+    }[destination];
+  } catch (error) {
+    inboxMessage.value = error instanceof Error ? error.message : "The capture could not be moved.";
+  } finally {
+    inboxBusy.value = false;
+  }
 }
 
 // ---- Layouts: named arrangements of the canvas ----
@@ -989,6 +1166,11 @@ const stopCanvasCommands = registerCommands("canvas", () => {
     ["terminal", "terminal"],
   ];
   return [
+    { id: "workspace-inbox", title: "Open workspace inbox", icon: "archive", detail: "Workspace", keywords: "capture clipboard screenshot", run: openInbox },
+    ...(writable ? [
+      { id: "folder-compare", title: "Compare two folders", icon: "columns", detail: "Canvas", run: () => placeWorkbench("folder-compare", {}) },
+      { id: "test-results", title: "Pin Playwright results", icon: "terminal", detail: "Canvas", run: () => placeWorkbench("test-results", {}) },
+    ] : []),
     ...(writable
       ? [
           { id: "app-new", title: "New app", icon: "plus", hint: workspace.shortcuts.create.toUpperCase(), detail: "Canvas", run: () => createApp() },
@@ -1051,26 +1233,37 @@ function onCanvas(target: EventTarget | null) {
   );
 }
 function canvasDragOver(event: DragEvent) {
-  if (!canEdit.value || importBusy.value || !onCanvas(event.target) || !mayHoldImage(event.dataTransfer)) return;
+  if (!canEdit.value || importBusy.value || !onCanvas(event.target)) return;
+  if (!event.dataTransfer?.types.includes(RECORD_PREVIEW_MIME) && !mayHoldImage(event.dataTransfer)) return;
   event.preventDefault();
   if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
 }
 function canvasDrop(event: DragEvent) {
   if (!canEdit.value || importBusy.value || !onCanvas(event.target) || !event.dataTransfer) return;
   event.preventDefault();
+  const at = { x: (event.clientX - camera.x) / camera.zoom, y: (event.clientY - camera.y) / camera.zoom };
+  if (event.dataTransfer.types.includes(RECORD_PREVIEW_MIME)) {
+    const link = readRecordPreview(event.dataTransfer.getData(RECORD_PREVIEW_MIME));
+    if (link) addRecordPreview(link, at);
+    return;
+  }
+  const folders = folderDrop(event.dataTransfer);
+  if (folders.length) {
+    placeWorkbench("folder-compare", { left: folders[0], right: folders[1] || "" }, undefined, at);
+    return;
+  }
   const { jobs, files, skipped } = importDrop(event.dataTransfer);
   if (!jobs.length && !files.length)
     return notifyDrop(
       skipped ? "Folders cannot be placed on the canvas." : "Drop images or files from the File Explorer here.",
     );
   if (skipped) notifyDrop(`${skipped} folder${skipped === 1 ? " was" : "s were"} skipped.`);
-  const at = { x: (event.clientX - camera.x) / camera.zoom, y: (event.clientY - camera.y) / camera.zoom };
   void placeImages(jobs, at, 0);
   placeFiles(files, at, jobs.length * 28);
 }
-// Creates a one-component app (image or file widget) centred on `at`.
+// Creates a one-component app centred on `at`.
 function placeWidget(
-  kind: "image" | "file",
+  kind: "image" | "file" | "netsuite-record" | WorkbenchKind,
   value: string,
   name: string,
   size: { width: number; height: number },
@@ -1084,7 +1277,7 @@ function placeWidget(
         id: appId,
         properties: {
           name,
-          icon: kind === "image" ? "image" : "file",
+          icon: ({ "netsuite-record": "globe", "browser-clip": "image", "folder-compare": "columns", "test-results": "terminal" } as Record<string, string>)[kind] ?? kind,
           width: size.width,
           height: size.height,
           x: at.x - size.width / 2,
@@ -1096,8 +1289,71 @@ function placeWidget(
     },
     { operation: "component_create", args: { appId, kind, properties: { label: name, value, sizing: "fill" } } },
   ]);
-  workspace.apps.push(result.workspace.apps.find((a) => a.id === appId)!);
+  const app = result.workspace.apps.find((a) => a.id === appId)!;
+  workspace.apps.push(app);
   createdAppId.value = appId;
+  return app;
+}
+function placeWorkbench(kind: WorkbenchKind, value: object, title?: string, at?: { x: number; y: number }) {
+  if (!canEdit.value || importBusy.value) return;
+  if (workspace.apps.length >= 300) return notifyDrop("The workspace has reached its app limit.");
+  const settings = {
+    "browser-clip": { width: 620, height: 430, name: "Browser clip" },
+    "folder-compare": { width: 900, height: 600, name: "Folder comparison" },
+    "test-results": { width: 760, height: 560, name: "Playwright test results" },
+  }[kind];
+  exitFocus();
+  const app = placeWidget(kind, JSON.stringify(value), title?.slice(0, 150) || settings.name, settings, at ?? {
+    x: (viewport.width / 2 - camera.x) / camera.zoom,
+    y: (viewport.height / 2 - camera.y) / camera.zoom,
+  });
+  if (!at) void focusApp(app);
+}
+function workbenchEvent(event: Event) {
+  const detail = (event as CustomEvent<{ kind: WorkbenchKind; value: object; title?: string }>).detail;
+  if (!detail || !["browser-clip", "folder-compare", "test-results"].includes(detail.kind) || !detail.value) return;
+  placeWorkbench(detail.kind, detail.value, detail.title);
+}
+function folderDrop(data: DataTransfer): string[] {
+  try {
+    const { paths, dirs } = JSON.parse(data.getData(DRAG_MIME));
+    if (Array.isArray(paths) && paths.length > 0 && paths.length <= 2 && Array.isArray(dirs) &&
+      paths.every((p) => typeof p === "string" && dirs.includes(p))) return paths;
+  } catch {
+    // External drops use the standard image and file handling.
+  }
+  return [];
+}
+function addRecordPreview(link: RecordPreviewLink, at?: { x: number; y: number }) {
+  if (!canEdit.value || importBusy.value || !querySourceExists(link.sourceBlockId, link.queryId)) return;
+  const source = netSuiteSources.value.get(link.sourceBlockId)!.app;
+  const existing = recordPreviews.value.get(querySource(link.sourceBlockId, link.queryId));
+  if (!existing && workspace.apps.length >= 300) return notifyDrop("The workspace has reached its app limit.");
+  const size = { width: 380, height: Math.min(580, source.height) };
+  let left = source.x + source.width + 24;
+  if (!at && !existing) {
+    for (const app of [...apps.value].sort((a, b) => a.x - b.x)) {
+      if (app.y < source.y + size.height && app.y + app.height > source.y &&
+        app.x < left + size.width && app.x + app.width > left)
+        left = app.x + app.width + 24;
+    }
+  }
+  const preview = existing ?? placeWidget("netsuite-record", JSON.stringify(link), "NetSuite record preview", size, at ?? {
+    x: left + size.width / 2,
+    y: source.y + size.height / 2,
+  });
+  if (preview.layoutHidden) preview.layoutHidden = false;
+  exitFocus();
+  if (!at || existing) void focusApp(source, false, preview);
+}
+async function imageWidgetSize(value: string) {
+  // Fit the picture into 480 px on its longer side, keeping its shape.
+  const size = await measure(value);
+  const scale = Math.min(1, 480 / Math.max(size.width, size.height));
+  return {
+    width: Math.max(180, Math.round(size.width * scale)),
+    height: Math.max(160, Math.round(size.height * scale) + 36),
+  };
 }
 async function placeImages(jobs: Promise<PlacedImage>[], at: { x: number; y: number }, offset: number) {
   for (const job of jobs) {
@@ -1109,14 +1365,11 @@ async function placeImages(jobs: Promise<PlacedImage>[], at: { x: number; y: num
       continue;
     }
     if (!placed.value || !canEdit.value) continue;
-    // Fit the picture into 480 px on its longer side, keeping its shape.
-    const size = await measure(placed.value);
-    const scale = Math.min(1, 480 / Math.max(size.width, size.height));
     placeWidget(
       "image",
       placed.value,
       placed.name || "Image",
-      { width: Math.max(180, Math.round(size.width * scale)), height: Math.max(160, Math.round(size.height * scale) + 36) },
+      await imageWidgetSize(placed.value),
       { x: at.x + offset, y: at.y + offset },
     );
     offset += 28;
@@ -1326,7 +1579,7 @@ function clearLocator() {
   locatedAppId.value = "";
 }
 onBeforeUnmount(clearLocator);
-async function focusApp(a: CanvasApp, locate = false) {
+async function focusApp(a: CanvasApp, locate = false, alongside?: CanvasApp) {
   stopPan();
   stopZoom();
   const sequence = navigationSequence;
@@ -1351,10 +1604,11 @@ async function focusApp(a: CanvasApp, locate = false) {
   const bottom = Math.max(top + 1, (dock?.top ?? viewport.height - 70) - 20);
   const width = Math.max(1, viewport.width - 2 * margin);
   const height = bottom - top;
-  const zoom = Math.min(2.5, width / a.width, height / a.height);
+  const bounds = alongside ? groupBounds([a, alongside])! : a;
+  const zoom = Math.min(2.5, width / bounds.width, height / bounds.height);
   panTo(
-    viewport.width / 2 - (a.x + a.width / 2) * zoom,
-    (top + bottom) / 2 - (a.y + a.height / 2) * zoom,
+    viewport.width / 2 - (bounds.x + bounds.width / 2) * zoom,
+    (top + bottom) / 2 - (bounds.y + bounds.height / 2) * zoom,
     () => {
       if (locate) {
         locatedAppId.value = a.id;
@@ -1494,6 +1748,7 @@ function releaseSpace() {
   }
 }
 function spaceDown(e: KeyboardEvent) {
+  if (inboxOpen.value) return;
   if (replayingSpace || e.code !== "Space" || e.ctrlKey || e.metaKey || e.altKey || !ready.value) return;
   if (editable(e.target) || wheelOpen.value) return;
   e.preventDefault();
@@ -1855,6 +2110,24 @@ function applyPan(dx: number, dy: number) {
   wheelPanTimer = setTimeout(() => (movingCamera.value = false), 140);
 }
 // A press in a code app or Browser page makes it the app in use.
+// Ctrl+T / Ctrl+Shift+T when a Browser app is the one in use but the key
+// went to the canvas (its frame was clicked, not its page or toolbar):
+// the Browser opens or reopens a tab. Keys inside the Browser itself are
+// handled there first and never arrive here.
+function browserTabKeys(e: KeyboardEvent) {
+  const mod = e.ctrlKey || e.metaKey;
+  if (!mod || e.altKey || e.key.toLowerCase() !== "t" || typing(e.target)) return false;
+  const app = apps.value.find((a) => a.id === active.value);
+  const browser = app && flatten(app.blocks).find((block) => block.kind === "browser");
+  if (!browser) return false;
+  const inside = e.target instanceof Element ? e.target.closest(".canvas-app") : null;
+  if (inside && (inside as HTMLElement).dataset.appId !== app.id) return false;
+  e.preventDefault();
+  window.dispatchEvent(
+    new CustomEvent(BROWSER_SHORTCUT, { detail: { blockId: browser.id, name: e.shiftKey ? "reopen-tab" : "new-tab" } }),
+  );
+  return true;
+}
 function activatedApp(event: Event) {
   const appId = (event as CustomEvent<{ appId: string }>).detail?.appId;
   if (!appId || !apps.value.some((a) => a.id === appId)) return;
@@ -2078,6 +2351,7 @@ function wheelRemove(id: string) {
 }
 function keydown(e: KeyboardEvent) {
   if (!ready.value) return;
+  if (browserTabKeys(e)) return;
   // Delete removes the selected sticky note, arrow or drawing.
   if (
     (e.key === "Delete" || e.key === "Backspace") &&
@@ -2953,6 +3227,7 @@ onMounted(() => {
   window.addEventListener("wheel", wheel, { passive: false });
   window.addEventListener("orvane-canvas-pan", embeddedPan);
   window.addEventListener("orvane:place-file", placeFileEvent);
+  window.addEventListener(WORKBENCH_WIDGET, workbenchEvent);
   window.addEventListener("keydown", paletteKeys, true);
   window.addEventListener("keydown", spaceDown, true);
   window.addEventListener("keyup", spaceUp, true);
@@ -2975,6 +3250,7 @@ onBeforeUnmount(() => {
   mcpBridge?.close();
   window.removeEventListener("orvane-canvas-pan", embeddedPan);
   window.removeEventListener("orvane:place-file", placeFileEvent);
+  window.removeEventListener(WORKBENCH_WIDGET, workbenchEvent);
   window.removeEventListener("keydown", paletteKeys, true);
   window.removeEventListener("keydown", spaceDown, true);
   window.removeEventListener("keyup", spaceUp, true);
@@ -3723,6 +3999,9 @@ onBeforeUnmount(() => {
       <p class="field-help">
         Saved on this computer. Shared across browsers connected to this server.
       </p>
+      <button class="subtle-button" @click="openInbox">
+        <Icon name="archive" :size="14" />Workspace inbox
+      </button>
       <button
         class="subtle-button"
         :disabled="!canEdit || importBusy"
@@ -4103,6 +4382,20 @@ onBeforeUnmount(() => {
       </button>
     </section>
 
+    <WorkspaceInbox
+      v-if="inboxOpen"
+      v-model:draft="inboxDraft"
+      :captures="workspace.inbox ?? []"
+      :busy="inboxBusy"
+      :editable="canChangeInbox"
+      :desktop="!!desktopWindow?.readInboxClipboard"
+      :message="inboxMessage"
+      @close="inboxOpen = false"
+      @save="saveInboxDraft"
+      @paste-image="saveInboxImage"
+      @clipboard="readInboxClipboard"
+      @move="moveCapture"
+    />
     <section
       v-if="pendingImport"
       class="import-preview floating-panel"

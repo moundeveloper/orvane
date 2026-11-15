@@ -26,6 +26,9 @@ const theme = {
   cursor: "#45697e",
   cursorAccent: "#f7fafc",
   selectionBackground: "rgba(111, 137, 152, 0.32)",
+  scrollbarSliderBackground: "rgba(69, 89, 104, 0.3)",
+  scrollbarSliderHoverBackground: "rgba(69, 89, 104, 0.42)",
+  scrollbarSliderActiveBackground: "rgba(69, 89, 104, 0.52)",
   black: "#2b3a44",
   red: "#b83a35",
   green: "#2f7d4f",
@@ -407,8 +410,9 @@ onBeforeUnmount(() => {
 .terminal-host :deep(.xterm-viewport) {
   background: transparent !important;
 }
+/* xterm draws its own scrollbar; a native one here added a second bar with
+   Windows' arrow buttons. */
 .terminal-host :deep(.xterm-viewport) {
-  scrollbar-width: thin;
-  scrollbar-color: rgb(69 89 104 / 30%) transparent;
+  scrollbar-width: none;
 }
 </style>

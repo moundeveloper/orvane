@@ -18,7 +18,13 @@ Hover an image widget for its tools: rotate left/right, flip, crop (drag the box
 
 ### File widgets
 
-Any other file dropped on the canvas — a video, PDF, spreadsheet, audio or code file, from the File Explorer or (in the desktop app) from the system — becomes a **file widget** that shows it with the same viewers as Peek. File widgets link to the file where it is, rather than copying it, and refresh as soon as the file changes on disk. Folders are skipped. **Place on canvas** in the File Explorer works for every file type.
+Any other file dropped on the canvas — a video, PDF, spreadsheet, audio or code file, from the File Explorer or (in the desktop app) from the system — becomes a **file widget** that shows it with the same viewers as Peek. File widgets link to the file where it is, rather than copying it, and refresh as soon as the file changes on disk. **Place on canvas** in the File Explorer works for every file type.
+
+### Canvas workbenches
+
+- **Browser clip.** In Orvane Desktop, open a page and choose **Browser menu → Browser tools → Pin a live clip**. Drag over the area to pin. **Refresh clip** captures that area again from the open source tab, and **Open original** returns to the page. Backups include the last captured image.
+- **Folder comparison.** Drop one or two folders from File Explorer on the canvas, or run **Compare two folders** from Ctrl+K. Drop the second folder onto the empty field or enter both paths. The comparison checks nested file contents and skips filesystem links. **Open diff** uses local Git. Copying over an existing file requires confirmation.
+- **Playwright test results.** Choose **Pin Playwright results** in Terminal, enter the project folder, and run the suite or import a Playwright JSON report. Click a failure's file and line to see its source, or choose **Rerun test** to run it again. The card uses the project's installed Playwright.
 
 ### More File Explorer tools
 
@@ -46,6 +52,12 @@ Ctrl+K opens one box that searches apps, commands, Notes pages and their text, B
 The rail on the left of the canvas holds whiteboard tools: **sticky notes** (click to place; double-click to write; drag the top strip, resize from the corner, change colour), **arrows** (drag from one app or note to another; the arrow follows them as they move; double-click to label), **freehand drawing** and an **eraser**. The colour dot sets the colour for arrows and drawings. Select an item and press Delete to remove it; Esc returns to Select. Board items are saved with the workspace.
 
 Drop a file or folder from the File Explorer, or a tab from the Browser, onto a sticky note to **link** it. The link shows at the bottom of the note; click it to open the file (selected in its folder) or folder in the File Explorer, or the page in the Browser. Dropping several items links the first. Select the note to remove the link.
+
+### Workspace inbox
+
+Open **Workspace options → Workspace inbox** or search for it with Ctrl+K. Add a note, paste a link, or paste a copied image into the capture field. In the desktop app, **Ctrl+Alt+I** (Command+Option+I on macOS) or **Capture clipboard** in the tray saves the current clipboard and opens the inbox. To capture a Windows screenshot, copy it with **Win+Shift+S**, then use the Orvane shortcut.
+
+Move text or links to a sticky note or to today's Calendar. A link on a sticky note opens in an Orvane Browser app. Move an image to the canvas as a widget, or discard any capture. Inbox entries and their images are included in workspace backups.
 
 ### Calendar
 
@@ -201,6 +213,8 @@ Git must be available on the local server's PATH. Git commands use argument arra
 
 
 ### NetSuite app and processing tabs (desktop)
+
+Run a SuiteQL query, then click **Add record preview** to place a linked widget beside the query, or drag the button to a spot on the canvas. In the preview, enter a SuiteScript record type such as `customer`, select the result column containing the internal ID, and click **Apply**. Select a result row to load that record's populated body fields using the selected environment. The workspace saves the link and mapping. Run the query again after reopening the workspace to choose a row.
 
 Open and sign in to NetSuite in a Browser app, then choose **Create NetSuite app** from workspace settings and select an environment. Open NetSuite tabs are detected automatically. Tabs on the same `*.app.netsuite.com` origin appear as one environment; separate account origins remain separate. Orvane creates a hidden processing page per environment in the Browser's shared session, and NetSuite requests run there. Orvane starts and reconnects the processing page automatically. The Browser's compact **Processing tabs** group also shows its status. **Use current tab** can also create a processing page for other websites; generic pages are not refreshed automatically.
 

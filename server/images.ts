@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
+import { IMAGE_ID } from "../src/imageId.ts";
 
 const LIMIT = 30_000_000;
 export const IMAGE_MIME: Record<string, string> = {
@@ -21,8 +22,6 @@ export const IMAGE_MIME: Record<string, string> = {
 const EXT_OF: Record<string, string> = Object.fromEntries(
   Object.entries(IMAGE_MIME).map(([ext, mime]) => [mime, ext === "jpeg" ? "jpg" : ext]),
 );
-export const IMAGE_ID = /^[a-f\d]{40}\.(png|jpg|gif|webp|bmp|ico|svg|avif)$/;
-
 export function createImageStore(directory: string) {
   const folder = join(directory, "images");
   async function save(data: Buffer, ext: string, name: string) {

@@ -5,6 +5,9 @@ import {
   type Rule,
   type ActionGraph,
 } from "./model";
+import { INBOX_LIMIT } from "./inbox";
+import { readRecordPreview } from "./netsuiteCanvas";
+import { readWidget, type BrowserClip } from "./workbenchState.ts";
 
 export function mergeWorkspace(
   current: Workspace,
@@ -50,6 +53,15 @@ export function mergeWorkspace(
   ];
   allBlocks.forEach((b) => {
     b.id = remap(b.id);
+    if (b.kind === "netsuite-record") {
+      const link = readRecordPreview(b.value);
+      if (link) b.value = JSON.stringify({ ...link, sourceBlockId: remap(link.sourceBlockId) });
+    }
+    if (b.kind === "browser-clip") {
+      const clip = readWidget<BrowserClip>(b.value);
+      if (typeof clip.blockId === "string" && ids.has(clip.blockId))
+        b.value = JSON.stringify({ ...clip, blockId: remap(clip.blockId) });
+    }
     if (b.sharedId) b.sharedId = remap(b.sharedId);
     b.items.forEach((i) => (i.id = uid()));
     flow(b.rules, b.graph);
@@ -90,8 +102,15 @@ export function mergeWorkspace(
   allBlocks.forEach((b) => values(b.rules));
   copy.customNodes.forEach((n) => values(n.rules || []));
   copy.actions?.forEach((a) => values(a.rules));
+  const inbox = [
+    ...(current.inbox ?? []),
+    ...(copy.inbox ?? []).map((capture) => ({ ...capture, id: uid() })),
+  ].sort((a, b) => b.capturedAt - a.capturedAt);
+  if (inbox.length > INBOX_LIMIT)
+    throw Error("Clear some inbox captures before merging this backup.");
   return {
     ...JSON.parse(JSON.stringify(current)),
+    ...(inbox.length ? { inbox } : {}),
     apps: [...current.apps, ...copy.apps],
     library: [...current.library, ...copy.library],
     customNodes: [...current.customNodes, ...copy.customNodes],

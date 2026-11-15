@@ -36,7 +36,7 @@ export function allCommands() {
 // block id matches handles it (or the first one, when no id is given).
 export type OpenRequest =
   | { kind: "notes-page"; blockId?: string; pageId: string }
-  | { kind: "browser-url"; blockId?: string; url: string }
+  | { kind: "browser-url"; blockId?: string; url: string; reuse?: boolean }
   | { kind: "git-commit"; blockId?: string; workspaceId: string; hash: string }
   | { kind: "explorer-path"; blockId?: string; path: string; select?: string };
 export const OPEN_EVENT = "orvane:open-request";
