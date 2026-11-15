@@ -86,7 +86,7 @@ import { uid, type Block } from "../model";
 import { siteName, type PasswordPrompt, type PasswordsApi } from "../passwords";
 import { getDomain } from "tldts";
 import Icon from "./Icon.vue";
-import { activateApp, appOf, canvasScroll, passWheel } from "../canvasScroll";
+import { activateApp, appOf } from "../canvasScroll";
 import { onOpenRequest, registerCommands } from "../commands";
 import BrowserDrawer, {
   type Bookmark,
@@ -164,7 +164,6 @@ interface OrvaneDesktop {
   setPageDensity(webContentsId: number, density: number): Promise<void>;
   setPageActive?(webContentsId: number, active: boolean): Promise<void>;
   setPagePinned?(webContentsId: number, pinned: boolean): Promise<void>;
-  setPageScrollPans?(webContentsId: number, pans: boolean): Promise<void>;
   capturePage?(
     webContentsId: number,
     mode: "visible" | "full" | "area",
@@ -181,7 +180,6 @@ interface OrvaneDesktop {
         | { from: number; kind: "zoom"; x: number; y: number; deltaY: number }
         | { from: number; kind: "zoom"; clientX: number; clientY: number; deltaY: number }
         | { from: number; kind: "pan"; dx: number; dy: number }
-        | { from: number; kind: "scroll"; dx: number; dy: number; shift?: boolean }
         | { from: number; kind: "focus" }
         | { from: number; kind: "peek"; url: string }
         | { from: number; kind: "split"; url: string }
@@ -717,8 +715,6 @@ function bindWebview(tab: BrowserTab, element: unknown) {
     if (detail.isMainFrame && detail.errorCode !== -3 && tab.id === state.value.active)
       error.value = `This page couldn't load (${detail.errorDescription || detail.errorCode}).`;
   });
-  // Each new document gets the current "scroll pans the canvas" flag.
-  view.addEventListener("dom-ready", () => syncScroll(view));
   view.addEventListener("did-stop-loading", () => {
     if (tab.id !== state.value.active) return;
     rememberedAt = 0;
@@ -829,9 +825,7 @@ onMounted(() => {
   stopGuestInput = desktop?.onGuestInput((input) => {
     const view = webviewFor(input.from);
     if (!view) return;
-    // Scroll over a page whose app is not being worked in pans the canvas.
-    if (input.kind === "scroll") return passWheel(Number(input.dx), Number(input.dy), !!input.shift);
-    // A press in a page hands this app the scroll, like a press anywhere in it.
+    // A press in a page makes this the app in use, like a press anywhere in it.
     if (input.kind === "focus") activateApp(appOf(root.value));
     if (input.kind === "focus" || input.kind === "peek" || input.kind === "split") {
       const tab = state.value.tabs.find((item) => webviews.get(item.id) === view);
@@ -1144,19 +1138,6 @@ if (useWebview) {
 }
 // ---- Sidebar, pins, groups, spaces, Peek, Split View and shortcuts ----
 const root = ref<HTMLElement>();
-// Pages pass plain scroll to the canvas unless this app is the one being
-// worked in (see canvasScroll.ts); the flag lives in each page's process.
-const ownsScroll = computed(
-  () => !canvasScroll.panning && !!canvasScroll.owner && canvasScroll.owner === appOf(root.value),
-);
-function syncScroll(view: WebviewElement) {
-  try {
-    void desktop?.setPageScrollPans?.(view.getWebContentsId(), !ownsScroll.value);
-  } catch {
-    // Not attached yet; dom-ready syncs it.
-  }
-}
-watch(ownsScroll, () => webviews.forEach((view) => syncScroll(view)));
 /** Position inside the Browser app, whatever the canvas zoom. */
 function local(event: MouseEvent) {
   const box = root.value!;

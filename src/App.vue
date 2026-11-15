@@ -28,7 +28,7 @@ import { importDrop, importPath, mayHoldImage, measure, type PlacedImage } from 
 import { isImage, peekKind } from "./components/files/explorer";
 import { isBackup, makeBackup, restoreImages } from "./backup";
 import { registerCommands } from "./commands";
-import { ACTIVATE_EVENT, appOf, canvasScroll, WHEEL_EVENT } from "./canvasScroll";
+import { ACTIVATE_EVENT, canvasScroll } from "./canvasScroll";
 import CommandPalette from "./components/CommandPalette.vue";
 import BoardLayer from "./components/BoardLayer.vue";
 import BoardTools from "./components/BoardTools.vue";
@@ -1317,8 +1317,8 @@ function pointerDown(e: PointerEvent, app?: CanvasApp, edge = "") {
     document.activeElement instanceof HTMLElement
   )
     document.activeElement.blur();
-  // Pressing in an app hands it the scroll; pressing empty canvas takes it
-  // back. Pan gestures (middle button, Space) change neither.
+  // Pressing in an app makes it the app in use (outlined); pressing empty
+  // canvas clears that. Pan gestures (middle button, Space) change neither.
   if (e.button === 0 && !space.value) {
     if (app) canvasScroll.owner = app.id;
     else if (
@@ -1492,59 +1492,84 @@ function stopZoom() {
   zoomFrame = 0;
   zoomTarget = camera.zoom;
 }
-// Two-finger scroll (or the mouse wheel; Shift for sideways) pans the
-// canvas everywhere except over the app you are working in, whose content
-// scrolls as usual (see canvasScroll.ts). Frames and Browser pages pass
-// their scroll here when their app is not the one being worked in.
+// Plain scroll belongs to whatever is under the pointer (apps scroll their
+// content). Only while Space is held does two-finger scroll pan the canvas;
+// the pan shield then covers apps and web pages, so the scroll lands here.
 let wheelPanTimer: ReturnType<typeof setTimeout> | undefined;
-function panBy(dx: number, dy: number, shift: boolean) {
-  // A plain mouse wheel only scrolls vertically; Shift turns it sideways.
-  if (shift && !dx) [dx, dy] = [dy, 0];
-  if (!Number.isFinite(dx) || !Number.isFinite(dy) || gesture || pinch) return;
+// Windows locks touchpad scroll to one axis when a gesture starts along it.
+// The desktop app also streams the two fingers' own movement (electron/
+// touchpad.cs); while that arrives, panning follows the fingers in every
+// direction and the axis-locked scroll is only used to learn how many
+// pixels (and which sign) one touchpad width means for this user's scroll
+// settings, so the pan feels like their normal scrolling.
+const TOUCHPAD_SCALE_KEY = "orvane.touchpadScale";
+// Panning from the fingers at full scroll speed felt too sensitive.
+const TOUCHPAD_PAN_SPEED = 0.5;
+let touchpadScale = (() => {
+  try {
+    const saved = Number(localStorage.getItem(TOUCHPAD_SCALE_KEY));
+    return Number.isFinite(saved) && Math.abs(saved) > 50 ? saved : 1500;
+  } catch {
+    return 1500;
+  }
+})();
+let stopTouchpad: (() => void) | undefined;
+let fingersAt = 0;
+let fingerSum = { x: 0, y: 0 };
+function touchpadInput(input: { fx?: number; fy?: number; end?: boolean }) {
+  if (input.end || !space.value || !ready.value || gesture || pinch) {
+    fingerSum = { x: 0, y: 0 };
+    return;
+  }
+  const fx = Number(input.fx),
+    fy = Number(input.fy);
+  if (!Number.isFinite(fx) || !Number.isFinite(fy)) return;
+  fingersAt = performance.now();
+  fingerSum.x += fx;
+  fingerSum.y += fy;
+  applyPan(fx * touchpadScale * TOUCHPAD_PAN_SPEED, fy * touchpadScale * TOUCHPAD_PAN_SPEED);
+}
+function learnScale(dx: number, dy: number) {
+  // Compare the locked scroll with the finger movement since the last one.
+  const vertical = Math.abs(dy) >= Math.abs(dx);
+  const scroll = vertical ? dy : dx,
+    fingers = vertical ? fingerSum.y : fingerSum.x;
+  fingerSum = { x: 0, y: 0 };
+  if (Math.abs(scroll) < 2 || Math.abs(fingers) < 0.003) return;
+  const sample = scroll / fingers;
+  if (!Number.isFinite(sample) || Math.abs(sample) < 100 || Math.abs(sample) > 20000) return;
+  // A sign flip means the scroll direction setting differs: adopt it at once.
+  touchpadScale =
+    Math.sign(sample) !== Math.sign(touchpadScale) ? sample : touchpadScale * 0.85 + sample * 0.15;
+  try {
+    localStorage.setItem(TOUCHPAD_SCALE_KEY, String(Math.round(touchpadScale)));
+  } catch {
+    // Per-viewer convenience only.
+  }
+}
+function wheelPan(e: WheelEvent) {
+  if (!space.value || !ready.value || gesture || pinch) return;
+  e.preventDefault();
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? viewport.height : 1;
+  let dx = e.deltaX * unit,
+    dy = e.deltaY * unit;
+  if (e.shiftKey && !dx) [dx, dy] = [dy, 0];
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+  // The fingers are driving the pan: use this scroll only to calibrate.
+  if (performance.now() - fingersAt < 150) return learnScale(dx, dy);
+  applyPan(dx, dy);
+}
+function applyPan(dx: number, dy: number) {
+  spaceMoved = true; // a pan, not a tap: don't replay Space to the app
   stopPan();
   camera.x -= dx;
   camera.y -= dy;
-  // Same light rendering as other camera motion while the scroll lasts,
-  // and the gesture stays with the canvas until it pauses.
+  // Same light rendering as other camera motion while the scroll lasts.
   movingCamera.value = true;
-  panLatchUntil = performance.now() + PAN_LATCH_MS;
-  if (!canvasScroll.panning) canvasScroll.panning = true;
   clearTimeout(wheelPanTimer);
-  wheelPanTimer = setTimeout(() => {
-    movingCamera.value = false;
-    canvasScroll.panning = false;
-  }, PAN_LATCH_MS);
+  wheelPanTimer = setTimeout(() => (movingCamera.value = false), 140);
 }
-// Touchpads that report no gesture phases (common on Windows) let each
-// scroll event land on whatever is under the pointer as the canvas moves;
-// a pause this long ends the pan.
-const PAN_LATCH_MS = 220;
-let panLatchUntil = 0;
-function wheelPan(e: WheelEvent) {
-  const target = e.target as Element | null;
-  if (ready.value && performance.now() < panLatchUntil) {
-    e.preventDefault();
-    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? viewport.height : 1;
-    return panBy(e.deltaX * unit, e.deltaY * unit, e.shiftKey);
-  }
-  if (
-    !ready.value ||
-    !target?.closest?.(".workspace") ||
-    target.closest(
-      ".dock,.floating-panel,.topbar,.board-rail,.cp-backdrop,.dock-context,.node-workspace",
-    )
-  )
-    return;
-  const app = appOf(target);
-  if (app && app === canvasScroll.owner) return;
-  e.preventDefault();
-  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? viewport.height : 1;
-  panBy(e.deltaX * unit, e.deltaY * unit, e.shiftKey);
-}
-function passedWheel(event: Event) {
-  const { dx, dy, shift } = (event as CustomEvent<{ dx: number; dy: number; shift?: boolean }>).detail ?? {};
-  if (ready.value) panBy(Number(dx), Number(dy), !!shift);
-}
+// A press in a code app or Browser page makes it the app in use.
 function activatedApp(event: Event) {
   const appId = (event as CustomEvent<{ appId: string }>).detail?.appId;
   if (!appId || !apps.value.some((a) => a.id === appId)) return;
@@ -2625,7 +2650,9 @@ onMounted(() => {
   window.addEventListener("keyup", spaceUp, true);
   window.addEventListener("pointermove", hoverPan, { passive: true });
   window.addEventListener("orvane:space", spaceEvent);
-  window.addEventListener(WHEEL_EVENT, passedWheel);
+  stopTouchpad = (window as unknown as {
+    orvaneDesktop?: { onTouchpad?: (cb: (input: { fx?: number; fy?: number; end?: boolean }) => void) => () => void };
+  }).orvaneDesktop?.onTouchpad?.(touchpadInput);
   window.addEventListener(ACTIVATE_EVENT, activatedApp);
   window.addEventListener("orvane:palette", paletteEvent);
   window.addEventListener("paste", pasteImage);
@@ -2644,7 +2671,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("keyup", spaceUp, true);
   window.removeEventListener("pointermove", hoverPan);
   window.removeEventListener("orvane:space", spaceEvent);
-  window.removeEventListener(WHEEL_EVENT, passedWheel);
+  stopTouchpad?.();
   window.removeEventListener(ACTIVATE_EVENT, activatedApp);
   window.removeEventListener("orvane:palette", paletteEvent);
   window.removeEventListener("paste", pasteImage);

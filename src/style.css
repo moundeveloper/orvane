@@ -2200,7 +2200,7 @@ kbd {
 .layout-switch:hover {
   background: #d8e6ed;
 }
-/* The app that keeps two-finger scroll (others let the canvas pan). */
+/* The app in use (last clicked or typed in). */
 .canvas-app.scroll-owner {
   outline: 1.5px solid rgb(111 137 152 / 45%);
   outline-offset: 3px;

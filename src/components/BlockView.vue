@@ -22,7 +22,7 @@ import { uid, type Block } from "../model";
 import Icon from "./Icon.vue";
 import { vMotion } from "../motion";
 import { APP_RUNTIME } from "../appRuntime";
-import { activateApp, appOf, canvasScroll, passWheel } from "../canvasScroll";
+import { activateApp, appOf } from "../canvasScroll";
 const props = defineProps<{
   block: Block;
   editing: boolean;
@@ -60,23 +60,7 @@ function onMessage(event: MessageEvent) {
   else if (event.data?.orvaneActivate === true) activateApp(appOf(frame.value));
   else if (typeof event.data?.orvaneSpace === "boolean")
     window.dispatchEvent(new CustomEvent("orvane:space", { detail: event.data.orvaneSpace }));
-  else if (event.data?.orvaneWheel) {
-    const { dx, dy, shift } = event.data.orvaneWheel;
-    passWheel(Number(dx), Number(dy), !!shift);
-  }
 }
-// The frame's runtime passes two-finger scroll to the canvas unless its
-// app is the one being worked in.
-function announceScroll() {
-  frame.value?.contentWindow?.postMessage(
-    {
-      orvaneScrollOwner:
-        !canvasScroll.panning && !!canvasScroll.owner && canvasScroll.owner === appOf(frame.value),
-    },
-    "*",
-  );
-}
-watch(() => [canvasScroll.owner, canvasScroll.panning], announceScroll);
 // A code app is told when it is on screen, so its runtime can idle its
 // timers while nobody can see it (see appRuntimeSource.js).
 let frameVisible: boolean | undefined;
@@ -307,7 +291,7 @@ const sandboxDocument = (code: string) => {
         sandbox="allow-scripts"
         :srcdoc="sandboxDocument(runningCode)"
         class="custom-frame"
-        @load="announceFrame(), announceScroll()"
+        @load="announceFrame"
         :style="
           !fillHeight && block.height
             ? { height: block.height + 'px' }

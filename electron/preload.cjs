@@ -12,6 +12,12 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
   displays: () => ipcRenderer.invoke("orvane:displays"),
   setDisplay: (id) => ipcRenderer.invoke("orvane:display-set", id),
   partition: "persist:orvane-browser",
+  /** Two-finger touchpad movement (fractions of the pad), or { end: true }. */
+  onTouchpad(callback) {
+    const listener = (_event, input) => callback(input);
+    ipcRenderer.on("orvane:touchpad", listener);
+    return () => ipcRenderer.removeListener("orvane:touchpad", listener);
+  },
   /** The local path of a file dropped from the system, or "" if it has none. */
   pathForFile(file) {
     try {
@@ -35,10 +41,6 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
   /** Keep a picture of a page now on screen, shown if it is discarded. */
   rememberPage(webContentsId) {
     return ipcRenderer.invoke("orvane:page-remember", webContentsId);
-  },
-  /** Plain scroll over the page pans the canvas (true) or scrolls it. */
-  setPageScrollPans(webContentsId, pans) {
-    return ipcRenderer.invoke("orvane:page-scroll-pans", webContentsId, pans);
   },
   /** A pinned page previews links that leave its site in a Peek. */
   setPagePinned(webContentsId, pinned) {
