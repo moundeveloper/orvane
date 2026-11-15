@@ -733,3 +733,179 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
 .editor-scroll {
   padding-inline-end: 19px;
 }
+/* Orvane's own date, time and month pickers (src/components/pickers).
+   Sizes are in em: the popover's font size follows the canvas zoom. */
+.picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: #e7eef2;
+  color: #455968;
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.picker-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.picker-trigger.empty {
+  color: #8a9ca7;
+}
+.picker-trigger:hover,
+.picker-trigger[aria-expanded="true"] {
+  background: #dfeaf0;
+}
+.picker-trigger:focus-visible {
+  outline: none;
+  box-shadow: inset 0 -1px #8da6b5;
+}
+.picker-popover {
+  overflow: hidden;
+  padding: 0.5em;
+  color: #455968;
+}
+.picker-popover button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.picker-columns {
+  display: flex;
+  gap: 0.25em;
+}
+.picker-col {
+  height: 16em;
+  width: 4em;
+  overflow-y: auto;
+  scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1em;
+}
+.picker-col::-webkit-scrollbar {
+  display: none;
+}
+.picker-col > button {
+  flex: none;
+  padding: 0.45em 0;
+  border-radius: 0.3em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.picker-col > button:hover,
+.picker-day:hover,
+.picker-month:hover,
+.picker-nav:hover,
+.picker-title-button:hover,
+.picker-foot > button:hover {
+  background: #e2ecf2;
+}
+.picker-col > button[aria-selected="true"],
+.picker-day.selected,
+.picker-month.selected {
+  background: #6f8998;
+  color: #fff;
+}
+.picker-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5em;
+  margin-top: 0.4em;
+  padding-top: 0.4em;
+  border-top: 1px solid #dde4e8;
+}
+.picker-foot > button {
+  padding: 0.35em 0.7em;
+  border-radius: 0.3em;
+  color: #556c7a;
+}
+.picker-head {
+  display: flex;
+  align-items: center;
+  gap: 0.25em;
+  margin-bottom: 0.4em;
+}
+.picker-title {
+  flex: 1;
+  text-align: center;
+  font-weight: 600;
+  color: #3d505d;
+  text-transform: capitalize;
+}
+.picker-title-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3em;
+  padding: 0.35em 0.5em;
+  border-radius: 0.3em;
+}
+.picker-nav {
+  display: grid;
+  place-items: center;
+  width: 2.2em;
+  height: 2.2em;
+  border-radius: 0.3em;
+}
+.picker-days {
+  display: grid;
+  grid-template-columns: repeat(7, 2.4em);
+  gap: 0.15em;
+}
+.picker-weekday {
+  text-align: center;
+  font-size: 0.8em;
+  color: #687d8a;
+  text-transform: uppercase;
+  padding-bottom: 0.2em;
+}
+.picker-day {
+  height: 2.2em;
+  border-radius: 0.3em;
+  font-variant-numeric: tabular-nums;
+}
+.picker-day.outside {
+  color: #a6b4bd;
+}
+.picker-day.today:not(.selected),
+.picker-month.current:not(.selected) {
+  color: #45697e;
+  font-weight: 700;
+}
+.picker-months {
+  width: 17.2em;
+}
+.picker-month-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.25em;
+}
+.picker-month {
+  padding: 0.75em 0;
+  border-radius: 0.3em;
+  text-transform: capitalize;
+}
+/* Date cells in Notes database views look like the other cells. */
+.picker-trigger.cell-date {
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: 0;
+  background: transparent;
+  font-size: 13px;
+  color: var(--notes-text, #455968);
+}
+.picker-trigger.cell-date.empty {
+  color: var(--notes-text-faint, #a6b4bd);
+}
+.picker-trigger.cell-date:hover {
+  background: rgb(0 0 0 / 4%);
+}

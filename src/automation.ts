@@ -37,6 +37,8 @@ const kind = z.enum([
   "files",
   "image",
   "file",
+  "calendar",
+  "terminal",
 ]);
 const componentPatch = z
   .object({

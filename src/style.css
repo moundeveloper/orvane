@@ -2206,3 +2206,18 @@ kbd {
   outline-offset: 3px;
   border-radius: 10px;
 }
+/* Focus mode: the rest of the canvas is covered behind the focused app,
+   which is not moved or resized while focused. */
+.focus-backdrop {
+  position: absolute;
+  background: #e9edf0;
+}
+.canvas-app.focused-app .resize-edge {
+  display: none;
+}
+/* Terminal app: frosted glass like the top bar (.topbar-frost). */
+.app-surface.app-frosted {
+  background: rgb(247 250 252 / 8%);
+  backdrop-filter: blur(8px) saturate(120%);
+  -webkit-backdrop-filter: blur(8px) saturate(120%);
+}

@@ -9,9 +9,11 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  Notification,
   screen,
   session,
   shell,
+  Tray,
   webContents,
   webFrameMain,
 } from "electron";
@@ -195,8 +197,14 @@ function secure() {
   sites.setPermissionRequestHandler((_contents, permission, done) =>
     done(["fullscreen", "clipboard-sanitized-write"].includes(permission)),
   );
-  session.defaultSession.setPermissionRequestHandler((contents, permission, done) =>
-    done(isOrvane(contents.getURL()) && permission === "clipboard-sanitized-write"),
+  session.defaultSession.setPermissionRequestHandler((contents, permission, done, details) =>
+    done(
+      isOrvane(contents.getURL()) &&
+        (permission === "clipboard-sanitized-write" ||
+          // Right-click paste in the Terminal app; Orvane's own page only,
+          // never a frame inside it (code apps).
+          (permission === "clipboard-read" && details?.isMainFrame === true && isOrvane(details.requestingUrl || ""))),
+    ),
   );
 
   const processing = setupProcessing({ partition: sites, isOrvane });
@@ -508,6 +516,27 @@ ipcMain.handle("orvane:page-capture", async (event, id, mode, rect) => {
 
 // The close button in Orvane's top bar. Only Orvane's own window may ask,
 // and closing goes through the unsaved-changes guard in createWindow.
+// Calendar reminders. Kept referenced until clicked or closed, so the click
+// still arrives.
+const shownNotifications = new Set();
+ipcMain.handle("orvane:notify", (event, data) => {
+  if (!isOrvane(event.senderFrame?.url || "") || !Notification.isSupported()) return;
+  const notification = new Notification({
+    title: String(data?.title ?? "Reminder").slice(0, 120),
+    body: String(data?.body ?? "").slice(0, 240),
+    icon: join(root, "public/favicon.ico"),
+  });
+  const appId = String(data?.appId ?? "");
+  const forget = () => shownNotifications.delete(notification);
+  notification.on("click", () => {
+    forget();
+    showWindow();
+    if (!event.sender.isDestroyed()) event.sender.send("orvane:notification-click", appId);
+  });
+  notification.on("close", forget);
+  shownNotifications.add(notification);
+  notification.show();
+});
 ipcMain.handle("orvane:window-close", (event) => {
   if (!isOrvane(event.senderFrame?.url || "")) return;
   BrowserWindow.fromWebContents(event.sender)?.close();
@@ -632,6 +661,53 @@ ipcMain.handle("orvane:page-snapshot", async (event, id, picture) => {
   return { edited: false, image: (picture === true && pictures.get(guest.id)) || "" };
 });
 
+// ---- Tray: closing the window hides Orvane there; Quit is in its menu ----
+// Quitting (tray menu, or the system shutting down) really closes the window,
+// still waiting for the last save as before.
+let quitting = false;
+let tray;
+// Started by "Launch at login": stay in the tray until shown.
+const startedFromLogin = process.argv.includes("--from-login");
+const loginItem = () => ({
+  path: process.execPath,
+  args: [join(root, "electron/main.mjs"), "--from-login"],
+});
+function showWindow() {
+  const [window] = BrowserWindow.getAllWindows();
+  if (!window) return;
+  if (window.isMinimized()) window.restore();
+  // A window started hidden is maximized the first time it is shown.
+  if (!window.isVisible() && !window.isMaximized()) window.maximize();
+  window.show();
+  window.focus();
+}
+function quitOrvane() {
+  quitting = true;
+  app.quit();
+}
+function trayMenu() {
+  return Menu.buildFromTemplate([
+    { label: "Show Orvane", click: showWindow },
+    {
+      label: "Launch at login",
+      type: "checkbox",
+      checked: app.getLoginItemSettings(loginItem()).openAtLogin,
+      click: (item) => {
+        app.setLoginItemSettings({ ...loginItem(), openAtLogin: item.checked });
+        tray?.setContextMenu(trayMenu());
+      },
+    },
+    { type: "separator" },
+    { label: "Quit Orvane", click: quitOrvane },
+  ]);
+}
+function createTray() {
+  tray = new Tray(nativeImage.createFromPath(join(root, "public/favicon.ico")));
+  tray.setToolTip("Orvane");
+  tray.setContextMenu(trayMenu());
+  tray.on("click", showWindow);
+}
+
 function createWindow() {
   const area = chosenDisplay().workArea;
   const window = new BrowserWindow({
@@ -679,6 +755,12 @@ function createWindow() {
       )
       .catch(() => true);
   window.on("close", (event) => {
+    // Closing hides Orvane to the tray; it keeps running (reminders too).
+    if (!quitting) {
+      event.preventDefault();
+      window.hide();
+      return;
+    }
     if (closing || leaveAnyway) return;
     event.preventDefault();
     closing = true;
@@ -687,6 +769,7 @@ function createWindow() {
         await new Promise((done) => setTimeout(done, 100));
       if (window.isDestroyed()) return;
       if (!(await saved())) {
+        showWindow();
         const choice = dialog.showMessageBoxSync(window, {
           type: "warning",
           buttons: ["Stay", "Close anyway"],
@@ -699,6 +782,7 @@ function createWindow() {
         });
         if (choice !== 1) {
           closing = false;
+          quitting = false;
           return;
         }
         leaveAnyway = true;
@@ -710,8 +794,10 @@ function createWindow() {
     // Already confirmed above; let the page unload (and release its lease).
     if (leaveAnyway || closing) event.preventDefault();
   });
-  window.maximize();
-  window.show();
+  if (!startedFromLogin) {
+    window.maximize();
+    window.show();
+  }
   void window.loadURL(origin);
   return window;
 }
@@ -725,11 +811,8 @@ app.on("browser-window-created", (_event, window) => {
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on("second-instance", () => {
-    const [window] = BrowserWindow.getAllWindows();
-    if (window?.isMinimized()) window.restore();
-    window?.focus();
-  });
+  app.on("second-instance", showWindow);
+  app.on("before-quit", () => (quitting = true));
   app.on("window-all-closed", () => app.quit());
   app.on("will-quit", stopServer);
   app
@@ -738,6 +821,7 @@ else {
       secure();
       await startServer();
       createWindow();
+      createTray();
       // Free-direction two-finger panning from the touchpad's own fingers.
       app.on("will-quit", setupTouchpad(root));
     })

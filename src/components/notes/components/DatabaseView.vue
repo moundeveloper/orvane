@@ -13,6 +13,7 @@ import type {
   PropertyType,
 } from "../types";
 import MSelect from "../NotesSelect.vue";
+import DatePicker from "../../pickers/DatePicker.vue";
 
 const props = defineProps<{ page: Page }>();
 const ws = useNotesWorkspace();
@@ -778,18 +779,13 @@ async function addNewViewOfType(type: "table" | "board" | "list") {
                   "
                 />
                 <!-- date -->
-                <input
+                <DatePicker
                   v-else-if="p.type === 'date'"
-                  type="date"
-                  class="cell-input"
-                  :value="(rec.values?.[p.id] as string) ?? ''"
-                  @change="
-                    setValue(
-                      rec,
-                      p.id,
-                      ($event.target as HTMLInputElement).value || undefined,
-                    )
-                  "
+                  class="cell-input cell-date"
+                  :model-value="(rec.values?.[p.id] as string) ?? ''"
+                  :aria-label="p.name"
+                  placeholder="Empty"
+                  @change="setValue(rec, p.id, $event || undefined)"
                 />
                 <!-- number -->
                 <input

@@ -27,8 +27,9 @@ import { vMotion } from "./motion";
 import { importDrop, importPath, mayHoldImage, measure, type PlacedImage } from "./imageDrop";
 import { isImage, peekKind } from "./components/files/explorer";
 import { isBackup, makeBackup, restoreImages } from "./backup";
-import { registerCommands } from "./commands";
+import { OPEN_EVENT, registerCommands, type OpenRequest } from "./commands";
 import { ACTIVATE_EVENT, canvasScroll } from "./canvasScroll";
+import { dueAt, formatDay, readCalendar, type CalendarItem } from "./calendar";
 import CommandPalette from "./components/CommandPalette.vue";
 import BoardLayer from "./components/BoardLayer.vue";
 import BoardTools from "./components/BoardTools.vue";
@@ -46,6 +47,7 @@ import {
   type Layout,
   type ActionGraph,
   type WorkspaceAction,
+  type NoteLink,
 } from "./model";
 const STORAGE = LEGACY_STORAGE;
 // Desktop shell without a system title bar: the top bar is the drag area
@@ -59,6 +61,8 @@ const desktopWindow = (
         { id: number; label: string; chosen: boolean }[]
       >;
       setDisplay?: (id: number) => Promise<boolean>;
+      notify?: (n: { title: string; body: string; appId: string }) => Promise<void>;
+      onNotificationClick?: (callback: (appId: string) => void) => () => void;
     };
   }
 ).orvaneDesktop;
@@ -193,12 +197,18 @@ const store = new WorkspaceStorage(async () => {
 });
 function replaceWorkspace(value: Workspace) {
   applying = true;
+  // Workspaces from before the focus shortcut get F, or a free key.
+  if (value.shortcuts && !value.shortcuts.focus) {
+    const used = Object.values(value.shortcuts);
+    value.shortcuts.focus = [..."fabcdeghijlmopqrstuvwxyz0123456789"].find((k) => !used.includes(k));
+  }
   Object.assign(workspace, value);
   for (const key of Object.keys(workspace))
     if (!(key in value))
       delete (workspace as unknown as Record<string, unknown>)[key];
   applying = false;
   workspaceRevision.value++;
+  resetCanvasHistory();
 }
 async function refresh() {
   const value = await store.read();
@@ -219,6 +229,8 @@ async function initialize() {
           await store.learn(EXAMPLES);
         }
         await persist();
+        // Undo starts from the canvas as it opened (examples included).
+        resetCanvasHistory();
         ready.value = true;
       } catch (error) {
         canEdit.value = false;
@@ -268,6 +280,63 @@ watch(active, (id) => {
   stack.value = [...stack.value.filter((other) => other !== id), id];
 });
 const stackLevel = (id: string) => stack.value.indexOf(id) + 2;
+// ---- Focus mode: one app fills the window between the top bar and dock ----
+// Only how the app is drawn changes: its saved position and size stay as
+// they are, and the canvas view comes back exactly as it was.
+const focused = ref<{
+  id: string;
+  camera: { x: number; y: number; zoom: number };
+  rect: { x: number; y: number; width: number; height: number };
+} | null>(null);
+function focusArea() {
+  const margin = viewport.width <= 600 ? 8 : 12;
+  const topbar = document.querySelector(".topbar")?.getBoundingClientRect();
+  const dock = document.querySelector(".dock")?.getBoundingClientRect();
+  const rail = document.querySelector(".board-rail")?.getBoundingClientRect();
+  const top = Math.max(margin, (topbar?.bottom ?? 40) + margin);
+  const bottom = Math.max(top + 200, (dock?.top ?? viewport.height - 70) - margin);
+  // Leave the Board tools rail on the left uncovered.
+  const left = rail && rail.width ? rail.right + margin : margin;
+  return { x: left, y: top, width: Math.max(200, viewport.width - left - margin), height: bottom - top };
+}
+/** Point the camera so the focused app's corner sits at the focus area's. */
+function placeFocus() {
+  const f = focused.value;
+  const app = f && workspace.apps.find((a) => a.id === f.id);
+  if (!f || !app) return;
+  f.rect = focusArea();
+  camera.zoom = 1;
+  camera.x = f.rect.x - app.x;
+  camera.y = f.rect.y - app.y;
+}
+function enterFocus(app: CanvasApp) {
+  if (focused.value?.id === app.id) return exitFocus();
+  stopPan();
+  stopZoom();
+  const saved = focused.value?.camera ?? { x: camera.x, y: camera.y, zoom: camera.zoom };
+  mountedApps.add(app.id);
+  active.value = app.id;
+  canvasScroll.owner = app.id;
+  panel.value = null;
+  focused.value = { id: app.id, camera: saved, rect: focusArea() };
+  placeFocus();
+}
+function exitFocus(restoreCamera = true) {
+  const f = focused.value;
+  if (!f) return;
+  focused.value = null;
+  if (!restoreCamera) return;
+  stopPan();
+  stopZoom();
+  Object.assign(camera, f.camera);
+}
+/** Focus or unfocus the app in use (the shortcut). */
+function toggleFocus() {
+  if (focused.value) return exitFocus();
+  const app = apps.value.find((a) => a.id === (canvasScroll.owner || active.value));
+  if (app) enterFocus(app);
+  else status.value = "Click an app first, then press the focus shortcut.";
+}
 const hint = ref("");
 const hintText = computed(() =>
   hint.value === "move"
@@ -466,8 +535,110 @@ async function persist() {
       "Saving is unavailable. Your changes are still here; export a backup from Workspace or retry saving.";
   }
 }
+// ---- Canvas undo (Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y) ----
+// Covers where apps are and whether they exist (move, resize, create,
+// duplicate, archive, delete, layout visibility) and the Board (sticky
+// notes, arrows, drawings). Never content inside apps: each app keeps its
+// own undo. The canvas state is recorded once changes settle, so a drag or
+// a stroke is one step.
+type CanvasAppState = Pick<CanvasApp, "id" | "x" | "y" | "width" | "height" | "archived" | "deleted" | "layoutHidden">;
+const UNDO_LIMIT = 100;
+let canvasUndo: string[] = [];
+let canvasRedo: string[] = [];
+let canvasCurrent = "";
+let canvasRecordTimer: ReturnType<typeof setTimeout> | undefined;
+// Apps an undo took off the canvas, kept so redo can bring them back whole.
+const undoneApps = new Map<string, CanvasApp>();
+function canvasState() {
+  return JSON.stringify({
+    apps: workspace.apps.map(
+      (a): CanvasAppState => ({
+        id: a.id,
+        x: a.x,
+        y: a.y,
+        width: a.width,
+        height: a.height,
+        archived: a.archived,
+        deleted: a.deleted,
+        layoutHidden: a.layoutHidden,
+      }),
+    ),
+    board: workspace.board ?? null,
+  });
+}
+function recordCanvas() {
+  clearTimeout(canvasRecordTimer);
+  canvasRecordTimer = undefined;
+  const state = canvasState();
+  if (state === canvasCurrent) return;
+  if (canvasCurrent) canvasUndo.push(canvasCurrent);
+  if (canvasUndo.length > UNDO_LIMIT) canvasUndo.shift();
+  canvasRedo = [];
+  canvasCurrent = state;
+}
+function scheduleCanvasRecord() {
+  clearTimeout(canvasRecordTimer);
+  canvasRecordTimer = setTimeout(recordCanvas, 400);
+}
+/** A loaded or replaced workspace starts a fresh history. */
+function resetCanvasHistory() {
+  clearTimeout(canvasRecordTimer);
+  canvasRecordTimer = undefined;
+  canvasUndo = [];
+  canvasRedo = [];
+  undoneApps.clear();
+  canvasCurrent = canvasState();
+}
+function applyCanvasState(state: string) {
+  const { apps: saved, board } = JSON.parse(state) as {
+    apps: CanvasAppState[];
+    board: Workspace["board"] | null;
+  };
+  const byId = new Map(workspace.apps.map((a) => [a.id, a]));
+  for (const app of workspace.apps)
+    if (!saved.some((s) => s.id === app.id)) undoneApps.set(app.id, app);
+  const next: CanvasApp[] = [];
+  for (const s of saved) {
+    const app = byId.get(s.id) ?? undoneApps.get(s.id);
+    if (!app) continue;
+    undoneApps.delete(s.id);
+    app.x = s.x;
+    app.y = s.y;
+    app.width = s.width;
+    app.height = s.height;
+    app.archived = s.archived;
+    if (s.deleted === undefined) delete app.deleted;
+    else app.deleted = s.deleted;
+    if (s.layoutHidden === undefined) delete app.layoutHidden;
+    else app.layoutHidden = s.layoutHidden;
+    next.push(app);
+  }
+  workspace.apps.splice(0, workspace.apps.length, ...next);
+  if (board) workspace.board = board;
+  else delete workspace.board;
+  boardSelected.value = "";
+  boardEditNote.value = "";
+  canvasCurrent = canvasState();
+}
+function undoCanvas(redo = false) {
+  if (!canEdit.value || importBusy.value) return;
+  if (canvasRecordTimer) recordCanvas();
+  const from = redo ? canvasRedo : canvasUndo,
+    to = redo ? canvasUndo : canvasRedo;
+  const state = from.pop();
+  if (!state) {
+    status.value = redo ? "Nothing to redo on the canvas." : "Nothing to undo on the canvas.";
+    return;
+  }
+  to.push(canvasCurrent);
+  applyCanvasState(state);
+  // An "archived / moved to trash" notice no longer describes the canvas.
+  if (/ (moved to trash|archived)\. Restore it/.test(status.value)) status.value = "";
+}
+onBeforeUnmount(() => clearTimeout(canvasRecordTimer));
 const workspaceWatch = trackWorkspace(workspace, () => {
   if (!canEdit.value || applying) return;
+  scheduleCanvasRecord();
   unsavedChanges.value = true;
   workspaceRevision.value++;
   clearTimeout(saveTimer);
@@ -534,11 +705,18 @@ const toolApps = {
   browser: { name: "Browser", icon: "globe" },
   netsuite: { name: "NetSuite", icon: "globe" },
   files: { name: "File Explorer", icon: "folder-open" },
+  calendar: { name: "Calendar", icon: "calendar", width: 780, height: 520 },
+  terminal: { name: "Terminal", icon: "terminal", width: 940, height: 560 },
 };
 function createGitViewer(kind: keyof typeof toolApps = "git") {
   if (!canEdit.value || importBusy.value) return;
   const appId = uid();
-  const { name, icon } = toolApps[kind];
+  const { name, icon, width = 1160, height = 740 } = toolApps[kind] as {
+    name: string;
+    icon: string;
+    width?: number;
+    height?: number;
+  };
   const result = applyCommands(workspace, [
     {
       operation: "app_create",
@@ -547,10 +725,10 @@ function createGitViewer(kind: keyof typeof toolApps = "git") {
         properties: {
           name,
           icon,
-          width: 1160,
-          height: 740,
-          x: (viewport.width / 2 - camera.x) / camera.zoom - 580,
-          y: (viewport.height / 2 - camera.y) / camera.zoom - 370,
+          width,
+          height,
+          x: (viewport.width / 2 - camera.x) / camera.zoom - width / 2,
+          y: (viewport.height / 2 - camera.y) / camera.zoom - height / 2,
           padding: 0,
           gap: 0,
         },
@@ -599,6 +777,45 @@ function paletteEvent(event: Event) {
 function focusBlock(blockId: string) {
   const app = workspace.apps.find((a) => !a.archived && !a.deleted && flatten(a.blocks).some((b) => b.id === blockId));
   if (app) void focusApp(app);
+}
+// A sticky note's link opens in the File Explorer (files and folders) or
+// the Browser (pages), like the same results in Ctrl+K.
+async function openNoteLink(link: NoteLink, external = false) {
+  const kind = link.kind === "page" ? "browser" : "files";
+  const app = liveApps.value.find((a) => flatten(a.blocks).some((b) => b.kind === kind));
+  const block = app && flatten(app.blocks).find((b) => b.kind === kind);
+  if ((!app || !block) && external && link.kind === "page") {
+    window.open(link.target, "_blank", "noopener");
+    return;
+  }
+  if (!app || !block) {
+    status.value = `Add a ${kind === "browser" ? "Browser" : "File Explorer"} app to open this link.`;
+    return;
+  }
+  if (app.layoutHidden && canEdit.value) app.layoutHidden = false;
+  await focusApp(app);
+  const folder = link.target.replace(/[\\/][^\\/]*$/, "");
+  const request: OpenRequest =
+    link.kind === "page"
+      ? { kind: "browser-url", blockId: block.id, url: link.target }
+      : link.kind === "folder"
+        ? { kind: "explorer-path", blockId: block.id, path: link.target }
+        : { kind: "explorer-path", blockId: block.id, path: folder, select: link.target };
+  // The app may still be loading: ask again briefly until it answers.
+  for (let i = 0; i < 20; i++) {
+    const event = new CustomEvent<OpenRequest>(OPEN_EVENT, { detail: request });
+    window.dispatchEvent(event);
+    if ((event as CustomEvent & { handled?: boolean }).handled) return;
+    await new Promise((done) => setTimeout(done, 100));
+  }
+}
+// Ctrl+click on a link or path in the Terminal app.
+function openLinkEvent(event: Event) {
+  const detail = (event as CustomEvent<{ link?: NoteLink; external?: boolean }>).detail;
+  const link = detail?.link;
+  if (!link || !["file", "folder", "page"].includes(link.kind) || typeof link.target !== "string") return;
+  if (link.kind === "page" && !/^https?:\/\//i.test(link.target)) return;
+  void openNoteLink(link, !!detail.external);
 }
 function focusAppById(appId: string) {
   const app = workspace.apps.find((a) => a.id === appId);
@@ -658,7 +875,9 @@ function captureLayout(id: string, name: string): Layout {
     apps: Object.fromEntries(
       liveApps.value.map((a) => [a.id, { x: a.x, y: a.y, width: a.width, height: a.height, shown: !a.layoutHidden }]),
     ),
-    camera: { x: camera.x, y: camera.y, zoom: camera.zoom },
+    camera: focused.value
+      ? { ...focused.value.camera }
+      : { x: camera.x, y: camera.y, zoom: camera.zoom },
   };
 }
 function saveLayout(name = layoutName.value.trim()) {
@@ -708,6 +927,55 @@ function showAllApps() {
   if (!canEdit.value) return;
   for (const app of liveApps.value) app.layoutHidden = false;
 }
+// ---- Calendar reminders ----
+// Checked every 15 seconds in the editing window (one per workspace, so a
+// reminder never shows twice). In the desktop app they are system
+// notifications that also fire while Orvane sits in the tray; in a browser,
+// the browser's notifications. A reminder missed while Orvane was closed is
+// shown once if it was due in the last day, and otherwise skipped quietly.
+const MISSED_REMINDER_MS = 24 * 60 * 60 * 1000;
+function notifyReminder(item: CalendarItem, appId: string) {
+  const body = `${item.time} · ${formatDay(item.date)}`;
+  if (desktopWindow?.notify) {
+    void desktopWindow.notify({ title: item.title, body, appId }).catch(() => undefined);
+    return;
+  }
+  if ("Notification" in window && Notification.permission === "granted") {
+    const shown = new Notification(item.title, { body, tag: item.id });
+    shown.onclick = () => {
+      window.focus();
+      focusAppById(appId);
+    };
+    return;
+  }
+  status.value = `Reminder: ${item.title} (${body})`;
+}
+function checkReminders() {
+  if (!ready.value || !canEdit.value || importBusy.value) return;
+  const now = Date.now();
+  for (const app of liveApps.value)
+    for (const block of flatten(app.blocks)) {
+      if (block.kind !== "calendar") continue;
+      const data = readCalendar(block.value);
+      let changed = false;
+      for (const item of data.items) {
+        if (!item.remind || item.done || item.notified) continue;
+        const at = dueAt(item);
+        if (at === null || at > now) continue;
+        item.notified = true;
+        changed = true;
+        if (now - at < MISSED_REMINDER_MS) notifyReminder(item, app.id);
+      }
+      if (changed) block.value = JSON.stringify(data);
+    }
+}
+const reminderTimer = setInterval(checkReminders, 15_000);
+watch(ready, (isReady) => isReady && checkReminders());
+const stopNotificationClicks = desktopWindow?.onNotificationClick?.((appId) => focusAppById(appId));
+onBeforeUnmount(() => {
+  clearInterval(reminderTimer);
+  stopNotificationClicks?.();
+});
 const stopCanvasCommands = registerCommands("canvas", () => {
   const writable = canEdit.value && !importBusy.value;
   const tools: [keyof typeof toolApps, string][] = [
@@ -717,6 +985,8 @@ const stopCanvasCommands = registerCommands("canvas", () => {
     ["git", "git"],
     ["projects", "folder"],
     ["netsuite", "globe"],
+    ["calendar", "calendar"],
+    ["terminal", "terminal"],
   ];
   return [
     ...(writable
@@ -902,6 +1172,8 @@ function stopPan() {
   movingCamera.value = false;
 }
 function panTo(x: number, y: number, done?: () => void, zoom = camera.zoom) {
+  // Navigating leaves focus mode; the camera is about to move anyway.
+  exitFocus(false);
   stopPan();
   stopZoom();
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -966,6 +1238,15 @@ function nearestApp(qualifies: (app: CanvasApp) => boolean) {
 // nearest first, so a large workspace can be used before all of it exists.
 // Anything opened, created or navigated to later mounts immediately.
 const mountedApps = reactive(new Set<string>());
+// The window resizing re-fits the focused app; it leaving the canvas
+// (archived, deleted, hidden by a layout) ends focus.
+watch(() => [viewport.width, viewport.height], () => focused.value && placeFocus());
+watch(
+  () => focused.value && apps.value.some((a) => a.id === focused.value!.id),
+  (present) => {
+    if (focused.value && !present) exitFocus();
+  },
+);
 let mountHandle = 0;
 function inView(app: CanvasApp) {
   const left = app.x * camera.zoom + camera.x,
@@ -1226,7 +1507,7 @@ function spaceUp(e: KeyboardEvent) {
   releaseSpace();
 }
 function hoverPan(e: PointerEvent) {
-  if (!space.value || e.buttons || gesture) {
+  if (!space.value || e.buttons || gesture || focused.value) {
     hoverLast = null;
     return;
   }
@@ -1260,6 +1541,7 @@ let pinch: {
 } | null = null;
 function touchStart(e: PointerEvent) {
   if (
+    focused.value ||
     e.pointerType !== "touch" ||
     (e.target as HTMLElement).closest(
       ".dock,.floating-panel,.topbar,.node-workspace,.code-workspace",
@@ -1328,6 +1610,8 @@ function pointerDown(e: PointerEvent, app?: CanvasApp, edge = "") {
       canvasScroll.owner = "";
   }
   if (gesture) return;
+  // A focused app is not moved, resized or panned away.
+  if (focused.value) return;
   if (app && (!canEdit.value || importBusy.value)) return;
   if (pinch) return;
   if (e.button !== 0 && e.button !== 1) return;
@@ -1426,7 +1710,7 @@ function groupClick(event: MouseEvent, id: string) {
 // pointer events never reach this document. Deltas are screen pixels.
 function embeddedPan(event: Event) {
   const { dx, dy } = (event as CustomEvent<{ dx: number; dy: number }>).detail;
-  if (gesture || pinch || !Number.isFinite(dx) || !Number.isFinite(dy)) return;
+  if (gesture || pinch || focused.value || !Number.isFinite(dx) || !Number.isFinite(dy)) return;
   stopZoom();
   stopPan();
   camera.x += dx;
@@ -1560,6 +1844,7 @@ function wheelPan(e: WheelEvent) {
   applyPan(dx, dy);
 }
 function applyPan(dx: number, dy: number) {
+  if (focused.value) return;
   spaceMoved = true; // a pan, not a tap: don't replay Space to the app
   stopPan();
   camera.x -= dx;
@@ -1579,6 +1864,11 @@ function activatedApp(event: Event) {
 onBeforeUnmount(() => clearTimeout(wheelPanTimer));
 function wheel(e: WheelEvent) {
   if (!(e.ctrlKey || e.metaKey)) return wheelPan(e);
+  if (focused.value) {
+    // No canvas zoom while an app is focused.
+    e.preventDefault();
+    return;
+  }
   if (
     (e.target as HTMLElement).closest(
       ".dock,.floating-panel,.node-workspace,.code-editor,.select-popover",
@@ -1831,6 +2121,11 @@ function keydown(e: KeyboardEvent) {
   )
     return;
   if (e.key === "Escape") {
+    if (focused.value && !typing(e.target)) {
+      exitFocus();
+      e.preventDefault();
+      return;
+    }
     canvasScroll.owner = "";
     pendingImport.value = undefined;
     managedApp.value = undefined;
@@ -1840,6 +2135,16 @@ function keydown(e: KeyboardEvent) {
     return;
   }
   if (typing(e.target)) return;
+  if (
+    (e.ctrlKey || e.metaKey) &&
+    !e.altKey &&
+    (e.code === "KeyZ" || e.code === "KeyY") &&
+    !(e.target instanceof Element && e.target.closest(".app-surface,.floating-panel,.cp-backdrop"))
+  ) {
+    e.preventDefault();
+    undoCanvas(e.code === "KeyY" || e.shiftKey);
+    return;
+  }
   if (
     e.code === "Space" &&
     !(e.target instanceof Element && e.target.closest("button,[role=button]"))
@@ -1858,6 +2163,9 @@ function keydown(e: KeyboardEvent) {
   } else if (key === workspace.shortcuts.home) {
     e.preventDefault();
     home();
+  } else if (key === (workspace.shortcuts.focus || "f")) {
+    e.preventDefault();
+    toggleFocus();
   }
 }
 const keyup = (e: KeyboardEvent) => {
@@ -2584,7 +2892,7 @@ function focusIn(e: FocusEvent, app: CanvasApp) {
     lastFocus.set(app.id, e.target);
 }
 function shortcutChanged(key: keyof Workspace["shortcuts"]) {
-  const value = workspace.shortcuts[key].toLowerCase().slice(-1);
+  const value = (workspace.shortcuts[key] ?? "").toLowerCase().slice(-1);
   if (
     !/^[a-z0-9]$/.test(value) ||
     Object.entries(workspace.shortcuts).some(
@@ -2596,7 +2904,7 @@ function shortcutChanged(key: keyof Workspace["shortcuts"]) {
       .filter(([k]) => k !== key)
       .map(([, v]) => v);
     workspace.shortcuts[key] = [
-      emptyWorkspace().shortcuts[key],
+      emptyWorkspace().shortcuts[key]!,
       ..."abcdefghijklmnopqrstuvwxyz0123456789",
     ].find((k) => !occupied.includes(k))!;
   } else {
@@ -2654,6 +2962,7 @@ onMounted(() => {
     orvaneDesktop?: { onTouchpad?: (cb: (input: { fx?: number; fy?: number; end?: boolean }) => void) => () => void };
   }).orvaneDesktop?.onTouchpad?.(touchpadInput);
   window.addEventListener(ACTIVATE_EVENT, activatedApp);
+  window.addEventListener("orvane:open-link", openLinkEvent);
   window.addEventListener("orvane:palette", paletteEvent);
   window.addEventListener("paste", pasteImage);
   window.addEventListener("pointermove", trackPointer, { passive: true });
@@ -2673,6 +2982,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("orvane:space", spaceEvent);
   stopTouchpad?.();
   window.removeEventListener(ACTIVATE_EVENT, activatedApp);
+  window.removeEventListener("orvane:open-link", openLinkEvent);
   window.removeEventListener("orvane:palette", paletteEvent);
   window.removeEventListener("paste", pasteImage);
   window.removeEventListener("pointermove", trackPointer);
@@ -3078,6 +3388,7 @@ onBeforeUnmount(() => {
         @select="boardSelected = $event"
         @erase="eraseBoardItem"
         @edit-note="boardEditNote = $event"
+        @open-link="openNoteLink"
       />
       <template v-for="group in spatialGroups" :key="group.id"
         ><div
@@ -3111,18 +3422,34 @@ onBeforeUnmount(() => {
             @pointerdown.stop="groupPointerDown($event, group.id)"
           ></div></div
       ></template>
+      <!-- Focus mode: covers the rest of the canvas behind the focused app. -->
+      <div
+        v-if="focused"
+        class="focus-backdrop"
+        :style="{
+          left: -camera.x + 'px',
+          top: -camera.y + 'px',
+          width: viewport.width + 'px',
+          height: viewport.height + 'px',
+          zIndex: stack.length + 3,
+        }"
+        @pointerdown.stop
+      ></div>
       <div
         v-for="app in apps"
         :key="`${renderGeneration}:${app.id}`"
         class="canvas-app"
-        :class="{ 'scroll-owner': canvasScroll.owner === app.id }"
+        :class="{
+          'scroll-owner': canvasScroll.owner === app.id,
+          'focused-app': focused?.id === app.id,
+        }"
         :data-app-id="app.id"
         :style="{
           left: app.x + 'px',
           top: app.y + 'px',
-          width: app.width + 'px',
-          height: app.height + 'px',
-          zIndex: stackLevel(app.id),
+          width: (focused?.id === app.id ? focused.rect.width : app.width) + 'px',
+          height: (focused?.id === app.id ? focused.rect.height : app.height) + 'px',
+          zIndex: focused?.id === app.id ? stack.length + 4 : stackLevel(app.id),
         }"
         @pointerdown.stop="pointerDown($event, app)"
         @focusin="focusIn($event, app)"
@@ -3164,6 +3491,8 @@ onBeforeUnmount(() => {
           :app="app"
           :workspace="workspace"
           :enter-motion="createdAppId === app.id"
+          :focused="focused?.id === app.id"
+          @focus="enterFocus"
           @run="run"
           @archive="archive"
           @duplicate="duplicate"
@@ -3435,6 +3764,20 @@ onBeforeUnmount(() => {
       <button
         class="subtle-button"
         :disabled="!canEdit || importBusy"
+        @click="createGitViewer('calendar')"
+      >
+        <Icon name="calendar" :size="14" />Create Calendar
+      </button>
+      <button
+        class="subtle-button"
+        :disabled="!canEdit || importBusy"
+        @click="createGitViewer('terminal')"
+      >
+        <Icon name="terminal" :size="14" />Create Terminal
+      </button>
+      <button
+        class="subtle-button"
+        :disabled="!canEdit || importBusy"
         @click="recoverBrowserWorkspace"
       >
         Recover earlier browser workspace
@@ -3505,6 +3848,7 @@ onBeforeUnmount(() => {
             create: 'New app',
             search: 'Find app',
             home: 'Center canvas',
+            focus: 'Focus app full-window',
           }"
           :key="key"
           class="shortcut-row"

@@ -72,6 +72,8 @@ const block: z.ZodType<Block> = z.lazy(() =>
       "files",
       "image",
       "file",
+      "calendar",
+      "terminal",
     ]),
     label: z.string(),
     value: z.string(),
@@ -138,6 +140,7 @@ const schema = z.object({
     create: z.string().regex(/^[a-z0-9]$/i),
     search: z.string().regex(/^[a-z0-9]$/i),
     home: z.string().regex(/^[a-z0-9]$/i),
+    focus: z.string().regex(/^[a-z0-9]$/i).optional(),
   }),
   groups: z.array(z.object({ id, name: z.string() })).optional(),
   wheel: z
@@ -194,6 +197,13 @@ const schema = z.object({
             height: number.min(40).max(4000),
             text: z.string().max(20000),
             color: z.string().regex(/^#[\da-f]{6}$/i),
+            link: z
+              .object({
+                kind: z.enum(["file", "folder", "page"]),
+                target: z.string().min(1).max(4000),
+                label: z.string().max(300),
+              })
+              .optional(),
           }),
         )
         .max(500),
@@ -366,7 +376,7 @@ export function parseWorkspace(
     checkFlow(b.rules, b.graph);
   });
   w.customNodes.forEach((n) => checkFlow(n.rules || [], n.graph));
-  if (new Set(Object.values(w.shortcuts)).size !== 3)
+  if (new Set(Object.values(w.shortcuts)).size !== Object.values(w.shortcuts).length)
     throw Error("Workspace shortcuts must be distinct.");
   return w;
 }

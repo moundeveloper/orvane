@@ -8,6 +8,13 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
   /** The window has no system title bar; Orvane draws its own controls. */
   frameless: true,
   closeWindow: () => ipcRenderer.invoke("orvane:window-close"),
+  /** A system notification (calendar reminders); clicking it opens the app. */
+  notify: (notification) => ipcRenderer.invoke("orvane:notify", notification),
+  onNotificationClick(callback) {
+    const listener = (_event, appId) => callback(appId);
+    ipcRenderer.on("orvane:notification-click", listener);
+    return () => ipcRenderer.removeListener("orvane:notification-click", listener);
+  },
   /** Monitors as [{ id, label, chosen }], and moving the window to one. */
   displays: () => ipcRenderer.invoke("orvane:displays"),
   setDisplay: (id) => ipcRenderer.invoke("orvane:display-set", id),

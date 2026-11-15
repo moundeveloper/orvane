@@ -33,12 +33,15 @@ const props = defineProps<{
   app: CanvasApp;
   workspace: Workspace;
   enterMotion?: boolean;
+  /** Shown full-window (focus mode). */
+  focused?: boolean;
 }>();
 const emit = defineEmits<{
   run: [app: CanvasApp, block: Block];
   archive: [app: CanvasApp];
   duplicate: [app: CanvasApp];
   geometry: [app: CanvasApp];
+  focus: [app: CanvasApp];
   error: [message: string];
 }>();
 const editing = ref(false),
@@ -115,6 +118,8 @@ const current = computed(() =>
 const root = computed(() => props.app.blocks);
 // Browser pages must attach, load and keep their sessions while off screen,
 // so their app is never skipped from rendering.
+// The Terminal app is frosted glass like Orvane's top bar.
+const frosted = computed(() => flatten(props.app.blocks).some((b) => b.kind === "terminal"));
 const hasLivePage = computed(() =>
   blocks.value.some((block) => block.kind === "browser"),
 );
@@ -496,6 +501,7 @@ defineExpose({
       'is-editing': editing,
       'app-headerless': app.showName === false && !editing,
       'has-live-page': hasLivePage,
+      'app-frosted': frosted,
     }"
     :style="{
       '--app-accent': app.accent,
@@ -531,6 +537,13 @@ defineExpose({
           @click="editing = false"
         >
           <Icon name="check" :size="14" />Done</button
+        ><button
+          class="icon-button"
+          :aria-label="focused ? `Return ${app.name} to the canvas` : `Focus ${app.name} full-window`"
+          :title="focused ? 'Return to canvas (Esc)' : 'Focus full-window'"
+          @click="emit('focus', app)"
+        >
+          <Icon :name="focused ? 'shrink' : 'expand'" :size="14" /></button
         ><button
           class="icon-button"
           :aria-label="`Options for ${app.name}`"

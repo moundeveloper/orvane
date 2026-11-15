@@ -3,8 +3,10 @@
 // strokes and sticky notes. Lives inside the transformed canvas plane.
 import { computed, nextTick, ref } from "vue";
 import Icon from "./Icon.vue";
-import type { Board, CanvasApp } from "../model";
+import type { Board, CanvasApp, NoteLink } from "../model";
 import { arrowPoints, NOTE_COLORS, strokePath, type Tool } from "../board";
+import { DRAG_MIME } from "./files/explorer";
+import { PAGE_DRAG_MIME } from "../commands";
 
 const props = defineProps<{
   board: Board;
@@ -16,7 +18,12 @@ const props = defineProps<{
   selected: string;
   editNote: string;
 }>();
-const emit = defineEmits<{ select: [id: string]; erase: [id: string]; editNote: [id: string] }>();
+const emit = defineEmits<{
+  select: [id: string];
+  erase: [id: string];
+  editNote: [id: string];
+  openLink: [link: NoteLink];
+}>();
 const arrows = computed(() =>
   props.board.arrows.flatMap((arrow) => {
     const points = arrowPoints(arrow, props.apps, props.board, props.allApps);
@@ -26,6 +33,8 @@ const arrows = computed(() =>
 const markerColors = computed(() => [...new Set(props.board.arrows.map((a) => a.color))]);
 const markerId = (color: string) => `board-head-${color.slice(1)}`;
 function pick(id: string, event: Event) {
+  // Only the left button picks or erases; middle-drag pans the canvas.
+  if (event instanceof PointerEvent && event.button !== 0) return;
   if (props.tool === "eraser") return emit("erase", id);
   if (props.tool !== "select") return;
   event.stopPropagation();
@@ -68,6 +77,46 @@ function startEdit(id: string) {
   emit("editNote", id);
   void nextTick(() => textareas.value?.find((t) => t.dataset.id === id)?.focus());
 }
+// ---- Links: drop a File Explorer item or a Browser tab on a note ----
+const dropNote = ref("");
+const linkable = (event: DragEvent) =>
+  props.editable &&
+  !!event.dataTransfer &&
+  [DRAG_MIME, PAGE_DRAG_MIME].some((type) => event.dataTransfer!.types.includes(type));
+function noteDragOver(event: DragEvent, id: string) {
+  if (!linkable(event)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  event.dataTransfer!.dropEffect = "link";
+  dropNote.value = id;
+}
+function noteDrop(event: DragEvent, note: Board["notes"][number]) {
+  dropNote.value = "";
+  if (!linkable(event)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const data = event.dataTransfer!;
+  try {
+    if (data.types.includes(PAGE_DRAG_MIME)) {
+      const page = JSON.parse(data.getData(PAGE_DRAG_MIME)) as { url?: string; title?: string };
+      if (typeof page.url === "string" && /^https?:/i.test(page.url))
+        note.link = { kind: "page", target: page.url, label: (page.title || page.url).slice(0, 300) };
+      return;
+    }
+    const files = JSON.parse(data.getData(DRAG_MIME)) as { paths?: string[]; dirs?: string[] };
+    // Several items dropped: the note links to the first.
+    const path = files.paths?.[0];
+    if (typeof path !== "string" || !path) return;
+    note.link = {
+      kind: files.dirs?.includes(path) ? "folder" : "file",
+      target: path,
+      label: (path.split(/[\\/]/).filter(Boolean).pop() || path).slice(0, 300),
+    };
+  } catch {
+    // Not data we understand; the note is left as it was.
+  }
+}
+const linkIcon = (link: NoteLink) => (link.kind === "page" ? "globe" : link.kind === "folder" ? "folder" : "file");
 // Arrow labels are edited in place (Electron has no window.prompt).
 const labelling = ref<{ id: string; x: number; y: number; text: string } | null>(null);
 const labelInput = ref<HTMLInputElement>();
@@ -136,7 +185,7 @@ function commitLabel() {
     @keydown.stop
     @keydown.enter="commitLabel"
     @keydown.esc="labelling = null"
-    @pointerdown.stop
+    @pointerdown="$event.button !== 1 && $event.stopPropagation()"
     @blur="commitLabel"
   />
   <div
@@ -146,9 +195,13 @@ function commitLabel() {
     :class="{ selected: selected === note.id, erasing: tool === 'eraser' }"
     :data-note-id="note.id"
     :style="{ left: note.x + 'px', top: note.y + 'px', width: note.width + 'px', height: note.height + 'px', background: note.color }"
-    @pointerdown="tool === 'eraser' ? emit('erase', note.id) : tool === 'select' && ($event.stopPropagation(), emit('select', note.id))"
+    @pointerdown="$event.button === 0 && (tool === 'eraser' ? emit('erase', note.id) : tool === 'select' && ($event.stopPropagation(), emit('select', note.id)))"
     @dblclick.stop="startEdit(note.id)"
+    @dragover="noteDragOver($event, note.id)"
+    @dragleave="dropNote === note.id && (dropNote = '')"
+    @drop="noteDrop($event, note)"
   >
+    <div v-if="dropNote === note.id" class="board-note-drop" aria-hidden="true">Link to this note</div>
     <div class="board-note-bar" @pointerdown="dragNote($event, note, 'move')">
       <template v-if="editable && selected === note.id">
         <button type="button" title="Change colour" aria-label="Change note colour" @pointerdown.stop @click="cycleColor(note)">
@@ -170,10 +223,34 @@ function commitLabel() {
       maxlength="20000"
       @keydown.stop
       @keydown.esc="emit('editNote', '')"
-      @pointerdown.stop
+      @pointerdown="$event.button !== 1 && $event.stopPropagation()"
       @blur="emit('editNote', '')"
     ></textarea>
     <div v-else class="board-note-text read" :class="{ empty: !note.text }">{{ note.text || "Double-click to write" }}</div>
+    <div v-if="note.link" class="board-note-link">
+      <button
+        type="button"
+        class="board-note-link-open"
+        :title="note.link.target"
+        :aria-label="`Open ${note.link.label}`"
+        @pointerdown="$event.button !== 1 && $event.stopPropagation()"
+        @dblclick.stop
+        @click="emit('openLink', note.link)"
+      >
+        <Icon :name="linkIcon(note.link)" :size="12" /><span>{{ note.link.label }}</span>
+      </button>
+      <button
+        v-if="editable && selected === note.id"
+        type="button"
+        class="board-note-unlink"
+        title="Remove link"
+        aria-label="Remove link"
+        @pointerdown="$event.button !== 1 && $event.stopPropagation()"
+        @click="delete note.link"
+      >
+        <Icon name="unlink" :size="11" />
+      </button>
+    </div>
     <div v-if="editable && tool === 'select'" class="board-note-resize" @pointerdown="dragNote($event, note, 'resize')"></div>
   </div>
 </template>
@@ -280,6 +357,58 @@ function commitLabel() {
 }
 .board-note-text.empty {
   opacity: 0.45;
+}
+.board-note-drop {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  outline: 2px dashed #6f9ab0;
+  outline-offset: -4px;
+  background: rgb(255 255 255 / 45%);
+  color: #344f5e;
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.board-note-link {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  margin: 0 10px 10px;
+  min-width: 0;
+}
+.board-note-link-open {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 55%);
+  color: #344f5e;
+  font-size: 11px;
+}
+.board-note-link-open:hover {
+  background: rgb(255 255 255 / 80%);
+}
+.board-note-link-open span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-note-unlink {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 55%);
+  color: #5d6a52;
 }
 .board-note-resize {
   position: absolute;

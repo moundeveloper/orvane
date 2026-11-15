@@ -87,7 +87,7 @@ import { siteName, type PasswordPrompt, type PasswordsApi } from "../passwords";
 import { getDomain } from "tldts";
 import Icon from "./Icon.vue";
 import { activateApp, appOf } from "../canvasScroll";
-import { onOpenRequest, registerCommands } from "../commands";
+import { onOpenRequest, PAGE_DRAG_MIME, registerCommands } from "../commands";
 import BrowserDrawer, {
   type Bookmark,
   type BrowserLayout as Layout,
@@ -1575,6 +1575,9 @@ function beginTabDrag(event: DragEvent, tab: BrowserTab) {
   draggingTab.value = tab.id;
   event.dataTransfer.effectAllowed = "move";
   event.dataTransfer.setData("text/plain", label(tab));
+  // Sticky notes on the canvas link to the page when it is dropped on them.
+  if (tab.url)
+    event.dataTransfer.setData(PAGE_DRAG_MIME, JSON.stringify({ url: tab.url, title: label(tab) }));
 }
 function allowTabDrop(event: DragEvent) {
   if (!draggingTab.value || !event.dataTransfer) return;

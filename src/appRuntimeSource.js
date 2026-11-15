@@ -69,6 +69,58 @@
 
   // A press here makes this the app in use.
   addEventListener("pointerdown", () => parent.postMessage({ orvaneActivate: true }, "*"), true);
+  // Canvas gestures made over the app: Ctrl/Cmd+wheel (and touchpad pinch)
+  // zooms the canvas, middle-drag pans it, as everywhere else in Orvane.
+  addEventListener(
+    "wheel",
+    (event) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? innerHeight : 1;
+      parent.postMessage({ orvaneZoom: { x: event.clientX, y: event.clientY, deltaY: event.deltaY * unit } }, "*");
+    },
+    { capture: true, passive: false },
+  );
+  let panFrom = null;
+  addEventListener(
+    "pointerdown",
+    (event) => {
+      if (event.button !== 1) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      // Screen coordinates: the frame itself moves while the canvas pans.
+      panFrom = { x: event.screenX, y: event.screenY };
+      try {
+        event.target.setPointerCapture?.(event.pointerId);
+      } catch {
+        // Capture is a convenience; moves inside the frame still arrive.
+      }
+    },
+    true,
+  );
+  addEventListener(
+    "pointermove",
+    (event) => {
+      if (!panFrom) return;
+      if (!(event.buttons & 4)) {
+        panFrom = null;
+        return;
+      }
+      const dx = event.screenX - panFrom.x,
+        dy = event.screenY - panFrom.y;
+      panFrom = { x: event.screenX, y: event.screenY };
+      if (dx || dy) parent.postMessage({ orvanePan: { dx, dy } }, "*");
+    },
+    true,
+  );
+  const endPan = (event) => {
+    if (event.button === 1 || event.type === "pointercancel") panFrom = null;
+  };
+  addEventListener("pointerup", endPan, true);
+  addEventListener("pointercancel", endPan, true);
+  // No autoscroll circle from the middle button.
+  addEventListener("mousedown", (event) => event.button === 1 && event.preventDefault(), true);
   // Holding Space (outside text fields) pans the canvas; the host follows
   // the pointer while it is held.
   let spaceHeld = false;

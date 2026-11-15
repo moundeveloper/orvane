@@ -40,6 +40,8 @@ export type OpenRequest =
   | { kind: "git-commit"; blockId?: string; workspaceId: string; hash: string }
   | { kind: "explorer-path"; blockId?: string; path: string; select?: string };
 export const OPEN_EVENT = "orvane:open-request";
+/** Drag data of a Browser tab: { url, title }. */
+export const PAGE_DRAG_MIME = "application/x-orvane-page";
 export function requestOpen(request: OpenRequest) {
   window.dispatchEvent(new CustomEvent<OpenRequest>(OPEN_EVENT, { detail: request }));
 }

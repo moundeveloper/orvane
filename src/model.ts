@@ -15,7 +15,9 @@ export type Kind =
   | "netsuite"
   | "files"
   | "image"
-  | "file";
+  | "file"
+  | "calendar"
+  | "terminal";
 export type ActionKind =
   | "add-item"
   | "clear"
@@ -106,6 +108,8 @@ export function appMinimum(app: CanvasApp) {
   const notes = flatten(app.blocks).some((block) => block.kind === "notes");
   const browser = flatten(app.blocks).some((block) => block.kind === "browser");
   const files = flatten(app.blocks).some((block) => block.kind === "files");
+  const calendar = flatten(app.blocks).some((block) => block.kind === "calendar");
+  const terminal = flatten(app.blocks).some((block) => block.kind === "terminal");
   const projects = flatten(app.blocks).some(
     (block) => block.kind === "projects",
   );
@@ -113,12 +117,12 @@ export function appMinimum(app: CanvasApp) {
     width: Math.max(
       180,
       app.minWidth ??
-        (projects ? 900 : git ? 720 : notes ? 640 : files ? 560 : browser ? 480 : 180),
+        (projects ? 900 : git ? 720 : notes ? 640 : files ? 560 : browser ? 480 : calendar ? 360 : terminal ? 420 : 180),
     ),
     height: Math.max(
       160,
       app.minHeight ??
-        (projects ? 580 : git ? 440 : notes ? 440 : files ? 360 : browser ? 320 : 160),
+        (projects ? 580 : git ? 440 : notes ? 440 : files ? 360 : browser ? 320 : calendar ? 380 : terminal ? 240 : 160),
     ),
   };
 }
@@ -127,7 +131,7 @@ export interface Workspace {
   apps: CanvasApp[];
   library: { id: string; name: string; block: Block }[];
   customNodes: CustomNode[];
-  shortcuts: { create: string; search: string; home: string };
+  shortcuts: { create: string; search: string; home: string; focus?: string };
   groups?: { id: string; name: string }[];
   wheel?: WheelEntry[];
   actions?: WorkspaceAction[];
@@ -139,8 +143,24 @@ export interface Workspace {
 // An arrow end attached to an app or sticky note follows it; x/y is where
 // the end was when last attached, used if that item disappears.
 export type BoardEnd = { appId?: string; noteId?: string; x: number; y: number };
+/** What a sticky note links to: a file or folder (opened in the File
+ * Explorer) or a web page (opened in the Browser). */
+export interface NoteLink {
+  kind: "file" | "folder" | "page";
+  target: string;
+  label: string;
+}
 export interface Board {
-  notes: { id: string; x: number; y: number; width: number; height: number; text: string; color: string }[];
+  notes: {
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    text: string;
+    color: string;
+    link?: NoteLink;
+  }[];
   arrows: { id: string; from: BoardEnd; to: BoardEnd; label?: string; color: string }[];
   /** Freehand strokes; points are flat [x0, y0, x1, y1, …]. */
   strokes: { id: string; points: number[]; color: string; width: number }[];
@@ -268,6 +288,16 @@ export const kinds: { kind: Kind; name: string; description: string }[] = [
     name: "File",
     description: "A live view of a video, PDF, spreadsheet or code file",
   },
+  {
+    kind: "calendar",
+    name: "Calendar",
+    description: "Dated items and reminders",
+  },
+  {
+    kind: "terminal",
+    name: "Terminal",
+    description: "Live shells (cmd, PowerShell, WSL…) in tabs and split panes",
+  },
 ];
 export function makeBlock(kind: Kind): Block {
   return {
@@ -291,6 +321,8 @@ export function makeBlock(kind: Kind): Block {
       files: "File Explorer",
       image: "Image",
       file: "File",
+      calendar: "Calendar",
+      terminal: "Terminal",
     }[kind],
     value: "",
     checked: false,
@@ -313,7 +345,7 @@ export function emptyWorkspace(): Workspace {
     groups: [],
     library: [],
     customNodes: [],
-    shortcuts: { create: "n", search: "k", home: "h" },
+    shortcuts: { create: "n", search: "k", home: "h", focus: "f" },
   };
 }
 export function validateWorkspace(data: unknown): data is Workspace {
