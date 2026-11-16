@@ -14,6 +14,85 @@ The browser derives a non-extractable AES-256-GCM key with PBKDF2-SHA256 (600,00
 
 The **API secrets** tab stores separate named secrets using the same vault password, encryption, environment tags and grouping. Enter any nonempty value (1–16,384 characters); 32 characters is not required. **Generate 32-character secret** uses the local cryptographic random generator with a URL-safe alphabet. Secrets are masked by default and support reveal, copy, edit and delete. Switching between API keys and API secrets retains the current unlock; the existing lock triggers and password change apply to both. Existing vault entries without a credential type remain API keys, and saving secrets preserves those entries.
 
+### File Explorer
+
+Create it from **Workspace options → Create File Explorer**, or add a **File Explorer** component in the builder. It browses this computer's folders through Orvane's local server (`/__orvane/files/*`, same-origin loopback only, implemented in `server/files.ts`).
+
+Each tab is a folder with its own back/forward history, sort, Details/Icons view and preview pane. Tabs use the same strip as the NetSuite apps: drag to reorder, drag a tab to the left or right edge to split, right-click for split/duplicate/close-others, Ctrl+Alt+N for a new tab and Ctrl+Alt+T to reopen one. Dragging folders onto the tab bar opens them as tabs. The sidebar has Quick access, pinned folders and a lazy folder tree of the drives; all of them accept drops.
+
+Files support multi-selection (Ctrl/Shift, Ctrl+A, arrows, type-ahead), Enter to open (folders navigate, files open in their default program), F2 inline rename, Ctrl+X/C/V, drag-and-drop between folders, tabs and split panes (same drive moves, another drive copies; Ctrl copies, Shift moves), Ctrl+Shift+N new folder, and Delete, which moves items to the Recycle Bin after an in-app confirmation; nothing is permanently deleted. Ctrl+L edits the path, Ctrl+F filters the folder, and the search box searches the folder and its subfolders by name (limited to 500 results). The preview pane shows images and text, and text files of up to 2 MB can be edited and saved with Ctrl+S; a save is refused if the file changed on disk since it was opened. Tabs, splits, views and pins are saved with the app.
+
+**Peek** (Space, the eye button, or right-click → Peek) opens a file in a panel over the folder, styled like the Browser's Peek View. Arrow keys step through the folder's files; Enter opens the file in its default program; Esc or Space closes. It shows images, video and audio (streamed with seeking, so large files start at once), PDFs, Excel workbooks (.xlsx/.xlsm, every sheet) and CSV/TSV as a table, and code, XML, JSON and other text read-only with syntax highlighting and search. Spreadsheets show stored values (no formula recalculation or date formatting) and the first 2,000 rows × 80 columns; legacy .xls and video codecs Chromium cannot decode open in the default program instead. Media is served at `/__orvane/files/raw` with a per-server token that only the Orvane page receives.
+
+### Image widgets
+
+Drop an image on empty canvas to create an image widget at that spot, sized to the picture: from the File Explorer, from the system's file manager, or dragged out of a web page (including the Browser app). File Explorer images can also be placed with right-click → **Place on canvas** or the Peek rail. Pictures are copied into `.orvane/images/` (content-addressed), so the widget keeps working when the original moves; a web image that cannot be downloaded (for example behind a sign-in) keeps its web address instead. Image widgets can also be added from the builder and filled by dropping or choosing a file. Ctrl+V on empty canvas places a clipboard image (a screenshot, a copied picture or an image address) at the pointer.
+
+Hover an image widget for its tools: rotate left/right, flip, crop (drag the box or its corners; Enter applies, Esc cancels), caption, and a frame (mat border, polaroid, shadow, rounded). Rotate, flip and crop store a new picture and keep the original, so **Reset** returns to it. Pictures from a web address cannot be rotated or cropped.
+
+### File widgets
+
+Any other file dropped on the canvas — a video, PDF, spreadsheet, audio or code file, from the File Explorer or (in the desktop app) from the system — becomes a **file widget** that shows it with the same viewers as Peek. File widgets link to the file where it is, rather than copying it, and refresh as soon as the file changes on disk. **Place on canvas** in the File Explorer works for every file type.
+
+### Canvas workbenches
+
+- **Browser clip.** In Orvane Desktop, open a page and choose **Browser menu → Browser tools → Pin a live clip**. Drag over the area to pin. **Refresh clip** captures that area again from the open source tab, and **Open original** returns to the page. Backups include the last captured image.
+- **Folder comparison.** Drop one or two folders from File Explorer on the canvas, or run **Compare two folders** from Ctrl+K. Drop the second folder onto the empty field or enter both paths. The comparison checks nested file contents and skips filesystem links. **Open diff** uses local Git. Copying over an existing file requires confirmation.
+- **Playwright test results.** Choose **Pin Playwright results** in Terminal, enter the project folder, and run the suite or import a Playwright JSON report. Click a failure's file and line to see its source, or choose **Rerun test** to run it again. The card uses the project's installed Playwright.
+
+### More File Explorer tools
+
+- **Compress to ZIP** / **Extract here** (right-click). Archives are written and read with Node's zlib; entries that would land outside the target folder are refused, and ZIP64, encrypted and over-2 GB archives are not supported.
+- **Git badges**: inside a repository, files and folders show M (modified), A (added), D (deleted), R (renamed), U (untracked) or C (conflict). Folders show the most notable change inside them.
+- **Batch rename**: select several items and press F2 (or right-click → Rename). Use find & replace (optionally a regular expression, keeping extensions) or a numbered pattern such as `Photo {n}`; the preview flags duplicates and invalid names, and all items are renamed together.
+- **Folder sizes**: the size button computes folder totals in the background (≥ marks a total that stopped early in a very large folder); sorting by size then includes folders.
+- **Live updates** (on by default): visible tabs refresh the moment their folder changes on disk.
+- History survives reloads; mouse back/forward buttons work in each pane, and Alt+Left/Right/Up and Backspace act on the active pane even after a sidebar click.
+
+### Connections between apps
+
+Drag files from the File Explorer (or the system, in the desktop app) into **Notes**: images become image blocks, other files a 📎 link that opens the file. Drop files on the **Projects Hub terminal** to type their quoted paths at the prompt; nothing runs until Enter.
+
+### Search and commands (Ctrl+K)
+
+Ctrl+K opens one box that searches apps, commands, Notes pages and their text, Browser history, Git commit messages and hashes (across saved Git workspaces) and file names under your home folder. Enter opens the result in its app: a note page, a browser tab, the commit in a Git viewer, or the file selected in the File Explorer. Type `>` first, or press Ctrl+Shift+P, for commands only. Apps add their own commands (open a File Explorer place or pin, new note, new browser tab, run the SuiteQL query, refresh Git history), next to canvas commands such as new apps, layouts, board tools and backups. Inside Notes, Ctrl+K keeps opening the Notes search.
+
+### Layouts
+
+**Layouts** in the top bar saves the current arrangement under a name (Coding, Research, NetSuite…): every app's position, size and whether it is shown, plus the view. Click a layout to switch; switching never changes what is inside an app. Untick apps under "Shown in this view" to leave them out of a layout, update a layout with the save icon, and switch from Ctrl+K. Apps created after a layout was saved stay visible where they are.
+
+### Board
+
+The rail on the left of the canvas holds whiteboard tools: **sticky notes** (click to place; double-click to write; drag the top strip, resize from the corner, change colour), **arrows** (drag from one app or note to another; the arrow follows them as they move; double-click to label), **freehand drawing** and an **eraser**. The colour dot sets the colour for arrows and drawings. Select an item and press Delete to remove it; Esc returns to Select. Board items are saved with the workspace.
+
+Drop a file or folder from the File Explorer, or a tab from the Browser, onto a sticky note to **link** it. The link shows at the bottom of the note; click it to open the file (selected in its folder) or folder in the File Explorer, or the page in the Browser. Dropping several items links the first. Select the note to remove the link.
+
+### Workspace inbox
+
+Open **Workspace options → Workspace inbox** or search for it with Ctrl+K. Add a note, paste a link, or paste a copied image into the capture field. In the desktop app, **Ctrl+Alt+I** (Command+Option+I on macOS) or **Capture clipboard** in the tray saves the current clipboard and opens the inbox. To capture a Windows screenshot, copy it with **Win+Shift+S**, then use the Orvane shortcut.
+
+Move text or links to a sticky note or to today's Calendar. A link on a sticky note opens in an Orvane Browser app. Move an image to the canvas as a widget, or discard any capture. Inbox entries and their images are included in workspace backups.
+
+### Calendar
+
+Create it from **Workspace options → Create Calendar** (or Ctrl+K). Click the month name to jump to any month and year. A month view sits next to the selected day's items: add an item with an optional time, tick it done, edit its title or time, or delete it. An item with a time gets a **reminder** (the bell turns it on or off). Due reminders are checked every 15 seconds by the editing window: in the desktop app they are system notifications, also while Orvane sits in the tray, and clicking one opens the Calendar; in a browser they use the browser's notifications (asked for when you first set one), or a message in Orvane when notifications are blocked. A reminder missed while Orvane was closed is shown once if it was due within the last day, and skipped otherwise. Upcoming items appear in Ctrl+K and open their day.
+
+### Terminal
+
+Create it from **Workspace options → Create Terminal** (or Ctrl+K). Each pane is a real shell running in a pseudo-console ([node-pty](https://github.com/microsoft/node-pty)): output streams as it happens, colours, prompts and full-screen programs work, and Ctrl+C interrupts. The **profiles** are the shells found on this computer: Command Prompt, Windows PowerShell, PowerShell 7, Git Bash, WSL distributions, Visual Studio developer shells and the custom profiles in Windows Terminal's settings. Pick one from the arrow next to **+**, star one to make it the default, or press Ctrl+Shift+1…9.
+
+- **Tabs and split panes**: Ctrl+Shift+T new tab, Ctrl+Shift+W close the pane, Ctrl+Tab / Ctrl+Shift+Tab switch tabs; double-click a tab (or F2) to rename it, middle-click to close it. Alt+Shift+D splits the pane, Alt+Shift+= splits right and Alt+Shift+- splits down (also the buttons on the right); drag a divider to resize and use Alt+arrows to move between panes. Tabs show a dot for new output and a bell when a program rings.
+- **Copy and paste** like Windows Terminal: Ctrl+C copies a selection (and interrupts otherwise), Ctrl+V or Ctrl+Shift+V pastes, Ctrl+Shift+C copies, and right-click copies a selection or pastes.
+- **Links**: Ctrl+click a web address to open it in the Browser app (or your browser when there is none), or a path like `C:\Users\…` to show it in the File Explorer.
+- **Find** with Ctrl+Shift+F (Enter / Shift+Enter for next / previous). Ctrl+= / Ctrl+- / Ctrl+0 change the text size; Ctrl+Shift+K clears the screen.
+- **Drop files** from the File Explorer or the system onto a pane to type their quoted paths.
+- **Shells keep running** when Orvane reloads or the app is archived: reopening reattaches to them and replays their recent output. A shell that exits normally closes its pane; otherwise press Enter to restart it. Shells no window has shown for 15 minutes end, and all of them end with Orvane.
+- The app is frosted glass like the top bar. The terminal server only accepts Orvane's own page on this computer (same origin, loopback).
+
+### Backups
+
+**Export backup** includes the pictures used by image widgets, so restoring brings them back too; a picture whose content no longer matches its id is skipped. Plain workspace JSON from earlier exports still imports. File widgets link to files elsewhere on disk and are not included.
+
 ### Projects Hub
 
 Projects Hub recreates the local project manager from `C:\Projects\UI` as an Orvane app. Create it from **Workspace options → Create Projects Hub**, or add a **Projects Hub** component in the builder. Choose an existing projects root using Browse or enter its absolute path and Open. The selected root is saved with the app. Existing `.projects-hub.json` groups and terminal state can be read from that root; new configuration writes go to Orvane's SQLite database, leaving the original metadata file unchanged.
@@ -51,10 +130,12 @@ An optional local MCP server can create, inspect and edit apps, nested component
 
 ## Canvas
 
-- Drag empty space, Space-drag, or middle-drag to pan. Ctrl/Command-scroll or pinch on the background to zoom. Wheel zoom eases continuously toward the requested scale, anchored at the pointer. A single translate/scale transform is used throughout motion and at rest. There is no CSS-zoom handoff, end-of-gesture resize or forced blur/sharpen pass. Frame timing is measured only between animation-frame timestamps; the first frame cannot run backward. App dimensions, text layout and iframe viewports stay unchanged.
+- Drag empty space, Space-drag, or middle-drag to pan. Scrolling (mouse wheel or two fingers) over an app scrolls that app. On a touchpad, hold **Space and scroll with two fingers** to pan. The app you last clicked or typed in has a faint outline; click empty canvas or press Esc to clear it. Hold **Space and move the pointer** (no click needed) to pan freely in any direction — over empty canvas, apps, code apps and Browser pages alike, whichever app has focus; only text fields and code editors keep Space for typing, and a quick tap of Space still reaches the app (e.g. Peek in the File Explorer). Ctrl/Command-scroll or pinch on the background to zoom. Wheel zoom eases continuously toward the requested scale, anchored at the pointer. A single translate/scale transform is used throughout motion and at rest. There is no CSS-zoom handoff, end-of-gesture resize or forced blur/sharpen pass. Frame timing is measured only between animation-frame timestamps; the first frame cannot run backward. App dimensions, text layout and iframe viewports stay unchanged.
 - Drag an app header to move it, or Alt/Option-drag its surface; drag any edge or corner to resize. Titles are editable only in Build mode. Header controls and title inputs keep their normal behavior. App options also expose numeric position and size for keyboard and touch access.
 - Dock tabs and search pan and zoom to fit the selected app between the top controls and dock, preserving its state and logical dimensions. Drag tabs to reorder, or focus a tab and press Alt+Left/Right. Search matches names and spatial groups. Use Groups in the top bar, or click a group label, to create/name groups and select their apps. Group bounds follow member positions without moving or resizing any app; Go to group pans without changing zoom. Ungroup apps keeps the apps and their content.
-- Defaults: **N** creates an app, **K** searches, **H** centers the canvas. Customize these in Workspace. Global shortcuts defer to text fields.
+- Defaults: **N** creates an app, **K** searches, **H** centers the canvas, **F** focuses the app in use. Customize these in Workspace. Global shortcuts defer to text fields.
+- **Focus an app**: the expand button in its header, or **F** for the app you last clicked, fills the window between the top bar and dock with that app. Esc (outside text fields), F or the button again returns; the app keeps its saved position and size and the view comes back as it was. While focused, the canvas doesn't pan or zoom and the app isn't moved or resized. Opening another app from the dock or search leaves focus.
+- **Undo** with Ctrl+Z, redo with Ctrl+Shift+Z or Ctrl+Y (outside apps and text fields): moving, resizing, creating, duplicating, archiving and deleting apps, layout visibility, and Board notes, links, arrows and drawings. Content inside apps is never undone this way; each app keeps its own undo. A drag or stroke is one step; history holds 100 steps and starts fresh when the workspace is loaded or replaced.
 
 ## Build
 
@@ -129,7 +210,7 @@ Pages load in a sandboxed iframe, so this is a light embedded browser, not a ful
 pnpm desktop
 ```
 
-Opens Orvane maximized in its own window, without a system title bar: drag the window by the orvane wordmark, and close it with the button after Workspace options. It reuses a dev server already running on `http://localhost:5173`, otherwise starts one with the system `node` (so `better-sqlite3` stays built for the same Node as the MCP server) and stops it on exit. Set `ORVANE_PORT` to use another port (MCP browser bridging then also needs `ORVANE_MCP_ORIGINS`).
+Opens Orvane maximized in its own window, without a system title bar: drag the window by the orvane wordmark. The close button after Workspace options hides Orvane to the **system tray**, where it keeps running (calendar reminders still fire); click the tray icon to bring it back, and use **Quit Orvane** in the tray menu to exit (it still waits for the last save). **Launch at login** in the tray menu starts Orvane with Windows, staying in the tray until opened. It reuses a dev server already running on `http://localhost:5173`, otherwise starts one with the system `node` (so `better-sqlite3` stays built for the same Node as the MCP server) and stops it on exit. Set `ORVANE_PORT` to use another port (MCP browser bridging then also needs `ORVANE_MCP_ORIGINS`).
 
 In the desktop app the Browser app uses Electron's `<webview>` instead of an iframe, so sites that refuse embedding (NetSuite, Google, GitHub…) load normally, with real back/forward history, page titles on tabs and one live page per tab. Sign-ins persist in a separate `persist:orvane-browser` session, isolated from Orvane itself. Links that open a new tab become Browser tabs; `window.open` popups (e.g. NetSuite selectors) open as small windows. Web pages never get Node, a preload script, or camera/microphone/location/notification permissions, and can't navigate to Orvane's own address. Orvane's window only navigates within Orvane; other links open in your system browser.
 
@@ -147,6 +228,8 @@ Git must be available on the local server's PATH. Git commands use argument arra
 
 
 ### NetSuite app and processing tabs (desktop)
+
+Run a SuiteQL query, then click **Add record preview** to place a linked widget beside the query, or drag the button to a spot on the canvas. In the preview, enter a SuiteScript record type such as `customer`, select the result column containing the internal ID, and click **Apply**. Select a result row to load that record's populated body fields using the selected environment. The workspace saves the link and mapping. Run the query again after reopening the workspace to choose a row.
 
 Open and sign in to NetSuite in a Browser app, then choose **Create NetSuite app** from workspace settings and select an environment. Open NetSuite tabs are detected automatically. Tabs on the same `*.app.netsuite.com` origin appear as one environment; separate account origins remain separate. Orvane creates a hidden processing page per environment in the Browser's shared session, and NetSuite requests run there. Orvane starts and reconnects the processing page automatically. The Browser's compact **Processing tabs** group also shows its status. **Use current tab** can also create a processing page for other websites; generic pages are not refreshed automatically.
 

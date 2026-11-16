@@ -1410,3 +1410,7 @@
     }
   }
 }
+/* Files dragged onto the terminal type their paths at the prompt. */
+.terminal-body.terminal-drop {
+  box-shadow: inset 0 0 0 2px #6f9ab0;
+}

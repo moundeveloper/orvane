@@ -51,9 +51,15 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         "tables",
         "table-detail",
         "query",
+        "record-preview",
       ].includes(operation)
     )
       throw Error("Unknown NetSuite operation.");
+    if (
+      operation === "record-preview" &&
+      (!Number.isSafeInteger(options.id) || options.id <= 0 ||
+        typeof options.kind !== "string" || !/^[a-z][a-z0-9_]{0,99}$/.test(options.kind))
+    ) throw Error("Choose a SuiteScript record type and a positive internal ID.");
     if (
       operation === "query" &&
       (typeof options.sql !== "string" ||
@@ -200,6 +206,29 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
       }
       if (!N) throw Error('NetSuite SuiteScript is unavailable on this page. Open a signed-in NetSuite page and try again.');
       if (input.operation === 'user') { const u = N.runtime.getCurrentUser(); return { account: N.runtime.accountId, id: u.id, name: u.name, email: u.email, role: u.role, roleId: u.roleId }; }
+      if (input.operation === 'record-preview') {
+        if (!N.record?.load) throw Error('Record loading is unavailable for this NetSuite role.');
+        const options = { type: input.options.kind, id: input.options.id };
+        const record = N.record.load.promise ? await N.record.load.promise(options) : N.record.load(options);
+        const fields = [];
+        for (const fieldId of record.getFields()) {
+          let value;
+          try { value = record.getValue({ fieldId }); } catch { continue; }
+          if (value == null || value === '' || (Array.isArray(value) && !value.length)) continue;
+          let label = fieldId;
+          try {
+            const field = record.getField({ fieldId });
+            label = field?.label || fieldId;
+            if (field?.type === 'select' || field?.type === 'multiselect') {
+              const text = record.getText({ fieldId });
+              if (text != null && text !== '' && (!Array.isArray(text) || text.length)) value = text;
+            }
+          } catch { /* A field's value can still be shown without its label. */ }
+          const display = Array.isArray(value) ? value.join(', ') : String(value);
+          fields.push({ id: fieldId, label, value: display.length > 2000 ? display.slice(0, 2000) + '…' : display });
+        }
+        return { fields };
+      }
       const run = async (query, params = []) => (await N.query.runSuiteQL.promise({ query, params })).asMappedResults();
       if (input.operation === 'script-logs') {
         if (!N.search?.create) throw Error('Script execution logs are unavailable for this role.');

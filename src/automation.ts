@@ -17,6 +17,7 @@ import {
   ruleSchema,
 } from "./validation";
 import { mergeWorkspace } from "./imports";
+import { readRecordPreview } from "./netsuiteCanvas";
 
 const id = z.string().min(1).max(200);
 const kind = z.enum([
@@ -36,6 +37,15 @@ const kind = z.enum([
   "netsuite",
   "certificates",
   "claude",
+  "netsuite-record",
+  "browser-clip",
+  "folder-compare",
+  "test-results",
+  "files",
+  "image",
+  "file",
+  "calendar",
+  "terminal",
 ]);
 const componentPatch = z
   .object({
@@ -360,9 +370,15 @@ export function duplicateApp(w: Workspace, app: CanvasApp, name?: string) {
     });
   }
   const blocks = flatten(copy.blocks);
-  flatten(app.blocks).forEach((b, i) => {
+  const originalBlocks = flatten(app.blocks);
+  originalBlocks.forEach((b, i) => {
     external(b.rules, blocks[i]!.rules);
     delete blocks[i]!.sharedId;
+    if (b.kind === "netsuite-record") {
+      const link = readRecordPreview(b.value);
+      if (link && !originalBlocks.some((source) => source.id === link.sourceBlockId))
+        blocks[i]!.value = b.value;
+    }
   });
   incoming.customNodes.forEach((n, i) =>
     external(

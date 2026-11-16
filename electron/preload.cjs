@@ -1,18 +1,50 @@
 // Orvane window only (never websites): tells the Browser app it can use
 // <webview>, relays links that a page wants opened in a new tab, and manages
 // saved logins (sites and usernames only; passwords never reach this window).
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("orvaneDesktop", {
   webview: true,
   /** The window has no system title bar; Orvane draws its own controls. */
   frameless: true,
   closeWindow: () => ipcRenderer.invoke("orvane:window-close"),
+  readInboxClipboard: () => ipcRenderer.invoke("orvane:inbox-clipboard"),
+  onInboxCapture(callback) {
+    const listener = () => callback();
+    ipcRenderer.on("orvane:inbox-capture", listener);
+    return () => ipcRenderer.removeListener("orvane:inbox-capture", listener);
+  },
+  /** A system notification (calendar reminders); clicking it opens the app. */
+  notify: (notification) => ipcRenderer.invoke("orvane:notify", notification),
+  onNotificationClick(callback) {
+    const listener = (_event, appId) => callback(appId);
+    ipcRenderer.on("orvane:notification-click", listener);
+    return () => ipcRenderer.removeListener("orvane:notification-click", listener);
+  },
   /** Monitors as [{ id, label, chosen }], and moving the window to one. */
   displays: () => ipcRenderer.invoke("orvane:displays"),
   setDisplay: (id) => ipcRenderer.invoke("orvane:display-set", id),
   partition: "persist:orvane-browser",
+  /** Two-finger touchpad movement (fractions of the pad), or { end: true }. */
+  onTouchpad(callback) {
+    const listener = (_event, input) => callback(input);
+    ipcRenderer.on("orvane:touchpad", listener);
+    return () => ipcRenderer.removeListener("orvane:touchpad", listener);
+  },
+  /** The local path of a file dropped from the system, or "" if it has none. */
+  pathForFile(file) {
+    try {
+      return webUtils.getPathForFile(file) || "";
+    } catch {
+      return "";
+    }
+  },
   /** Render a Browser page at this many device pixels per CSS pixel. */
+  // Runs a script in one of this window's Browser pages, even while it is
+  // still loading (the <webview> method waits for loading to finish).
+  runInPage(webContentsId, code) {
+    return ipcRenderer.invoke("orvane:page-run", webContentsId, code);
+  },
   setPageDensity(webContentsId, density) {
     return ipcRenderer.invoke("orvane:page-density", webContentsId, density);
   },
@@ -35,6 +67,9 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
   /** A PNG data URL of a page: "visible", "full", or "area" with a rect. */
   capturePage(webContentsId, mode, rect) {
     return ipcRenderer.invoke("orvane:page-capture", webContentsId, mode, rect);
+  },
+  captureClip(webContentsId, url, rect, fromViewport) {
+    return ipcRenderer.invoke("orvane:page-clip", webContentsId, url, rect, fromViewport);
   },
   /** Canvas zoom/pan gestures made over a Browser page. */
   onGuestInput(callback) {

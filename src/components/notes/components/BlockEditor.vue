@@ -13,6 +13,8 @@ import {
 import { useNotesWorkspace } from "../stores/workspace";
 import type { Block, BlockType } from "../types";
 import BlockItem from "./BlockItem.vue";
+import { importDrop, imageSource } from "../../../imageDrop";
+import { api, DRAG_MIME } from "../../files/explorer";
 import SlashMenu from "./SlashMenu.vue";
 import FloatingToolbar from "./FloatingToolbar.vue";
 
@@ -381,8 +383,65 @@ function onDragOver(_index: number, e: DragEvent) {
 }
 
 function onEditorDragOver(e: DragEvent) {
-  if (!acceptBlockDrag(e)) return;
-  dropIndex.value = insertionIndexFromPointer(e.clientY);
+  if (acceptBlockDrag(e)) {
+    dropIndex.value = insertionIndexFromPointer(e.clientY);
+    return;
+  }
+  // Files from the File Explorer or the system: images become image blocks,
+  // other files a 📎 link that opens them.
+  const types = e.dataTransfer?.types ?? [];
+  if (!types.includes(DRAG_MIME) && !types.includes("Files")) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  dropIndex.value = externalIndex(e.clientY);
+}
+function externalIndex(y: number) {
+  const vis = visibleBlocks.value;
+  for (const { block, index } of vis) {
+    const el = editorEl.value?.querySelector<HTMLElement>(`[data-block-id="${block.id}"]`);
+    if (el && y < el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2) return index;
+  }
+  return ws.blocks.length;
+}
+function escapeHtml(text: string) {
+  return text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+}
+async function onEditorDrop(e: DragEvent) {
+  if (dragIndex.value !== null) return void onDrop();
+  const at = dropIndex.value ?? ws.blocks.length;
+  dropIndex.value = null;
+  if (!e.dataTransfer) return;
+  const { jobs, files } = importDrop(e.dataTransfer);
+  if (!jobs.length && !files.length) return;
+  ws.snapshot();
+  let index = at - 1;
+  for (const path of files) {
+    const name = path.split(/[\\/]/).pop() ?? path;
+    const link = ws.newBlock(
+      "callout",
+      `<a href="#" data-orvane-file="${escapeHtml(path)}" title="${escapeHtml(path)}">${escapeHtml(name)}</a>`,
+    );
+    link.icon = "📎";
+    await ws.insertBlock(index++, link);
+  }
+  for (const job of jobs) {
+    try {
+      const placed = await job;
+      const image = ws.newBlock("image", imageSource(placed.value) || placed.value);
+      image.caption = placed.name;
+      await ws.insertBlock(index++, image);
+    } catch (error) {
+      console.error("The image could not be added.", error);
+    }
+  }
+}
+// A 📎 file link opens the file in its default program.
+function onEditorClick(e: MouseEvent) {
+  const link = (e.target as Element | null)?.closest?.<HTMLElement>("a[data-orvane-file]");
+  if (!link) return;
+  e.preventDefault();
+  void api("open", { path: link.dataset.orvaneFile }).catch(() => undefined);
 }
 
 function isNearEditor(e: DragEvent): boolean {
@@ -821,7 +880,8 @@ onBeforeUnmount(() => {
     @paste="onEditorPaste"
     @dragenter="acceptBlockDrag"
     @dragover="onEditorDragOver"
-    @drop.prevent.stop="onDrop"
+    @drop.prevent.stop="onEditorDrop"
+    @click="onEditorClick"
   >
     <BlockItem
       v-for="{ block, index } in visibleBlocks"

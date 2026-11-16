@@ -136,11 +136,14 @@ test("pinned tabs, groups, multi-select and spaces organise tabs", async ({
     // A group becomes a bookmark folder and its tabs are ungrouped.
     await menu(group, "Save as bookmark folder");
     await expect(group).toHaveCount(0);
-    await browser.getByRole("button", { name: "Library", exact: true }).click();
+    const library = browser.getByRole("button", { name: "Library", exact: true });
+    await library.click();
     const bookmarks = browser.getByRole("navigation", { name: "Bookmarks" });
-    await expect(bookmarks.getByRole("button", { name: /Research/ })).toBeVisible();
-    await expect(bookmarks.getByRole("button", { name: "127.0.0.1", exact: true })).toHaveCount(2);
-    await page.keyboard.press("Escape");
+    const folder = bookmarks.getByRole("button", { name: /Research/ });
+    await expect(folder).toBeVisible();
+    if ((await folder.getAttribute("aria-expanded")) === "false") await folder.click();
+    await expect(bookmarks.locator(".library-item.in-folder")).toHaveCount(2);
+    await library.click();
 
     // Group by site sweeps the loose tabs together.
     await more("Group tabs by site");
@@ -259,7 +262,7 @@ test("Peek, Split View and tab search open pages without losing the current one"
     });
     await search.fill("other");
     // One matching tab, plus the offer to open the text in a new tab.
-    const results = browser.getByRole("dialog", { name: "Search tabs" }).getByRole("option");
+    const results = browser.getByRole("listbox", { name: "Browser results" }).getByRole("option");
     await expect(results).toHaveCount(2);
     await page.screenshot({ path: "artifacts/browser-command.png" });
     await search.press("Enter");

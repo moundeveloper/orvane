@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { captureSchema, INBOX_LIMIT } from "./inbox.ts";
 import {
   flatten,
   appMinimum,
@@ -71,6 +72,15 @@ const block: z.ZodType<Block> = z.lazy(() =>
       "netsuite",
       "certificates",
       "claude",
+      "netsuite-record",
+      "browser-clip",
+      "folder-compare",
+      "test-results",
+      "files",
+      "image",
+      "file",
+      "calendar",
+      "terminal",
     ]),
     label: z.string(),
     value: z.string(),
@@ -91,6 +101,7 @@ const block: z.ZodType<Block> = z.lazy(() =>
     gitWorkspaceId: id.optional(),
   }),
 );
+const boardEnd = z.object({ appId: z.string().optional(), noteId: z.string().optional(), x: number, y: number });
 const schema = z.object({
   version: z.literal(1),
   apps: z
@@ -118,10 +129,12 @@ const schema = z.object({
         showName: z.boolean().optional(),
         breakpoint: number.positive().optional(),
         editorWidth: number.positive().optional(),
+        layoutHidden: z.boolean().optional(),
       }),
     )
     .max(300),
   library: z.array(z.object({ id, name: z.string(), block })),
+  inbox: z.array(captureSchema).max(INBOX_LIMIT).optional(),
   customNodes: z.array(
     z.object({
       id,
@@ -135,6 +148,7 @@ const schema = z.object({
     create: z.string().regex(/^[a-z0-9]$/i),
     search: z.string().regex(/^[a-z0-9]$/i),
     home: z.string().regex(/^[a-z0-9]$/i),
+    focus: z.string().regex(/^[a-z0-9]$/i).optional(),
   }),
   groups: z.array(z.object({ id, name: z.string() })).optional(),
   wheel: z
@@ -163,6 +177,66 @@ const schema = z.object({
       }),
     )
     .max(500)
+    .optional(),
+  layouts: z
+    .array(
+      z.object({
+        id,
+        name: z.string().max(80),
+        apps: z.record(
+          z.string(),
+          z.object({ x: number, y: number, width: number.min(180), height: number.min(160), shown: z.boolean() }),
+        ),
+        camera: z.object({ x: number, y: number, zoom: number.positive() }),
+      }),
+    )
+    .max(50)
+    .optional(),
+  activeLayout: z.string().optional(),
+  board: z
+    .object({
+      notes: z
+        .array(
+          z.object({
+            id,
+            x: number,
+            y: number,
+            width: number.min(60).max(4000),
+            height: number.min(40).max(4000),
+            text: z.string().max(20000),
+            color: z.string().regex(/^#[\da-f]{6}$/i),
+            link: z
+              .object({
+                kind: z.enum(["file", "folder", "page"]),
+                target: z.string().min(1).max(4000),
+                label: z.string().max(300),
+              })
+              .optional(),
+          }),
+        )
+        .max(500),
+      arrows: z
+        .array(
+          z.object({
+            id,
+            from: boardEnd,
+            to: boardEnd,
+            label: z.string().max(200).optional(),
+            color: z.string().regex(/^#[\da-f]{6}$/i),
+          }),
+        )
+        .max(1000),
+      strokes: z
+        .array(
+          z.object({
+            id,
+            points: z.array(number).max(8000),
+            color: z.string().regex(/^#[\da-f]{6}$/i),
+            width: number.min(0.5).max(40),
+          }),
+        )
+        .max(2000),
+    })
     .optional(),
 });
 export const appPatchSchema = schema.shape.apps.element
@@ -310,7 +384,7 @@ export function parseWorkspace(
     checkFlow(b.rules, b.graph);
   });
   w.customNodes.forEach((n) => checkFlow(n.rules || [], n.graph));
-  if (new Set(Object.values(w.shortcuts)).size !== 3)
+  if (new Set(Object.values(w.shortcuts)).size !== Object.values(w.shortcuts).length)
     throw Error("Workspace shortcuts must be distinct.");
   return w;
 }

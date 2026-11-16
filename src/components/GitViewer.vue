@@ -18,6 +18,7 @@ import {
   type GitFolder,
 } from "../git";
 import Icon from "./Icon.vue";
+import { onOpenRequest, registerCommands } from "../commands";
 import CustomSelect from "./CustomSelect.vue";
 import { vMotion } from "../motion";
 import "../git.css";
@@ -353,6 +354,22 @@ async function initialize() {
   }
 }
 void initialize();
+// Ctrl+K palette: open a commit found by search, switching repository first
+// when this viewer shows another one.
+const stopOpen = onOpenRequest((request) => {
+  if (request.kind !== "git-commit" || (request.blockId && request.blockId !== props.block.id)) return;
+  const show = () => void selectCommit(request.hash);
+  if (props.block.gitWorkspaceId !== request.workspaceId) {
+    props.block.gitWorkspaceId = request.workspaceId;
+    // The workspace watcher reloads history; select once that settles.
+    setTimeout(show, 400);
+  } else show();
+  return true;
+});
+const stopCommands = registerCommands(`git:${props.block.id}`, () => [
+  { id: `git-refresh:${props.block.id}`, title: "Refresh Git history", icon: "refresh", blockId: props.block.id, keywords: "reload commits", run: () => load() },
+]);
+onBeforeUnmount(() => (stopOpen(), stopCommands()));
 async function selectCommit(hash: string) {
   const sequence = ++detailsRequest;
   patchRequest++;

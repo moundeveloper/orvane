@@ -13,7 +13,18 @@ const CertificateManager = defineAsyncComponent(
 );
 const NotesView = defineAsyncComponent(() => import("./notes/NotesView.vue"));
 const NetSuiteView = defineAsyncComponent(() => import("./NetSuiteView.vue"));
+const NetSuiteRecordPreview = defineAsyncComponent(() => import("./NetSuiteRecordPreview.vue"));
+const BrowserClip = defineAsyncComponent(() => import("./BrowserClip.vue"));
+const FolderCompare = defineAsyncComponent(() => import("./files/FolderCompare.vue"));
+const TestResults = defineAsyncComponent(() => import("./terminal/TestResults.vue"));
 const BrowserView = defineAsyncComponent(() => import("./BrowserView.vue"));
+const ImageBlock = defineAsyncComponent(() => import("./ImageBlock.vue"));
+const FileBlock = defineAsyncComponent(() => import("./FileBlock.vue"));
+const CalendarView = defineAsyncComponent(() => import("./CalendarView.vue"));
+const TerminalView = defineAsyncComponent(() => import("./terminal/TerminalView.vue"));
+const FileExplorer = defineAsyncComponent(
+  () => import("./files/FileExplorer.vue"),
+);
 const ProjectsHub = defineAsyncComponent(
   () => import("./projects/ProjectsHub.vue"),
 );
@@ -21,6 +32,7 @@ import { uid, type Block } from "../model";
 import Icon from "./Icon.vue";
 import { vMotion } from "../motion";
 import { APP_RUNTIME } from "../appRuntime";
+import { activateApp, appOf } from "../canvasScroll";
 const props = defineProps<{
   block: Block;
   editing: boolean;
@@ -55,6 +67,33 @@ function onMessage(event: MessageEvent) {
     frameError.value = event.data.orvaneCodeError.slice(0, 240);
   else if (Number.isFinite(event.data?.orvaneCodeSlow))
     frameSlow.value = Math.max(frameSlow.value, event.data.orvaneCodeSlow);
+  else if (event.data?.orvaneActivate === true) activateApp(appOf(frame.value));
+  else if (typeof event.data?.orvaneSpace === "boolean")
+    window.dispatchEvent(new CustomEvent("orvane:space", { detail: event.data.orvaneSpace }));
+  else if (event.data?.orvanePan) {
+    // Middle-drag inside the app pans the canvas (screen pixels).
+    const dx = Number(event.data.orvanePan.dx),
+      dy = Number(event.data.orvanePan.dy);
+    if (Number.isFinite(dx) && Number.isFinite(dy) && Math.abs(dx) < 1e4 && Math.abs(dy) < 1e4)
+      window.dispatchEvent(new CustomEvent("orvane-canvas-pan", { detail: { dx, dy } }));
+  } else if (event.data?.orvaneZoom) {
+    // Ctrl+wheel inside the app zooms the canvas at the pointer: replay it
+    // on the frame in Orvane's coordinates, where the canvas listens.
+    const { x, y, deltaY } = event.data.orvaneZoom;
+    if (![x, y, deltaY].every((v) => Number.isFinite(Number(v)))) return;
+    const rect = frame.value.getBoundingClientRect();
+    const scale = frame.value.offsetWidth ? rect.width / frame.value.offsetWidth : 1;
+    frame.value.dispatchEvent(
+      new WheelEvent("wheel", {
+        clientX: rect.left + Number(x) * scale,
+        clientY: rect.top + Number(y) * scale,
+        deltaY: Number(deltaY),
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  }
 }
 // A code app is told when it is on screen, so its runtime can idle its
 // timers while nobody can see it (see appRuntimeSource.js).
@@ -130,6 +169,23 @@ const sandboxDocument = (code: string) => {
       :editing="editing"
     />
     <NetSuiteView v-else-if="block.kind === 'netsuite'" :block="block" />
+    <NetSuiteRecordPreview v-else-if="block.kind === 'netsuite-record'" :block="block" />
+    <BrowserClip v-else-if="block.kind === 'browser-clip'" :block="block" />
+    <FolderCompare v-else-if="block.kind === 'folder-compare'" :block="block" />
+    <TestResults v-else-if="block.kind === 'test-results'" :block="block" />
+    <FileExplorer v-else-if="block.kind === 'files'" :block="block" />
+    <CalendarView v-else-if="block.kind === 'calendar'" :block="block" />
+    <TerminalView v-else-if="block.kind === 'terminal'" :block="block" />
+    <ImageBlock
+      v-else-if="block.kind === 'image'"
+      :block="block"
+      :editing="editing"
+    />
+    <FileBlock
+      v-else-if="block.kind === 'file'"
+      :block="block"
+      :editing="editing"
+    />
     <BrowserView
       v-else-if="block.kind === 'browser'"
       :block="block"

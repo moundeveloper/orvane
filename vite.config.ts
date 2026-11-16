@@ -9,6 +9,8 @@ import { projectsApi } from "./server/projects-api.ts";
 import { notesApi } from "./server/notes-api.ts";
 import { certificatesApi } from "./server/certificates-api.ts";
 import { claudeApi } from "./server/claude-api.ts";
+import { filesApi } from "./server/files-api.ts";
+import { terminalApi } from "./server/terminal.ts";
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -28,6 +30,11 @@ export default defineConfig({
         compilerOptions: { isCustomElement: (tag) => tag === "webview" },
       },
     }),
+    terminalApi(),
+    filesApi(
+      process.env.ORVANE_DATA_DIR ||
+        fileURLToPath(new URL("./.orvane", import.meta.url)),
+    ),
     notesApi(
       process.env.ORVANE_DATA_DIR ||
         fileURLToPath(new URL("./.orvane", import.meta.url)),

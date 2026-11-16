@@ -14,7 +14,16 @@ export type Kind =
   | "browser"
   | "netsuite"
   | "certificates"
-  | "claude";
+  | "claude"
+  | "netsuite-record"
+  | "browser-clip"
+  | "folder-compare"
+  | "test-results"
+  | "files"
+  | "image"
+  | "file"
+  | "calendar"
+  | "terminal";
 export type ActionKind =
   | "add-item"
   | "clear"
@@ -90,6 +99,8 @@ export interface CanvasApp {
   showName?: boolean;
   breakpoint?: number;
   editorWidth?: number;
+  /** Left out of the current layout (see Workspace.layouts); content is untouched. */
+  layoutHidden?: boolean;
 }
 export interface CustomNode {
   id: string;
@@ -106,6 +117,9 @@ export function appMinimum(app: CanvasApp) {
   const git = flatten(app.blocks).some((block) => block.kind === "git");
   const notes = flatten(app.blocks).some((block) => block.kind === "notes");
   const browser = flatten(app.blocks).some((block) => block.kind === "browser");
+  const files = flatten(app.blocks).some((block) => block.kind === "files");
+  const calendar = flatten(app.blocks).some((block) => block.kind === "calendar");
+  const terminal = flatten(app.blocks).some((block) => block.kind === "terminal");
   const projects = flatten(app.blocks).some(
     (block) => block.kind === "projects",
   );
@@ -113,32 +127,12 @@ export function appMinimum(app: CanvasApp) {
     width: Math.max(
       180,
       app.minWidth ??
-        (claude ? 360 : certificates
-          ? 640
-          : projects
-            ? 900
-            : git
-              ? 720
-              : notes
-                ? 640
-                : browser
-                  ? 480
-                  : 180),
+        (claude ? 360 : certificates ? 640 : projects ? 900 : git ? 720 : notes ? 640 : files ? 560 : browser ? 480 : calendar ? 360 : terminal ? 420 : 180),
     ),
     height: Math.max(
       160,
       app.minHeight ??
-        (claude ? 440 : certificates
-          ? 480
-          : projects
-            ? 580
-            : git
-              ? 440
-              : notes
-                ? 440
-                : browser
-                  ? 320
-                  : 160),
+        (claude ? 440 : certificates ? 480 : projects ? 580 : git ? 440 : notes ? 440 : files ? 360 : browser ? 320 : calendar ? 380 : terminal ? 240 : 160),
     ),
   };
 }
@@ -147,10 +141,48 @@ export interface Workspace {
   apps: CanvasApp[];
   library: { id: string; name: string; block: Block }[];
   customNodes: CustomNode[];
-  shortcuts: { create: string; search: string; home: string };
+  shortcuts: { create: string; search: string; home: string; focus?: string };
   groups?: { id: string; name: string }[];
   wheel?: WheelEntry[];
   actions?: WorkspaceAction[];
+  layouts?: Layout[];
+  activeLayout?: string;
+  board?: Board;
+  inbox?: import("./inbox").InboxCapture[];
+}
+// Whiteboard items drawn on the canvas itself, in canvas coordinates.
+// An arrow end attached to an app or sticky note follows it; x/y is where
+// the end was when last attached, used if that item disappears.
+export type BoardEnd = { appId?: string; noteId?: string; x: number; y: number };
+/** What a sticky note links to: a file or folder (opened in the File
+ * Explorer) or a web page (opened in the Browser). */
+export interface NoteLink {
+  kind: "file" | "folder" | "page";
+  target: string;
+  label: string;
+}
+export interface Board {
+  notes: {
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    text: string;
+    color: string;
+    link?: NoteLink;
+  }[];
+  arrows: { id: string; from: BoardEnd; to: BoardEnd; label?: string; color: string }[];
+  /** Freehand strokes; points are flat [x0, y0, x1, y1, …]. */
+  strokes: { id: string; points: number[]; color: string; width: number }[];
+}
+// A named arrangement of the canvas: where each app sits, whether it is
+// shown, and the camera. Switching layouts never changes app content.
+export interface Layout {
+  id: string;
+  name: string;
+  apps: Record<string, { x: number; y: number; width: number; height: number; shown: boolean }>;
+  camera: { x: number; y: number; zoom: number };
 }
 export interface WorkspaceAction {
   id: string;
@@ -258,10 +290,31 @@ export const kinds: { kind: Kind; name: string; description: string }[] = [
     name: "Web browser",
     description: "Tabs, an address bar and web pages",
   },
+  { kind: "netsuite", name: "NetSuite", description: "Query an open NetSuite session" },
   {
-    kind: "netsuite",
-    name: "NetSuite",
-    description: "Query an open NetSuite session",
+    kind: "files",
+    name: "File Explorer",
+    description: "Browse local folders in tabs and split views",
+  },
+  {
+    kind: "image",
+    name: "Image",
+    description: "A picture, dropped in or chosen from a file",
+  },
+  {
+    kind: "file",
+    name: "File",
+    description: "A live view of a video, PDF, spreadsheet or code file",
+  },
+  {
+    kind: "calendar",
+    name: "Calendar",
+    description: "Dated items and reminders",
+  },
+  {
+    kind: "terminal",
+    name: "Terminal",
+    description: "Live shells (cmd, PowerShell, WSL…) in tabs and split panes",
   },
 ];
 export function makeBlock(kind: Kind): Block {
@@ -285,6 +338,15 @@ export function makeBlock(kind: Kind): Block {
       netsuite: "NetSuite",
       certificates: "Certificate manager",
       claude: "Claude sessions",
+      "netsuite-record": "NetSuite record preview",
+      "browser-clip": "Browser clip",
+      "folder-compare": "Folder comparison",
+      "test-results": "Playwright test results",
+      files: "File Explorer",
+      image: "Image",
+      file: "File",
+      calendar: "Calendar",
+      terminal: "Terminal",
     }[kind],
     value: "",
     checked: false,
@@ -307,7 +369,7 @@ export function emptyWorkspace(): Workspace {
     groups: [],
     library: [],
     customNodes: [],
-    shortcuts: { create: "n", search: "k", home: "h" },
+    shortcuts: { create: "n", search: "k", home: "h", focus: "f" },
   };
 }
 export function validateWorkspace(data: unknown): data is Workspace {

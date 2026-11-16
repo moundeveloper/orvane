@@ -363,6 +363,7 @@ onBeforeUnmount(() => {
         :class="{ focused: split && id === layout.active }"
         :style="paneStyle(id)"
         @pointerdown.capture="split && layout.active !== id && select(id)"
+        @focusin="split && layout.active !== id && select(id)"
       >
         <slot
           v-if="!lazy || initialized.has(id)"

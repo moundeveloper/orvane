@@ -41,6 +41,7 @@ export const gitSchemas = {
     })
     .strict(),
   git_commit: z.object({ workspaceId: id, hash }).strict(),
+  git_search: z.object({ query: z.string().trim().min(2).max(200) }).strict(),
   git_status: z.object({ workspaceId: id }).strict(),
   git_diff: z
     .object({
@@ -69,6 +70,8 @@ export const gitDescriptions: Record<GitOperation, string> = {
     "Read a commit message, its parents and changed files. Merge commits compare against their first parent.",
   git_status:
     "Read staged, unstaged and untracked local changes, with optional index writes disabled.",
+  git_search:
+    "Search commit messages (case-insensitive, all refs) and hash prefixes across every saved Git workspace. Read-only; at most 15 commits per workspace.",
   git_diff:
     "Read a commit or working-tree/index diff. External diff drivers and text conversion are disabled. Untracked files have no diff. No stage, commit, checkout or network operations.",
 };
@@ -440,6 +443,30 @@ export class GitService {
           message: message.trimEnd(),
           files: files(changed),
         };
+      }
+      case "git_search": {
+        const p = gitSchemas.git_search.parse(args);
+        const results: { workspaceId: string; workspace: string; hash: string; short: string; subject: string; author: string; date: string }[] = [];
+        const format = "--format=%H%x1f%h%x1f%s%x1f%an%x1f%aI";
+        await Promise.all(
+          this.database.gitWorkspaces().map(async (workspace) => {
+            const lines = new Set<string>();
+            const read = (out: string) => out.split("\n").filter(Boolean).forEach((l) => lines.add(l));
+            await git(workspace.path, ["log", "--all", "--regexp-ignore-case", "--fixed-strings", `--grep=${p.query}`, "-n", "15", format])
+              .then(read)
+              .catch(() => undefined);
+            // A hash prefix finds that commit directly. "--" ends the revisions.
+            if (/^[0-9a-f]{4,40}$/i.test(p.query))
+              await git(workspace.path, ["log", "-n", "1", format, `${p.query}^{commit}`, "--"])
+                .then(read)
+                .catch(() => undefined);
+            for (const line of lines) {
+              const [hash, short, subject, author, date] = line.split("\x1f");
+              if (hash) results.push({ workspaceId: workspace.id, workspace: workspace.name, hash, short: short!, subject: subject ?? "", author: author ?? "", date: date ?? "" });
+            }
+          }),
+        );
+        return results.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 40);
       }
       case "git_diff": {
         const p = gitSchemas.git_diff.parse(args),

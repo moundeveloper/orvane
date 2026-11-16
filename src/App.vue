@@ -4,8 +4,10 @@ import {
   nextTick,
   onBeforeUnmount,
   onMounted,
+  provide,
   reactive,
   ref,
+  shallowReactive,
   watch,
   defineAsyncComponent,
 } from "vue";
@@ -24,6 +26,21 @@ import CustomSelect from "./components/CustomSelect.vue";
 import CustomNumber from "./components/CustomNumber.vue";
 import { migrateGroups, groupBounds } from "./groups";
 import { vMotion } from "./motion";
+import { importDrop, importImageData, importImageFile, importPath, mayHoldImage, measure, type PlacedImage } from "./imageDrop";
+import { isImage, peekKind } from "./components/files/explorer";
+import { isBackup, makeBackup, restoreImages } from "./backup";
+import { OPEN_EVENT, registerCommands, type OpenRequest } from "./commands";
+import { ACTIVATE_EVENT, BROWSER_SHORTCUT, canvasScroll } from "./canvasScroll";
+import { dayKey, dueAt, formatDay, readCalendar, type CalendarItem } from "./calendar";
+import { captureLink, CAPTURE_TEXT_LIMIT, INBOX_LIMIT, type ClipboardCapture, type InboxCapture } from "./inbox";
+import WorkspaceInbox from "./components/WorkspaceInbox.vue";
+import { netSuiteCanvas, querySource, readRecordPreview, RECORD_PREVIEW_MIME, type RecordPreviewLink, type SuiteQLSelection } from "./netsuiteCanvas";
+import { WORKBENCH_WIDGET, workbenchEditable, type WorkbenchKind } from "./workbenchWidgets";
+import { DRAG_MIME } from "./components/files/explorer";
+import CommandPalette from "./components/CommandPalette.vue";
+import BoardLayer from "./components/BoardLayer.vue";
+import BoardTools from "./components/BoardTools.vue";
+import { BOARD_COLORS, ensureBoard, type Tool } from "./board";
 import {
   emptyWorkspace,
   appMinimum,
@@ -34,8 +51,10 @@ import {
   type CanvasApp,
   type Rule,
   type Workspace,
+  type Layout,
   type ActionGraph,
   type WorkspaceAction,
+  type NoteLink,
 } from "./model";
 const STORAGE = LEGACY_STORAGE;
 // Desktop shell without a system title bar: the top bar is the drag area
@@ -45,10 +64,14 @@ const desktopWindow = (
     orvaneDesktop?: {
       frameless?: boolean;
       closeWindow?: () => void;
+      readInboxClipboard?: () => Promise<ClipboardCapture | null>;
+      onInboxCapture?: (callback: () => void) => () => void;
       displays?: () => Promise<
         { id: number; label: string; chosen: boolean }[]
       >;
       setDisplay?: (id: number) => Promise<boolean>;
+      notify?: (n: { title: string; body: string; appId: string }) => Promise<void>;
+      onNotificationClick?: (callback: (appId: string) => void) => () => void;
     };
   }
 ).orvaneDesktop;
@@ -183,12 +206,19 @@ const store = new WorkspaceStorage(async () => {
 });
 function replaceWorkspace(value: Workspace) {
   applying = true;
+  suiteQLSelections.clear();
+  // Workspaces from before the focus shortcut get F, or a free key.
+  if (value.shortcuts && !value.shortcuts.focus) {
+    const used = Object.values(value.shortcuts);
+    value.shortcuts.focus = [..."fabcdeghijlmopqrstuvwxyz0123456789"].find((k) => !used.includes(k));
+  }
   Object.assign(workspace, value);
   for (const key of Object.keys(workspace))
     if (!(key in value))
       delete (workspace as unknown as Record<string, unknown>)[key];
   applying = false;
   workspaceRevision.value++;
+  resetCanvasHistory();
 }
 async function refresh() {
   const value = await store.read();
@@ -209,6 +239,8 @@ async function initialize() {
           await store.learn(EXAMPLES);
         }
         await persist();
+        // Undo starts from the canvas as it opened (examples included).
+        resetCanvasHistory();
         ready.value = true;
       } catch (error) {
         canEdit.value = false;
@@ -241,8 +273,48 @@ async function initialize() {
   }
 }
 const apps = computed(() =>
+  workspace.apps.filter((a) => !a.archived && !a.deleted && !a.layoutHidden),
+);
+// Every live app, including ones the current layout leaves out.
+const liveApps = computed(() =>
   workspace.apps.filter((a) => !a.archived && !a.deleted),
 );
+const suiteQLSelections = shallowReactive(new Map<string, SuiteQLSelection>());
+const netSuiteSources = computed(() => {
+  const sources = new Map<string, { app: CanvasApp; block: Block }>();
+  for (const app of liveApps.value)
+    for (const block of flatten(app.blocks))
+      if (block.kind === "netsuite") sources.set(block.id, { app, block });
+  return sources;
+});
+const recordPreviews = computed(() => {
+  const previews = new Map<string, CanvasApp>();
+  for (const app of liveApps.value)
+    for (const block of flatten(app.blocks)) {
+      if (block.kind !== "netsuite-record") continue;
+      const link = readRecordPreview(block.value);
+      if (link) previews.set(querySource(link.sourceBlockId, link.queryId), app);
+    }
+  return previews;
+});
+function querySourceExists(blockId: string, queryId: string) {
+  const source = netSuiteSources.value.get(blockId);
+  if (!source) return false;
+  try {
+    const files: unknown = JSON.parse(source.block.value).queries;
+    return Array.isArray(files) && files.some((file) => file?.id === queryId);
+  } catch {
+    return false;
+  }
+}
+provide(netSuiteCanvas, {
+  editable: () => canEdit.value && !importBusy.value,
+  sourceExists: querySourceExists,
+  hasPreview: (source) => recordPreviews.value.has(source),
+  selections: suiteQLSelections,
+  addPreview: addRecordPreview,
+});
+provide(workbenchEditable, () => canEdit.value && !importBusy.value);
 const active = ref(""),
   camera = reactive({ x: 0, y: 0, zoom: 1 }),
   movingCamera = ref(false);
@@ -254,6 +326,63 @@ watch(active, (id) => {
   stack.value = [...stack.value.filter((other) => other !== id), id];
 });
 const stackLevel = (id: string) => stack.value.indexOf(id) + 2;
+// ---- Focus mode: one app fills the window between the top bar and dock ----
+// Only how the app is drawn changes: its saved position and size stay as
+// they are, and the canvas view comes back exactly as it was.
+const focused = ref<{
+  id: string;
+  camera: { x: number; y: number; zoom: number };
+  rect: { x: number; y: number; width: number; height: number };
+} | null>(null);
+function focusArea() {
+  const margin = viewport.width <= 600 ? 8 : 12;
+  const topbar = document.querySelector(".topbar")?.getBoundingClientRect();
+  const dock = document.querySelector(".dock")?.getBoundingClientRect();
+  const rail = document.querySelector(".board-rail")?.getBoundingClientRect();
+  const top = Math.max(margin, (topbar?.bottom ?? 40) + margin);
+  const bottom = Math.max(top + 200, (dock?.top ?? viewport.height - 70) - margin);
+  // Leave the Board tools rail on the left uncovered.
+  const left = rail && rail.width ? rail.right + margin : margin;
+  return { x: left, y: top, width: Math.max(200, viewport.width - left - margin), height: bottom - top };
+}
+/** Point the camera so the focused app's corner sits at the focus area's. */
+function placeFocus() {
+  const f = focused.value;
+  const app = f && workspace.apps.find((a) => a.id === f.id);
+  if (!f || !app) return;
+  f.rect = focusArea();
+  camera.zoom = 1;
+  camera.x = f.rect.x - app.x;
+  camera.y = f.rect.y - app.y;
+}
+function enterFocus(app: CanvasApp) {
+  if (focused.value?.id === app.id) return exitFocus();
+  stopPan();
+  stopZoom();
+  const saved = focused.value?.camera ?? { x: camera.x, y: camera.y, zoom: camera.zoom };
+  mountedApps.add(app.id);
+  active.value = app.id;
+  canvasScroll.owner = app.id;
+  panel.value = null;
+  focused.value = { id: app.id, camera: saved, rect: focusArea() };
+  placeFocus();
+}
+function exitFocus(restoreCamera = true) {
+  const f = focused.value;
+  if (!f) return;
+  focused.value = null;
+  if (!restoreCamera) return;
+  stopPan();
+  stopZoom();
+  Object.assign(camera, f.camera);
+}
+/** Focus or unfocus the app in use (the shortcut). */
+function toggleFocus() {
+  if (focused.value) return exitFocus();
+  const app = apps.value.find((a) => a.id === (canvasScroll.owner || active.value));
+  if (app) enterFocus(app);
+  else status.value = "Click an app first, then press the focus shortcut.";
+}
 const hint = ref("");
 const hintText = computed(() =>
   hint.value === "move"
@@ -275,7 +404,7 @@ function dismissHint() {
 const createdAppId = ref("");
 
 const panel = ref<
-    "search" | "workspace" | "help" | "geometry" | "groups" | null
+    "search" | "workspace" | "help" | "geometry" | "groups" | "layouts" | null
   >(null),
   query = ref(""),
   searchInput = ref<HTMLInputElement>(),
@@ -365,6 +494,11 @@ const spatialGroups = computed(() =>
     }))
     .map((group) => ({ ...group, bounds: groupBounds(group.members) })),
 );
+const layoutNameInput = ref<HTMLInputElement>();
+function openLayouts() {
+  panel.value = "layouts";
+  void nextTick(() => layoutNameInput.value?.focus());
+}
 function openGroups(id?: string) {
   selectedGroup.value = id || groups.value[0]?.id || "";
   panel.value = "groups";
@@ -447,8 +581,110 @@ async function persist() {
       "Saving is unavailable. Your changes are still here; export a backup from Workspace or retry saving.";
   }
 }
+// ---- Canvas undo (Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y) ----
+// Covers where apps are and whether they exist (move, resize, create,
+// duplicate, archive, delete, layout visibility) and the Board (sticky
+// notes, arrows, drawings). Never content inside apps: each app keeps its
+// own undo. The canvas state is recorded once changes settle, so a drag or
+// a stroke is one step.
+type CanvasAppState = Pick<CanvasApp, "id" | "x" | "y" | "width" | "height" | "archived" | "deleted" | "layoutHidden">;
+const UNDO_LIMIT = 100;
+let canvasUndo: string[] = [];
+let canvasRedo: string[] = [];
+let canvasCurrent = "";
+let canvasRecordTimer: ReturnType<typeof setTimeout> | undefined;
+// Apps an undo took off the canvas, kept so redo can bring them back whole.
+const undoneApps = new Map<string, CanvasApp>();
+function canvasState() {
+  return JSON.stringify({
+    apps: workspace.apps.map(
+      (a): CanvasAppState => ({
+        id: a.id,
+        x: a.x,
+        y: a.y,
+        width: a.width,
+        height: a.height,
+        archived: a.archived,
+        deleted: a.deleted,
+        layoutHidden: a.layoutHidden,
+      }),
+    ),
+    board: workspace.board ?? null,
+  });
+}
+function recordCanvas() {
+  clearTimeout(canvasRecordTimer);
+  canvasRecordTimer = undefined;
+  const state = canvasState();
+  if (state === canvasCurrent) return;
+  if (canvasCurrent) canvasUndo.push(canvasCurrent);
+  if (canvasUndo.length > UNDO_LIMIT) canvasUndo.shift();
+  canvasRedo = [];
+  canvasCurrent = state;
+}
+function scheduleCanvasRecord() {
+  clearTimeout(canvasRecordTimer);
+  canvasRecordTimer = setTimeout(recordCanvas, 400);
+}
+/** A loaded or replaced workspace starts a fresh history. */
+function resetCanvasHistory() {
+  clearTimeout(canvasRecordTimer);
+  canvasRecordTimer = undefined;
+  canvasUndo = [];
+  canvasRedo = [];
+  undoneApps.clear();
+  canvasCurrent = canvasState();
+}
+function applyCanvasState(state: string) {
+  const { apps: saved, board } = JSON.parse(state) as {
+    apps: CanvasAppState[];
+    board: Workspace["board"] | null;
+  };
+  const byId = new Map(workspace.apps.map((a) => [a.id, a]));
+  for (const app of workspace.apps)
+    if (!saved.some((s) => s.id === app.id)) undoneApps.set(app.id, app);
+  const next: CanvasApp[] = [];
+  for (const s of saved) {
+    const app = byId.get(s.id) ?? undoneApps.get(s.id);
+    if (!app) continue;
+    undoneApps.delete(s.id);
+    app.x = s.x;
+    app.y = s.y;
+    app.width = s.width;
+    app.height = s.height;
+    app.archived = s.archived;
+    if (s.deleted === undefined) delete app.deleted;
+    else app.deleted = s.deleted;
+    if (s.layoutHidden === undefined) delete app.layoutHidden;
+    else app.layoutHidden = s.layoutHidden;
+    next.push(app);
+  }
+  workspace.apps.splice(0, workspace.apps.length, ...next);
+  if (board) workspace.board = board;
+  else delete workspace.board;
+  boardSelected.value = "";
+  boardEditNote.value = "";
+  canvasCurrent = canvasState();
+}
+function undoCanvas(redo = false) {
+  if (!canEdit.value || importBusy.value) return;
+  if (canvasRecordTimer) recordCanvas();
+  const from = redo ? canvasRedo : canvasUndo,
+    to = redo ? canvasUndo : canvasRedo;
+  const state = from.pop();
+  if (!state) {
+    status.value = redo ? "Nothing to redo on the canvas." : "Nothing to undo on the canvas.";
+    return;
+  }
+  to.push(canvasCurrent);
+  applyCanvasState(state);
+  // An "archived / moved to trash" notice no longer describes the canvas.
+  if (/ (moved to trash|archived)\. Restore it/.test(status.value)) status.value = "";
+}
+onBeforeUnmount(() => clearTimeout(canvasRecordTimer));
 const workspaceWatch = trackWorkspace(workspace, () => {
   if (!canEdit.value || applying) return;
+  scheduleCanvasRecord();
   unsavedChanges.value = true;
   workspaceRevision.value++;
   clearTimeout(saveTimer);
@@ -516,11 +752,19 @@ const toolApps = {
   browser: { name: "Browser", icon: "globe" },
   netsuite: { name: "NetSuite", icon: "globe" },
   certificates: { name: "Certificate manager", icon: "key" },
+  files: { name: "File Explorer", icon: "folder-open" },
+  calendar: { name: "Calendar", icon: "calendar", width: 780, height: 520 },
+  terminal: { name: "Terminal", icon: "terminal", width: 940, height: 560 },
 };
-function createGitViewer(kind: keyof typeof toolApps = "git") {
+function createGitViewer(kind: keyof typeof toolApps = "git", value?: string) {
   if (!canEdit.value || importBusy.value) return;
   const appId = uid();
-  const { name, icon } = toolApps[kind];
+  const { name, icon, width = 1160, height = 740 } = toolApps[kind] as {
+    name: string;
+    icon: string;
+    width?: number;
+    height?: number;
+  };
   const result = applyCommands(workspace, [
     {
       operation: "app_create",
@@ -529,10 +773,10 @@ function createGitViewer(kind: keyof typeof toolApps = "git") {
         properties: {
           name,
           icon,
-          width: 1160,
-          height: 740,
-          x: (viewport.width / 2 - camera.x) / camera.zoom - 580,
-          y: (viewport.height / 2 - camera.y) / camera.zoom - 370,
+          width,
+          height,
+          x: (viewport.width / 2 - camera.x) / camera.zoom - width / 2,
+          y: (viewport.height / 2 - camera.y) / camera.zoom - height / 2,
           padding: 0,
           gap: 0,
         },
@@ -546,6 +790,7 @@ function createGitViewer(kind: keyof typeof toolApps = "git") {
         properties: {
           label: name,
           sizing: "fill",
+          ...(value === undefined ? {} : { value }),
         },
       },
     },
@@ -556,6 +801,624 @@ function createGitViewer(kind: keyof typeof toolApps = "git") {
   panel.value = null;
   void focusApp(app);
 }
+// ---- Command palette (Ctrl+K) ----
+const palette = ref<string | null>(null);
+// Ctrl+K (search and commands) and Ctrl+Shift+P (commands only) are caught
+// in the capture phase, before apps that keep keys to themselves. Notes
+// keeps Ctrl+K for its own search while you type in it.
+function paletteKeys(e: KeyboardEvent) {
+  if (!ready.value || inboxOpen.value || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+  const key = e.key.toLowerCase();
+  const commands = key === "p" && e.shiftKey;
+  if (!commands && !(key === "k" && !e.shiftKey)) return;
+  if (!commands && e.target instanceof Element && e.target.closest(".block-notes")) return;
+  e.preventDefault();
+  e.stopPropagation();
+  openPalette(commands ? ">" : "");
+}
+function openPalette(initial: string) {
+  palette.value = palette.value === null ? initial : null;
+}
+// Web pages in the Browser app forward the same shortcuts.
+function paletteEvent(event: Event) {
+  openPalette(String((event as CustomEvent<string>).detail ?? ""));
+}
+function focusBlock(blockId: string) {
+  const app = workspace.apps.find((a) => !a.archived && !a.deleted && flatten(a.blocks).some((b) => b.id === blockId));
+  if (app) void focusApp(app);
+}
+// A sticky note's link opens in the File Explorer (files and folders) or
+// the Browser (pages), like the same results in Ctrl+K.
+async function openNoteLink(link: NoteLink, external = false, sourceBlockId?: string) {
+  const kind = link.kind === "page" ? "browser" : "files";
+  const source = kind === "browser" && sourceBlockId
+    ? liveApps.value.find((a) => flatten(a.blocks).some((b) => b.kind === kind && b.id === sourceBlockId))
+    : undefined;
+  const app = source ?? liveApps.value.find((a) => flatten(a.blocks).some((b) => b.kind === kind));
+  const block = app && flatten(app.blocks).find((b) => b.kind === kind && (!source || b.id === sourceBlockId));
+  if ((!app || !block) && external && link.kind === "page") {
+    window.open(link.target, "_blank", "noopener");
+    return;
+  }
+  if (!app || !block) {
+    status.value = `Add a ${kind === "browser" ? "Browser" : "File Explorer"} app to open this link.`;
+    return;
+  }
+  if (app.layoutHidden && canEdit.value) app.layoutHidden = false;
+  await focusApp(app);
+  const folder = link.target.replace(/[\\/][^\\/]*$/, "");
+  const request: OpenRequest =
+    link.kind === "page"
+      ? { kind: "browser-url", blockId: block.id, url: link.target, reuse: !!sourceBlockId }
+      : link.kind === "folder"
+        ? { kind: "explorer-path", blockId: block.id, path: link.target }
+        : { kind: "explorer-path", blockId: block.id, path: folder, select: link.target };
+  // The app may still be loading: ask again briefly until it answers.
+  for (let i = 0; i < 20; i++) {
+    const event = new CustomEvent<OpenRequest>(OPEN_EVENT, { detail: request });
+    window.dispatchEvent(event);
+    if ((event as CustomEvent & { handled?: boolean }).handled) return;
+    await new Promise((done) => setTimeout(done, 100));
+  }
+}
+// Ctrl+click on a link or path in the Terminal app.
+function openLinkEvent(event: Event) {
+  const detail = (event as CustomEvent<{ link?: NoteLink; external?: boolean; sourceBlockId?: string }>).detail;
+  const link = detail?.link;
+  if (!link || !["file", "folder", "page"].includes(link.kind) || typeof link.target !== "string") return;
+  if (link.kind === "page" && !/^https?:\/\//i.test(link.target)) return;
+  void openNoteLink(link, !!detail.external, detail.sourceBlockId);
+}
+function focusAppById(appId: string) {
+  const app = workspace.apps.find((a) => a.id === appId);
+  if (!app) return;
+  // Asking for an app that the layout hides brings it back.
+  if (app.layoutHidden && canEdit.value) app.layoutHidden = false;
+  void focusApp(app);
+}
+
+// ---- Board: sticky notes, arrows and drawings on the canvas ----
+const boardTool = ref<Tool>("select");
+const boardColor = ref(BOARD_COLORS[0]!);
+const boardSelected = ref("");
+const boardEditNote = ref("");
+const EMPTY_BOARD = { notes: [], arrows: [], strokes: [] };
+const boardView = computed(() => workspace.board ?? EMPTY_BOARD);
+// The board is created the first time a drawing tool is picked.
+watch(boardTool, (tool) => {
+  if (tool !== "select" && canEdit.value) ensureBoard(workspace);
+  if (tool !== "select") boardSelected.value = "";
+});
+function boardCreated(id: string, kind: "note" | "arrow" | "stroke") {
+  boardSelected.value = id;
+  if (kind === "note") boardEditNote.value = id;
+}
+function eraseBoardItem(id: string) {
+  const board = workspace.board;
+  if (!board || !canEdit.value) return;
+  board.strokes = board.strokes.filter((s) => s.id !== id);
+  board.notes = board.notes.filter((n) => n.id !== id);
+  board.arrows = board.arrows.filter((a) => a.id !== id && a.from.noteId !== id && a.to.noteId !== id);
+  if (boardSelected.value === id) boardSelected.value = "";
+}
+function addStickyNote(text = "", link?: NoteLink) {
+  if (!canEdit.value) return;
+  const board = ensureBoard(workspace);
+  const note = {
+    id: uid(),
+    x: Math.round((viewport.width / 2 - camera.x) / camera.zoom - 100),
+    y: Math.round((viewport.height / 2 - camera.y) / camera.zoom - 80),
+    width: 200,
+    height: 160,
+    text,
+    color: "#fff4b8",
+    ...(link ? { link } : {}),
+  };
+  board.notes.push(note);
+  if (text) boardSelected.value = note.id;
+  else boardCreated(note.id, "note");
+}
+
+const inboxOpen = ref(false);
+const inboxBusy = ref(false);
+const inboxMessage = ref("");
+const inboxDraft = ref("");
+const canChangeInbox = computed(() => ready.value && canEdit.value && !importBusy.value);
+function openInbox() {
+  if (!inboxOpen.value) inboxMessage.value = "";
+  panel.value = null;
+  palette.value = null;
+  inboxOpen.value = true;
+}
+async function saveCapture(read: () => Promise<ClipboardCapture | null>) {
+  if (inboxBusy.value) return false;
+  if (!canChangeInbox.value) {
+    inboxMessage.value = "Open the inbox in the editing window to capture.";
+    return false;
+  }
+  if ((workspace.inbox?.length ?? 0) >= INBOX_LIMIT) {
+    inboxMessage.value = "The inbox is full. Move or discard a capture first.";
+    return false;
+  }
+  const apps = workspace.apps;
+  inboxBusy.value = true;
+  try {
+    const data = await read();
+    if (!data?.value) {
+      inboxMessage.value = "Copy text, a link or an image first.";
+      return false;
+    }
+    if (data.kind === "text" && data.value.length > CAPTURE_TEXT_LIMIT) {
+      inboxMessage.value = "Captures can contain up to 20,000 characters.";
+      return false;
+    }
+    if (workspace.apps !== apps || !canChangeInbox.value) {
+      inboxMessage.value = "The workspace changed. Capture again.";
+      return false;
+    }
+    workspace.inbox = [{ ...data, id: uid(), capturedAt: Date.now() }, ...(workspace.inbox ?? [])];
+    inboxMessage.value = "Saved to inbox.";
+    return true;
+  } catch (error) {
+    inboxMessage.value = error instanceof Error ? error.message : "The capture could not be saved.";
+    return false;
+  } finally {
+    inboxBusy.value = false;
+  }
+}
+async function saveInboxDraft() {
+  const value = inboxDraft.value.trim();
+  if (await saveCapture(async () => ({ kind: "text", value }))) inboxDraft.value = "";
+}
+function saveInboxImage(file: File) {
+  return saveCapture(async () => ({
+    kind: "image",
+    value: (await importImageFile(file, "Clipboard image")).value,
+  }));
+}
+function readInboxClipboard() {
+  void saveCapture(async () => {
+    const input = await desktopWindow?.readInboxClipboard?.();
+    return input?.kind === "image"
+      ? { kind: "image", value: (await importImageData(input.value, "Clipboard image")).value }
+      : input ?? null;
+  });
+}
+const pendingInboxShortcut = ref(false);
+const stopInboxCapture = desktopWindow?.onInboxCapture?.(() => {
+  openInbox();
+  pendingInboxShortcut.value = true;
+});
+watch([ready, pendingInboxShortcut], ([loaded, pending]) => {
+  if (!loaded || !pending) return;
+  pendingInboxShortcut.value = false;
+  readInboxClipboard();
+});
+onBeforeUnmount(() => stopInboxCapture?.());
+
+type CaptureDestination = "note" | "calendar" | "image" | "discard";
+async function moveCapture(capture: InboxCapture, destination: CaptureDestination) {
+  if (inboxBusy.value || !canChangeInbox.value || !workspace.inbox?.includes(capture)) return;
+  inboxBusy.value = true;
+  try {
+    if (destination === "note" && capture.kind === "text") {
+      if ((workspace.board?.notes.length ?? 0) >= 500) throw Error("The board is full.");
+      exitFocus();
+      boardTool.value = "select";
+      const url = captureLink(capture.value);
+      addStickyNote(capture.value, url ? { kind: "page", target: capture.value, label: url.hostname } : undefined);
+    } else if (destination === "calendar" && capture.kind === "text") {
+      const calendar = liveApps.value.flatMap((a) => flatten(a.blocks)).find((b) => b.kind === "calendar");
+      const data = readCalendar(calendar?.value ?? "");
+      data.items.push({
+        id: uid(),
+        title: capture.value.split(/\r?\n/, 1)[0]!.slice(0, 200),
+        date: dayKey(new Date()),
+      });
+      if (calendar) calendar.value = JSON.stringify(data);
+      else {
+        if (workspace.apps.length >= 300) throw Error("The workspace has reached its app limit.");
+        createGitViewer("calendar", JSON.stringify(data));
+      }
+    } else if (destination === "image" && capture.kind === "image") {
+      const size = await imageWidgetSize(capture.value);
+      if (!canChangeInbox.value || !workspace.inbox?.includes(capture)) return;
+      if (workspace.apps.length >= 300) throw Error("The workspace has reached its app limit.");
+      exitFocus();
+      placeWidget("image", capture.value, "Clipboard image", size, {
+        x: (viewport.width / 2 - camera.x) / camera.zoom,
+        y: (viewport.height / 2 - camera.y) / camera.zoom,
+      });
+    } else if (destination !== "discard") return;
+    workspace.inbox = workspace.inbox?.filter((item) => item.id !== capture.id);
+    inboxMessage.value = {
+      note: "Moved to a sticky note.",
+      calendar: "Added to Calendar for today.",
+      image: "Placed on the canvas.",
+      discard: "Capture discarded.",
+    }[destination];
+  } catch (error) {
+    inboxMessage.value = error instanceof Error ? error.message : "The capture could not be moved.";
+  } finally {
+    inboxBusy.value = false;
+  }
+}
+
+// ---- Layouts: named arrangements of the canvas ----
+const layouts = computed(() => workspace.layouts ?? []);
+const layoutName = ref("");
+function captureLayout(id: string, name: string): Layout {
+  return {
+    id,
+    name: name.slice(0, 80) || "Layout",
+    apps: Object.fromEntries(
+      liveApps.value.map((a) => [a.id, { x: a.x, y: a.y, width: a.width, height: a.height, shown: !a.layoutHidden }]),
+    ),
+    camera: focused.value
+      ? { ...focused.value.camera }
+      : { x: camera.x, y: camera.y, zoom: camera.zoom },
+  };
+}
+function saveLayout(name = layoutName.value.trim()) {
+  if (!canEdit.value) return;
+  const layout = captureLayout(uid(), name || `Layout ${layouts.value.length + 1}`);
+  workspace.layouts = [...layouts.value, layout].slice(-50);
+  workspace.activeLayout = layout.id;
+  layoutName.value = "";
+}
+function updateLayout(id: string) {
+  const index = layouts.value.findIndex((l) => l.id === id);
+  if (index < 0 || !canEdit.value) return;
+  const next = [...layouts.value];
+  next[index] = captureLayout(id, next[index]!.name);
+  workspace.layouts = next;
+  workspace.activeLayout = id;
+}
+function renameLayout(id: string, name: string) {
+  const layout = layouts.value.find((l) => l.id === id);
+  if (layout && canEdit.value) layout.name = name.slice(0, 80);
+}
+function deleteLayout(id: string) {
+  if (!canEdit.value) return;
+  workspace.layouts = layouts.value.filter((l) => l.id !== id);
+  if (workspace.activeLayout === id) workspace.activeLayout = undefined;
+}
+// Apps created after the layout was saved stay where they are, shown.
+function applyLayout(id: string) {
+  const layout = layouts.value.find((l) => l.id === id);
+  if (!layout || !canEdit.value) return;
+  for (const app of liveApps.value) {
+    const place = layout.apps[app.id];
+    if (!place) {
+      app.layoutHidden = false;
+      continue;
+    }
+    app.x = place.x;
+    app.y = place.y;
+    app.width = Math.max(place.width, appMinimum(app).width);
+    app.height = Math.max(place.height, appMinimum(app).height);
+    app.layoutHidden = !place.shown;
+  }
+  workspace.activeLayout = id;
+  panTo(layout.camera.x, layout.camera.y, undefined, layout.camera.zoom);
+}
+function showAllApps() {
+  if (!canEdit.value) return;
+  for (const app of liveApps.value) app.layoutHidden = false;
+}
+// ---- Calendar reminders ----
+// Checked every 15 seconds in the editing window (one per workspace, so a
+// reminder never shows twice). In the desktop app they are system
+// notifications that also fire while Orvane sits in the tray; in a browser,
+// the browser's notifications. A reminder missed while Orvane was closed is
+// shown once if it was due in the last day, and otherwise skipped quietly.
+const MISSED_REMINDER_MS = 24 * 60 * 60 * 1000;
+function notifyReminder(item: CalendarItem, appId: string) {
+  const body = `${item.time} · ${formatDay(item.date)}`;
+  if (desktopWindow?.notify) {
+    void desktopWindow.notify({ title: item.title, body, appId }).catch(() => undefined);
+    return;
+  }
+  if ("Notification" in window && Notification.permission === "granted") {
+    const shown = new Notification(item.title, { body, tag: item.id });
+    shown.onclick = () => {
+      window.focus();
+      focusAppById(appId);
+    };
+    return;
+  }
+  status.value = `Reminder: ${item.title} (${body})`;
+}
+function checkReminders() {
+  if (!ready.value || !canEdit.value || importBusy.value) return;
+  const now = Date.now();
+  for (const app of liveApps.value)
+    for (const block of flatten(app.blocks)) {
+      if (block.kind !== "calendar") continue;
+      const data = readCalendar(block.value);
+      let changed = false;
+      for (const item of data.items) {
+        if (!item.remind || item.done || item.notified) continue;
+        const at = dueAt(item);
+        if (at === null || at > now) continue;
+        item.notified = true;
+        changed = true;
+        if (now - at < MISSED_REMINDER_MS) notifyReminder(item, app.id);
+      }
+      if (changed) block.value = JSON.stringify(data);
+    }
+}
+const reminderTimer = setInterval(checkReminders, 15_000);
+watch(ready, (isReady) => isReady && checkReminders());
+const stopNotificationClicks = desktopWindow?.onNotificationClick?.((appId) => focusAppById(appId));
+onBeforeUnmount(() => {
+  clearInterval(reminderTimer);
+  stopNotificationClicks?.();
+});
+const stopCanvasCommands = registerCommands("canvas", () => {
+  const writable = canEdit.value && !importBusy.value;
+  const tools: [keyof typeof toolApps, string][] = [
+    ["files", "folder-open"],
+    ["notes", "text"],
+    ["browser", "globe"],
+    ["git", "git"],
+    ["projects", "folder"],
+    ["netsuite", "globe"],
+    ["calendar", "calendar"],
+    ["terminal", "terminal"],
+  ];
+  return [
+    { id: "workspace-inbox", title: "Open workspace inbox", icon: "archive", detail: "Workspace", keywords: "capture clipboard screenshot", run: openInbox },
+    ...(writable ? [
+      { id: "folder-compare", title: "Compare two folders", icon: "columns", detail: "Canvas", run: () => placeWorkbench("folder-compare", {}) },
+      { id: "test-results", title: "Pin Playwright results", icon: "terminal", detail: "Canvas", run: () => placeWorkbench("test-results", {}) },
+    ] : []),
+    ...(writable
+      ? [
+          { id: "app-new", title: "New app", icon: "plus", hint: workspace.shortcuts.create.toUpperCase(), detail: "Canvas", run: () => createApp() },
+          ...tools.map(([kind, icon]) => ({
+            id: `app-new-${kind}`,
+            title: `New ${toolApps[kind].name}`,
+            icon,
+            detail: "Canvas",
+            keywords: "create add open",
+            run: () => createGitViewer(kind),
+          })),
+        ]
+      : []),
+    ...layouts.value.map((l) => ({
+      id: `layout:${l.id}`,
+      title: `Switch to layout: ${l.name}`,
+      icon: "layers",
+      detail: workspace.activeLayout === l.id ? "Current layout" : "Layouts",
+      keywords: "workspace snapshot arrangement",
+      run: () => applyLayout(l.id),
+    })),
+    ...(writable
+      ? [
+          { id: "layout-save", title: "Save current layout…", icon: "layers", detail: "Layouts", keywords: "workspace snapshot arrangement", run: () => openLayouts() },
+          { id: "layout-show-all", title: "Show all apps", icon: "eye", detail: "Layouts", keywords: "unhide", run: () => showAllApps() },
+        ]
+      : []),
+    ...(writable
+      ? [
+          { id: "board-note", title: "Add sticky note", icon: "text", detail: "Board", keywords: "whiteboard postit", run: () => addStickyNote() },
+          { id: "board-arrow", title: "Draw an arrow between apps", icon: "forward", detail: "Board", keywords: "connect connector link whiteboard", run: () => (boardTool.value = "arrow") },
+          { id: "board-pen", title: "Draw on the canvas", icon: "edit", detail: "Board", keywords: "pen freehand sketch whiteboard", run: () => (boardTool.value = "pen") },
+          { id: "board-eraser", title: "Erase board items", icon: "trash", detail: "Board", keywords: "whiteboard delete", run: () => (boardTool.value = "eraser") },
+          ...(workspace.board?.strokes.length
+            ? [{ id: "board-clear", title: "Clear all drawings", icon: "trash", detail: "Board", keywords: "whiteboard pen erase", run: () => (workspace.board!.strokes = []) }]
+            : []),
+        ]
+      : []),
+    { id: "canvas-home", title: "Center the canvas", icon: "home", hint: workspace.shortcuts.home.toUpperCase(), detail: "Canvas", run: () => home() },
+    { id: "backup-export", title: "Export backup", icon: "download", detail: "Workspace", keywords: "save download json images", run: () => exportWorkspace() },
+    ...(writable
+      ? [{ id: "backup-import", title: "Import backup…", icon: "upload", detail: "Workspace", keywords: "restore load", run: () => importInput.value?.click() }]
+      : []),
+  ];
+});
+onBeforeUnmount(stopCanvasCommands);
+
+// ---- Image widgets: drops on empty canvas and "Place on canvas" ----
+const dropNotice = ref("");
+let dropNoticeTimer: ReturnType<typeof setTimeout> | undefined;
+function notifyDrop(text: string) {
+  clearTimeout(dropNoticeTimer);
+  dropNotice.value = text;
+  dropNoticeTimer = setTimeout(() => (dropNotice.value = ""), 4500);
+}
+function onCanvas(target: EventTarget | null) {
+  return (
+    target instanceof Element &&
+    (target.classList.contains("canvas-background") || target.classList.contains("workspace"))
+  );
+}
+function canvasDragOver(event: DragEvent) {
+  if (!canEdit.value || importBusy.value || !onCanvas(event.target)) return;
+  if (!event.dataTransfer?.types.includes(RECORD_PREVIEW_MIME) && !mayHoldImage(event.dataTransfer)) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+}
+function canvasDrop(event: DragEvent) {
+  if (!canEdit.value || importBusy.value || !onCanvas(event.target) || !event.dataTransfer) return;
+  event.preventDefault();
+  const at = { x: (event.clientX - camera.x) / camera.zoom, y: (event.clientY - camera.y) / camera.zoom };
+  if (event.dataTransfer.types.includes(RECORD_PREVIEW_MIME)) {
+    const link = readRecordPreview(event.dataTransfer.getData(RECORD_PREVIEW_MIME));
+    if (link) addRecordPreview(link, at);
+    return;
+  }
+  const folders = folderDrop(event.dataTransfer);
+  if (folders.length) {
+    placeWorkbench("folder-compare", { left: folders[0], right: folders[1] || "" }, undefined, at);
+    return;
+  }
+  const { jobs, files, skipped } = importDrop(event.dataTransfer);
+  if (!jobs.length && !files.length)
+    return notifyDrop(
+      skipped ? "Folders cannot be placed on the canvas." : "Drop images or files from the File Explorer here.",
+    );
+  if (skipped) notifyDrop(`${skipped} folder${skipped === 1 ? " was" : "s were"} skipped.`);
+  void placeImages(jobs, at, 0);
+  placeFiles(files, at, jobs.length * 28);
+}
+// Creates a one-component app centred on `at`.
+function placeWidget(
+  kind: "image" | "file" | "netsuite-record" | WorkbenchKind,
+  value: string,
+  name: string,
+  size: { width: number; height: number },
+  at: { x: number; y: number },
+) {
+  const appId = uid();
+  const result = applyCommands(workspace, [
+    {
+      operation: "app_create",
+      args: {
+        id: appId,
+        properties: {
+          name,
+          icon: ({ "netsuite-record": "globe", "browser-clip": "image", "folder-compare": "columns", "test-results": "terminal" } as Record<string, string>)[kind] ?? kind,
+          width: size.width,
+          height: size.height,
+          x: at.x - size.width / 2,
+          y: at.y - size.height / 2,
+          padding: 0,
+          gap: 0,
+        },
+      },
+    },
+    { operation: "component_create", args: { appId, kind, properties: { label: name, value, sizing: "fill" } } },
+  ]);
+  const app = result.workspace.apps.find((a) => a.id === appId)!;
+  workspace.apps.push(app);
+  createdAppId.value = appId;
+  return app;
+}
+function placeWorkbench(kind: WorkbenchKind, value: object, title?: string, at?: { x: number; y: number }) {
+  if (!canEdit.value || importBusy.value) return;
+  if (workspace.apps.length >= 300) return notifyDrop("The workspace has reached its app limit.");
+  const settings = {
+    "browser-clip": { width: 620, height: 430, name: "Browser clip" },
+    "folder-compare": { width: 900, height: 600, name: "Folder comparison" },
+    "test-results": { width: 760, height: 560, name: "Playwright test results" },
+  }[kind];
+  exitFocus();
+  const app = placeWidget(kind, JSON.stringify(value), title?.slice(0, 150) || settings.name, settings, at ?? {
+    x: (viewport.width / 2 - camera.x) / camera.zoom,
+    y: (viewport.height / 2 - camera.y) / camera.zoom,
+  });
+  if (!at) void focusApp(app);
+}
+function workbenchEvent(event: Event) {
+  const detail = (event as CustomEvent<{ kind: WorkbenchKind; value: object; title?: string }>).detail;
+  if (!detail || !["browser-clip", "folder-compare", "test-results"].includes(detail.kind) || !detail.value) return;
+  placeWorkbench(detail.kind, detail.value, detail.title);
+}
+function folderDrop(data: DataTransfer): string[] {
+  try {
+    const { paths, dirs } = JSON.parse(data.getData(DRAG_MIME));
+    if (Array.isArray(paths) && paths.length > 0 && paths.length <= 2 && Array.isArray(dirs) &&
+      paths.every((p) => typeof p === "string" && dirs.includes(p))) return paths;
+  } catch {
+    // External drops use the standard image and file handling.
+  }
+  return [];
+}
+function addRecordPreview(link: RecordPreviewLink, at?: { x: number; y: number }) {
+  if (!canEdit.value || importBusy.value || !querySourceExists(link.sourceBlockId, link.queryId)) return;
+  const source = netSuiteSources.value.get(link.sourceBlockId)!.app;
+  const existing = recordPreviews.value.get(querySource(link.sourceBlockId, link.queryId));
+  if (!existing && workspace.apps.length >= 300) return notifyDrop("The workspace has reached its app limit.");
+  const size = { width: 380, height: Math.min(580, source.height) };
+  let left = source.x + source.width + 24;
+  if (!at && !existing) {
+    for (const app of [...apps.value].sort((a, b) => a.x - b.x)) {
+      if (app.y < source.y + size.height && app.y + app.height > source.y &&
+        app.x < left + size.width && app.x + app.width > left)
+        left = app.x + app.width + 24;
+    }
+  }
+  const preview = existing ?? placeWidget("netsuite-record", JSON.stringify(link), "NetSuite record preview", size, at ?? {
+    x: left + size.width / 2,
+    y: source.y + size.height / 2,
+  });
+  if (preview.layoutHidden) preview.layoutHidden = false;
+  exitFocus();
+  if (!at || existing) void focusApp(source, false, preview);
+}
+async function imageWidgetSize(value: string) {
+  // Fit the picture into 480 px on its longer side, keeping its shape.
+  const size = await measure(value);
+  const scale = Math.min(1, 480 / Math.max(size.width, size.height));
+  return {
+    width: Math.max(180, Math.round(size.width * scale)),
+    height: Math.max(160, Math.round(size.height * scale) + 36),
+  };
+}
+async function placeImages(jobs: Promise<PlacedImage>[], at: { x: number; y: number }, offset: number) {
+  for (const job of jobs) {
+    let placed: PlacedImage;
+    try {
+      placed = await job;
+    } catch (error) {
+      notifyDrop(error instanceof Error ? error.message : "The image could not be placed.");
+      continue;
+    }
+    if (!placed.value || !canEdit.value) continue;
+    placeWidget(
+      "image",
+      placed.value,
+      placed.name || "Image",
+      await imageWidgetSize(placed.value),
+      { x: at.x + offset, y: at.y + offset },
+    );
+    offset += 28;
+  }
+}
+// File widgets link to the file on disk; size follows what it shows.
+const FILE_SIZES: Record<string, { width: number; height: number }> = {
+  video: { width: 640, height: 400 },
+  pdf: { width: 540, height: 700 },
+  sheet: { width: 680, height: 440 },
+  audio: { width: 380, height: 220 },
+  text: { width: 600, height: 460 },
+};
+function placeFiles(paths: string[], at: { x: number; y: number }, offset: number) {
+  for (const path of paths.slice(0, 20)) {
+    const name = path.split(/[\\/]/).pop() ?? path;
+    const ext = name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
+    const kind = peekKind({ name, path, dir: false, size: 0, mtime: 0, ext, hidden: false, link: false });
+    placeWidget("file", path, name, FILE_SIZES[kind] ?? FILE_SIZES.text!, { x: at.x + offset, y: at.y + offset });
+    offset += 28;
+  }
+}
+// Ctrl+V with nothing text-like focused: an image on the clipboard (a
+// screenshot, a copied picture or an image address) becomes a widget at the
+// pointer, or in the middle of the view.
+let lastPointer: { x: number; y: number } | null = null;
+function trackPointer(event: PointerEvent) {
+  lastPointer = { x: event.clientX, y: event.clientY };
+}
+function pasteImage(event: ClipboardEvent) {
+  const target = event.target as Element | null;
+  if (!canEdit.value || importBusy.value || !event.clipboardData) return;
+  if (target?.closest?.("input, textarea, [contenteditable], .code-editor, .app-surface, .node-workspace")) return;
+  const { jobs } = importDrop(event.clipboardData);
+  if (!jobs.length) return;
+  event.preventDefault();
+  const point = lastPointer ?? { x: viewport.width / 2, y: viewport.height / 2 };
+  void placeImages(jobs, { x: (point.x - camera.x) / camera.zoom, y: (point.y - camera.y) / camera.zoom }, 0);
+}
+function placeFileEvent(event: Event) {
+  const path = (event as CustomEvent<{ path?: string }>).detail?.path;
+  if (!path || !canEdit.value || importBusy.value) return;
+  const at = { x: (viewport.width / 2 - camera.x) / camera.zoom, y: (viewport.height / 2 - camera.y) / camera.zoom };
+  if (isImage(path)) void placeImages([importPath(path)], at, 0);
+  else placeFiles([path], at, 0);
+}
+
 let navigationSequence = 0;
 function stopPan() {
   navigationSequence++;
@@ -564,6 +1427,8 @@ function stopPan() {
   movingCamera.value = false;
 }
 function panTo(x: number, y: number, done?: () => void, zoom = camera.zoom) {
+  // Navigating leaves focus mode; the camera is about to move anyway.
+  exitFocus(false);
   stopPan();
   stopZoom();
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -628,6 +1493,15 @@ function nearestApp(qualifies: (app: CanvasApp) => boolean) {
 // nearest first, so a large workspace can be used before all of it exists.
 // Anything opened, created or navigated to later mounts immediately.
 const mountedApps = reactive(new Set<string>());
+// The window resizing re-fits the focused app; it leaving the canvas
+// (archived, deleted, hidden by a layout) ends focus.
+watch(() => [viewport.width, viewport.height], () => focused.value && placeFocus());
+watch(
+  () => focused.value && apps.value.some((a) => a.id === focused.value!.id),
+  (present) => {
+    if (focused.value && !present) exitFocus();
+  },
+);
 let mountHandle = 0;
 function inView(app: CanvasApp) {
   const left = app.x * camera.zoom + camera.x,
@@ -707,7 +1581,7 @@ function clearLocator() {
   locatedAppId.value = "";
 }
 onBeforeUnmount(clearLocator);
-async function focusApp(a: CanvasApp, locate = false) {
+async function focusApp(a: CanvasApp, locate = false, alongside?: CanvasApp) {
   stopPan();
   stopZoom();
   const sequence = navigationSequence;
@@ -732,10 +1606,11 @@ async function focusApp(a: CanvasApp, locate = false) {
   const bottom = Math.max(top + 1, (dock?.top ?? viewport.height - 70) - 20);
   const width = Math.max(1, viewport.width - 2 * margin);
   const height = bottom - top;
-  const zoom = Math.min(2.5, width / a.width, height / a.height);
+  const bounds = alongside ? groupBounds([a, alongside])! : a;
+  const zoom = Math.min(2.5, width / bounds.width, height / bounds.height);
   panTo(
-    viewport.width / 2 - (a.x + a.width / 2) * zoom,
-    (top + bottom) / 2 - (a.y + a.height / 2) * zoom,
+    viewport.width / 2 - (bounds.x + bounds.width / 2) * zoom,
+    (top + bottom) / 2 - (bounds.y + bounds.height / 2) * zoom,
     () => {
       if (locate) {
         locatedAppId.value = a.id;
@@ -841,6 +1716,80 @@ watch(
   },
   { flush: "sync" },
 );
+// Hold Space and move the pointer: the canvas follows in any direction,
+// over empty space, apps and web pages alike (the pan shield covers them
+// while Space is held). Space is taken before apps see it, except while
+// typing; a quick tap without moving is passed on to the app (Peek etc.).
+let hoverLast: { x: number; y: number } | null = null;
+let spaceMoved = false;
+let spaceTarget: EventTarget | null = null;
+let replayingSpace = false;
+const editable = (target: EventTarget | null) =>
+  target instanceof Element &&
+  !!target.closest("input,textarea,select,[contenteditable]:not([contenteditable=false]),.cm-editor,.code-editor,.xterm");
+function armSpace(target: EventTarget | null) {
+  if (space.value) return;
+  space.value = true;
+  spaceMoved = false;
+  spaceTarget = target;
+  hoverLast = null;
+}
+function releaseSpace() {
+  if (!space.value) return;
+  space.value = false;
+  hoverLast = null;
+  const target = spaceTarget;
+  spaceTarget = null;
+  // A tap, not a pan: let the app have its Space after all.
+  if (!spaceMoved && target instanceof Element && target.closest(".canvas-app")) {
+    replayingSpace = true;
+    try {
+      target.dispatchEvent(new KeyboardEvent("keydown", { key: " ", code: "Space", bubbles: true, cancelable: true }));
+    } finally {
+      replayingSpace = false;
+    }
+  }
+}
+function spaceDown(e: KeyboardEvent) {
+  if (inboxOpen.value) return;
+  if (replayingSpace || e.code !== "Space" || e.ctrlKey || e.metaKey || e.altKey || !ready.value) return;
+  if (editable(e.target) || wheelOpen.value) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (!e.repeat) armSpace(e.target);
+}
+function spaceUp(e: KeyboardEvent) {
+  if (e.code !== "Space" || !space.value) return;
+  e.preventDefault();
+  e.stopPropagation();
+  releaseSpace();
+}
+function hoverPan(e: PointerEvent) {
+  if (!space.value || e.buttons || gesture || focused.value) {
+    hoverLast = null;
+    return;
+  }
+  if (hoverLast) {
+    const dx = e.clientX - hoverLast.x,
+      dy = e.clientY - hoverLast.y;
+    if (dx || dy) {
+      spaceMoved = true;
+      stopPan();
+      camera.x += dx;
+      camera.y += dy;
+    }
+  }
+  hoverLast = { x: e.clientX, y: e.clientY };
+}
+// Space held inside a web page or code app arrives as this event.
+function spaceEvent(event: Event) {
+  const down = (event as CustomEvent<boolean>).detail;
+  if (down) armSpace(null);
+  else if (space.value) {
+    spaceMoved = true; // the page already had its key; never replay it
+    releaseSpace();
+  }
+}
 const touches = new Map<number, { x: number; y: number }>();
 let pinch: {
   distance: number;
@@ -850,6 +1799,7 @@ let pinch: {
 } | null = null;
 function touchStart(e: PointerEvent) {
   if (
+    focused.value ||
     e.pointerType !== "touch" ||
     (e.target as HTMLElement).closest(
       ".dock,.floating-panel,.topbar,.node-workspace,.code-workspace",
@@ -908,7 +1858,19 @@ function pointerDown(e: PointerEvent, app?: CanvasApp, edge = "") {
     document.activeElement instanceof HTMLElement
   )
     document.activeElement.blur();
+  // Pressing in an app makes it the app in use (outlined); pressing empty
+  // canvas clears that. Pan gestures (middle button, Space) change neither.
+  if (e.button === 0 && !space.value) {
+    if (app) canvasScroll.owner = app.id;
+    else if (
+      e.target instanceof Element &&
+      (e.target.classList.contains("canvas-background") || e.target.classList.contains("workspace"))
+    )
+      canvasScroll.owner = "";
+  }
   if (gesture) return;
+  // A focused app is not moved, resized or panned away.
+  if (focused.value) return;
   if (app && (!canEdit.value || importBusy.value)) return;
   if (pinch) return;
   if (e.button !== 0 && e.button !== 1) return;
@@ -1012,7 +1974,7 @@ function groupClick(event: MouseEvent, id: string) {
 // pointer events never reach this document. Deltas are screen pixels.
 function embeddedPan(event: Event) {
   const { dx, dy } = (event as CustomEvent<{ dx: number; dy: number }>).detail;
-  if (gesture || pinch || !Number.isFinite(dx) || !Number.isFinite(dy)) return;
+  if (gesture || pinch || focused.value || !Number.isFinite(dx) || !Number.isFinite(dy)) return;
   stopZoom();
   stopPan();
   camera.x += dx;
@@ -1085,8 +2047,117 @@ function stopZoom() {
   zoomFrame = 0;
   zoomTarget = camera.zoom;
 }
+// Plain scroll belongs to whatever is under the pointer (apps scroll their
+// content). Only while Space is held does two-finger scroll pan the canvas;
+// the pan shield then covers apps and web pages, so the scroll lands here.
+let wheelPanTimer: ReturnType<typeof setTimeout> | undefined;
+// Windows locks touchpad scroll to one axis when a gesture starts along it.
+// The desktop app also streams the two fingers' own movement (electron/
+// touchpad.cs); while that arrives, panning follows the fingers in every
+// direction and the axis-locked scroll is only used to learn how many
+// pixels (and which sign) one touchpad width means for this user's scroll
+// settings, so the pan feels like their normal scrolling.
+const TOUCHPAD_SCALE_KEY = "orvane.touchpadScale";
+// Panning from the fingers at full scroll speed felt too sensitive.
+const TOUCHPAD_PAN_SPEED = 0.5;
+let touchpadScale = (() => {
+  try {
+    const saved = Number(localStorage.getItem(TOUCHPAD_SCALE_KEY));
+    return Number.isFinite(saved) && Math.abs(saved) > 50 ? saved : 1500;
+  } catch {
+    return 1500;
+  }
+})();
+let stopTouchpad: (() => void) | undefined;
+let fingersAt = 0;
+let fingerSum = { x: 0, y: 0 };
+function touchpadInput(input: { fx?: number; fy?: number; end?: boolean }) {
+  if (input.end || !space.value || !ready.value || gesture || pinch) {
+    fingerSum = { x: 0, y: 0 };
+    return;
+  }
+  const fx = Number(input.fx),
+    fy = Number(input.fy);
+  if (!Number.isFinite(fx) || !Number.isFinite(fy)) return;
+  fingersAt = performance.now();
+  fingerSum.x += fx;
+  fingerSum.y += fy;
+  applyPan(fx * touchpadScale * TOUCHPAD_PAN_SPEED, fy * touchpadScale * TOUCHPAD_PAN_SPEED);
+}
+function learnScale(dx: number, dy: number) {
+  // Compare the locked scroll with the finger movement since the last one.
+  const vertical = Math.abs(dy) >= Math.abs(dx);
+  const scroll = vertical ? dy : dx,
+    fingers = vertical ? fingerSum.y : fingerSum.x;
+  fingerSum = { x: 0, y: 0 };
+  if (Math.abs(scroll) < 2 || Math.abs(fingers) < 0.003) return;
+  const sample = scroll / fingers;
+  if (!Number.isFinite(sample) || Math.abs(sample) < 100 || Math.abs(sample) > 20000) return;
+  // A sign flip means the scroll direction setting differs: adopt it at once.
+  touchpadScale =
+    Math.sign(sample) !== Math.sign(touchpadScale) ? sample : touchpadScale * 0.85 + sample * 0.15;
+  try {
+    localStorage.setItem(TOUCHPAD_SCALE_KEY, String(Math.round(touchpadScale)));
+  } catch {
+    // Per-viewer convenience only.
+  }
+}
+function wheelPan(e: WheelEvent) {
+  if (!space.value || !ready.value || gesture || pinch) return;
+  e.preventDefault();
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? viewport.height : 1;
+  let dx = e.deltaX * unit,
+    dy = e.deltaY * unit;
+  if (e.shiftKey && !dx) [dx, dy] = [dy, 0];
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+  // The fingers are driving the pan: use this scroll only to calibrate.
+  if (performance.now() - fingersAt < 150) return learnScale(dx, dy);
+  applyPan(dx, dy);
+}
+function applyPan(dx: number, dy: number) {
+  if (focused.value) return;
+  spaceMoved = true; // a pan, not a tap: don't replay Space to the app
+  stopPan();
+  camera.x -= dx;
+  camera.y -= dy;
+  // Same light rendering as other camera motion while the scroll lasts.
+  movingCamera.value = true;
+  clearTimeout(wheelPanTimer);
+  wheelPanTimer = setTimeout(() => (movingCamera.value = false), 140);
+}
+// A press in a code app or Browser page makes it the app in use.
+// Ctrl+T / Ctrl+Shift+T when a Browser app is the one in use but the key
+// went to the canvas (its frame was clicked, not its page or toolbar):
+// the Browser opens or reopens a tab. Keys inside the Browser itself are
+// handled there first and never arrive here.
+function browserTabKeys(e: KeyboardEvent) {
+  const mod = e.ctrlKey || e.metaKey;
+  if (!mod || e.altKey || e.key.toLowerCase() !== "t" || typing(e.target)) return false;
+  const app = apps.value.find((a) => a.id === active.value);
+  const browser = app && flatten(app.blocks).find((block) => block.kind === "browser");
+  if (!browser) return false;
+  const inside = e.target instanceof Element ? e.target.closest(".canvas-app") : null;
+  if (inside && (inside as HTMLElement).dataset.appId !== app.id) return false;
+  e.preventDefault();
+  window.dispatchEvent(
+    new CustomEvent(BROWSER_SHORTCUT, { detail: { blockId: browser.id, name: e.shiftKey ? "reopen-tab" : "new-tab" } }),
+  );
+  return true;
+}
+function activatedApp(event: Event) {
+  const appId = (event as CustomEvent<{ appId: string }>).detail?.appId;
+  if (!appId || !apps.value.some((a) => a.id === appId)) return;
+  canvasScroll.owner = appId;
+  active.value = appId;
+}
+onBeforeUnmount(() => clearTimeout(wheelPanTimer));
 function wheel(e: WheelEvent) {
-  if (!(e.ctrlKey || e.metaKey)) return;
+  if (!(e.ctrlKey || e.metaKey)) return wheelPan(e);
+  if (focused.value) {
+    // No canvas zoom while an app is focused.
+    e.preventDefault();
+    return;
+  }
   if (
     (e.target as HTMLElement).closest(
       ".dock,.floating-panel,.node-workspace,.code-editor,.select-popover",
@@ -1296,6 +2367,18 @@ function wheelRemove(id: string) {
 }
 function keydown(e: KeyboardEvent) {
   if (!ready.value) return;
+  if (browserTabKeys(e)) return;
+  // Delete removes the selected sticky note, arrow or drawing.
+  if (
+    (e.key === "Delete" || e.key === "Backspace") &&
+    boardSelected.value &&
+    !boardEditNote.value &&
+    !(e.target instanceof Element && e.target.closest("input, textarea, [contenteditable], .app-surface"))
+  ) {
+    e.preventDefault();
+    eraseBoardItem(boardSelected.value);
+    return;
+  }
   if (
     e.key === "Tab" &&
     !e.repeat &&
@@ -1328,6 +2411,12 @@ function keydown(e: KeyboardEvent) {
   )
     return;
   if (e.key === "Escape") {
+    if (focused.value && !typing(e.target)) {
+      exitFocus();
+      e.preventDefault();
+      return;
+    }
+    canvasScroll.owner = "";
     pendingImport.value = undefined;
     managedApp.value = undefined;
     dockContext.value = undefined;
@@ -1336,6 +2425,16 @@ function keydown(e: KeyboardEvent) {
     return;
   }
   if (typing(e.target)) return;
+  if (
+    (e.ctrlKey || e.metaKey) &&
+    !e.altKey &&
+    (e.code === "KeyZ" || e.code === "KeyY") &&
+    !(e.target instanceof Element && e.target.closest(".app-surface,.floating-panel,.cp-backdrop"))
+  ) {
+    e.preventDefault();
+    undoCanvas(e.code === "KeyY" || e.shiftKey);
+    return;
+  }
   if (
     e.code === "Space" &&
     !(e.target instanceof Element && e.target.closest("button,[role=button]"))
@@ -1354,6 +2453,9 @@ function keydown(e: KeyboardEvent) {
   } else if (key === workspace.shortcuts.home) {
     e.preventDefault();
     home();
+  } else if (key === (workspace.shortcuts.focus || "f")) {
+    e.preventDefault();
+    toggleFocus();
   }
 }
 const keyup = (e: KeyboardEvent) => {
@@ -1447,6 +2549,18 @@ function moveDock(a: CanvasApp, direction: number) {
 }
 async function exportWorkspace(raw = false) {
   let data = JSON.stringify(workspace, null, 2);
+  if (!raw) {
+    // A full backup carries the pictures of image widgets too.
+    try {
+      const { backup, count, missing } = await makeBackup(JSON.parse(data));
+      data = JSON.stringify(backup);
+      status.value = count || missing
+        ? `Backup includes ${count} image${count === 1 ? "" : "s"}${missing ? `; ${missing} could not be read and were left out` : ""}.`
+        : status.value;
+    } catch {
+      // Fall back to the workspace alone.
+    }
+  }
   if (raw) {
     try {
       const stored = await store.read();
@@ -1505,9 +2619,23 @@ async function importWorkspace(e: Event) {
     file = el.files?.[0];
   if (!file || !canEdit.value) return;
   try {
-    if (file.size > 25_000_000)
-      throw Error("This backup is too large (maximum 25 MB).");
-    const value = parseWorkspace(JSON.parse(await file.text()));
+    if (file.size > 400_000_000)
+      throw Error("This backup is too large (maximum 400 MB).");
+    let raw: unknown = JSON.parse(await file.text());
+    let restoredNote = "";
+    if (isBackup(raw)) {
+      // Pictures go back into the image store first; they are content-
+      // addressed, so restoring them twice or merging is harmless.
+      const { restored, rejected } = await restoreImages(raw.images);
+      restoredNote = rejected
+        ? `${restored} images restored; ${rejected} were damaged and skipped.`
+        : restored
+          ? `${restored} image${restored === 1 ? "" : "s"} restored.`
+          : "";
+      raw = raw.workspace;
+    } else if ((raw as { version?: number })?.version === 1 && file.size > 25_000_000)
+      throw Error("This backup is too large (maximum 25 MB without images).");
+    const value = parseWorkspace(raw);
     upgradeExampleApps(value);
     migrateGroups(value);
     pendingImport.value = value;
@@ -1517,7 +2645,7 @@ async function importWorkspace(e: Event) {
         ?.focus(),
     );
     panel.value = "workspace";
-    status.value = "";
+    status.value = restoredNote;
   } catch (error) {
     status.value =
       error instanceof Error ? error.message : "This backup could not be read.";
@@ -2049,11 +3177,12 @@ async function run(app: CanvasApp, block: Block) {
 }
 function focusIn(e: FocusEvent, app: CanvasApp) {
   active.value = app.id;
+  canvasScroll.owner = app.id;
   if (e.target instanceof HTMLElement && typing(e.target))
     lastFocus.set(app.id, e.target);
 }
 function shortcutChanged(key: keyof Workspace["shortcuts"]) {
-  const value = workspace.shortcuts[key].toLowerCase().slice(-1);
+  const value = (workspace.shortcuts[key] ?? "").toLowerCase().slice(-1);
   if (
     !/^[a-z0-9]$/.test(value) ||
     Object.entries(workspace.shortcuts).some(
@@ -2065,7 +3194,7 @@ function shortcutChanged(key: keyof Workspace["shortcuts"]) {
       .filter(([k]) => k !== key)
       .map(([, v]) => v);
     workspace.shortcuts[key] = [
-      emptyWorkspace().shortcuts[key],
+      emptyWorkspace().shortcuts[key]!,
       ..."abcdefghijklmnopqrstuvwxyz0123456789",
     ].find((k) => !occupied.includes(k))!;
   } else {
@@ -2113,6 +3242,21 @@ onMounted(() => {
   window.addEventListener("pagehide", hidePage);
   window.addEventListener("wheel", wheel, { passive: false });
   window.addEventListener("orvane-canvas-pan", embeddedPan);
+  window.addEventListener("orvane:place-file", placeFileEvent);
+  window.addEventListener(WORKBENCH_WIDGET, workbenchEvent);
+  window.addEventListener("keydown", paletteKeys, true);
+  window.addEventListener("keydown", spaceDown, true);
+  window.addEventListener("keyup", spaceUp, true);
+  window.addEventListener("pointermove", hoverPan, { passive: true });
+  window.addEventListener("orvane:space", spaceEvent);
+  stopTouchpad = (window as unknown as {
+    orvaneDesktop?: { onTouchpad?: (cb: (input: { fx?: number; fy?: number; end?: boolean }) => void) => () => void };
+  }).orvaneDesktop?.onTouchpad?.(touchpadInput);
+  window.addEventListener(ACTIVATE_EVENT, activatedApp);
+  window.addEventListener("orvane:open-link", openLinkEvent);
+  window.addEventListener("orvane:palette", paletteEvent);
+  window.addEventListener("paste", pasteImage);
+  window.addEventListener("pointermove", trackPointer, { passive: true });
 });
 onBeforeUnmount(() => {
   window.removeEventListener("beforeunload", beforeUnload);
@@ -2121,6 +3265,20 @@ onBeforeUnmount(() => {
   window.removeEventListener("online", persist);
   mcpBridge?.close();
   window.removeEventListener("orvane-canvas-pan", embeddedPan);
+  window.removeEventListener("orvane:place-file", placeFileEvent);
+  window.removeEventListener(WORKBENCH_WIDGET, workbenchEvent);
+  window.removeEventListener("keydown", paletteKeys, true);
+  window.removeEventListener("keydown", spaceDown, true);
+  window.removeEventListener("keyup", spaceUp, true);
+  window.removeEventListener("pointermove", hoverPan);
+  window.removeEventListener("orvane:space", spaceEvent);
+  stopTouchpad?.();
+  window.removeEventListener(ACTIVATE_EVENT, activatedApp);
+  window.removeEventListener("orvane:open-link", openLinkEvent);
+  window.removeEventListener("orvane:palette", paletteEvent);
+  window.removeEventListener("paste", pasteImage);
+  window.removeEventListener("pointermove", trackPointer);
+  clearTimeout(dropNoticeTimer);
   stopPan();
   stopZoom();
   document.removeEventListener("pointerdown", dismissOutside, true);
@@ -2155,14 +3313,35 @@ onBeforeUnmount(() => {
     @pointerup="pointerUp"
     @pointercancel="pointerUp"
     @lostpointercapture="pointerUp"
+    @dragover="canvasDragOver"
+    @drop="canvasDrop"
     @click="
       !dragging &&
       (($event.target as HTMLElement).classList.contains('canvas-background') ||
         $event.target === $event.currentTarget) &&
-      (panel = null)
+      ((panel = null), (boardSelected = ''))
     "
   >
     <div class="canvas-background"></div>
+    <div v-if="dropNotice" class="drop-notice" role="status">{{ dropNotice }}</div>
+    <BoardTools
+      v-if="ready && canEdit"
+      v-model:tool="boardTool"
+      v-model:color="boardColor"
+      :board="boardView"
+      :apps="apps"
+      :all-apps="workspace.apps"
+      :camera="camera"
+      @created="boardCreated"
+    />
+    <CommandPalette
+      v-if="palette !== null"
+      :apps="workspace.apps"
+      :initial="palette"
+      @close="palette = null"
+      @focus-app="focusAppById"
+      @focus-block="focusBlock"
+    />
     <ActionStudio
       v-if="actionStudio"
       :workspace="workspace"
@@ -2438,6 +3617,15 @@ onBeforeUnmount(() => {
         >
           <Icon name="layers" :size="14" /><span>Groups</span>
         </button>
+        <button
+          class="subtle-button"
+          aria-label="Layouts"
+          @click="panel === 'layouts' ? (panel = null) : openLayouts()"
+        >
+          <Icon name="app" :size="14" /><span>{{
+            layouts.find((l) => l.id === workspace.activeLayout)?.name || "Layouts"
+          }}</span>
+        </button>
         <span v-if="ready && !canEdit" class="field-help">Read-only tab</span>
         <button
           class="subtle-button"
@@ -2479,6 +3667,21 @@ onBeforeUnmount(() => {
         transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})`,
       }"
     >
+      <BoardLayer
+        v-if="workspace.board"
+        :board="workspace.board"
+        :apps="apps"
+        :all-apps="workspace.apps"
+        :zoom="camera.zoom"
+        :tool="boardTool"
+        :editable="canEdit && !importBusy"
+        :selected="boardSelected"
+        :edit-note="boardEditNote"
+        @select="boardSelected = $event"
+        @erase="eraseBoardItem"
+        @edit-note="boardEditNote = $event"
+        @open-link="openNoteLink"
+      />
       <template v-for="group in spatialGroups" :key="group.id"
         ><div
           v-if="group.bounds"
@@ -2511,17 +3714,34 @@ onBeforeUnmount(() => {
             @pointerdown.stop="groupPointerDown($event, group.id)"
           ></div></div
       ></template>
+      <!-- Focus mode: covers the rest of the canvas behind the focused app. -->
+      <div
+        v-if="focused"
+        class="focus-backdrop"
+        :style="{
+          left: -camera.x + 'px',
+          top: -camera.y + 'px',
+          width: viewport.width + 'px',
+          height: viewport.height + 'px',
+          zIndex: stack.length + 3,
+        }"
+        @pointerdown.stop
+      ></div>
       <div
         v-for="app in apps"
         :key="`${renderGeneration}:${app.id}`"
         class="canvas-app"
+        :class="{
+          'scroll-owner': canvasScroll.owner === app.id,
+          'focused-app': focused?.id === app.id,
+        }"
         :data-app-id="app.id"
         :style="{
           left: app.x + 'px',
           top: app.y + 'px',
-          width: app.width + 'px',
-          height: app.height + 'px',
-          zIndex: stackLevel(app.id),
+          width: (focused?.id === app.id ? focused.rect.width : app.width) + 'px',
+          height: (focused?.id === app.id ? focused.rect.height : app.height) + 'px',
+          zIndex: focused?.id === app.id ? stack.length + 4 : stackLevel(app.id),
         }"
         @pointerdown.stop="pointerDown($event, app)"
         @focusin="focusIn($event, app)"
@@ -2563,6 +3783,8 @@ onBeforeUnmount(() => {
           :app="app"
           :workspace="workspace"
           :enter-motion="createdAppId === app.id"
+          :focused="focused?.id === app.id"
+          @focus="enterFocus"
           @run="run"
           @archive="archive"
           @duplicate="duplicate"
@@ -2793,6 +4015,9 @@ onBeforeUnmount(() => {
       <p class="field-help">
         Saved on this computer. Shared across browsers connected to this server.
       </p>
+      <button class="subtle-button" @click="openInbox">
+        <Icon name="archive" :size="14" />Workspace inbox
+      </button>
       <button
         class="subtle-button"
         :disabled="!canEdit || importBusy"
@@ -2837,6 +4062,27 @@ onBeforeUnmount(() => {
       </button>
       <button class="subtle-button" :disabled="!canEdit || importBusy" @click="createGitViewer('claude')">
         <Icon name="text" :size="14" />Create Claude sessions
+      </button>
+      <button
+        class="subtle-button"
+        :disabled="!canEdit || importBusy"
+        @click="createGitViewer('files')"
+      >
+        <Icon name="folder-open" :size="14" />Create File Explorer
+      </button>
+      <button
+        class="subtle-button"
+        :disabled="!canEdit || importBusy"
+        @click="createGitViewer('calendar')"
+      >
+        <Icon name="calendar" :size="14" />Create Calendar
+      </button>
+      <button
+        class="subtle-button"
+        :disabled="!canEdit || importBusy"
+        @click="createGitViewer('terminal')"
+      >
+        <Icon name="terminal" :size="14" />Create Terminal
       </button>
       <button
         class="subtle-button"
@@ -2911,6 +4157,7 @@ onBeforeUnmount(() => {
             create: 'New app',
             search: 'Find app',
             home: 'Center canvas',
+            focus: 'Focus app full-window',
           }"
           :key="key"
           class="shortcut-row"
@@ -2961,6 +4208,74 @@ onBeforeUnmount(() => {
           ><span v-if="t.error" class="inline-error">{{ t.error }}</span>
         </div>
       </details>
+    </section>
+    <section
+      v-if="panel === 'layouts'"
+      class="groups-panel layouts-panel floating-panel"
+      :inert="!canEdit"
+      v-motion="{ kind: 'popover' }"
+      aria-label="Layouts"
+      @pointerdown.stop
+    >
+      <div class="panel-heading">
+        <h1>Layouts</h1>
+        <button class="icon-button" aria-label="Close layouts" @click="panel = null">
+          <Icon name="close" />
+        </button>
+      </div>
+      <p class="field-help">
+        A layout remembers where each app sits, which apps are shown and the
+        view. Switching never changes what is inside an app.
+      </p>
+      <div v-if="layouts.length" class="layout-list">
+        <div
+          v-for="l in layouts"
+          :key="l.id"
+          class="layout-row"
+          :class="{ current: l.id === workspace.activeLayout }"
+        >
+          <button class="layout-switch" :title="`Switch to ${l.name}`" @click="applyLayout(l.id)">
+            <Icon :name="l.id === workspace.activeLayout ? 'check' : 'app'" :size="13" />
+          </button>
+          <input
+            :value="l.name"
+            :aria-label="`Layout name: ${l.name}`"
+            maxlength="80"
+            @change="renameLayout(l.id, ($event.target as HTMLInputElement).value)"
+            @keydown.enter="applyLayout(l.id)"
+          />
+          <button class="icon-button" title="Save the current arrangement into this layout" :aria-label="`Update ${l.name}`" @click="updateLayout(l.id)">
+            <Icon name="download" :size="13" /></button
+          ><button class="icon-button" :aria-label="`Delete ${l.name}`" title="Delete layout" @click="deleteLayout(l.id)">
+            <Icon name="trash" :size="13" />
+          </button>
+        </div>
+      </div>
+      <form class="group-picker" @submit.prevent="saveLayout()">
+        <input
+          ref="layoutNameInput"
+          v-model="layoutName"
+          class="layout-name"
+          placeholder="Coding, Research, NetSuite…"
+          aria-label="New layout name"
+          maxlength="80"
+        /><button class="subtle-button" type="submit">
+          <Icon name="plus" :size="13" />Save current
+        </button>
+      </form>
+      <div class="section-line">
+        <span>Shown in this view</span><span>{{ apps.length }} / {{ liveApps.length }}</span>
+      </div>
+      <div class="group-members">
+        <label v-for="app in liveApps" :key="app.id" class="group-member"
+          ><input
+            type="checkbox"
+            :checked="!app.layoutHidden"
+            :aria-label="`Show ${app.name || 'Untitled'}`"
+            @change="app.layoutHidden = !($event.target as HTMLInputElement).checked"
+          /><Icon :name="app.icon" :size="13" /><span>{{ app.name || "Untitled" }}</span></label
+        >
+      </div>
     </section>
     <section
       v-if="panel === 'groups'"
@@ -3097,6 +4412,20 @@ onBeforeUnmount(() => {
       </button>
     </section>
 
+    <WorkspaceInbox
+      v-if="inboxOpen"
+      v-model:draft="inboxDraft"
+      :captures="workspace.inbox ?? []"
+      :busy="inboxBusy"
+      :editable="canChangeInbox"
+      :desktop="!!desktopWindow?.readInboxClipboard"
+      :message="inboxMessage"
+      @close="inboxOpen = false"
+      @save="saveInboxDraft"
+      @paste-image="saveInboxImage"
+      @clipboard="readInboxClipboard"
+      @move="moveCapture"
+    />
     <section
       v-if="pendingImport"
       class="import-preview floating-panel"

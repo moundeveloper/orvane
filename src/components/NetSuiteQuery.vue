@@ -4,6 +4,7 @@ export type QueryFile = { id: string; name: string; sql: string };
 <script setup lang="ts">
 import {
   computed,
+  inject,
   onActivated,
   onBeforeUnmount,
   onDeactivated,
@@ -17,8 +18,10 @@ import SuiteQLSchema from "./SuiteQLSchema.vue";
 import { format as formatSql } from "sql-formatter";
 import type { SuiteQLTracePlan } from "../suiteqlTrace";
 import Icon from "./Icon.vue";
+import { registerCommands } from "../commands";
 import type { Block } from "../model";
 import { uid } from "../model";
+import { netSuiteCanvas, querySource, RECORD_PREVIEW_MIME, type RecordPreviewLink } from "../netsuiteCanvas";
 import {
   QueryOutputCache,
   estimateQueryOutputBytes,
@@ -439,6 +442,51 @@ function clearResults() {
 const columns = computed(() =>
   Array.from(new Set(results.value.flatMap((row) => Object.keys(row)))),
 );
+const canvas = inject(netSuiteCanvas);
+const selectionOwner = Symbol("SuiteQL results");
+const sourceKey = computed(() => querySource(props.block.id, activeFile.value));
+const linked = computed(() => !!canvas?.hasPreview(sourceKey.value));
+const selectedRow = computed(() => canvas?.selections.get(sourceKey.value)?.row);
+function selectResult(row: Row) {
+  if (!linked.value) return;
+  canvas?.selections.set(sourceKey.value, { owner: selectionOwner, environment: props.environment, row });
+}
+function clearSelections() {
+  if (!canvas) return;
+  for (const [key, selection] of canvas.selections) {
+    if (selection.owner === selectionOwner) canvas.selections.delete(key);
+  }
+}
+watch(results, (rows) => {
+  const selection = canvas?.selections.get(sourceKey.value);
+  if (selection?.owner === selectionOwner && !rows.includes(selection.row))
+    canvas?.selections.delete(sourceKey.value);
+});
+onBeforeUnmount(clearSelections);
+
+function previewLink(): RecordPreviewLink {
+  const state = readState();
+  // The first untouched example query may still exist only in memory.
+  if (!Array.isArray(state.queries) || !state.queries.some((file: QueryFile) => file.id === activeFile.value))
+    props.block.value = JSON.stringify({ ...state, queries: files.value });
+  const names = columns.value;
+  return {
+    sourceBlockId: props.block.id,
+    queryId: activeFile.value,
+    queryName: currentFile.value.name,
+    columns: names,
+    column: names.find((name) => /^id$/i.test(name)) ?? names.find((name) => /^internal_?id$/i.test(name)) ?? "",
+    type: "",
+  };
+}
+function showRecordPreview() {
+  canvas?.addPreview(previewLink());
+}
+function dragRecordPreview(event: DragEvent) {
+  if (!canvas?.editable() || !event.dataTransfer) return;
+  event.dataTransfer.effectAllowed = "copy";
+  event.dataTransfer.setData(RECORD_PREVIEW_MIME, JSON.stringify(previewLink()));
+}
 let generation = 0;
 let disposed = false;
 async function call(
@@ -515,6 +563,24 @@ async function runTrace() {
     busy.value = false;
   }
 }
+// Ctrl+K palette: run the open query.
+const stopCommands = registerCommands(`suiteql:${props.block.id}:${props.stateKey}`, () =>
+  currentFile.value
+    ? [
+        {
+          id: `suiteql-run:${props.block.id}:${props.stateKey}`,
+          title: "Run SuiteQL query",
+          detail: currentFile.value?.name ? `NetSuite · ${currentFile.value.name}` : "NetSuite",
+          icon: "play",
+          keywords: "netsuite sql execute",
+          blockId: props.block.id,
+          run: () => runQuery(),
+        },
+      ]
+    : [],
+);
+onBeforeUnmount(stopCommands);
+
 async function runQuery(page?: number) {
   const request = generation,
     file = activeFile.value,
@@ -824,6 +890,15 @@ onBeforeUnmount(() => {
                 offset + results.length
               }}</span
             ><button
+              v-if="bottomTab === 'results' && results.length && canvas?.editable()"
+              class="subtle-button"
+              :draggable="!linked"
+              :title="linked ? 'Frame this query and its linked preview' : 'Click to add beside the query, or drag onto the canvas'"
+              @click="showRecordPreview"
+              @dragstart="dragRecordPreview"
+            >
+              {{ linked ? "Show record preview" : "Add record preview" }}</button
+            ><button
               v-if="bottomTab === 'results' && hasResult"
               class="subtle-button"
               :disabled="!results.length"
@@ -918,11 +993,12 @@ onBeforeUnmount(() => {
               <div
                 class="ns-result-grid"
                 :style="{
-                  minWidth: `${columns.length * 150}px`,
-                  gridTemplateColumns: `repeat(${columns.length}, minmax(150px, 1fr))`,
+                  minWidth: `${columns.length * 150 + (linked ? 38 : 0)}px`,
+                  gridTemplateColumns: `${linked ? '38px ' : ''}repeat(${columns.length}, minmax(150px, 1fr))`,
                 }"
               >
                 <div class="ns-result-head">
+                  <span v-if="linked" aria-label="Record preview"></span>
                   <button
                     v-for="col in columns"
                     :key="col"
@@ -950,7 +1026,17 @@ onBeforeUnmount(() => {
                     v-for="(row, i) in visibleRows.rows"
                     :key="visibleRows.start + i"
                     class="ns-result-row"
+                    :class="{ 'preview-linked': linked, 'preview-selected': linked && selectedRow === row }"
+                    @click="selectResult(row)"
                   >
+                    <button
+                      v-if="linked"
+                      class="ns-preview-row"
+                      type="button"
+                      :aria-label="`Preview result row ${visibleRows.start + i + 1}`"
+                      :aria-pressed="selectedRow === row"
+                      @click.stop="selectResult(row)"
+                    ><Icon name="eye" :size="14" /></button>
                     <span v-for="col in columns" :key="col">{{
                       row[col]
                     }}</span>
@@ -1299,6 +1385,20 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.ns-result-row.preview-linked {
+  cursor: pointer;
+}
+.ns-result-row.preview-linked:hover,
+.ns-result-row.preview-selected {
+  background: #e7f0f5;
+}
+.ns-preview-row {
+  border: 0;
+  border-bottom: 1px solid #e0e9ec;
+  background: transparent;
+  color: #3d657c;
+  cursor: pointer;
 }
 button:disabled {
   opacity: 0.5;
