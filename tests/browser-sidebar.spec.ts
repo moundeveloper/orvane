@@ -333,3 +333,78 @@ test("Split View keeps its anchor and replaces only the focused pane", async ({ 
     server.close();
   }
 });
+
+test("dragging reorders tabs and spaces and previews a split over the current page", async ({ page }) => {
+  const { server, origin, browser, go, tab } = await open(page);
+  try {
+    await go("/first");
+    await tab("/second");
+    const tabs = browser.locator("[data-drag-tab]");
+    const first = (await tabs.first().getAttribute("data-drag-tab"))!;
+    const second = (await tabs.last().getAttribute("data-drag-tab"))!;
+    const begin = async (target: Locator) => {
+      await target.hover();
+      await page.mouse.down();
+    };
+    const move = async (target: Locator, x: number, y: number) => {
+      const box = (await target.boundingBox())!;
+      await page.mouse.move(box.x + box.width * x, box.y + box.height * y, { steps: 12 });
+    };
+    await begin(tabs.first());
+    await move(tabs.last(), 0.5, 0.85);
+    await expect(tabs.first()).toHaveAttribute("data-drag-tab", second);
+    await page.mouse.up();
+    await expect(tabs.last()).toHaveAttribute("data-drag-tab", first);
+    await expect(browser.getByRole("textbox", { name: "Address" })).toHaveValue(`${origin}/second`);
+
+    const panel = browser.locator(".browser-page");
+    const splitTarget = browser.locator(".browser-split-target");
+    await begin(tabs.last());
+    await move(panel, 0.75, 0.4);
+    await expect(splitTarget).toBeVisible();
+    await expect(splitTarget.locator(".drop-selected")).toHaveText("Right pane");
+    const preview = (await browser.locator(".browser-drag-preview").boundingBox())!;
+    const strip = (await browser.locator(".browser-tabs").boundingBox())!;
+    expect(preview.x + preview.width).toBeLessThanOrEqual(strip.x + strip.width + 1);
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    await expect(splitTarget).toBeHidden();
+    await expect(browser.getByRole("toolbar", { name: "Split View" })).toHaveCount(0);
+    await begin(tabs.last());
+    await move(panel, 0.75, 0.4);
+    await expect(splitTarget).toBeVisible();
+    await page.mouse.up();
+    await expect(browser.locator("iframe.pane-first")).toHaveAttribute("src", `${origin}/second`);
+    await expect(browser.locator("iframe.pane-second")).toHaveAttribute("src", `${origin}/first`);
+    await browser.getByRole("button", { name: "Exit Split View", exact: true }).click();
+    await begin(tabs.last());
+    await move(panel, 0.25, 0.4);
+    await expect(splitTarget.locator(".drop-selected")).toHaveText("Left pane");
+    await page.mouse.up();
+    await expect(browser.locator("iframe.pane-first")).toHaveAttribute("src", `${origin}/first`);
+    await expect(browser.locator("iframe.pane-second")).toHaveAttribute("src", `${origin}/second`);
+
+    await browser.getByRole("button", { name: "New space", exact: true }).click();
+    const dialog = browser.getByRole("dialog", { name: "New space" });
+    await dialog.getByRole("textbox").fill("Work");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    const spaces = browser.getByRole("tablist", { name: "Spaces" }).getByRole("tab");
+    const work = browser.getByRole("tab", { name: "Space Work", exact: true });
+    const main = browser.getByRole("tab", { name: "Space Main", exact: true });
+    await expect(work).toBeVisible();
+    await expect(dialog).toBeHidden();
+    await work.hover();
+    await expect(browser.getByRole("tooltip")).toHaveText("Work");
+    await page.mouse.down();
+    await move(main, 0.15, 0.5);
+    await expect(browser.locator(".browser-drag-preview")).toHaveText("W");
+    await expect(browser.getByRole("tooltip")).toHaveCount(0);
+    await expect(spaces.first()).toHaveAttribute("aria-label", "Space Work");
+    await page.mouse.up();
+    await page.reload();
+    await expect(spaces.first()).toHaveAttribute("aria-label", "Space Work");
+    await expect(spaces.first()).toHaveAttribute("aria-selected", "true");
+  } finally {
+    server.close();
+  }
+});

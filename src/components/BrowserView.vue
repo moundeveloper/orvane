@@ -1383,25 +1383,20 @@ function openMenu(event: MouseEvent, items: MenuItem[], title = "") {
   const at = event.type === "click"
     ? { x: (target.left - bounds.left) / scale, y: (target.bottom - bounds.top) / scale + 6 }
     : local(event);
-  const height = menuHeight(items, title);
-  menu.value = {
-    x: Math.max(4, Math.min(at.x, box.offsetWidth - 270)),
-    y: Math.max(4, Math.min(at.y, box.offsetHeight - height - 4)),
-    title,
-    items,
-  };
-  if (event.detail === 0) nextTick(() => menuBox.value?.querySelector<HTMLButtonElement>("button:enabled")?.focus());
+  menu.value = { ...at, title, items };
+  nextTick(() => positionMenu(event.detail === 0));
 }
-function menuHeight(items: MenuItem[], title: string) {
-  return 12 + (title ? 27 : 0) + items.reduce((sum, item) => sum + (item.label ? 33 : 11), 0);
+function positionMenu(focus: boolean) {
+  const box = root.value, popup = menuBox.value, current = menu.value;
+  if (!box || !popup || !current) return;
+  current.x = Math.max(4, Math.min(current.x, box.clientWidth - popup.offsetWidth - 4));
+  current.y = Math.max(4, Math.min(current.y, box.clientHeight - popup.offsetHeight - 4));
+  if (focus) popup.querySelector<HTMLButtonElement>("button:enabled")?.focus({ preventScroll: true });
 }
 function pick(item: MenuItem) {
   if (item.children && menu.value) {
-    const items = item.children();
-    const title = item.label || "";
-    menu.value = { ...menu.value, y: Math.max(4, Math.min(menu.value.y,
-      root.value!.offsetHeight - menuHeight(items, title) - 4)), title, items };
-    nextTick(() => menuBox.value?.querySelector<HTMLButtonElement>("button:enabled")?.focus());
+    menu.value = { ...menu.value, title: item.label || "", items: item.children() };
+    nextTick(() => positionMenu(true));
     return;
   }
   menu.value = null;
@@ -1569,34 +1564,172 @@ function groupTabs(ids: string[], group: TabGroup | null) {
   selected.clear();
   save();
 }
-const draggingTab = ref("");
-function beginTabDrag(event: DragEvent, tab: BrowserTab) {
-  if (!event.dataTransfer || inSplit(tab.id)) return event.preventDefault();
+type BrowserDrag = {
+  kind: "tab" | "space";
+  id: string;
+  pointer: number;
+  startX: number;
+  startY: number;
+  grabX: number;
+  grabY: number;
+  width: number;
+  height: number;
+  moving: boolean;
+  split?: "primary" | "secondary";
+  strip: HTMLElement;
+  horizontal: boolean;
+  group?: string;
+  destination?: { id: string; after: boolean };
+  original: string[];
+};
+const browserDrag = ref<BrowserDrag>();
+const dragPreview = ref<HTMLElement>();
+let dragPoint = { x: 0, y: 0 };
+let suppressDragClick = false;
+let tipResumeAt: { x: number; y: number } | undefined;
+function positionDragPreview() {
+  const drag = browserDrag.value;
+  const browser = root.value;
+  if (!drag || !dragPreview.value || !browser) return;
+  const bounds = browser.getBoundingClientRect();
+  const strip = drag.strip.getBoundingClientRect();
+  const scale = bounds.width / browser.offsetWidth || 1;
+  const left = (strip.left - bounds.left) / scale;
+  const top = (strip.top - bounds.top) / scale;
+  const x = drag.horizontal
+    ? Math.max(left, Math.min(dragPoint.x - drag.grabX, left + strip.width / scale - drag.width))
+    : drag.startX - drag.grabX;
+  const y = drag.horizontal
+    ? drag.startY - drag.grabY
+    : Math.max(top, Math.min(dragPoint.y - drag.grabY, top + strip.height / scale - drag.height));
+  dragPreview.value.style.transform =
+    `translate3d(${x}px, ${y}px, 0)`;
+}
+function beginBrowserDrag(event: PointerEvent, kind: BrowserDrag["kind"], id: string) {
+  if (event.button !== 0 || event.pointerType === "touch" || event.altKey ||
+      event.ctrlKey || event.metaKey || event.shiftKey ||
+      (kind === "tab" && (inSplit(id) || (event.target as Element).closest("button")))) return;
+  const { x, y } = local(event);
+  const source = event.currentTarget as HTMLElement;
+  const strip = source.closest<HTMLElement>(kind === "tab" ? ".browser-tabs" : ".browser-spaces");
+  if (!strip) return;
+  const bounds = source.getBoundingClientRect();
+  const scale = bounds.width / source.offsetWidth || 1;
+  dragPoint = { x, y };
+  browserDrag.value = {
+    kind, id, pointer: event.pointerId, startX: x, startY: y,
+    grabX: (event.clientX - bounds.left) / scale, grabY: (event.clientY - bounds.top) / scale,
+    width: source.offsetWidth, height: source.offsetHeight, moving: false, strip,
+    horizontal: kind === "space"
+      ? !(state.value.collapsed || narrow.value)
+      : state.value.layout === "comfortable",
+    original: (kind === "tab" ? state.value.tabs : state.value.spaces).map((item) => item.id),
+  };
+}
+function moveBrowserDrag(event: PointerEvent) {
+  const drag = browserDrag.value;
+  if (!drag || drag.pointer !== event.pointerId) return;
+  const { x, y } = local(event);
+  dragPoint = { x, y };
+  if (!drag.moving) {
+    if (Math.hypot(x - drag.startX, y - drag.startY) < 2) return;
+    drag.moving = true;
+    root.value?.setPointerCapture(event.pointerId);
+    hideTip();
+    nextTick(positionDragPreview);
+  }
+  positionDragPreview();
+  const { horizontal } = drag;
+  const target = document.elementFromPoint(event.clientX, event.clientY);
+  const page = pageBox.value?.getBoundingClientRect();
+  const overPage = drag.kind === "tab" && drag.id !== state.value.active && !peek.value &&
+    !!page && event.clientX >= page.left && event.clientX < page.right &&
+    event.clientY >= page.top && event.clientY < page.bottom;
+  drag.split = undefined;
+  if (overPage && page) {
+    const share = state.value.stacked
+      ? (event.clientY - page.top) / page.height
+      : (event.clientX - page.left) / page.width;
+    drag.split = share < state.value.ratio / 100 ? "primary" : "secondary";
+  }
+  drag.group = drag.kind === "tab" ? target?.closest<HTMLElement>("[data-drop-group]")?.dataset.dropGroup : undefined;
+  drag.destination = undefined;
+  if (drag.split || drag.group) return;
+
+  const attribute = drag.kind === "tab" ? "dragTab" : "dragSpace";
+  const list = target?.closest<HTMLElement>(drag.kind === "tab" ? ".browser-tabs" : ".browser-spaces");
+  if (!list || !root.value?.contains(list)) return;
+  const scale = list.getBoundingClientRect().width / list.offsetWidth || 1;
+  const pointer = horizontal ? event.clientX : event.clientY;
+  // Use each item's layout slot, independent of its current animation frame.
+  for (const row of list.querySelectorAll<HTMLElement>(drag.kind === "tab" ? "[data-drag-tab]" : "[data-drag-space]")) {
+    const rect = row.getBoundingClientRect();
+    const transform = getComputedStyle(row).transform;
+    const matrix = transform === "none" ? undefined : new DOMMatrixReadOnly(transform);
+    const start = horizontal ? rect.left - (matrix?.e ?? 0) * scale : rect.top - (matrix?.f ?? 0) * scale;
+    const size = horizontal ? rect.width : rect.height;
+    if (pointer < start || pointer >= start + size) continue;
+    moveToDragSlot(drag, row.dataset[attribute], pointer >= start + size / 2);
+    break;
+  }
+}
+function moveToDragSlot(drag: BrowserDrag, target: string | undefined, after: boolean) {
+  if (drag.kind === "space") {
+    reorderBrowserItems(state.value.spaces, drag.id, target, after);
+  } else {
+    const tab = spaceTabs.value.find((item) => item.id === drag.id);
+    const other = spaceTabs.value.find((item) => item.id === target);
+    if (!tab || !other || !!tab.pinned !== !!other.pinned) return;
+    if (tab.group === other.group) reorderBrowserItems(state.value.tabs, drag.id, other.id, after);
+    else drag.destination = { id: other.id, after };
+  }
+}
+function reorderBrowserItems<T extends { id: string }>(items: T[], source: string, target: string | undefined, after: boolean) {
+  const from = items.findIndex((item) => item.id === source);
+  const at = items.findIndex((item) => item.id === target);
+  if (from < 0 || at < 0 || from === at) return;
+  const to = at + Number(after) - Number(from < at);
+  if (from !== to) items.splice(to, 0, items.splice(from, 1)[0]!);
+}
+function endBrowserDrag(event?: PointerEvent, cancel = false) {
+  const drag = browserDrag.value;
+  if (!drag || (event && drag.pointer !== event.pointerId)) return;
+  browserDrag.value = undefined;
+  if (!drag.moving) return;
+  tipResumeAt = dragPoint;
   hideTip();
-  draggingTab.value = tab.id;
-  event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData("text/plain", label(tab));
-}
-function allowTabDrop(event: DragEvent) {
-  if (!draggingTab.value || !event.dataTransfer) return;
-  event.preventDefault();
-  event.dataTransfer.dropEffect = "move";
-}
-function dropTab(event: DragEvent, target?: BrowserTab, group?: TabGroup) {
-  const tab = spaceTabs.value.find((item) => item.id === draggingTab.value);
-  draggingTab.value = "";
-  if (!tab || tab === target) return;
-  event.preventDefault();
-  event.stopPropagation();
-  if (group) return groupTabs([tab.id], group);
-  if (!target || !!target.pinned !== !!tab.pinned) return;
-  const tabs = state.value.tabs;
-  const from = tabs.indexOf(tab), to = tabs.indexOf(target);
-  tabs.splice(from, 1);
-  tabs.splice(to, 0, tab);
-  tab.group = target.group;
+  suppressDragClick = true;
+  setTimeout(() => { suppressDragClick = false; });
+  if (cancel || drag.split || drag.group || drag.destination) {
+    const positions = new Map(drag.original.map((id, index) => [id, index]));
+    const items = drag.kind === "tab" ? state.value.tabs : state.value.spaces;
+    items.sort((a, b) => (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity));
+  }
+  if (cancel) return;
+  if (drag.split) return placeBeside(drag.id, state.value.active, drag.split);
+  const group = state.value.groups.find((item) => item.id === drag.group);
+  if (group) return groupTabs([drag.id], group);
+  if (drag.destination) {
+    const tab = spaceTabs.value.find((item) => item.id === drag.id);
+    const target = spaceTabs.value.find((item) => item.id === drag.destination?.id);
+    if (tab && target) {
+      tab.group = target.group;
+      reorderBrowserItems(state.value.tabs, drag.id, target.id, drag.destination.after);
+    }
+  }
   save();
 }
+function ignoreDragClick(event: MouseEvent) {
+  if (!suppressDragClick) return;
+  event.preventDefault();
+  event.stopPropagation();
+}
+const draggedTab = computed(() => browserDrag.value?.kind === "tab"
+  ? spaceTabs.value.find((tab) => tab.id === browserDrag.value?.id)
+  : undefined);
+const draggedSpace = computed(() => browserDrag.value?.kind === "space"
+  ? state.value.spaces.find((space) => space.id === browserDrag.value?.id)
+  : undefined);
 function groupMenu(event: MouseEvent, group: TabGroup) {
   const members = () => state.value.tabs.filter((tab) => tab.group === group.id);
   const removeGroup = () => {
@@ -1946,16 +2079,18 @@ function closeSplit() {
   }
 }
 /** Open the target opposite the source, preserving the sidebar anchor. */
-function placeBeside(id: string, source = state.value.active) {
+function placeBeside(id: string, source = state.value.active, side?: "primary" | "secondary") {
   const split = state.value.split;
   if (source === id) return;
   if (split) {
-    const pane = split.secondary === source ? "primary" : "secondary";
+    const pane = side ?? (split.secondary === source ? "primary" : "secondary");
     const replaced = split[pane];
     if (replaced !== id && replaced !== state.value.active) leaving(replaced);
     split[pane] = id;
   } else {
-    state.value.split = { primary: source, secondary: id, anchor: source };
+    state.value.split = side === "primary"
+      ? { primary: id, secondary: source, anchor: source }
+      : { primary: source, secondary: id, anchor: source };
   }
   selectTab(id);
 }
@@ -2149,6 +2284,7 @@ function placeTip() {
   visible.y = Math.max(6, Math.min(bottom, y));
 }
 function planTip(target: HTMLElement | undefined, keyboard: boolean) {
+  if (browserDrag.value || tipResumeAt) return;
   if (target === tipFor && tipByKeyboard === keyboard) return;
   hideTip();
   if (!target || target.matches(":disabled")) return;
@@ -2167,8 +2303,12 @@ function planTip(target: HTMLElement | undefined, keyboard: boolean) {
   }, keyboard ? 240 : 500);
 }
 function tipOver(event: PointerEvent) {
-  if (event.pointerType === "touch") return;
+  if (event.pointerType === "touch" || event.buttons) return;
   tipPoint = local(event);
+  if (tipResumeAt) {
+    if (Math.hypot(tipPoint.x - tipResumeAt.x, tipPoint.y - tipResumeAt.y) < 4) return;
+    tipResumeAt = undefined;
+  }
   const target = (event.target as HTMLElement)?.closest<HTMLElement>("[data-tip]");
   planTip(target || undefined, false);
   if (tip.value) placeTip();
@@ -2558,7 +2698,14 @@ function shortcut(name: string) {
   else if (name === "escape" && peek.value) closePeek();
 }
 function hostKey(event: KeyboardEvent) {
+  if (event.key === "Tab") tipResumeAt = undefined;
   if (event.key === "Escape") {
+    if (browserDrag.value?.moving) {
+      event.preventDefault();
+      event.stopPropagation();
+      endBrowserDrag(undefined, true);
+      return;
+    }
     hideTip();
     if (!(menu.value || switcher.value || dialog.value || drawer.value || peek.value || cropArming.value)) return;
     if ((event.target as Element)?.closest(".browser-drawer") && !menu.value) return;
@@ -2622,7 +2769,12 @@ function browserWheel(event: WheelEvent) {
     @wheel="browserWheel"
     @keydown.capture="hostKey"
     @keyup.capture="hostKeyUp"
-    @pointermove="tipOver"
+    @pointermove="browserDrag ? moveBrowserDrag($event) : tipOver($event)"
+    @pointerup="endBrowserDrag($event)"
+    @pointercancel="endBrowserDrag($event, true)"
+    @lostpointercapture.self="endBrowserDrag($event, true)"
+    @pointerleave="!browserDrag?.moving && endBrowserDrag()"
+    @click.capture="ignoreDragClick"
     @scroll.capture="hideTip"
     @focusin="tipFocus"
     @focusout="tipBlur"
@@ -2659,12 +2811,15 @@ function browserWheel(event: WheelEvent) {
           <Icon name="sidebar" :size="15" />
         </button>
       </div>
-      <div class="browser-spaces" role="tablist" aria-label="Spaces">
-        <template v-for="space in state.spaces" :key="space.id">
+      <TransitionGroup tag="div" class="browser-spaces" role="tablist" aria-label="Spaces" move-class="browser-reorder-move">
           <button
+            v-for="space in state.spaces"
+            :key="space.id"
             type="button"
             class="browser-space"
-            :class="{ active: space.id === state.space }"
+            :class="{ active: space.id === state.space, 'drag-source': browserDrag?.moving && browserDrag.id === space.id }"
+            :data-drag-space="space.id"
+            @pointerdown="beginBrowserDrag($event, 'space', space.id)"
             :style="{ '--space': space.color }"
             role="tab"
             :aria-selected="space.id === state.space"
@@ -2675,9 +2830,9 @@ function browserWheel(event: WheelEvent) {
           >
             {{ space.icon || space.name.slice(0, 1).toUpperCase() }}
           </button>
-        </template>
         <button
           v-if="state.spaces.length < MAX_SPACES"
+          key="add-space"
           type="button"
           class="browser-space browser-space-add"
           aria-label="New space"
@@ -2686,7 +2841,7 @@ function browserWheel(event: WheelEvent) {
         >
           <Icon name="plus" :size="11" />
         </button>
-      </div>
+      </TransitionGroup>
       <button
         v-if="state.layout === 'performance'"
         type="button"
@@ -2699,7 +2854,7 @@ function browserWheel(event: WheelEvent) {
         <Icon name="search" :size="12" />
         <span>{{ activeTab.url ? label(activeTab) : "Search or enter address" }}</span>
       </button>
-      <div class="browser-tabs" role="tablist">
+      <TransitionGroup tag="div" class="browser-tabs" role="tablist" move-class="browser-reorder-move">
         <template v-for="row in rows" :key="rowKey(row)">
           <div v-if="row.kind === 'title'" class="side-title">
             <span class="side-title-text">{{ row.text }}</span>
@@ -2731,7 +2886,8 @@ function browserWheel(event: WheelEvent) {
           <div
             v-else-if="row.kind === 'group'"
             class="browser-group"
-            :class="{ collapsed: row.group.collapsed }"
+            :class="{ collapsed: row.group.collapsed, 'group-drop-active': browserDrag?.group === row.group.id }"
+            :data-drop-group="row.group.id"
             :style="{ '--group': row.group.color }"
             role="button"
             tabindex="0"
@@ -2747,8 +2903,6 @@ function browserWheel(event: WheelEvent) {
             "
             @dblclick.stop="rename(row.group)"
             @contextmenu="groupMenu($event, row.group)"
-            @dragover="allowTabDrop"
-            @drop="dropTab($event, undefined, row.group)"
           >
             <Icon class="browser-group-chevron" name="down" :size="12" />
             <span class="browser-group-dot"></span>
@@ -2765,7 +2919,7 @@ function browserWheel(event: WheelEvent) {
             </button>
           </div>
           <div v-else-if="row.kind === 'empty-group'" class="browser-group-empty"
-            @dragover="allowTabDrop" @drop="dropTab($event, undefined, row.group)">
+            :data-drop-group="row.group.id" :class="{ 'group-drop-active': browserDrag?.group === row.group.id }">
             Drop tabs here
           </div>
           <div
@@ -2840,25 +2994,22 @@ function browserWheel(event: WheelEvent) {
               pinned: !!row.tab.pinned,
               grouped: row.grouped,
               selected: selected.has(row.tab.id),
-              dragging: draggingTab === row.tab.id,
+              'drag-source': browserDrag?.moving && browserDrag.id === row.tab.id,
+              'group-drop-active': browserDrag?.destination?.id === row.tab.id,
             }"
             role="tab"
             :aria-selected="row.tab.id === state.active"
             tabindex="0"
             :data-tip="row.tab.pinned ? `${label(row.tab)} · Double-click to return` : label(row.tab)"
-            draggable="true"
+            :data-drag-tab="row.tab.id"
             @click="tabClick($event, row.tab)"
             @dblclick="resetPin(row.tab)"
             @keydown.enter.self.prevent="selectTab(row.tab.id)"
             @keydown.space.self.prevent="selectTab(row.tab.id)"
-            @pointerdown="tabMiddleDown"
+            @pointerdown="tabMiddleDown($event); beginBrowserDrag($event, 'tab', row.tab.id)"
             @mousedown="tabMiddleDown"
             @auxclick.prevent="$event.button === 1 && closeTab(row.tab.id)"
             @contextmenu="tabMenu($event, row.tab)"
-            @dragstart="beginTabDrag($event, row.tab)"
-            @dragend="draggingTab = ''"
-            @dragover="allowTabDrop"
-            @drop="dropTab($event, row.tab)"
           >
             <span class="tab-favicon" :style="faviconStyle(row.tab.url)">
               <Icon v-if="!row.tab.url" name="box" :size="14" />
@@ -2885,7 +3036,7 @@ function browserWheel(event: WheelEvent) {
             </button>
           </div>
         </template>
-      </div>
+      </TransitionGroup>
       <div v-if="miniTab" class="browser-mini" aria-label="Playing in another tab">
         <button
           type="button"
@@ -3350,6 +3501,16 @@ function browserWheel(event: WheelEvent) {
           <Icon name="close" :size="13" />
         </button>
       </div>
+      <Transition name="browser-split-target">
+        <div v-if="browserDrag?.split" class="browser-split-target" aria-hidden="true">
+          <div class="split-drop-pane" :class="{ 'drop-selected': browserDrag.split === 'primary' }">
+            <span>{{ state.stacked ? "Top pane" : "Left pane" }}</span>
+          </div>
+          <div class="split-drop-pane" :class="{ 'drop-selected': browserDrag.split === 'secondary' }">
+            <span>{{ state.stacked ? "Bottom pane" : "Right pane" }}</span>
+          </div>
+        </div>
+      </Transition>
       <div
         v-if="cropArming"
         class="browser-crop"
@@ -3361,6 +3522,20 @@ function browserWheel(event: WheelEvent) {
       >
         <div v-if="cropBox" class="browser-crop-box" :style="cropBox"></div>
       </div>
+    </div>
+    <div v-if="browserDrag?.moving" ref="dragPreview" class="browser-drag-preview" aria-hidden="true"
+      :class="{ 'space-preview': browserDrag.kind === 'space' }"
+      :style="{ width: browserDrag.width + 'px', height: browserDrag.height + 'px', '--space': draggedSpace?.color }">
+      <template v-if="draggedTab">
+        <span class="tab-favicon" :style="faviconStyle(draggedTab.url)">
+          <Icon v-if="!draggedTab.url" name="box" :size="14" />
+          <template v-else>{{ glyph(draggedTab) }}</template>
+        </span>
+        <span class="tab-text">{{ label(draggedTab) }}</span>
+      </template>
+      <template v-else-if="draggedSpace">
+        {{ draggedSpace.icon || draggedSpace.name.slice(0, 1).toUpperCase() }}
+      </template>
     </div>
     <div
       v-if="menu"
@@ -5031,15 +5206,101 @@ function browserWheel(event: WheelEvent) {
 }
 
 /* Menus, command palette, notices and tooltips */
+.browser-reorder-move {
+  transition: transform 105ms ease-out !important;
+}
+.browser-tab,
+.browser-space {
+  user-select: none;
+}
+.browser-view .drag-source {
+  opacity: 0;
+}
+.browser-view .group-drop-active {
+  background: var(--selection);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.browser-drag-preview {
+  position: absolute;
+  inset: 0 auto auto 0;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-inline: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--selection);
+  color: var(--ink);
+  box-shadow: 0 2px 6px rgb(32 52 65 / 10%);
+  pointer-events: none;
+}
+.browser-drag-preview.space-preview {
+  padding: 0;
+  justify-content: center;
+  color: var(--space);
+  background: color-mix(in srgb, var(--space) 20%, var(--surface));
+  font-weight: 630;
+}
+.browser-split-target {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  grid-template-columns: var(--split) minmax(0, 1fr);
+  pointer-events: none;
+}
+.stacked .browser-split-target {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: var(--split) minmax(0, 1fr);
+}
+.split-drop-pane {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  margin: 8px;
+  border: 1px dashed var(--accent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  color: var(--ink);
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+.split-drop-pane span {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--surface);
+  font-weight: 600;
+}
+.split-drop-pane.drop-selected {
+  border-style: solid;
+  background: color-mix(in srgb, var(--selection) 94%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.browser-split-target-enter-active,
+.browser-split-target-leave-active {
+  transition: opacity 190ms var(--ease), transform 190ms var(--ease);
+}
+.browser-split-target-enter-from,
+.browser-split-target-leave-to {
+  opacity: 0;
+  transform: scale(0.97);
+}
 /* Overlays span the whole app, not just the page column. */
-.browser-view > :is(.browser-menu, .browser-scrim, .browser-notice, .browser-tip, .browser-drawer) {
+.browser-view > :is(.browser-menu, .browser-scrim, .browser-notice, .browser-tip, .browser-drawer, .browser-drag-preview) {
   grid-column: 1 / -1;
   grid-row: 1 / -1;
 }
 .browser-menu {
   position: absolute;
   z-index: 8;
-  width: 222px;
+  width: min(248px, calc(100% - 8px));
+  max-height: calc(100% - 8px);
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
   padding: 6px;
   border: 1px solid var(--line);
   border-radius: 11px;
@@ -5085,6 +5346,29 @@ function browserWheel(event: WheelEvent) {
   border: 0;
   background: var(--soft);
 }
+.browser-menu-label {
+  padding: 8px 9px 6px;
+  color: var(--sub);
+  font-size: 10px;
+  font-weight: 680;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.browser-menu button .menu-initial {
+  display: grid;
+  flex: 0 0 19px;
+  height: 19px;
+  place-items: center;
+  border-radius: 5px;
+  background: var(--selection);
+  font-size: 10px;
+}
+.browser-menu button.danger:hover:not(:disabled) {
+  color: #9d4444;
+}
+.theme-dark .browser-menu button.danger:hover:not(:disabled) {
+  color: #ffabab;
+}
 .browser-scrim {
   position: absolute;
   inset: 0;
@@ -5092,7 +5376,8 @@ function browserWheel(event: WheelEvent) {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: 12% 20px 20px;
+  padding: 0 20px;
+  align-items: center;
   background: rgb(32 52 65 / 22%);
   backdrop-filter: blur(3px);
   animation: browser-fade 0.15s both;
@@ -5102,8 +5387,9 @@ function browserWheel(event: WheelEvent) {
   backdrop-filter: none;
 }
 .browser-switcher {
+  margin-block: 12px;
   width: min(520px, 100%);
-  max-height: 100%;
+  max-height: calc(100% - 24px);
   display: flex;
   flex-direction: column;
   border: 1px solid var(--line);
@@ -5112,6 +5398,69 @@ function browserWheel(event: WheelEvent) {
   box-shadow: var(--floating);
   overflow: hidden;
   animation: browser-pop 0.18s var(--ease);
+}
+.browser-dialog {
+  overflow: auto;
+}
+.browser-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 19px 8px;
+}
+.browser-dialog h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 660;
+}
+.browser-dialog-body {
+  padding: 8px 19px 18px;
+}
+.browser-dialog-body label {
+  display: grid;
+  gap: 7px;
+  color: var(--sub);
+}
+.browser-dialog-body input {
+  width: 100%;
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--low);
+  color: var(--ink);
+}
+.browser-dialog-body input:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: inset 0 -1px var(--accent);
+}
+.browser-dialog-body p {
+  margin: 0;
+  color: var(--sub);
+  line-height: 1.5;
+}
+.browser-dialog-body footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  margin-top: 18px;
+}
+.browser-dialog-body button {
+  min-height: 34px;
+  padding: 0 13px;
+  border-radius: 7px;
+  background: var(--low);
+  color: var(--sub);
+}
+.browser-dialog-body button[type="submit"] {
+  background: var(--selection);
+  color: var(--ink);
+}
+.browser-dialog-body button.danger {
+  background: #893f3f;
+  color: #fff;
 }
 .command-input-row {
   position: relative;
@@ -5156,13 +5505,37 @@ function browserWheel(event: WheelEvent) {
   opacity: 0.75;
   transform: scaleX(1);
 }
-.command-results {
+.command-list-shell {
+  position: relative;
   display: flex;
   flex-direction: column;
-  padding: 8px 8px 14px;
+  min-height: 0;
+}
+.command-scroll-track {
+  position: absolute;
+  inset: 8px 3px 8px auto;
+  width: 8px;
+  touch-action: none;
+  cursor: pointer;
+}
+.command-scroll-track span {
+  position: absolute;
+  inset-inline: 2px;
+  border-radius: 8px;
+  background: var(--scroll-thumb);
+  cursor: grab;
+}
+.command-scroll-track span:active {
+  cursor: grabbing;
+}
+.command-results {
+  min-height: 0;
+  max-height: 355px;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 14px 14px 8px;
   overflow: hidden auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgb(108 143 164 / 35%) transparent;
+  scrollbar-width: none;
 }
 .command-row {
   display: flex;
@@ -5223,7 +5596,6 @@ function browserWheel(event: WheelEvent) {
 .browser-tip {
   position: absolute;
   z-index: 10;
-  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 9px;
@@ -5243,14 +5615,20 @@ function browserWheel(event: WheelEvent) {
 @keyframes tip-in {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(3px);
+    transform: translateY(3px);
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateY(0);
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .browser-reorder-move,
+  .split-drop-pane,
+  .browser-split-target-enter-active,
+  .browser-split-target-leave-active {
+    transition: none !important;
+  }
   .inline-split,
   .split-active-highlight,
   .browser-menu,
