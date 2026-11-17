@@ -66,6 +66,7 @@ export function createProjectsService(
     projectPaths: string[];
   };
   type TerminalState = {
+    layout?: string;
     isOpen?: boolean;
     isMaximized?: boolean;
     height?: number;
@@ -179,6 +180,7 @@ export function createProjectsService(
         typeof value.activeCwd === "string"
           ? path.resolve(value.activeCwd)
           : undefined,
+      layout: typeof value.layout === "string" ? value.layout : undefined,
       tabs: Array.isArray(value.tabs)
         ? value.tabs
             .filter(

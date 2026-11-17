@@ -18,11 +18,23 @@ async function open(page: Page) {
   await page.addInitScript(() =>
     localStorage.setItem("orvane.examples.v1", "installed"),
   );
-  await page.goto("/");
-  await page.getByRole("button", { name: "Workspace options" }).click();
-  await page.getByRole("button", { name: "Create Browser", exact: true }).click();
   const browser = page.locator(".browser-view");
-  await expect(browser).toBeVisible();
+  try {
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    // Load the lazy view before creating workspace state, since Vite may
+    // reload the page when it optimizes the view's first-use dependencies.
+    await page.waitForFunction(async () => {
+      const component = "/src/components/BrowserView.vue";
+      const view = await import(component).catch(() => null);
+      return !!view && document.querySelector('main[data-ready="true"]') !== null;
+    });
+    await page.getByRole("button", { name: "Workspace options" }).click();
+    await page.getByRole("button", { name: "Create Browser", exact: true }).click();
+    await expect(browser).toBeVisible({ timeout: 20000 });
+  } catch (error) {
+    server.close();
+    throw error;
+  }
   const go = async (path: string) => {
     const bar = browser.getByRole("textbox", { name: "Address" });
     await bar.fill(`${origin}${path}`);
@@ -353,6 +365,14 @@ test("dragging reorders tabs and spaces and previews a split over the current pa
       const box = (await target.boundingBox())!;
       await page.mouse.move(box.x + box.width * x, box.y + box.height * y, { steps: 12 });
     };
+    const dragPreview = browser.locator(".browser-drag-preview");
+    const firstSlot = (await tabs.first().boundingBox())!;
+    await begin(tabs.first());
+    await page.mouse.move(firstSlot.x + firstSlot.width / 2, firstSlot.y - 45, { steps: 8 });
+    await expect(dragPreview).toBeVisible();
+    expect((await dragPreview.boundingBox())!.y).toBeGreaterThanOrEqual(firstSlot.y - 1);
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
     await begin(tabs.first());
     await move(tabs.last(), 0.5, 0.85);
     await expect(tabs.first()).toHaveAttribute("data-drag-tab", second);
@@ -379,6 +399,11 @@ test("dragging reorders tabs and spaces and previews a split over the current pa
     await page.mouse.up();
     await expect(browser.locator("iframe.pane-first")).toHaveAttribute("src", `${origin}/second`);
     await expect(browser.locator("iframe.pane-second")).toHaveAttribute("src", `${origin}/first`);
+    const focusButtons = browser.getByRole("button", { name: "Focus pane", exact: true });
+    await expect(browser.getByText("Active pane", { exact: true })).toHaveCount(1);
+    await focusButtons.first().click();
+    await expect(focusButtons.first()).toHaveAttribute("aria-pressed", "true");
+    await expect(focusButtons.last()).toHaveAttribute("aria-pressed", "false");
     await browser.getByRole("button", { name: "Exit Split View", exact: true }).click();
     await begin(tabs.last());
     await move(panel, 0.25, 0.4);
@@ -398,6 +423,15 @@ test("dragging reorders tabs and spaces and previews a split over the current pa
     await expect(dialog).toBeHidden();
     await work.hover();
     await expect(browser.getByRole("tooltip")).toHaveText("Work");
+    const workspaceEnd = (await work.boundingBox())!;
+    await page.mouse.down();
+    await page.mouse.move(workspaceEnd.x + workspaceEnd.width + 45, workspaceEnd.y + workspaceEnd.height / 2, { steps: 8 });
+    await expect(dragPreview).toBeVisible();
+    const spacePreview = (await dragPreview.boundingBox())!;
+    expect(spacePreview.x + spacePreview.width).toBeLessThanOrEqual(workspaceEnd.x + workspaceEnd.width + 1);
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    await work.hover();
     await page.mouse.down();
     await move(main, 0.15, 0.5);
     await expect(browser.locator(".browser-drag-preview")).toHaveText("W");

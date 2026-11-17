@@ -92,6 +92,7 @@ test("shipping estimate", () => {
   await page
     .getByRole("button", { name: "Create Terminal", exact: true })
     .click();
+  await expect(page.locator(".terminal-pane .xterm")).toBeVisible({ timeout: 20000 });
   await page
     .getByRole("button", { name: "Pin Playwright results", exact: true })
     .click();

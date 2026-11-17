@@ -28,8 +28,10 @@ import {
   type TerminalTab,
 } from "../../terminalLayout";
 
-const props = defineProps<{ block: Block }>();
-const editable = inject(workbenchEditable);
+const props = withDefaults(defineProps<{ block: Block; initialCwd?: string; visible?: boolean }>(), {
+  visible: true,
+});
+const editable = inject(workbenchEditable, () => false);
 const DEFAULT_FONT = 13;
 const state = reactive<TerminalState>(readTerminal(props.block.value));
 function save() {
@@ -41,6 +43,11 @@ const defaultProfile = computed(
   () => profiles.value.find((p) => p.id === state.defaultProfile) ?? profiles.value[0],
 );
 const activeTab = computed(() => state.tabs.find((t) => t.id === state.active));
+const visitedTabs = reactive(new Set<string>());
+watch([activeTab, () => props.visible, () => state.tabs.map((tab) => tab.id)], ([tab, visible, ids]) => {
+  for (const id of visitedTabs) if (!ids.includes(id)) visitedTabs.delete(id);
+  if (tab && visible) visitedTabs.add(tab.id);
+}, { immediate: true });
 function openTestResults() {
   const tab = activeTab.value;
   const cwd = tab && panes(tab.root).find((pane) => pane.id === tab.focus)?.cwd;
@@ -66,15 +73,127 @@ function tabLabel(tab: TerminalTab) {
 }
 
 // ---- Tabs and panes ----
-function newPane(profileId = defaultProfile.value?.id ?? ""): PaneNode {
-  return { type: "pane", id: uid(), profile: profileId };
+function newPane(profileId = defaultProfile.value?.id ?? "", cwd = props.initialCwd): PaneNode {
+  return { type: "pane", id: uid(), profile: profileId, cwd };
 }
-function newTab(profileId?: string) {
-  const pane = newPane(profileId);
-  const tab: TerminalTab = { id: uid(), root: pane, focus: pane.id };
+function newTab(profileId?: string, cwd?: string, name?: string) {
+  const pane = newPane(profileId, cwd);
+  const tab: TerminalTab = { id: uid(), root: pane, focus: pane.id, name };
   state.tabs.push(tab);
   selectTab(tab.id);
+}
+defineExpose({ openTab: (cwd: string, name?: string) => newTab(undefined, cwd, name) });
+
+const tabMime = "application/x-orvane-terminal-tab";
+const dragging = ref<{ tabId: string; paneId?: string }>();
+const tabDrop = ref<{ id: string; after: boolean }>();
+const paneDrop = ref<{ id: string; edge: "left" | "right" | "top" | "bottom" }>();
+function resetDrag() {
+  dragging.value = undefined;
+  tabDrop.value = undefined;
+  paneDrop.value = undefined;
+}
+function startDrag(event: DragEvent, tabId: string, paneId?: string) {
+  if (!event.dataTransfer || (!paneId && (event.target as Element).closest("input, button"))) {
+    event.preventDefault();
+    return;
+  }
+  dragging.value = { tabId, paneId };
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData(tabMime, paneId ?? tabId);
+}
+function startPaneDrag(event: DragEvent) {
+  const id = (event.target as Element).closest<HTMLElement>("[data-drag-terminal-pane]")?.dataset.dragTerminalPane;
+  if (id && activeTab.value) startDrag(event, activeTab.value.id, id);
+}
+function movePaneToTab(source: TerminalTab, paneId: string, at = state.tabs.length) {
+  const pane = takePane(source, paneId);
+  if (!pane) return;
+  const tab: TerminalTab = { id: uid(), root: pane, focus: pane.id };
+  state.tabs.splice(at, 0, tab);
+  selectTab(tab.id);
+}
+function paneHandleClick(event: MouseEvent) {
+  const paneId = (event.target as Element).closest<HTMLElement>("[data-drag-terminal-pane]")?.dataset.dragTerminalPane;
+  if (paneId && activeTab.value) movePaneToTab(activeTab.value, paneId);
+}
+function overTab(event: DragEvent, id: string) {
+  paneDrop.value = undefined;
+  if (!dragging.value || (!dragging.value.paneId && dragging.value.tabId === id) || !event.dataTransfer?.types.includes(tabMime)) {
+    tabDrop.value = undefined;
+    return;
+  }
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  tabDrop.value = { id, after: event.clientX >= rect.left + rect.width / 2 };
+}
+function dropTab(event: DragEvent, id: string) {
+  const drag = dragging.value;
+  const drop = tabDrop.value;
+  const from = state.tabs.findIndex((tab) => tab.id === drag?.tabId);
+  const to = state.tabs.findIndex((tab) => tab.id === id);
+  resetDrag();
+  if (!drop || drop.id !== id || from < 0 || to < 0 || (from === to && !drag?.paneId)) return;
+  event.preventDefault();
+  if (drag?.paneId) {
+    return movePaneToTab(state.tabs[from]!, drag.paneId, to + Number(drop.after));
+  }
+  const [tab] = state.tabs.splice(from, 1);
+  state.tabs.splice(to + Number(drop.after) - Number(from < to), 0, tab!);
   save();
+}
+function overPane(event: DragEvent) {
+  tabDrop.value = undefined;
+  const drag = dragging.value;
+  if (!drag || (!drag.paneId && drag.tabId === state.active) || !event.dataTransfer?.types.includes(tabMime)) return;
+  const target = (event.target as Element).closest<HTMLElement>("[data-terminal-pane]");
+  if (!target || target.dataset.terminalPane === drag.paneId) {
+    paneDrop.value = undefined;
+    return;
+  }
+  const rect = target.getBoundingClientRect();
+  const x = (event.clientX - rect.left) / rect.width;
+  const y = (event.clientY - rect.top) / rect.height;
+  const edges = { left: x, right: 1 - x, top: y, bottom: 1 - y };
+  const edge = (Object.keys(edges) as (keyof typeof edges)[]).reduce((a, b) => edges[a] < edges[b] ? a : b);
+  paneDrop.value = edges[edge] < 0.32 ? { id: target.dataset.terminalPane!, edge } : undefined;
+  if (!paneDrop.value) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+}
+function dropPane(event: DragEvent) {
+  const drag = dragging.value;
+  const drop = paneDrop.value;
+  const source = state.tabs.find((tab) => tab.id === drag?.tabId);
+  const target = activeTab.value;
+  resetDrag();
+  if (!drop || !source || !target || (!drag?.paneId && source === target) || drop.id === drag?.paneId) return;
+  const pane = panes(target.root).find((item) => item.id === drop.id);
+  if (!pane) return;
+  event.preventDefault();
+  const moving = drag?.paneId ? takePane(source, drag.paneId) : source.root;
+  if (!moving) return;
+  const before = drop.edge === "left" || drop.edge === "top";
+  const node: LayoutNode = {
+    type: "split", id: uid(), ratio: 0.5,
+    dir: drop.edge === "left" || drop.edge === "right" ? "row" : "column",
+    a: before ? moving : pane, b: before ? pane : moving,
+  };
+  const root = replacePane(target.root, pane.id, node)!;
+  // Remove the tab without closing any of its live shell sessions.
+  if (!drag?.paneId) state.tabs.splice(state.tabs.indexOf(source), 1);
+  target.root = root;
+  target.focus = drag?.paneId ?? source.focus;
+  selectTab(target.id);
+}
+function takePane(tab: TerminalTab, id: string) {
+  const pane = panes(tab.root).find((item) => item.id === id);
+  const root = pane && replacePane(tab.root, id, null);
+  if (!root) return;
+  tab.root = root;
+  if (tab.focus === id) tab.focus = panes(root)[0]!.id;
+  return pane;
 }
 function selectTab(id: string) {
   state.active = id;
@@ -115,7 +234,7 @@ function split(paneId: string, dir: "row" | "column" | "auto") {
     dir = r && r.height > r.width ? "column" : "row";
   }
   // Like Windows Terminal: the new pane uses the same profile.
-  const added = newPane(pane.profile);
+  const added = newPane(pane.profile, pane.cwd);
   const node: LayoutNode = { type: "split", id: uid(), dir, ratio: 0.5, a: pane, b: added };
   tab.root = replacePane(tab.root, paneId, node)!;
   tab.focus = added.id;
@@ -224,7 +343,7 @@ function command(name: string, paneId: string) {
 
 const controller: TerminalController = {
   fontSize,
-  visible: (paneId) => !!activeTab.value && panes(activeTab.value.root).some((p) => p.id === paneId),
+  visible: (paneId) => props.visible && !!activeTab.value && panes(activeTab.value.root).some((p) => p.id === paneId),
   focused: (paneId) => activeTab.value?.focus === paneId,
   profileOf,
   focus(paneId) {
@@ -327,10 +446,18 @@ const kindIcon = (kind?: string) => (kind === "wsl" ? "desktop" : "terminal");
           v-for="tab in state.tabs"
           :key="tab.id"
           class="terminal-tab"
-          :class="{ active: tab.id === state.active }"
+          :class="{ active: tab.id === state.active, 'drop-before': tabDrop?.id === tab.id && !tabDrop.after, 'drop-after': tabDrop?.id === tab.id && tabDrop.after }"
           role="tab"
+          :aria-label="tabLabel(tab)"
+          :title="panes(tab.root).find((pane) => pane.id === tab.focus)?.cwd"
           :aria-selected="tab.id === state.active"
           tabindex="0"
+          :draggable="renaming !== tab.id"
+          @dragstart="startDrag($event, tab.id)"
+          @dragover="overTab($event, tab.id)"
+          @dragleave="!($event.currentTarget as HTMLElement).contains($event.relatedTarget as Node) && (tabDrop = undefined)"
+          @drop="dropTab($event, tab.id)"
+          @dragend="resetDrag"
           @click="selectTab(tab.id)"
           @dblclick="renameTab(tab)"
           @auxclick.prevent="$event.button === 1 && closeTab(tab.id)"
@@ -419,6 +546,7 @@ const kindIcon = (kind?: string) => (kind === "wsl" ? "desktop" : "terminal");
         >
           <Icon name="search" :size="14" />
         </button>
+        <slot name="actions" />
       </div>
     </div>
     <Teleport to="body">
@@ -487,14 +615,16 @@ const kindIcon = (kind?: string) => (kind === "wsl" ? "desktop" : "terminal");
         <Icon name="close" :size="12" />
       </button>
     </div>
-    <div class="terminal-body">
+    <div class="terminal-body" @click="paneHandleClick" @dragstart="startPaneDrag" @dragend="resetDrag" @dragover="overPane" @drop="dropPane"
+      @dragleave="!($event.currentTarget as HTMLElement).contains($event.relatedTarget as Node) && (paneDrop = undefined)">
       <div
         v-for="tab in state.tabs"
         v-show="tab.id === state.active"
         :key="tab.id"
         class="terminal-tab-body"
       >
-        <TerminalSplit :node="tab.root" @resized="save" />
+        <TerminalSplit v-if="visitedTabs.has(tab.id)" :node="tab.root"
+          :drop="tab.id === state.active ? paneDrop : undefined" @resized="save" />
       </div>
       <div v-if="!state.tabs.length" class="terminal-empty">
         <p>No terminals open.</p>
@@ -545,6 +675,12 @@ const kindIcon = (kind?: string) => (kind === "wsl" ? "desktop" : "terminal");
 }
 .terminal-tab:hover {
   background: rgb(255 255 255 / 35%);
+}
+.terminal-tab.drop-before {
+  box-shadow: inset 2px 0 #546e7c;
+}
+.terminal-tab.drop-after {
+  box-shadow: inset -2px 0 #546e7c;
 }
 .terminal-tab.active {
   background: rgb(255 255 255 / 60%);

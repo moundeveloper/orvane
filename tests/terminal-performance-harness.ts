@@ -3,6 +3,8 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import TerminalPanel from "../src/components/projects/TerminalPanel.vue";
 import type { TerminalState } from "../src/components/projects/types";
+import { makeBlock } from "../src/model";
+import { terminal as client, type SessionListener } from "../src/terminalClient";
 import "../src/components/projects/projects.css";
 
 export function mountTerminalFixture(count = 50, open = true) {
@@ -11,11 +13,40 @@ export function mountTerminalFixture(count = 50, open = true) {
   let changes = 0;
   let lastState: TerminalState | undefined;
   const calls: { cwd: string; command: string }[] = [];
-  const completions: ((value: {
-    stdOut: string;
-    stdErr: string;
-    exitCode: number;
-  }) => void)[] = [];
+  const completions: ((text: string) => void)[] = [];
+  const sessions = new Map<string, { cwd: string; draft: string; last: string; output: string; listener?: SessionListener }>();
+  const opened: string[] = [];
+  const killed: string[] = [];
+  const originalClient = { ...client };
+  client.open = (id, options, listener) => {
+    const existing = sessions.get(id);
+    if (existing) {
+      existing.listener = listener;
+      listener.attached(existing.output);
+      return;
+    }
+    opened.push(id);
+    sessions.set(id, { cwd: options.cwd ?? "", draft: "", last: "", output: "", listener });
+    listener.started("Fixture shell");
+  };
+  client.input = (id, data) => {
+    const session = sessions.get(id)!;
+    if (data === "\x1b[A") session.draft = session.last;
+    else if (data === "\r") {
+      const command = session.draft;
+      session.draft = "";
+      session.last = command;
+      calls.push({ cwd: session.cwd, command });
+      completions.push((text) => {
+        const output = command + "\r\n" + text + "\r\n";
+        session.output += output;
+        session.listener?.output(output);
+      });
+    } else session.draft += data;
+  };
+  client.resize = () => {};
+  client.detach = (id) => { const session = sessions.get(id); if (session) delete session.listener; };
+  client.kill = (id) => { killed.push(id); sessions.delete(id); };
   const originalOpen = Terminal.prototype.open;
   const originalFit = FitAddon.prototype.fit;
   Terminal.prototype.open = function (host: HTMLElement) {
@@ -38,6 +69,7 @@ export function mountTerminalFixture(count = 50, open = true) {
     tabs: paths.map((cwd) => ({ cwd, title: cwd.split("\\").at(-1)! })),
   };
   const panel = ref<InstanceType<typeof TerminalPanel>>();
+  const block = makeBlock("projects");
   const root = document.createElement("div");
   root.id = "terminal-fixture";
   root.className = "projects-hub";
@@ -47,13 +79,10 @@ export function mountTerminalFixture(count = 50, open = true) {
   const app = createApp({
     render: () =>
       h(TerminalPanel, {
+        block,
         ref: panel,
         initialCwd: paths[0]!,
         state,
-        runCommand: (cwd: string, command: string) => {
-          calls.push({ cwd, command });
-          return new Promise((resolve) => completions.push(resolve));
-        },
         onStateChange: (next: TerminalState) => {
           changes++;
           lastState = next;
@@ -70,6 +99,8 @@ export function mountTerminalFixture(count = 50, open = true) {
   return {
     paths,
     calls,
+    opened,
+    killed,
     get fits() {
       return fits;
     },
@@ -77,7 +108,7 @@ export function mountTerminalFixture(count = 50, open = true) {
       return changes;
     },
     get state() {
-      return lastState;
+      return lastState ?? state;
     },
     resetFits() {
       fits = 0;
@@ -87,7 +118,7 @@ export function mountTerminalFixture(count = 50, open = true) {
     },
     text(cwd: string) {
       const index = paths.indexOf(cwd);
-      const host = root.querySelectorAll<HTMLElement>(".terminal-host")[index];
+      const host = root.querySelectorAll<HTMLElement>(".terminal-tab-body")[index]?.querySelector(".terminal-host");
       const terminal = terminals.find((entry) => entry.host === host)?.terminal;
       if (!terminal) return "";
       const buffer = terminal.buffer.active;
@@ -97,7 +128,7 @@ export function mountTerminalFixture(count = 50, open = true) {
       ).join("\n");
     },
     complete(index: number, text = "Controlled output") {
-      completions[index]?.({ stdOut: text, stdErr: "", exitCode: 0 });
+      completions[index]?.(text);
     },
     addTabs() {
       return Promise.all(
@@ -111,6 +142,7 @@ export function mountTerminalFixture(count = 50, open = true) {
       root.remove();
       Terminal.prototype.open = originalOpen;
       FitAddon.prototype.fit = originalFit;
+      Object.assign(client, originalClient);
     },
   };
 }

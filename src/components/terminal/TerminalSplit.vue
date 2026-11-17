@@ -6,7 +6,11 @@ import TerminalPane from "./TerminalPane.vue";
 import type { LayoutNode } from "../../terminalLayout";
 
 defineOptions({ name: "TerminalSplit" });
-const props = defineProps<{ node: LayoutNode }>();
+const props = defineProps<{
+  node: LayoutNode;
+  movable?: boolean;
+  drop?: { id: string; edge: "left" | "right" | "top" | "bottom" };
+}>();
 const emit = defineEmits<{ resized: [] }>();
 const box = ref<HTMLDivElement>();
 function drag(event: PointerEvent) {
@@ -34,10 +38,11 @@ function drag(event: PointerEvent) {
 </script>
 
 <template>
-  <TerminalPane v-if="node.type === 'pane'" :key="node.id" :pane="node" />
+  <TerminalPane v-if="node.type === 'pane'" :key="node.id" :pane="node"
+    :movable="movable" :drop-edge="drop?.id === node.id ? drop.edge : undefined" />
   <div v-else ref="box" class="terminal-split" :class="node.dir">
     <div class="terminal-split-part" :style="{ flexBasis: node.ratio * 100 + '%' }">
-      <TerminalSplit :node="node.a" @resized="emit('resized')" />
+      <TerminalSplit :node="node.a" :drop="drop" movable @resized="emit('resized')" />
     </div>
     <div
       class="terminal-divider"
@@ -46,7 +51,7 @@ function drag(event: PointerEvent) {
       @pointerdown="drag"
     ></div>
     <div class="terminal-split-part" :style="{ flexBasis: (1 - node.ratio) * 100 + '%' }">
-      <TerminalSplit :node="node.b" @resized="emit('resized')" />
+      <TerminalSplit :node="node.b" :drop="drop" movable @resized="emit('resized')" />
     </div>
   </div>
 </template>

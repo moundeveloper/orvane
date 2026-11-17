@@ -1615,6 +1615,7 @@ type BrowserDrag = {
   moving: boolean;
   split?: "primary" | "secondary";
   strip: HTMLElement;
+  reorderRows: HTMLElement[];
   horizontal: boolean;
   group?: string;
   destination?: { id: string; after: boolean };
@@ -1634,14 +1635,28 @@ function positionDragPreview() {
   const scale = bounds.width / browser.offsetWidth || 1;
   const left = (strip.left - bounds.left) / scale;
   const top = (strip.top - bounds.top) / scale;
+  const slots = drag.reorderRows.map((row) => dragSlot(row, drag.horizontal, scale));
+  const origin = drag.horizontal ? bounds.left : bounds.top;
+  const stripStart = drag.horizontal ? left : top;
+  const stripSize = (drag.horizontal ? strip.width : strip.height) / scale;
+  const start = Math.max(stripStart, (Math.min(...slots.map((slot) => slot.start)) - origin) / scale);
+  const end = Math.min(stripStart + stripSize, (Math.max(...slots.map((slot) => slot.end)) - origin) / scale);
+  const clamp = (point: number, size: number) => Math.max(start, Math.min(point, end - size));
   const x = drag.horizontal
-    ? Math.max(left, Math.min(dragPoint.x - drag.grabX, left + strip.width / scale - drag.width))
+    ? clamp(dragPoint.x - drag.grabX, drag.width)
     : drag.startX - drag.grabX;
   const y = drag.horizontal
     ? drag.startY - drag.grabY
-    : Math.max(top, Math.min(dragPoint.y - drag.grabY, top + strip.height / scale - drag.height));
+    : clamp(dragPoint.y - drag.grabY, drag.height);
   dragPreview.value.style.transform =
     `translate3d(${x}px, ${y}px, 0)`;
+}
+function dragSlot(row: HTMLElement, horizontal: boolean, scale: number) {
+  const rect = row.getBoundingClientRect();
+  const transform = getComputedStyle(row).transform;
+  const matrix = transform === "none" ? undefined : new DOMMatrixReadOnly(transform);
+  const start = horizontal ? rect.left - (matrix?.e ?? 0) * scale : rect.top - (matrix?.f ?? 0) * scale;
+  return { start, end: start + (horizontal ? rect.width : rect.height) };
 }
 function beginBrowserDrag(event: PointerEvent, kind: BrowserDrag["kind"], id: string) {
   if (event.button !== 0 || event.pointerType === "touch" || event.altKey ||
@@ -1653,11 +1668,18 @@ function beginBrowserDrag(event: PointerEvent, kind: BrowserDrag["kind"], id: st
   if (!strip) return;
   const bounds = source.getBoundingClientRect();
   const scale = bounds.width / source.offsetWidth || 1;
+  const tab = kind === "tab" ? spaceTabs.value.find((item) => item.id === id) : undefined;
+  const reorderRows = [...strip.querySelectorAll<HTMLElement>(kind === "tab" ? "[data-drag-tab]" : "[data-drag-space]")]
+    .filter((row) => {
+      if (kind === "space" || row === source) return true;
+      const other = spaceTabs.value.find((item) => item.id === row.dataset.dragTab);
+      return other && !!other.pinned === !!tab?.pinned && other.group === tab?.group;
+    });
   dragPoint = { x, y };
   browserDrag.value = {
     kind, id, pointer: event.pointerId, startX: x, startY: y,
     grabX: (event.clientX - bounds.left) / scale, grabY: (event.clientY - bounds.top) / scale,
-    width: source.offsetWidth, height: source.offsetHeight, moving: false, strip,
+    width: source.offsetWidth, height: source.offsetHeight, moving: false, strip, reorderRows,
     horizontal: kind === "space"
       ? !(state.value.collapsed || narrow.value)
       : state.value.layout === "comfortable",
@@ -1701,13 +1723,9 @@ function moveBrowserDrag(event: PointerEvent) {
   const pointer = horizontal ? event.clientX : event.clientY;
   // Use each item's layout slot, independent of its current animation frame.
   for (const row of list.querySelectorAll<HTMLElement>(drag.kind === "tab" ? "[data-drag-tab]" : "[data-drag-space]")) {
-    const rect = row.getBoundingClientRect();
-    const transform = getComputedStyle(row).transform;
-    const matrix = transform === "none" ? undefined : new DOMMatrixReadOnly(transform);
-    const start = horizontal ? rect.left - (matrix?.e ?? 0) * scale : rect.top - (matrix?.f ?? 0) * scale;
-    const size = horizontal ? rect.width : rect.height;
-    if (pointer < start || pointer >= start + size) continue;
-    moveToDragSlot(drag, row.dataset[attribute], pointer >= start + size / 2);
+    const { start, end } = dragSlot(row, horizontal, scale);
+    if (pointer < start || pointer >= end) continue;
+    moveToDragSlot(drag, row.dataset[attribute], pointer >= (start + end) / 2);
     break;
   }
 }
@@ -3594,9 +3612,11 @@ function browserWheel(event: WheelEvent) {
             <template v-else>{{ glyph(tab) }}</template>
           </span>
           <span class="caption-name">{{ label(tab) }}</span>
+          <span v-if="tab.id === state.active" class="pane-active-label">Active pane</span>
           <button
             type="button"
             aria-label="Focus pane"
+            :aria-pressed="tab.id === state.active"
             data-tip="Focus pane"
             @click.stop="focusPane(tab.id)"
           >
@@ -4976,8 +4996,16 @@ function browserWheel(event: WheelEvent) {
   top: var(--split);
 }
 .pane-caption.current {
-  box-shadow: inset 0 1px 0 var(--accent);
+  background: var(--selection);
+  box-shadow: inset 0 -2px 0 var(--accent);
   color: var(--ink);
+}
+.pane-active-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
 }
 .pane-caption .tab-favicon {
   width: 13px;
@@ -5437,7 +5465,7 @@ function browserWheel(event: WheelEvent) {
   margin: 8px;
   border: 1px dashed var(--accent);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  background: color-mix(in srgb, var(--surface) 45%, transparent);
   color: var(--ink);
   transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
 }
@@ -5448,9 +5476,12 @@ function browserWheel(event: WheelEvent) {
   font-weight: 600;
 }
 .split-drop-pane.drop-selected {
-  border-style: solid;
-  background: color-mix(in srgb, var(--selection) 94%, transparent);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  border: 2px solid var(--ink);
+  background: color-mix(in srgb, var(--selection) 85%, transparent);
+}
+.split-drop-pane.drop-selected span {
+  background: #455968;
+  color: #fff;
 }
 .browser-split-target-enter-active,
 .browser-split-target-leave-active {

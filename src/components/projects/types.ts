@@ -20,6 +20,7 @@ export type Group = {
 };
 
 export type TerminalState = {
+  layout?: string;
   isOpen?: boolean;
   isMaximized?: boolean;
   height?: number;

@@ -8,9 +8,10 @@ import "@xterm/xterm/css/xterm.css";
 import { terminal as client } from "../../terminalClient";
 import { DRAG_MIME } from "../files/explorer";
 import { TERMINAL } from "./controller";
+import Icon from "../Icon.vue";
 import type { PaneNode } from "../../terminalLayout";
 
-const props = defineProps<{ pane: PaneNode }>();
+const props = defineProps<{ pane: PaneNode; movable?: boolean; dropEdge?: "left" | "right" | "top" | "bottom" }>();
 const ctl = inject(TERMINAL)!;
 const host = ref<HTMLDivElement>();
 const dropping = ref(false);
@@ -18,14 +19,18 @@ let term: Terminal | undefined;
 let fit: FitAddon | undefined;
 let exited = false;
 let observer: ResizeObserver | undefined;
+let fitFrame = 0;
+let fitted = { width: 0, height: 0, fontSize: 0 };
 
-// Readable on Orvane's frosted glass (light, translucent background).
+// Match the pane surface so xterm can calculate contrast for ANSI reverse video.
 const theme = {
-  background: "#00000000",
+  background: "#f7f9fa",
   foreground: "#2b3a44",
   cursor: "#45697e",
   cursorAccent: "#f7fafc",
-  selectionBackground: "rgba(111, 137, 152, 0.32)",
+  selectionBackground: "#c5d8e3",
+  selectionInactiveBackground: "#d9e4eb",
+  selectionForeground: "#223744",
   scrollbarSliderBackground: "rgba(69, 89, 104, 0.3)",
   scrollbarSliderHoverBackground: "rgba(69, 89, 104, 0.42)",
   scrollbarSliderActiveBackground: "rgba(69, 89, 104, 0.52)",
@@ -78,9 +83,14 @@ function followCanvasZoom(t: Terminal) {
   }
 }
 function fitNow() {
-  if (!term || !fit || !host.value?.offsetWidth || !host.value.offsetHeight) return;
+  const width = host.value?.offsetWidth ?? 0;
+  const height = host.value?.offsetHeight ?? 0;
+  if (!term || !fit || !width || !height) return;
+  const fontSize = ctl.fontSize.value;
+  if (width === fitted.width && height === fitted.height && fontSize === fitted.fontSize) return;
   try {
     fit.fit();
+    fitted = { width, height, fontSize };
   } catch {
     // Not laid out yet.
   }
@@ -303,7 +313,7 @@ function drop(event: DragEvent) {
 
 onMounted(async () => {
   term = new Terminal({
-    allowTransparency: true,
+    minimumContrastRatio: 4.5,
     fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, "Courier New", monospace',
     fontSize: ctl.fontSize.value,
     lineHeight: 1.15,
@@ -330,12 +340,12 @@ onMounted(async () => {
   term.onBell(() => ctl.bell(props.pane.id));
   term.textarea?.addEventListener("focus", () => ctl.focus(props.pane.id));
   await nextTick();
+  if (!term || !host.value) return;
   fitNow();
   start();
-  let frame = 0;
   observer = new ResizeObserver(() => {
-    cancelAnimationFrame(frame);
-    frame = requestAnimationFrame(fitNow);
+    cancelAnimationFrame(fitFrame);
+    fitFrame = requestAnimationFrame(fitNow);
   });
   observer.observe(host.value!);
   ctl.register(props.pane.id, {
@@ -361,19 +371,22 @@ watch(
   (visible) => visible && void nextTick(fitNow),
 );
 onBeforeUnmount(() => {
+  cancelAnimationFrame(fitFrame);
   observer?.disconnect();
   ctl.register(props.pane.id, null);
   // Unmounting (closing Orvane, archiving the app) leaves the shell running;
   // closing the pane itself kills it (TerminalView does that).
   client.detach(props.pane.id);
   term?.dispose();
+  term = undefined;
 });
 </script>
 
 <template>
   <div
     class="terminal-pane"
-    :class="{ focused: ctl.focused(pane.id), dropping }"
+    :data-terminal-pane="pane.id"
+    :class="{ focused: ctl.focused(pane.id), dropping, 'has-pane-handle': movable }"
     @pointerdown="ctl.focus(pane.id)"
     @contextmenu="contextMenu"
     @keydown.esc.stop
@@ -382,6 +395,11 @@ onBeforeUnmount(() => {
     @drop="drop"
   >
     <div ref="host" class="terminal-host"></div>
+    <button v-if="movable" type="button" class="terminal-pane-handle" draggable="true" :data-drag-terminal-pane="pane.id"
+      aria-label="Move pane to a tab" title="Move to a tab · Drag to tile elsewhere">
+      <Icon name="grip" :size="13" />
+    </button>
+    <div v-if="dropEdge" class="terminal-pane-drop" :class="dropEdge" aria-hidden="true"></div>
   </div>
 </template>
 
@@ -394,6 +412,7 @@ onBeforeUnmount(() => {
   min-height: 0;
   padding: 8px 4px 4px 10px;
   border-radius: 6px;
+  background: #f7f9fa;
   box-shadow: inset 0 0 0 1px transparent;
 }
 .terminal-pane.focused {
@@ -402,6 +421,36 @@ onBeforeUnmount(() => {
 .terminal-pane.dropping {
   box-shadow: inset 0 0 0 2px #6f9ab0;
 }
+.terminal-pane.has-pane-handle { padding-top: 23px; }
+.terminal-pane-handle {
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 17px;
+  border: 0;
+  padding: 0;
+  color: #455968;
+  background: #e9eff3;
+  border-radius: 4px;
+  cursor: grab;
+}
+.terminal-pane-handle:active { cursor: grabbing; }
+.terminal-pane-drop {
+  position: absolute;
+  inset: 3px;
+  border: 2px solid #546e7c;
+  border-radius: 5px;
+  background: rgb(197 216 227 / 65%);
+  pointer-events: none;
+  z-index: 2;
+}
+.terminal-pane-drop.left { right: 50%; }
+.terminal-pane-drop.right { left: 50%; }
+.terminal-pane-drop.top { bottom: 50%; }
+.terminal-pane-drop.bottom { top: 50%; }
 .terminal-host {
   width: 100%;
   height: 100%;

@@ -73,20 +73,20 @@ test("closed restored panels defer every terminal; selecting and closing tabs in
     .getByRole("button", { name: "Show terminal", exact: true })
     .click();
   await expect(root.locator(".xterm")).toHaveCount(1);
-  await root.getByRole("tab", { name: cwd(49), exact: true }).click();
+  await root.getByRole("tab", { name: "project-49", exact: true }).click();
   await expect(root.locator(".xterm")).toHaveCount(2);
   await root
-    .getByRole("tab", { name: cwd(20), exact: true })
-    .getByRole("button", { name: "Close terminal", exact: true })
+    .getByRole("tab", { name: "project-20", exact: true })
+    .getByRole("button", { name: /^Close project-/ })
     .click();
   await expect(root.locator(".xterm")).toHaveCount(2);
   await root
-    .getByRole("tab", { name: cwd(49), exact: true })
-    .getByRole("button", { name: "Close terminal", exact: true })
+    .getByRole("tab", { name: "project-49", exact: true })
+    .getByRole("button", { name: /^Close project-/ })
     .click();
   await expect(root.locator(".terminal-tab.active")).toHaveAttribute(
     "aria-label",
-    cwd(48),
+    "project-48",
   );
   await expect(root.locator(".xterm")).toHaveCount(2);
   await page.evaluate(() => (window as any).terminalFixture.unmount());
@@ -106,7 +106,7 @@ test("initialized terminal buffers, pending output, input and history survive ta
   await expect
     .poll(() => page.evaluate(() => (window as any).terminalFixture.calls))
     .toEqual([{ cwd: cwd(0), command: "echo controlled" }]);
-  await root.getByRole("tab", { name: cwd(1), exact: true }).click();
+  await root.getByRole("tab", { name: "project-1", exact: true }).click();
   await expect(root.locator(".xterm")).toHaveCount(2);
   await root
     .getByRole("button", { name: "Hide terminal", exact: true })
@@ -131,11 +131,11 @@ test("initialized terminal buffers, pending output, input and history survive ta
   await root
     .getByRole("button", { name: "Show terminal", exact: true })
     .click();
-  await root.getByRole("tab", { name: cwd(0), exact: true }).click();
+  await root.getByRole("tab", { name: "project-0", exact: true }).click();
   await page.evaluate(() => (window as any).terminalFixture.focus());
   await page.keyboard.type("draft-value");
-  await root.getByRole("tab", { name: cwd(1), exact: true }).click();
-  await root.getByRole("tab", { name: cwd(0), exact: true }).click();
+  await root.getByRole("tab", { name: "project-1", exact: true }).click();
+  await root.getByRole("tab", { name: "project-0", exact: true }).click();
   await page.evaluate(() => (window as any).terminalFixture.focus());
   await page.keyboard.press("Enter");
   await expect
@@ -183,7 +183,10 @@ test("a burst of new terminal tabs fits the final selection once and teardown ca
     1,
   );
   expect(
-    await page.evaluate(() => (window as any).terminalFixture.state.activeCwd),
+    await page.evaluate(() => {
+      const layout = JSON.parse((window as any).terminalFixture.state.layout);
+      return layout.tabs.find((tab: any) => tab.id === layout.active).root.cwd;
+    }),
   ).toBe("C:\\fixture\\new-4");
   await page.evaluate(async () => {
     const fixture = (window as any).terminalFixture;
@@ -194,4 +197,36 @@ test("a burst of new terminal tabs fits the final selection once and teardown ca
   await settleFrames(page);
   expect(await page.locator("#terminal-fixture").count()).toBe(0);
   expect(errors).toEqual([]);
+});
+
+test("Projects Hub uses live terminal tabs that reorder and dock without restarting their shells", async ({ page }) => {
+  const root = await mount(page, 3);
+  const first = root.getByRole("tab", { name: "project-0", exact: true });
+  const second = root.getByRole("tab", { name: "project-1", exact: true });
+  const third = root.getByRole("tab", { name: "project-2", exact: true });
+  await second.click();
+  const opened = await page.evaluate(() => (window as any).terminalFixture.opened.slice());
+  const thirdBounds = (await third.boundingBox())!;
+  await first.dragTo(third, { targetPosition: { x: thirdBounds.width - 27, y: 10 } });
+  await expect(root.getByRole("tab").last()).toHaveAccessibleName("project-0");
+
+  const pane = root.locator(".terminal-pane:visible");
+  const paneBounds = (await pane.boundingBox())!;
+  await first.dragTo(pane, { targetPosition: { x: paneBounds.width - 15, y: paneBounds.height / 2 } });
+  await expect(root.getByRole("tab")).toHaveCount(2);
+  await expect(root.locator(".terminal-split.row .terminal-pane")).toHaveCount(2);
+  await expect(root.locator(".terminal-split.row .terminal-pane").last())
+    .toHaveAttribute("data-terminal-pane", opened[0]);
+
+  const moving = root.locator(`[data-drag-terminal-pane="${opened[0]}"]`);
+  const otherPane = root.locator(`[data-terminal-pane="${opened[1]}"]`);
+  const otherBounds = (await otherPane.boundingBox())!;
+  await moving.dragTo(otherPane, { targetPosition: { x: otherBounds.width / 2, y: 12 } });
+  await expect(root.locator(".terminal-split.column .terminal-pane").first())
+    .toHaveAttribute("data-terminal-pane", opened[0]);
+  await moving.click();
+  await expect(root.getByRole("tab")).toHaveCount(3);
+  await expect(root.locator(".terminal-pane:visible")).toHaveAttribute("data-terminal-pane", opened[0]);
+  expect(await page.evaluate(() => (window as any).terminalFixture.opened)).toEqual(opened);
+  expect(await page.evaluate(() => (window as any).terminalFixture.killed)).toEqual([]);
 });

@@ -50,15 +50,6 @@ type Workspace = {
 };
 
 type ProjectTemplate = "empty" | "vue" | "suitecloud" | "git";
-type TerminalCommandResult = {
-  stdOut: string;
-  stdErr: string;
-  exitCode: number;
-};
-type TerminalPanelInstance = InstanceType<typeof TerminalPanel> & {
-  addTab: (cwd?: string, title?: string) => Promise<void>;
-};
-
 const STORAGE_KEY = "projects-hub:root-path";
 const SETTINGS_FOLDER = "ProjectsHub";
 const ALL_PROJECTS_ID = "__all__";
@@ -95,7 +86,7 @@ const suiteCloudProject = ref<Project | null>(null);
 const suiteCloudInfo = ref<SuiteCloudProjectInfo | null>(null);
 const isSuiteCloudUploading = ref(false);
 const isSuiteCloudRefreshing = ref(false);
-const terminalPanel = ref<TerminalPanelInstance | null>(null);
+const terminalPanel = ref<InstanceType<typeof TerminalPanel> | null>(null);
 const isLoading = ref(false);
 const isPickingFolder = ref(false);
 const browserPickedProjectFolderName = ref("");
@@ -628,6 +619,7 @@ const normalizeTerminalState = (state: unknown): TerminalState | undefined => {
     height: typeof value.height === "number" ? value.height : undefined,
     activeCwd:
       typeof value.activeCwd === "string" ? value.activeCwd : undefined,
+    layout: typeof value.layout === "string" ? value.layout : undefined,
     tabs: Array.isArray(value.tabs)
       ? value.tabs
           .filter((tab) => tab && typeof tab.cwd === "string" && tab.cwd.trim())
@@ -1849,51 +1841,33 @@ const openInCode = async (targetPath: string) => {
   }
 };
 
-const runTerminalCommand = async (
-  cwd: string,
-  command: string,
-): Promise<TerminalCommandResult> => {
-  if (!workspace.value) throw new Error("Workspace not loaded.");
-
-  if (isNeutralino()) {
-    const result = await Neutralino.os.execCommand(command, { cwd });
-    return {
-      stdOut: result.stdOut ?? "",
-      stdErr: result.stdErr ?? "",
-      exitCode: result.exitCode ?? 0,
-    };
-  }
-
-  return request<TerminalCommandResult>("/api/terminal/run", {
-    rootPath: workspace.value.rootPath,
-    path: cwd,
-    command,
-  });
-};
-
-const handleTerminalStateChange = async (state: TerminalState) => {
-  if (!workspace.value) return;
+let terminalSave = Promise.resolve();
+const handleTerminalStateChange = (state: TerminalState) => {
+  const current = workspace.value;
+  if (!current) return;
 
   const terminalState = normalizeTerminalState(state);
-  workspace.value = { ...workspace.value, terminalState };
+  workspace.value = { ...current, terminalState };
 
-  try {
+  terminalSave = terminalSave.then(async () => {
     if (isNeutralino()) {
+      const metadata = workspace.value?.rootPath === current.rootPath ? workspace.value : current;
       await writeHubData(
-        workspace.value.rootPath,
-        workspace.value.groups,
-        workspace.value.ignoredProjectPaths,
+        current.rootPath,
+        metadata.groups,
+        metadata.ignoredProjectPaths,
         terminalState,
       );
     } else {
       await request("/api/terminal/state", {
-        rootPath: workspace.value.rootPath,
+        rootPath: current.rootPath,
         terminalState,
       });
     }
-  } catch (error) {
-    errorMessage.value = formatError(error, "Unable to save terminal tabs.");
-  }
+  }).catch((error) => {
+    if (workspace.value?.rootPath === current.rootPath)
+      errorMessage.value = formatError(error, "Unable to save terminal tabs.");
+  });
 };
 
 const openInTerminal = async (targetPath = contextMenu.value?.projectPath) => {
@@ -2449,7 +2423,8 @@ onMounted(initializeWorkspace);
         <TerminalPanel
           ref="terminalPanel"
           :initial-cwd="workspace?.rootPath ?? ''"
-          :run-command="runTerminalCommand"
+          :block="block"
+          :key="workspace?.rootPath"
           :state="workspace?.terminalState"
           @state-change="handleTerminalStateChange"
         />

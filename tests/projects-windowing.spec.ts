@@ -2,6 +2,15 @@ import { test, expect, type Page } from "./fixtures";
 test.setTimeout(60000); // The isolated Hub import includes the SuiteCloud views.
 
 async function mount(page: Page, count = 1000, terminal = false) {
+  await page.routeWebSocket(/\/__orvane\/terminal$/, (socket) => {
+    socket.onMessage((raw) => {
+      const message = JSON.parse(String(raw));
+      if (message.t === "open") socket.send(JSON.stringify({ t: "started", id: message.id, name: "Fixture shell" }));
+      if (message.t === "in" && message.d === "\r") {
+        socket.send(JSON.stringify({ t: "o", id: message.id, d: "Controlled fixture output\r\n" }));
+      }
+    });
+  });
   const state = {
     longNames: false,
     removed: new Set<string>(),
@@ -44,8 +53,6 @@ async function mount(page: Page, count = 1000, terminal = false) {
         },
       };
     } else if (op === "terminal/state") data = { saved: true };
-    else if (op === "terminal/run")
-      data = { stdOut: "Controlled fixture output\n", stdErr: "", exitCode: 0 };
     else if (op === "open-code") data = { opened: true };
     else if (op === "suitecloud/inspect")
       data = { isSuiteCloud: false, files: [], accounts: [] };

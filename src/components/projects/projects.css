@@ -956,111 +956,14 @@
   }
 
   .terminal-resize-handle:hover::before,
-  .terminal-resize-handle.active::before {
+  .terminal-resize-handle:active::before {
     background: var(--blue-500);
   }
 
-  .terminal-titlebar {
-    height: 34px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid var(--slate-200);
-    background: var(--slate-100);
-  }
-
-  .terminal-tabs {
-    min-width: 0;
-    display: flex;
-    align-items: stretch;
-    overflow: auto hidden;
-  }
-
-  .terminal-tab {
-    min-width: 130px;
-    max-width: 220px;
-    height: 34px;
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    padding: 0 6px 0 10px;
-    border-right: 1px solid var(--slate-200);
-    background: transparent;
-    color: var(--slate-600);
-    cursor: pointer;
-  }
-
-  .terminal-tab.active {
-    background: white;
-    color: var(--slate-800);
-    box-shadow: inset 0 -2px 0 var(--blue-600);
-  }
-
-  .terminal-tab svg,
   .project-context-menu svg {
     width: 14px;
     height: 14px;
     flex: 0 0 auto;
-  }
-
-  .terminal-tab span {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 12px;
-    font-weight: 700;
-  }
-
-  .terminal-tab-close {
-    width: 20px;
-    height: 20px;
-    display: inline-grid;
-    place-items: center;
-    margin-left: auto;
-    border-radius: 4px;
-    background: transparent;
-    color: currentColor;
-    cursor: pointer;
-    opacity: 0.75;
-  }
-
-  .terminal-tab-close:hover {
-    background: var(--slate-200);
-    opacity: 1;
-  }
-
-  .terminal-actions {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    padding: 0 6px;
-  }
-
-  .terminal-actions .icon-button {
-    color: var(--slate-600);
-  }
-
-  .terminal-actions .icon-button:hover {
-    background: var(--slate-200);
-    color: var(--slate-800);
-  }
-
-  .terminal-body {
-    flex: 1;
-    min-height: 0;
-    padding: 6px 8px;
-    background: var(--slate-50);
-    overflow: hidden;
-  }
-
-  .terminal-host {
-    width: 100%;
-    height: 100%;
-  }
-
-  .terminal-host .xterm {
-    height: 100%;
   }
 
   .terminal-restore {
@@ -1083,11 +986,6 @@
   .terminal-restore svg {
     width: 16px;
     height: 16px;
-  }
-
-  .terminal-host .xterm-viewport,
-  .terminal-host .xterm-screen {
-    background: var(--slate-50) !important;
   }
 
   &.app-shell {
@@ -1299,10 +1197,6 @@
     border-top: 1px solid var(--line);
     background: #f0f5f7;
   }
-  .terminal-toolbar,
-  .terminal-header {
-    background: #eef3f6;
-  }
   .toast {
     background: var(--surface);
     color: #455968;
@@ -1393,9 +1287,6 @@
     background: #e7eff3;
     box-shadow: inset 0 -1px 0 #94aab7;
   }
-  .terminal-tab.active {
-    border-bottom-color: #6f8998;
-  }
   .toast.success {
     border: 0;
     color: #455968;
@@ -1409,8 +1300,4 @@
       grid-template-columns: minmax(0, 1fr);
     }
   }
-}
-/* Files dragged onto the terminal type their paths at the prompt. */
-.terminal-body.terminal-drop {
-  box-shadow: inset 0 0 0 2px #6f9ab0;
 }
