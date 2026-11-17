@@ -81,12 +81,14 @@ Create it from **Workspace options → Create Calendar** (or Ctrl+K). Click the 
 
 Create it from **Workspace options → Create Terminal** (or Ctrl+K). Each pane is a real shell running in a pseudo-console ([node-pty](https://github.com/microsoft/node-pty)): output streams as it happens, colours, prompts and full-screen programs work, and Ctrl+C interrupts. The **profiles** are the shells found on this computer: Command Prompt, Windows PowerShell, PowerShell 7, Git Bash, WSL distributions, Visual Studio developer shells and the custom profiles in Windows Terminal's settings. Pick one from the arrow next to **+**, star one to make it the default, or press Ctrl+Shift+1…9.
 
+In the built-in PowerShell profiles, press **Ctrl+Space** for the shell's completion menu for commands, parameters and paths. Use the arrows and Enter to insert a match, or Tab for the shell's regular completion. Recent PSReadLine versions also show matching history as you type. Open a new pane to apply the PowerShell startup settings.
+
 - **Tabs and split panes**: Ctrl+Shift+T new tab, Ctrl+Shift+W close the pane, Ctrl+Tab / Ctrl+Shift+Tab switch tabs; double-click a tab (or F2) to rename it, middle-click to close it. Drag tabs to reorder them, or drop another tab onto an edge of the current pane to tile its running shell there. Drag a split pane by its grip or hold Shift and drag inside the pane. Use **Move pane to its own tab** to untile it. Alt+Shift+D splits the pane, Alt+Shift+= splits right and Alt+Shift+- splits down (also the buttons on the right); drag a divider to resize and use Alt+arrows to move between panes. Tabs show a dot for new output and a bell when a program rings.
 - **Copy and paste** like Windows Terminal: Ctrl+C copies a selection (and interrupts otherwise), Ctrl+V or Ctrl+Shift+V pastes, Ctrl+Shift+C copies, and right-click copies a selection or pastes.
 - **Links**: Ctrl+click a web address to open it in the Browser app (or your browser when there is none), or a path like `C:\Users\…` to show it in the File Explorer.
 - **Find** with Ctrl+Shift+F (Enter / Shift+Enter for next / previous). Ctrl+= / Ctrl+- / Ctrl+0 change the text size; Ctrl+Shift+K clears the screen.
 - **Drop files** from the File Explorer or the system onto a pane to type their quoted paths.
-- **Shells keep running** when Orvane reloads or the app is archived: reopening reattaches to them and replays their recent output. A shell that exits normally closes its pane; otherwise press Enter to restart it. Shells no window has shown for 15 minutes end, and all of them end with Orvane.
+- **Shells keep running** when Orvane reloads or the app is archived: reopening reattaches to them and replays their recent output. A clean shell exit closes a standalone tab. Split panes stay in place and can be restarted with Enter. Press Enter to restart after a shell error. Shells no window has shown for 15 minutes end, and all of them end with Orvane.
 - The app is frosted glass like the top bar. The terminal server only accepts Orvane's own page on this computer (same origin, loopback).
 
 ### Backups

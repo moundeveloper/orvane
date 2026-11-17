@@ -12,8 +12,8 @@ export interface TerminalController {
   title: (paneId: string, title: string) => void;
   activity: (paneId: string) => void;
   bell: (paneId: string) => void;
-  /** The shell exited normally: the pane closes (like Windows Terminal). */
-  closed: (paneId: string) => void;
+  /** Close a standalone tab after a clean shell exit, keeping split layouts intact. */
+  closeAfterExit: (paneId: string) => boolean;
   command: (name: string, paneId: string) => void;
   /** Panes register their element and actions for focus moves and search. */
   register: (paneId: string, pane: PaneHandle | null) => void;

@@ -435,7 +435,11 @@ const controller: TerminalController = {
     const tab = tabOf(paneId);
     if (tab && (tab.id !== state.active || !document.hasFocus())) bells.add(tab.id);
   },
-  closed: (paneId) => closePane(paneId, false),
+  closeAfterExit: (paneId) => {
+    if (tabOf(paneId)?.root.type !== "pane") return false;
+    closePane(paneId, false);
+    return true;
+  },
   command,
   register(paneId, pane) {
     if (pane) handles.set(paneId, pane);

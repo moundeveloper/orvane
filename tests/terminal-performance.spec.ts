@@ -51,6 +51,19 @@ async function mount(
   );
   return page.locator("#terminal-fixture");
 }
+
+async function mountIsolated(page: import("@playwright/test").Page) {
+  await page.route("**/terminal-rendering-fixture", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<!doctype html>" }),
+  );
+  await page.goto("/terminal-rendering-fixture");
+  await page.evaluate(async () => {
+    const fixture = "/tests/terminal-performance-harness.ts";
+    (window as any).terminalFixture = (await import(fixture)).mountTerminalFixture(1);
+  });
+  return page.locator("#terminal-fixture");
+}
+
 async function settleFrames(page: import("@playwright/test").Page) {
   await page.evaluate(
     () =>
@@ -296,6 +309,22 @@ test("moving a split pane keeps its live terminal instead of replaying the shell
   await expect(source.locator(".xterm-rows")).toContainText("moved output");
 });
 
+test("a shell exiting successfully keeps its split and can restart in place", async ({ page }) => {
+  const root = await mountIsolated(page);
+  await root.getByRole("button", { name: "Split right", exact: true }).click();
+  const panes = root.locator(".terminal-pane:visible");
+  await expect(panes).toHaveCount(2);
+  const id = (await panes.last().getAttribute("data-terminal-pane"))!;
+  await page.evaluate((paneId) => (window as any).terminalFixture.exit(paneId, 0), id);
+  await expect(panes).toHaveCount(2);
+  await expect(panes.last().locator(".xterm-rows")).toContainText("Press Enter to restart");
+  await panes.last().locator(".xterm-helper-textarea").press("Enter");
+  await expect.poll(() => page.evaluate((paneId) =>
+    (window as any).terminalFixture.opened.filter((opened: string) => opened === paneId).length, id,
+  )).toBe(2);
+  await expect(panes).toHaveCount(2);
+});
+
 test("split panes only show a scrollbar when they have scrollback", async ({ page }) => {
   const root = await mount(page, 1);
   await root.getByRole("button", { name: "Split right", exact: true }).click();
@@ -461,4 +490,50 @@ test("releasing a split divider immediately fits both shells to the final size",
   expect(await count()).toBe(before);
   await page.mouse.up();
   expect(await count() - before).toBe(2);
+});
+
+test("terminal preserves ANSI colors and continuous backgrounds at fractional zoom", async ({ page }) => {
+  const root = await mountIsolated(page);
+  const host = root.locator(".terminal-host");
+  await expect(host.locator(".xterm-rows")).toBeVisible();
+  await host.evaluate(async (element) => {
+    const fixture = (window as any).terminalFixture;
+    const row = "\x1b[38;2;65;65;65;48;2;23;23;33mA" + " ".repeat(35) +
+      "\x1b[48;2;42;42;54m" + " ".repeat(10) + "\x1b[0m";
+    await fixture.write(element, Array.from({ length: 6 }, () => row).join("\r\n"));
+    const fixtureRoot = element.closest<HTMLElement>("#terminal-fixture")!;
+    fixtureRoot.style.transformOrigin = "top left";
+  });
+  const rows = host.locator(".xterm-rows > div");
+  const output = rows.first().locator("span").filter({ hasText: "A" });
+  await expect.soft(output).toHaveCSS("color", "rgb(65, 65, 65)");
+  await expect.soft(output).toHaveCSS("background-color", "rgb(23, 23, 33)");
+  for (const zoom of [0.83, 1.25]) {
+    await page.locator("#terminal-fixture").evaluate((element, scale) => {
+      element.style.transform = `translate(0.3px, 0.4px) scale(${scale})`;
+    }, zoom);
+    const first = (await rows.nth(1).boundingBox())!;
+    const last = (await rows.nth(4).boundingBox())!;
+    const top = Math.ceil(first.y + first.height / 2);
+    const screenshot = await page.screenshot({
+      clip: { x: Math.ceil(first.x + 25), y: top, width: 1, height: Math.floor(last.y + last.height / 2) - top },
+    });
+    const maxColorDelta = await page.evaluate(async (encoded) => {
+      const img = new Image();
+      img.src = "data:image/png;base64," + encoded;
+      await img.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0);
+      const data = ctx.getImageData(0, 0, img.width, img.height).data;
+      let maxDelta = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        maxDelta = Math.max(maxDelta, Math.abs(data[i]! - 23), Math.abs(data[i + 1]! - 23), Math.abs(data[i + 2]! - 33));
+      }
+      return maxDelta;
+    }, screenshot.toString("base64"));
+    expect.soft(maxColorDelta, `row seams at ${zoom * 100}% zoom`).toBeLessThanOrEqual(2);
+  }
 });

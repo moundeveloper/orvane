@@ -34,6 +34,40 @@ const SESSION_IDLE_MS = 15 * 60 * 1000;
 const SCROLLBACK_CHARS = 1_000_000;
 const MAX_INPUT = 1_000_000;
 
+// Leave line editing with PSReadLine so predictions and completion only appear
+// while the shell is reading a command. Older versions still offer native Tab.
+const powerShellStartup = `
+& {
+  $options = Get-Command Set-PSReadLineOption -ErrorAction Ignore
+  if (!$options) { return }
+  try {
+    if (!(Get-PSReadLineKeyHandler | Where-Object Key -eq 'Ctrl+Spacebar')) {
+      Set-PSReadLineKeyHandler -Chord Ctrl+Spacebar -Function MenuComplete -ErrorAction Stop
+    }
+    if ($options.Parameters.ContainsKey('PredictionViewStyle')) {
+      if ((Get-PSReadLineOption).PredictionSource -eq 'None') {
+        Set-PSReadLineOption -PredictionSource History -ErrorAction Stop
+      }
+      Set-PSReadLineOption -PredictionViewStyle ListView -ErrorAction Stop
+      $esc = [char]27
+      Set-PSReadLineOption -Colors @{
+        ListPredictionSelected = "$esc[38;2;34;55;68;48;2;220;232;239m"
+      } -ErrorAction Stop
+    }
+  } catch {
+    # Some consoles or PSReadLine versions do not support predictions.
+  }
+}
+`;
+
+function shellArgs(profile: TerminalProfile): TerminalProfile["args"] {
+  if ((profile.id === "pwsh" || profile.id === "powershell") && Array.isArray(profile.args)) {
+    const startup = Buffer.from(powerShellStartup, "utf16le").toString("base64");
+    return [...profile.args, "-NoExit", "-EncodedCommand", startup];
+  }
+  return profile.args;
+}
+
 function local(req: IncomingMessage) {
   const host = req.headers.host || "";
   return (
@@ -300,7 +334,7 @@ async function open(ws: WebSocket, message: Record<string, unknown>) {
   }
   let proc: pty.IPty;
   try {
-    proc = pty.spawn(profile.file, profile.args, {
+    proc = pty.spawn(profile.file, shellArgs(profile), {
       name: "xterm-256color",
       cols,
       rows,

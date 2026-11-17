@@ -122,6 +122,11 @@ export function mountTerminalFixture(count = 50, open = true) {
     resetFits() {
       fits = 0;
     },
+    exit(id: string, code: number) {
+      const session = sessions.get(id)!;
+      sessions.delete(id);
+      session.listener?.exit(code);
+    },
     write(host: Element, text: string) {
       const terminal = terminals.find(({ terminal }) => terminal.element?.parentElement === host)!.terminal;
       return new Promise<void>((resolve) => terminal.write(text, resolve));

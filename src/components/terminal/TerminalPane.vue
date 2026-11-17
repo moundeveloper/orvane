@@ -141,7 +141,7 @@ function sessionListener(): SessionListener {
       },
       exit(code) {
         exited = true;
-        if (code === 0) return ctl.closed(props.pane.id);
+        if (code === 0 && ctl.closeAfterExit(props.pane.id)) return;
         term?.write(`\r\n\x1b[90m[Process exited with code ${code}. Press Enter to restart.]\x1b[0m\r\n`);
       },
       error(message) {
@@ -399,7 +399,8 @@ onMounted(async () => {
     syncScrollback();
   } else {
     term = new Terminal({
-      minimumContrastRatio: 4.5,
+      // Terminal apps choose their own ANSI foreground/background pairs.
+      minimumContrastRatio: 1,
       fontFamily: terminalFont,
       fontSize: ctl.fontSize.value,
       lineHeight: 1.15,
@@ -590,6 +591,27 @@ onBeforeUnmount(() => {
 }
 .terminal-scroll.powershell :deep(.xterm-rows > div:has(.xterm-cursor)) {
   translate: var(--terminal-input-offset, 0px) 0;
+}
+/* Composite the character grid together to avoid row seams when zoomed out. */
+.terminal-host :deep(.xterm-screen) {
+  will-change: transform;
+}
+/* Chromium can antialias the edges of adjacent ANSI backgrounds separately.
+   Back each painted run up by one pixel so the canvas cannot show through. */
+.terminal-host :deep(.xterm-rows > div) {
+  overflow: clip !important;
+  overflow-clip-margin: 1px;
+}
+.terminal-host :deep(.xterm-rows span:is([style*="background-color"], [class*="xterm-bg-"])) {
+  position: relative;
+  isolation: isolate;
+}
+.terminal-host :deep(.xterm-rows span:is([style*="background-color"], [class*="xterm-bg-"])::before) {
+  content: "";
+  position: absolute;
+  inset: -1px 0 0;
+  background-color: inherit;
+  z-index: -1;
 }
 /* Orvane's frosted glass shows through. The theme stays opaque so xterm can
    keep highlighted and reverse-video text readable; only the painted
