@@ -1,26 +1,39 @@
+<script lang="ts">
+import type { Terminal as Xterm } from "@xterm/xterm";
+import type { FitAddon as Fit } from "@xterm/addon-fit";
+// Live xterms of panes that just unmounted, shared by every pane. A pane moved
+// in the split layout picks its own back up when it mounts again.
+const moving = new Map<string, { term: Xterm; fit: Fit; exited: boolean; timer: ReturnType<typeof setTimeout> }>();
+</script>
+
 <script setup lang="ts">
 // One terminal pane: xterm.js bound to a live shell on the local server.
 // Output streams as it happens; the shell keeps running across reloads.
-import { inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { Terminal, type ILink } from "@xterm/xterm";
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { Terminal, type IDisposable, type ILink } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import { terminal as client } from "../../terminalClient";
+import { terminal as client, type SessionListener } from "../../terminalClient";
 import { DRAG_MIME } from "../files/explorer";
 import { TERMINAL } from "./controller";
 import Icon from "../Icon.vue";
 import type { PaneNode } from "../../terminalLayout";
 
-const props = defineProps<{ pane: PaneNode; movable?: boolean; dropEdge?: "left" | "right" | "top" | "bottom" }>();
+const props = defineProps<{ pane: PaneNode; movable?: boolean; resizing?: boolean; dropEdge?: "left" | "right" | "top" | "bottom" }>();
 const ctl = inject(TERMINAL)!;
+const terminalFont = '"Cascadia Mono", "Cascadia Code", Consolas, "Courier New", monospace';
+const powerShell = computed(() => ctl.profileOf(props.pane.profile)?.kind === "powershell");
+const inputOffsetProperty = "--terminal-input-offset";
 const host = ref<HTMLDivElement>();
 const dropping = ref(false);
+const hasScrollback = ref(false);
 let term: Terminal | undefined;
 let fit: FitAddon | undefined;
 let exited = false;
 let observer: ResizeObserver | undefined;
 let fitFrame = 0;
 let fitted = { width: 0, height: 0, fontSize: 0 };
+let subscriptions: IDisposable[] = [];
 
 // Match the pane surface so xterm can calculate contrast for ANSI reverse video.
 const theme = {
@@ -62,9 +75,13 @@ function followCanvasZoom(t: Terminal) {
   if (!service) return;
   const unscale = (event: MouseEvent, element: HTMLElement) => {
     const rect = element.getBoundingClientRect();
-    const scale = element.offsetWidth ? rect.width / element.offsetWidth : 1;
-    if (!scale || Math.abs(scale - 1) < 0.001) return event;
-    const clientX = rect.left + (event.clientX - rect.left) / scale,
+    const scale = (element.offsetWidth && rect.width / element.offsetWidth) || 1;
+    const offset = parseFloat(t.element?.closest<HTMLElement>(".terminal-scroll")
+      ?.style.getPropertyValue(inputOffsetProperty) ?? "") || 0;
+    const inputRow = offset && t.element?.querySelector(".xterm-cursor")?.parentElement?.getBoundingClientRect();
+    const shift = inputRow && event.clientY >= inputRow.top && event.clientY < inputRow.bottom ? offset : 0;
+    if (!shift && Math.abs(scale - 1) < 0.001) return event;
+    const clientX = rect.left + (event.clientX - rect.left) / scale - shift,
       clientY = rect.top + (event.clientY - rect.top) / scale;
     return new Proxy(event, {
       get(target, key) {
@@ -83,6 +100,7 @@ function followCanvasZoom(t: Terminal) {
   }
 }
 function fitNow() {
+  if (props.resizing) return;
   const width = host.value?.offsetWidth ?? 0;
   const height = host.value?.offsetHeight ?? 0;
   if (!term || !fit || !width || !height) return;
@@ -95,13 +113,20 @@ function fitNow() {
     // Not laid out yet.
   }
 }
+function syncScrollback() {
+  hasScrollback.value = (term?.buffer.active.baseY ?? 0) > 0;
+}
 function start() {
   if (!term) return;
   exited = false;
   client.open(
     props.pane.id,
     { profile: props.pane.profile, cwd: props.pane.cwd, cols: term.cols, rows: term.rows },
-    {
+    sessionListener(),
+  );
+}
+function sessionListener(): SessionListener {
+  return {
       started() {
         // A fresh shell: anything shown before belongs to an old one.
         if (term?.buffer.active.length && term.buffer.active.length > term.rows) term.write("\r\n");
@@ -123,8 +148,7 @@ function start() {
         exited = true;
         term?.write(`\r\n\x1b[31m${message}\x1b[0m\r\n\x1b[90m[Press Enter to try again.]\x1b[0m\r\n`);
       },
-    },
-  );
+  };
 }
 
 // ---- Clipboard (Windows Terminal conventions) ----
@@ -311,41 +335,94 @@ function drop(event: DragEvent) {
   term?.focus();
 }
 
-onMounted(async () => {
-  term = new Terminal({
-    minimumContrastRatio: 4.5,
-    fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, "Courier New", monospace',
-    fontSize: ctl.fontSize.value,
-    lineHeight: 1.15,
-    cursorBlink: true,
-    cursorStyle: "bar",
-    scrollback: 10000,
-    theme,
-  });
-  fit = new FitAddon();
-  term.loadAddon(fit);
-  term.open(host.value!);
-  followCanvasZoom(term);
-  term.attachCustomKeyEventHandler(keys);
-  term.registerLinkProvider({ provideLinks });
-  term.onData((data) => {
-    if (exited) {
-      if (data === "\r") start();
+// Bind this component to the xterm: every handler that reads component state.
+function wire(t: Terminal) {
+  const scroller = host.value!.parentElement!;
+  const screen = t.element!.querySelector<HTMLElement>(".xterm-screen")!;
+  function positionInputLine() {
+    if (!powerShell.value || t.buffer.active.type !== "normal") {
+      scroller.style.removeProperty(inputOffsetProperty);
       return;
     }
-    client.input(props.pane.id, data);
-  });
-  term.onResize(({ cols, rows }) => client.resize(props.pane.id, cols, rows));
-  term.onTitleChange((title) => ctl.title(props.pane.id, title));
-  term.onBell(() => ctl.bell(props.pane.id));
-  term.textarea?.addEventListener("focus", () => ctl.focus(props.pane.id));
+    const width = scroller.clientWidth;
+    const caretEnd = (t.buffer.active.cursorX + 1) * screen.offsetWidth / t.cols;
+    const inputScroll = Math.max(0, Math.ceil(caretEnd - width));
+    // Keep output at the chosen scroll position. The active line only pans
+    // when its own caret would move beyond the right edge of the pane.
+    const offset = width ? scroller.scrollLeft - inputScroll : 0;
+    scroller.style.setProperty(inputOffsetProperty, `${offset}px`);
+  }
+  scroller.addEventListener("scroll", positionInputLine, { passive: true });
+  const focusOwner = () => ctl.focus(props.pane.id);
+  t.textarea?.addEventListener("focus", focusOwner);
+  t.attachCustomKeyEventHandler(keys);
+  subscriptions = [
+    t.registerLinkProvider({ provideLinks }),
+    t.onData((data) => {
+      if (exited) {
+        if (data === "\r") start();
+        return;
+      }
+      client.input(props.pane.id, data);
+    }),
+    t.onResize(({ cols, rows }) => {
+      client.resize(props.pane.id, cols, rows);
+      syncScrollback();
+    }),
+    t.onWriteParsed(syncScrollback),
+    t.onScroll(syncScrollback),
+    t.onRender(positionInputLine),
+    t.buffer.onBufferChange(syncScrollback),
+    t.onTitleChange((title) => ctl.title(props.pane.id, title)),
+    t.onBell(() => ctl.bell(props.pane.id)),
+    { dispose: () => {
+      t.textarea?.removeEventListener("focus", focusOwner);
+      scroller.removeEventListener("scroll", positionInputLine);
+      scroller.style.removeProperty(inputOffsetProperty);
+    } },
+  ];
+  positionInputLine();
+}
+
+onMounted(async () => {
+  // A pane moved to another spot in the split layout remounts. Keep its live
+  // xterm: replaying the shell's raw output into a new one redraws every
+  // prompt ConPTY repainted at earlier sizes.
+  const kept = moving.get(props.pane.id);
+  if (kept) {
+    moving.delete(props.pane.id);
+    clearTimeout(kept.timer);
+    ({ term, fit, exited } = kept);
+    host.value!.appendChild(kept.term.element!);
+    wire(term);
+    client.listen(props.pane.id, sessionListener());
+    syncScrollback();
+  } else {
+    term = new Terminal({
+      minimumContrastRatio: 4.5,
+      fontFamily: terminalFont,
+      fontSize: ctl.fontSize.value,
+      lineHeight: 1.15,
+      cursorBlink: true,
+      cursorStyle: "bar",
+      // Preserve the full current line through a narrow/wide resize cycle.
+      reflowCursorLine: true,
+      scrollback: 10000,
+      theme,
+    });
+    fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(host.value!);
+    followCanvasZoom(term);
+    wire(term);
+  }
   await nextTick();
   if (!term || !host.value) return;
   fitNow();
-  start();
+  if (!kept) start();
   observer = new ResizeObserver(() => {
     cancelAnimationFrame(fitFrame);
-    fitFrame = requestAnimationFrame(fitNow);
+    if (!props.resizing) fitFrame = requestAnimationFrame(fitNow);
   });
   observer.observe(host.value!);
   ctl.register(props.pane.id, {
@@ -360,6 +437,11 @@ onMounted(async () => {
   });
   if (ctl.focused(props.pane.id) && ctl.visible(props.pane.id)) term.focus();
 });
+// ConPTY repaints on resize. Fit once after the divider's final layout so
+// the next shell input uses the new size without a timer.
+watch(() => props.resizing, (resizing) => {
+  if (!resizing) fitNow();
+}, { flush: "post" });
 watch(ctl.fontSize, (size) => {
   if (!term) return;
   term.options.fontSize = size;
@@ -374,11 +456,26 @@ onBeforeUnmount(() => {
   cancelAnimationFrame(fitFrame);
   observer?.disconnect();
   ctl.register(props.pane.id, null);
-  // Unmounting (closing Orvane, archiving the app) leaves the shell running;
-  // closing the pane itself kills it (TerminalView does that).
-  client.detach(props.pane.id);
-  term?.dispose();
+  for (const subscription of subscriptions) subscription.dispose();
+  subscriptions = [];
+  if (term && fit) {
+    // Wait a moment in case the pane remounts elsewhere in the layout.
+    const id = props.pane.id;
+    const parked = { term, fit, exited };
+    moving.set(id, {
+      ...parked,
+      timer: setTimeout(() => {
+        if (moving.get(id)?.term !== parked.term) return;
+        moving.delete(id);
+        // Unmounting (closing Orvane, archiving the app) leaves the shell running;
+        // closing the pane itself kills it (TerminalView does that).
+        client.detach(id);
+        parked.term.dispose();
+      }),
+    });
+  }
   term = undefined;
+  fit = undefined;
 });
 </script>
 
@@ -386,7 +483,7 @@ onBeforeUnmount(() => {
   <div
     class="terminal-pane"
     :data-terminal-pane="pane.id"
-    :class="{ focused: ctl.focused(pane.id), dropping, 'has-pane-handle': movable }"
+    :class="{ focused: ctl.focused(pane.id), dropping, 'has-pane-handle': movable, 'has-scrollback': hasScrollback }"
     @pointerdown="ctl.focus(pane.id)"
     @contextmenu="contextMenu"
     @keydown.esc.stop
@@ -394,12 +491,23 @@ onBeforeUnmount(() => {
     @dragleave="dropping = false"
     @drop="drop"
   >
-    <div ref="host" class="terminal-host"></div>
-    <button v-if="movable" type="button" class="terminal-pane-handle" draggable="true" :data-drag-terminal-pane="pane.id"
-      aria-label="Move pane to a tab" title="Move to a tab · Drag to tile elsewhere">
-      <Icon name="grip" :size="13" />
-    </button>
-    <div v-if="dropEdge" class="terminal-pane-drop" :class="dropEdge" aria-hidden="true"></div>
+    <div class="terminal-scroll" :class="{ powershell: powerShell }">
+      <div ref="host" class="terminal-host"
+        :style="powerShell ? { fontFamily: terminalFont, fontSize: ctl.fontSize.value + 'px' } : undefined"></div>
+    </div>
+    <div v-if="movable" class="terminal-pane-controls">
+      <button type="button" class="terminal-pane-handle" draggable="true" :data-drag-terminal-pane="pane.id"
+        aria-label="Drag pane" title="Drag pane · Shift-drag from inside the pane">
+        <Icon name="grip" :size="13" />
+      </button>
+      <button type="button" :data-untile-terminal-pane="pane.id"
+        aria-label="Move pane to its own tab" title="Move pane to its own tab">
+        <Icon name="external" :size="12" />
+      </button>
+    </div>
+    <Transition name="terminal-tile">
+      <div v-if="dropEdge" class="terminal-pane-drop" :class="dropEdge" aria-hidden="true"></div>
+    </Transition>
   </div>
 </template>
 
@@ -412,7 +520,6 @@ onBeforeUnmount(() => {
   min-height: 0;
   padding: 8px 4px 4px 10px;
   border-radius: 6px;
-  background: #f7f9fa;
   box-shadow: inset 0 0 0 1px transparent;
 }
 .terminal-pane.focused {
@@ -422,10 +529,14 @@ onBeforeUnmount(() => {
   box-shadow: inset 0 0 0 2px #6f9ab0;
 }
 .terminal-pane.has-pane-handle { padding-top: 23px; }
-.terminal-pane-handle {
+.terminal-pane-controls {
   position: absolute;
   top: 3px;
   right: 5px;
+  display: flex;
+  gap: 3px;
+}
+.terminal-pane-controls button {
   display: grid;
   place-items: center;
   width: 24px;
@@ -435,9 +546,13 @@ onBeforeUnmount(() => {
   color: #455968;
   background: #e9eff3;
   border-radius: 4px;
+  cursor: pointer;
+}
+.terminal-pane-controls button:hover { background: #dbe8ee; }
+.terminal-pane-controls .terminal-pane-handle {
   cursor: grab;
 }
-.terminal-pane-handle:active { cursor: grabbing; }
+.terminal-pane-controls .terminal-pane-handle:active { cursor: grabbing; }
 .terminal-pane-drop {
   position: absolute;
   inset: 3px;
@@ -451,17 +566,46 @@ onBeforeUnmount(() => {
 .terminal-pane-drop.right { left: 50%; }
 .terminal-pane-drop.top { bottom: 50%; }
 .terminal-pane-drop.bottom { top: 50%; }
+.terminal-tile-enter-active, .terminal-tile-leave-active {
+  transition: opacity 120ms ease-out;
+}
+.terminal-tile-enter-from, .terminal-tile-leave-to { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .terminal-tile-enter-active, .terminal-tile-leave-active { transition: none; }
+}
+.terminal-scroll,
 .terminal-host {
   width: 100%;
   height: 100%;
+  /* Keep the previous xterm grid inside the pane while the divider is held. */
+  overflow: clip;
 }
+.terminal-scroll.powershell {
+  overflow: auto hidden;
+}
+/* PowerShell may omit table columns entirely at small console widths.
+   Keep a standard 80-column grid plus xterm's 14px scrollbar allowance. */
+.terminal-scroll.powershell > .terminal-host {
+  min-width: calc(80ch + 14px);
+}
+.terminal-scroll.powershell :deep(.xterm-rows > div:has(.xterm-cursor)) {
+  translate: var(--terminal-input-offset, 0px) 0;
+}
+/* Orvane's frosted glass shows through. The theme stays opaque so xterm can
+   keep highlighted and reverse-video text readable; only the painted
+   background (xterm sets it inline on its scroll container) is cleared. */
 .terminal-host :deep(.xterm),
-.terminal-host :deep(.xterm-viewport) {
+.terminal-host :deep(.xterm-viewport),
+.terminal-host :deep(.xterm-scrollable-element) {
   background: transparent !important;
 }
 /* xterm draws its own scrollbar; a native one here added a second bar with
    Windows' arrow buttons. */
 .terminal-host :deep(.xterm-viewport) {
   scrollbar-width: none;
+}
+/* Xterm's thumb uses pixel geometry. The buffer decides whether rows can scroll. */
+.terminal-pane:not(.has-scrollback) :deep(.xterm-scrollable-element > .scrollbar.vertical) {
+  display: none;
 }
 </style>

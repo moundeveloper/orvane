@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import Icon from "./Icon.vue";
+import "../splitDropZone.css";
 import { uid } from "../model";
 import {
   activate,
@@ -336,8 +337,8 @@ onBeforeUnmount(() => {
         <div
           v-for="side in ['left', 'right'] as const"
           :key="side"
-          class="st-zone"
-          :class="[side, { active: splitZone === side }]"
+          class="st-zone split-drop-zone"
+          :class="[side, { 'drop-selected': splitZone === side }]"
           @dragover.prevent="splitZone = side"
           @dragleave="splitZone = null"
           @drop.prevent="zoneDrop($event, side)"
@@ -584,24 +585,12 @@ onBeforeUnmount(() => {
   bottom: 0;
   z-index: 20;
   width: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  color: #4f7b93;
-  font-weight: 600;
-  background: #eef5f880;
-  border: 2px dashed transparent;
 }
 .st-zone.left {
   left: 0;
 }
 .st-zone.right {
   right: 0;
-}
-.st-zone.active {
-  background: #d8e9f1d9;
-  border-color: #6f9ab0;
 }
 .st-menu {
   position: absolute;

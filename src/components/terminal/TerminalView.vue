@@ -85,9 +85,11 @@ function newTab(profileId?: string, cwd?: string, name?: string) {
 defineExpose({ openTab: (cwd: string, name?: string) => newTab(undefined, cwd, name) });
 
 const tabMime = "application/x-orvane-terminal-tab";
+const terminalBody = ref<HTMLElement>();
 const dragging = ref<{ tabId: string; paneId?: string }>();
 const tabDrop = ref<{ id: string; after: boolean }>();
 const paneDrop = ref<{ id: string; edge: "left" | "right" | "top" | "bottom" }>();
+let shiftDrag: { pointer: number; paneId: string; tabId: string; x: number; y: number } | undefined;
 function resetDrag() {
   dragging.value = undefined;
   tabDrop.value = undefined;
@@ -106,15 +108,76 @@ function startPaneDrag(event: DragEvent) {
   const id = (event.target as Element).closest<HTMLElement>("[data-drag-terminal-pane]")?.dataset.dragTerminalPane;
   if (id && activeTab.value) startDrag(event, activeTab.value.id, id);
 }
+function beginShiftDrag(event: PointerEvent) {
+  if (!event.shiftKey || event.button !== 0 || !activeTab.value ||
+      (event.target as Element).closest("button")) return;
+  const pane = (event.target as Element).closest<HTMLElement>(".terminal-pane.has-pane-handle");
+  if (!pane?.dataset.terminalPane) return;
+  event.preventDefault();
+  event.stopPropagation();
+  shiftDrag = {
+    pointer: event.pointerId, paneId: pane.dataset.terminalPane, tabId: activeTab.value.id,
+    x: event.clientX, y: event.clientY,
+  };
+  terminalBody.value?.setPointerCapture(event.pointerId);
+}
+function moveShiftDrag(event: PointerEvent) {
+  if (!shiftDrag || shiftDrag.pointer !== event.pointerId) return;
+  if (!dragging.value) {
+    if (Math.hypot(event.clientX - shiftDrag.x, event.clientY - shiftDrag.y) < 4) return;
+    dragging.value = { tabId: shiftDrag.tabId, paneId: shiftDrag.paneId };
+  }
+  const target = document.elementFromPoint(event.clientX, event.clientY);
+  const tab = target?.closest<HTMLElement>("[data-terminal-tab]");
+  if (tab && terminalBody.value?.parentElement?.contains(tab)) {
+    paneDrop.value = undefined;
+    positionTabDrop(tab, tab.dataset.terminalTab!, event.clientX);
+    return;
+  }
+  tabDrop.value = undefined;
+  const pane = target?.closest<HTMLElement>("[data-terminal-pane]");
+  positionPaneDrop(pane && terminalBody.value?.contains(pane) ? pane : null, event.clientX, event.clientY);
+}
+function endShiftDrag(event: PointerEvent, cancel = false) {
+  if (!shiftDrag || shiftDrag.pointer !== event.pointerId) return;
+  shiftDrag = undefined;
+  if (cancel) resetDrag();
+  else if (tabDrop.value) dropTab(event, tabDrop.value.id);
+  else dropPane(event);
+}
+function animatePaneMove() {
+  const body = terminalBody.value;
+  if (!body || matchMedia("(prefers-reduced-motion: reduce)").matches) return () => {};
+  const visiblePanes = () => [...body.querySelectorAll<HTMLElement>("[data-terminal-pane]")]
+    .filter((pane) => pane.offsetWidth && pane.offsetHeight);
+  const before = new Map(visiblePanes().map((pane) => [pane.dataset.terminalPane, pane.getBoundingClientRect()]));
+  return () => void nextTick(() => {
+    const scale = body.getBoundingClientRect().width / body.offsetWidth || 1;
+    for (const pane of visiblePanes()) {
+      const rect = pane.getBoundingClientRect();
+      const previous = before.get(pane.dataset.terminalPane);
+      if (previous && previous.x === rect.x && previous.y === rect.y &&
+          previous.width === rect.width && previous.height === rect.height) continue;
+      const x = previous ? (previous.x - rect.x) / scale : 0;
+      const y = previous ? (previous.y - rect.y) / scale : 0;
+      pane.animate([
+        { transform: `translate(${x}px, ${y}px)`, opacity: 0.76 },
+        { transform: "translate(0, 0)", opacity: 1 },
+      ], { duration: 160, easing: "cubic-bezier(0.22, 1, 0.36, 1)" });
+    }
+  });
+}
 function movePaneToTab(source: TerminalTab, paneId: string, at = state.tabs.length) {
+  const animate = animatePaneMove();
   const pane = takePane(source, paneId);
   if (!pane) return;
   const tab: TerminalTab = { id: uid(), root: pane, focus: pane.id };
   state.tabs.splice(at, 0, tab);
   selectTab(tab.id);
+  animate();
 }
-function paneHandleClick(event: MouseEvent) {
-  const paneId = (event.target as Element).closest<HTMLElement>("[data-drag-terminal-pane]")?.dataset.dragTerminalPane;
+function detachPaneClick(event: MouseEvent) {
+  const paneId = (event.target as Element).closest<HTMLElement>("[data-untile-terminal-pane]")?.dataset.untileTerminalPane;
   if (paneId && activeTab.value) movePaneToTab(activeTab.value, paneId);
 }
 function overTab(event: DragEvent, id: string) {
@@ -125,10 +188,13 @@ function overTab(event: DragEvent, id: string) {
   }
   event.preventDefault();
   event.dataTransfer.dropEffect = "move";
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-  tabDrop.value = { id, after: event.clientX >= rect.left + rect.width / 2 };
+  positionTabDrop(event.currentTarget as HTMLElement, id, event.clientX);
 }
-function dropTab(event: DragEvent, id: string) {
+function positionTabDrop(tab: HTMLElement, id: string, x: number) {
+  const rect = tab.getBoundingClientRect();
+  tabDrop.value = { id, after: x >= rect.left + rect.width / 2 };
+}
+function dropTab(event: MouseEvent, id: string) {
   const drag = dragging.value;
   const drop = tabDrop.value;
   const from = state.tabs.findIndex((tab) => tab.id === drag?.tabId);
@@ -147,22 +213,26 @@ function overPane(event: DragEvent) {
   tabDrop.value = undefined;
   const drag = dragging.value;
   if (!drag || (!drag.paneId && drag.tabId === state.active) || !event.dataTransfer?.types.includes(tabMime)) return;
-  const target = (event.target as Element).closest<HTMLElement>("[data-terminal-pane]");
-  if (!target || target.dataset.terminalPane === drag.paneId) {
-    paneDrop.value = undefined;
-    return;
-  }
-  const rect = target.getBoundingClientRect();
-  const x = (event.clientX - rect.left) / rect.width;
-  const y = (event.clientY - rect.top) / rect.height;
-  const edges = { left: x, right: 1 - x, top: y, bottom: 1 - y };
-  const edge = (Object.keys(edges) as (keyof typeof edges)[]).reduce((a, b) => edges[a] < edges[b] ? a : b);
-  paneDrop.value = edges[edge] < 0.32 ? { id: target.dataset.terminalPane!, edge } : undefined;
+  positionPaneDrop((event.target as Element).closest<HTMLElement>("[data-terminal-pane]"), event.clientX, event.clientY);
   if (!paneDrop.value) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = "move";
 }
-function dropPane(event: DragEvent) {
+function positionPaneDrop(target: HTMLElement | null, clientX: number, clientY: number) {
+  if (!target || target.dataset.terminalPane === dragging.value?.paneId) {
+    paneDrop.value = undefined;
+    return;
+  }
+  const rect = target.getBoundingClientRect();
+  const x = (clientX - rect.left) / rect.width;
+  const y = (clientY - rect.top) / rect.height;
+  const edges = { left: x, right: 1 - x, top: y, bottom: 1 - y };
+  const edge = (Object.keys(edges) as (keyof typeof edges)[]).reduce((a, b) => edges[a] < edges[b] ? a : b);
+  const id = target.dataset.terminalPane!;
+  if (edges[edge] >= 0.32) paneDrop.value = undefined;
+  else if (paneDrop.value?.id !== id || paneDrop.value.edge !== edge) paneDrop.value = { id, edge };
+}
+function dropPane(event: MouseEvent) {
   const drag = dragging.value;
   const drop = paneDrop.value;
   const source = state.tabs.find((tab) => tab.id === drag?.tabId);
@@ -172,6 +242,7 @@ function dropPane(event: DragEvent) {
   const pane = panes(target.root).find((item) => item.id === drop.id);
   if (!pane) return;
   event.preventDefault();
+  const animate = animatePaneMove();
   const moving = drag?.paneId ? takePane(source, drag.paneId) : source.root;
   if (!moving) return;
   const before = drop.edge === "left" || drop.edge === "top";
@@ -186,6 +257,7 @@ function dropPane(event: DragEvent) {
   target.root = root;
   target.focus = drag?.paneId ?? source.focus;
   selectTab(target.id);
+  animate();
 }
 function takePane(tab: TerminalTab, id: string) {
   const pane = panes(tab.root).find((item) => item.id === id);
@@ -345,7 +417,7 @@ const controller: TerminalController = {
   fontSize,
   visible: (paneId) => props.visible && !!activeTab.value && panes(activeTab.value.root).some((p) => p.id === paneId),
   focused: (paneId) => activeTab.value?.focus === paneId,
-  profileOf,
+  profileOf: (id) => profileOf(id) ?? profiles.value[0],
   focus(paneId) {
     const tab = tabOf(paneId);
     if (!tab) return;
@@ -441,7 +513,7 @@ const kindIcon = (kind?: string) => (kind === "wsl" ? "desktop" : "terminal");
 <template>
   <div class="terminal-view">
     <div class="terminal-bar" role="tablist" aria-label="Terminal tabs">
-      <div class="terminal-tabs">
+      <TransitionGroup tag="div" class="terminal-tabs" move-class="terminal-tab-move" :css="false">
         <div
           v-for="tab in state.tabs"
           :key="tab.id"
@@ -451,6 +523,7 @@ const kindIcon = (kind?: string) => (kind === "wsl" ? "desktop" : "terminal");
           :aria-label="tabLabel(tab)"
           :title="panes(tab.root).find((pane) => pane.id === tab.focus)?.cwd"
           :aria-selected="tab.id === state.active"
+          :data-terminal-tab="tab.id"
           tabindex="0"
           :draggable="renaming !== tab.id"
           @dragstart="startDrag($event, tab.id)"
@@ -490,7 +563,7 @@ const kindIcon = (kind?: string) => (kind === "wsl" ? "desktop" : "terminal");
             <Icon name="close" :size="11" />
           </button>
         </div>
-      </div>
+      </TransitionGroup>
       <div class="terminal-new">
         <button
           type="button"
@@ -615,7 +688,9 @@ const kindIcon = (kind?: string) => (kind === "wsl" ? "desktop" : "terminal");
         <Icon name="close" :size="12" />
       </button>
     </div>
-    <div class="terminal-body" @click="paneHandleClick" @dragstart="startPaneDrag" @dragend="resetDrag" @dragover="overPane" @drop="dropPane"
+    <div ref="terminalBody" class="terminal-body" @click="detachPaneClick" @dragstart="startPaneDrag" @dragend="resetDrag" @dragover="overPane" @drop="dropPane"
+      @pointerdown.capture="beginShiftDrag" @pointermove="moveShiftDrag" @pointerup="endShiftDrag($event)"
+      @pointercancel="endShiftDrag($event, true)" @lostpointercapture="endShiftDrag($event, true)"
       @dragleave="!($event.currentTarget as HTMLElement).contains($event.relatedTarget as Node) && (paneDrop = undefined)">
       <div
         v-for="tab in state.tabs"
@@ -675,6 +750,12 @@ const kindIcon = (kind?: string) => (kind === "wsl" ? "desktop" : "terminal");
 }
 .terminal-tab:hover {
   background: rgb(255 255 255 / 35%);
+}
+.terminal-tab-move {
+  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .terminal-tab-move { transition: none; }
 }
 .terminal-tab.drop-before {
   box-shadow: inset 2px 0 #546e7c;

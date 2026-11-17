@@ -92,6 +92,7 @@ import {
 } from "../passwords";
 import { getDomain } from "tldts";
 import Icon from "./Icon.vue";
+import "../splitDropZone.css";
 import { activateApp, appOf, BROWSER_SHORTCUT } from "../canvasScroll";
 import { onOpenRequest, PAGE_DRAG_MIME, registerCommands } from "../commands";
 import BrowserDrawer, {
@@ -666,6 +667,33 @@ function closeTab(id: string) {
   if (space !== state.value.space) return save();
   selectAfterRemoval(fallback!.id);
 }
+// Closing a tab by hand (close button, middle click, Ctrl+W) slides it out
+// to the side first; then it leaves the list and the tabs after it move up
+// into the gap (browser-reorder-move). The list's layout is never touched.
+let pendingClose: { id: string; animation: Animation } | undefined;
+function flushPendingClose() {
+  const pending = pendingClose;
+  if (!pending) return;
+  pendingClose = undefined;
+  closeTab(pending.id);
+}
+function closeTabSliding(id: string) {
+  flushPendingClose();
+  const row = root.value?.querySelector<HTMLElement>(`.browser-tab[data-drag-tab="${CSS.escape(id)}"]`);
+  if (!row?.offsetParent || matchMedia("(prefers-reduced-motion: reduce)").matches) return closeTab(id);
+  const across = root.value!.classList.contains("layout-comfortable");
+  row.dataset.closing = "";
+  const animation = row.animate(
+    [
+      { transform: "translate(0, 0)", opacity: 1 },
+      { transform: across ? "translateY(-100%)" : "translateX(-100%)", opacity: 0 },
+    ],
+    { duration: 170, easing: "cubic-bezier(0.4, 0, 1, 1)", fill: "forwards" },
+  );
+  pendingClose = { id, animation };
+  animation.onfinish = () => pendingClose?.animation === animation && flushPendingClose();
+}
+onBeforeUnmount(flushPendingClose);
 function label(tab: BrowserTab) {
   if (tab.title) return tab.title;
   if (!tab.url) return "New tab";
@@ -1613,10 +1641,14 @@ type BrowserDrag = {
   width: number;
   height: number;
   moving: boolean;
+  detached: boolean;
+  fromSplit: boolean;
+  reattach: boolean;
   split?: "primary" | "secondary";
   strip: HTMLElement;
   reorderRows: HTMLElement[];
   horizontal: boolean;
+  forward: boolean;
   group?: string;
   destination?: { id: string; after: boolean };
   original: string[];
@@ -1631,8 +1663,14 @@ function positionDragPreview() {
   const browser = root.value;
   if (!drag || !dragPreview.value || !browser) return;
   const bounds = browser.getBoundingClientRect();
-  const strip = drag.strip.getBoundingClientRect();
   const scale = bounds.width / browser.offsetWidth || 1;
+  if (drag.detached) {
+    const x = bounds.left + (dragPoint.x - drag.grabX) * scale;
+    const y = bounds.top + (dragPoint.y - drag.grabY) * scale;
+    dragPreview.value.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`;
+    return;
+  }
+  const strip = drag.strip.getBoundingClientRect();
   const left = (strip.left - bounds.left) / scale;
   const top = (strip.top - bounds.top) / scale;
   const slots = drag.reorderRows.map((row) => dragSlot(row, drag.horizontal, scale));
@@ -1661,17 +1699,19 @@ function dragSlot(row: HTMLElement, horizontal: boolean, scale: number) {
 function beginBrowserDrag(event: PointerEvent, kind: BrowserDrag["kind"], id: string) {
   if (event.button !== 0 || event.pointerType === "touch" || event.altKey ||
       event.ctrlKey || event.metaKey || event.shiftKey ||
-      (kind === "tab" && (inSplit(id) || (event.target as Element).closest("button")))) return;
+      (kind === "tab" && (event.target as Element).closest("button"))) return;
   const { x, y } = local(event);
   const source = event.currentTarget as HTMLElement;
   const strip = source.closest<HTMLElement>(kind === "tab" ? ".browser-tabs" : ".browser-spaces");
   if (!strip) return;
+  source.setPointerCapture(event.pointerId);
   const bounds = source.getBoundingClientRect();
   const scale = bounds.width / source.offsetWidth || 1;
   const tab = kind === "tab" ? spaceTabs.value.find((item) => item.id === id) : undefined;
   const reorderRows = [...strip.querySelectorAll<HTMLElement>(kind === "tab" ? "[data-drag-tab]" : "[data-drag-space]")]
     .filter((row) => {
       if (kind === "space" || row === source) return true;
+      if (inSplit(id) || row.closest(".inline-split")) return false;
       const other = spaceTabs.value.find((item) => item.id === row.dataset.dragTab);
       return other && !!other.pinned === !!tab?.pinned && other.group === tab?.group;
     });
@@ -1679,7 +1719,8 @@ function beginBrowserDrag(event: PointerEvent, kind: BrowserDrag["kind"], id: st
   browserDrag.value = {
     kind, id, pointer: event.pointerId, startX: x, startY: y,
     grabX: (event.clientX - bounds.left) / scale, grabY: (event.clientY - bounds.top) / scale,
-    width: source.offsetWidth, height: source.offsetHeight, moving: false, strip, reorderRows,
+    width: source.offsetWidth, height: source.offsetHeight, moving: false, strip, reorderRows, forward: false,
+    detached: false, fromSplit: kind === "tab" && inSplit(id), reattach: false,
     horizontal: kind === "space"
       ? !(state.value.collapsed || narrow.value)
       : state.value.layout === "comfortable",
@@ -1690,19 +1731,30 @@ function moveBrowserDrag(event: PointerEvent) {
   const drag = browserDrag.value;
   if (!drag || drag.pointer !== event.pointerId) return;
   const { x, y } = local(event);
+  const delta = drag.horizontal ? x - dragPoint.x : y - dragPoint.y;
+  if (delta) drag.forward = delta > 0;
   dragPoint = { x, y };
   if (!drag.moving) {
     if (Math.hypot(x - drag.startX, y - drag.startY) < 2) return;
     drag.moving = true;
     root.value?.setPointerCapture(event.pointerId);
+    window.addEventListener("keydown", cancelBrowserDragKey, true);
     hideTip();
     nextTick(positionDragPreview);
   }
-  positionDragPreview();
   const { horizontal } = drag;
   const target = document.elementFromPoint(event.clientX, event.clientY);
+  const wasDetached = drag.detached;
+  const list = target?.closest<HTMLElement>(drag.kind === "tab" ? ".browser-tabs" : ".browser-spaces");
+  if (drag.kind === "tab") {
+    const insideStrip = list === drag.strip;
+    drag.reattach = drag.fromSplit && insideStrip && (wasDetached || !target?.closest(".inline-split"));
+    drag.detached = !insideStrip || drag.reattach;
+  }
+  if (wasDetached !== drag.detached) void nextTick(positionDragPreview);
+  else positionDragPreview();
   const page = pageBox.value?.getBoundingClientRect();
-  const overPage = drag.kind === "tab" && drag.id !== state.value.active && !peek.value &&
+  const overPage = drag.kind === "tab" && (splitPair.value || drag.id !== state.value.active) && !peek.value &&
     !!page && event.clientX >= page.left && event.clientX < page.right &&
     event.clientY >= page.top && event.clientY < page.bottom;
   drag.split = undefined;
@@ -1717,17 +1769,54 @@ function moveBrowserDrag(event: PointerEvent) {
   if (drag.split || drag.group) return;
 
   const attribute = drag.kind === "tab" ? "dragTab" : "dragSpace";
-  const list = target?.closest<HTMLElement>(drag.kind === "tab" ? ".browser-tabs" : ".browser-spaces");
-  if (!list || !root.value?.contains(list)) return;
+  if (list !== drag.strip) return;
   const scale = list.getBoundingClientRect().width / list.offsetWidth || 1;
   const pointer = horizontal ? event.clientX : event.clientY;
-  // Use each item's layout slot, independent of its current animation frame.
-  for (const row of list.querySelectorAll<HTMLElement>(drag.kind === "tab" ? "[data-drag-tab]" : "[data-drag-space]")) {
-    const { start, end } = dragSlot(row, horizontal, scale);
-    if (pointer < start || pointer >= end) continue;
-    moveToDragSlot(drag, row.dataset[attribute], pointer >= (start + end) / 2);
-    break;
+  if (drag.reattach || wasDetached) {
+    const tab = spaceTabs.value.find((item) => item.id === drag.id);
+    let nearest: { id: string; after: boolean; distance: number } | undefined;
+    for (const row of list.querySelectorAll<HTMLElement>("[data-drag-tab]")) {
+      const id = row.dataset.dragTab!;
+      if (id === drag.id || row.closest(".inline-split") || !row.offsetWidth) continue;
+      const other = spaceTabs.value.find((item) => item.id === id);
+      if (!other || !!tab?.pinned !== !!other.pinned) continue;
+      const { start, end } = dragSlot(row, horizontal, scale);
+      const middle = (start + end) / 2;
+      const distance = Math.abs(pointer - middle);
+      if (!nearest || distance < nearest.distance) nearest = { id, after: pointer >= middle, distance };
+    }
+    if (nearest) {
+      if (drag.reattach) drag.destination = { id: nearest.id, after: nearest.after };
+      else moveToDragSlot(drag, nearest.id, nearest.after);
+    }
+    return;
   }
+  if (drag.fromSplit) return;
+  const size = horizontal ? drag.width : drag.height;
+  const start = pointer - (horizontal ? drag.grabX : drag.grabY) * scale;
+  const after = drag.forward;
+  const edge = after ? start + size * scale : start;
+  const source = drag.reorderRows.find((row) => row.dataset[attribute] === drag.id);
+  if (!source) return;
+  const sourceSlot = dragSlot(source, horizontal, scale);
+  let crossed: { id: string; middle: number } | undefined;
+  for (const row of list.querySelectorAll<HTMLElement>(drag.kind === "tab" ? "[data-drag-tab]" : "[data-drag-space]")) {
+    const id = row.dataset[attribute];
+    if (!id || row === source || row.closest(".inline-split")) continue;
+    const { start, end } = dragSlot(row, horizontal, scale);
+    const middle = (start + end) / 2;
+    if (!drag.reorderRows.includes(row)) {
+      if (pointer >= start && pointer < end) {
+        moveToDragSlot(drag, id, pointer >= middle);
+        return;
+      }
+      continue;
+    }
+    // Move as soon as the leading edge covers half of the neighboring slot.
+    if (after ? middle < sourceSlot.end || edge < middle : middle > sourceSlot.start || edge > middle) continue;
+    if (!crossed || (after ? middle > crossed.middle : middle < crossed.middle)) crossed = { id, middle };
+  }
+  if (crossed) moveToDragSlot(drag, crossed.id, after);
 }
 function moveToDragSlot(drag: BrowserDrag, target: string | undefined, after: boolean) {
   if (drag.kind === "space") {
@@ -1752,6 +1841,7 @@ function endBrowserDrag(event?: PointerEvent, cancel = false) {
   if (!drag || (event && drag.pointer !== event.pointerId)) return;
   browserDrag.value = undefined;
   if (!drag.moving) return;
+  window.removeEventListener("keydown", cancelBrowserDragKey, true);
   tipResumeAt = dragPoint;
   hideTip();
   suppressDragClick = true;
@@ -1759,7 +1849,7 @@ function endBrowserDrag(event?: PointerEvent, cancel = false) {
   const note = !cancel && event && drag.kind === "tab"
     ? document.elementFromPoint(event.clientX, event.clientY)?.closest(".board-note")
     : undefined;
-  if (cancel || note || drag.split || drag.group || drag.destination) {
+  if (cancel || note || drag.detached || drag.split || drag.group || drag.destination) {
     const positions = new Map(drag.original.map((id, index) => [id, index]));
     const items = drag.kind === "tab" ? state.value.tabs : state.value.spaces;
     items.sort((a, b) => (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity));
@@ -1776,6 +1866,11 @@ function endBrowserDrag(event?: PointerEvent, cancel = false) {
     return;
   }
   if (drag.split) return placeBeside(drag.id, state.value.active, drag.split);
+  if (drag.reattach && state.value.split) {
+    const { primary, secondary } = state.value.split;
+    state.value.split = null;
+    leaving(state.value.active === primary ? secondary : primary);
+  }
   const group = state.value.groups.find((item) => item.id === drag.group);
   if (group) return groupTabs([drag.id], group);
   if (drag.destination) {
@@ -1788,6 +1883,13 @@ function endBrowserDrag(event?: PointerEvent, cancel = false) {
   }
   save();
 }
+function cancelBrowserDragKey(event: KeyboardEvent) {
+  if (event.key !== "Escape") return;
+  event.preventDefault();
+  event.stopPropagation();
+  endBrowserDrag(undefined, true);
+}
+onBeforeUnmount(() => window.removeEventListener("keydown", cancelBrowserDragKey, true));
 function ignoreDragClick(event: MouseEvent) {
   if (!suppressDragClick) return;
   event.preventDefault();
@@ -2150,13 +2252,19 @@ function closeSplit() {
 /** Open the target opposite the source, preserving the sidebar anchor. */
 function placeBeside(id: string, source = state.value.active, side?: "primary" | "secondary") {
   const split = state.value.split;
-  if (source === id) return;
   if (split) {
     const pane = side ?? (split.secondary === source ? "primary" : "secondary");
     const replaced = split[pane];
-    if (replaced !== id && replaced !== state.value.active) leaving(replaced);
-    split[pane] = id;
+    const opposite = pane === "primary" ? "secondary" : "primary";
+    if (split[opposite] === id) {
+      split[opposite] = replaced;
+      split[pane] = id;
+    } else if (replaced !== id) {
+      if (replaced !== state.value.active) leaving(replaced);
+      split[pane] = id;
+    }
   } else {
+    if (source === id) return;
     state.value.split = side === "primary"
       ? { primary: id, secondary: source, anchor: source }
       : { primary: source, secondary: id, anchor: source };
@@ -2853,7 +2961,11 @@ function shortcut(name: string) {
   else if (name === "new-tab") addTab();
   else if (name === "close-tab") {
     if (peek.value) closePeek();
-    else closeTab(state.value.active);
+    else {
+      // A second Ctrl+W while the first tab is still sliding closes the next one.
+      flushPendingClose();
+      closeTabSliding(state.value.active);
+    }
   } else if (name === "reopen-tab") reopenClosed();
   else if (name === "library") openDrawer("library");
   else if (name === "sidebar") toggleSidebar();
@@ -2880,12 +2992,6 @@ function shortcut(name: string) {
 function hostKey(event: KeyboardEvent) {
   if (event.key === "Tab") tipResumeAt = undefined;
   if (event.key === "Escape") {
-    if (browserDrag.value?.moving) {
-      event.preventDefault();
-      event.stopPropagation();
-      endBrowserDrag(undefined, true);
-      return;
-    }
     hideTip();
     if (!(menu.value || switcher.value || dialog.value || drawer.value || peek.value || cropArming.value)) return;
     if ((event.target as Element)?.closest(".browser-drawer") && !menu.value) return;
@@ -2902,6 +3008,13 @@ function hostKey(event: KeyboardEvent) {
     else closePeek();
     return;
   }
+  const name = keyShortcut(event);
+  if (!name) return;
+  event.preventDefault();
+  event.stopPropagation();
+  shortcut(name);
+}
+function keyShortcut(event: KeyboardEvent) {
   if (dialog.value || switcher.value?.mode === "search") return;
   const key = event.key.toLowerCase();
   const mod = event.ctrlKey || event.metaKey;
@@ -2915,18 +3028,27 @@ function hostKey(event: KeyboardEvent) {
     else name = ({ k: "palette", l: "address", t: "new-tab", w: "close-tab", b: "library",
       [String.fromCharCode(92)]: "sidebar", ...(peek.value ? { o: "promote-peek" } : {}) } as Record<string, string>)[key];
   }
-  if (!name) return;
-  event.preventDefault();
-  event.stopPropagation();
+  return name;
+}
+// A key the canvas got while this Browser is the app in use (its frame was
+// clicked, not its page or toolbar): run it as if it were pressed inside.
+function canvasShortcut(event: Event) {
+  const detail = (event as CustomEvent<{ blockId?: string; key?: KeyboardEvent; handled?: boolean }>).detail;
+  if (detail?.blockId !== props.block.id || props.editing || !detail.key) return;
+  const name = keyShortcut(detail.key);
+  if (!name || name === "palette") return;
+  detail.handled = true;
   shortcut(name);
 }
-function canvasShortcut(event: Event) {
-  const detail = (event as CustomEvent<{ blockId?: string; name?: string }>).detail;
-  if (detail?.blockId !== props.block.id || props.editing) return;
-  if (detail.name === "new-tab" || detail.name === "reopen-tab") shortcut(detail.name);
-}
-onMounted(() => window.addEventListener(BROWSER_SHORTCUT, canvasShortcut));
-onBeforeUnmount(() => window.removeEventListener(BROWSER_SHORTCUT, canvasShortcut));
+// Ctrl+Tab from the canvas: the Ctrl release lands outside the Browser too.
+onMounted(() => {
+  window.addEventListener(BROWSER_SHORTCUT, canvasShortcut);
+  window.addEventListener("keyup", hostKeyUp);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener(BROWSER_SHORTCUT, canvasShortcut);
+  window.removeEventListener("keyup", hostKeyUp);
+});
 function hostKeyUp(event: KeyboardEvent) {
   if (event.key === "Control" || event.key === "Meta") shortcut("release");
 }
@@ -3117,7 +3239,7 @@ function browserWheel(event: WheelEvent) {
             class="inline-split"
             role="group"
             aria-label="Split View panes"
-            :class="{ grouped: row.grouped }"
+            :class="{ grouped: row.grouped, 'pane-detached': browserDrag?.detached && browserDrag.fromSplit }"
             :style="{
               '--active-pane-index': splitPair[0]!.id === state.active ? 0 : 1,
             }"
@@ -3126,24 +3248,27 @@ function browserWheel(event: WheelEvent) {
             <div
               v-for="(tab, pane) in splitPair"
               :key="tab.id"
+              v-show="!(browserDrag?.detached && browserDrag.id === tab.id)"
               class="browser-tab"
               :class="{
                 active: tab.id === state.active,
                 pinned: !!tab.pinned,
                 selected: selected.has(tab.id),
+                'drag-source': browserDrag?.moving && browserDrag.id === tab.id,
               }"
               role="tab"
               :aria-selected="tab.id === state.active"
               tabindex="0"
               :data-tip="`${label(tab)} · ${state.stacked ? (pane ? 'Bottom' : 'Top') : (pane ? 'Right' : 'Left')} pane`"
+              :data-drag-tab="tab.id"
               @click="tabClick($event, tab)"
               @keydown.enter.self.prevent="selectTab(tab.id)"
               @keydown.space.self.prevent="selectTab(tab.id)"
               @keydown.up="focusSplitRow($event, 0)"
               @keydown.down="focusSplitRow($event, 1)"
-              @pointerdown="tabMiddleDown"
+              @pointerdown="tabMiddleDown($event); beginBrowserDrag($event, 'tab', tab.id)"
               @mousedown="tabMiddleDown"
-              @auxclick.prevent="$event.button === 1 && closeTab(tab.id)"
+              @auxclick.prevent="$event.button === 1 && closeTabSliding(tab.id)"
               @contextmenu="tabMenu($event, tab)"
             >
               <span class="tab-favicon" :style="faviconStyle(tab.url)">
@@ -3178,6 +3303,7 @@ function browserWheel(event: WheelEvent) {
           </div>
           <div
             v-else-if="row.kind === 'tab'"
+            v-show="!(browserDrag?.detached && browserDrag.id === row.tab.id)"
             class="browser-tab"
             :class="{
               active: row.tab.id === state.active,
@@ -3185,7 +3311,9 @@ function browserWheel(event: WheelEvent) {
               grouped: row.grouped,
               selected: selected.has(row.tab.id),
               'drag-source': browserDrag?.moving && browserDrag.id === row.tab.id,
-              'group-drop-active': browserDrag?.destination?.id === row.tab.id,
+              'group-drop-active': browserDrag?.destination?.id === row.tab.id && !browserDrag.reattach,
+              'attach-before': browserDrag?.reattach && browserDrag.destination?.id === row.tab.id && !browserDrag.destination.after,
+              'attach-after': browserDrag?.reattach && browserDrag.destination?.id === row.tab.id && browserDrag.destination.after,
             }"
             role="tab"
             :aria-selected="row.tab.id === state.active"
@@ -3198,7 +3326,7 @@ function browserWheel(event: WheelEvent) {
             @keydown.space.self.prevent="selectTab(row.tab.id)"
             @pointerdown="tabMiddleDown($event); beginBrowserDrag($event, 'tab', row.tab.id)"
             @mousedown="tabMiddleDown"
-            @auxclick.prevent="$event.button === 1 && closeTab(row.tab.id)"
+            @auxclick.prevent="$event.button === 1 && closeTabSliding(row.tab.id)"
             @contextmenu="tabMenu($event, row.tab)"
           >
             <span class="tab-favicon" :style="faviconStyle(row.tab.url)">
@@ -3220,7 +3348,7 @@ function browserWheel(event: WheelEvent) {
             <button
               class="browser-tab-close"
               :aria-label="`Close ${label(row.tab)}`"
-              @click.stop="closeTab(row.tab.id)"
+              @click.stop="closeTabSliding(row.tab.id)"
             >
               <Icon name="close" :size="12" />
             </button>
@@ -3693,13 +3821,14 @@ function browserWheel(event: WheelEvent) {
           <Icon name="close" :size="13" />
         </button>
       </div>
+      <div v-if="browserDrag?.moving && browserDrag.kind === 'tab'" class="browser-split-drag-shield" aria-hidden="true"></div>
       <Transition name="browser-split-target">
         <div v-if="browserDrag?.split" class="browser-split-target" aria-hidden="true">
-          <div class="split-drop-pane" :class="{ 'drop-selected': browserDrag.split === 'primary' }">
-            <span>{{ state.stacked ? "Top pane" : "Left pane" }}</span>
+          <div class="split-drop-zone" :class="{ 'drop-selected': browserDrag.split === 'primary' }">
+            <Icon name="layers" :size="15" />{{ state.stacked ? "Split Top" : "Split Left" }}
           </div>
-          <div class="split-drop-pane" :class="{ 'drop-selected': browserDrag.split === 'secondary' }">
-            <span>{{ state.stacked ? "Bottom pane" : "Right pane" }}</span>
+          <div class="split-drop-zone" :class="{ 'drop-selected': browserDrag.split === 'secondary' }">
+            <Icon name="layers" :size="15" />{{ state.stacked ? "Split Bottom" : "Split Right" }}
           </div>
         </div>
       </Transition>
@@ -3716,8 +3845,9 @@ function browserWheel(event: WheelEvent) {
         <div v-if="cropBox" class="browser-crop-box" :style="cropBox"></div>
       </div>
     </div>
-    <div v-if="browserDrag?.moving" ref="dragPreview" class="browser-drag-preview" aria-hidden="true"
-      :class="{ 'space-preview': browserDrag.kind === 'space' }"
+    <Teleport to="body" :disabled="!browserDrag?.detached">
+      <div v-if="browserDrag?.moving" ref="dragPreview" class="browser-drag-preview" aria-hidden="true"
+      :class="{ 'space-preview': browserDrag.kind === 'space', detached: browserDrag.detached }"
       :style="{ width: browserDrag.width + 'px', height: browserDrag.height + 'px', '--space': draggedSpace?.color }">
       <template v-if="draggedTab">
         <span class="tab-favicon" :style="faviconStyle(draggedTab.url)">
@@ -3729,7 +3859,8 @@ function browserWheel(event: WheelEvent) {
       <template v-else-if="draggedSpace">
         {{ draggedSpace.icon || draggedSpace.name.slice(0, 1).toUpperCase() }}
       </template>
-    </div>
+      </div>
+    </Teleport>
     <div
       v-if="menu"
       ref="menuBox"
@@ -4584,6 +4715,9 @@ function browserWheel(event: WheelEvent) {
 .inline-split.grouped {
   margin-left: 22px;
 }
+.inline-split.pane-detached .split-active-highlight {
+  display: none;
+}
 .inline-split::before {
   content: "";
   position: absolute;
@@ -5421,6 +5555,28 @@ function browserWheel(event: WheelEvent) {
   background: var(--selection);
   box-shadow: inset 0 0 0 1px var(--accent);
 }
+.browser-tab:is(.attach-before, .attach-after) {
+  position: relative;
+}
+.browser-tab:is(.attach-before, .attach-after)::after {
+  content: "";
+  position: absolute;
+  inset-inline: 4px;
+  height: 2px;
+  border-radius: 1px;
+  background: #4f7b93;
+  pointer-events: none;
+}
+.browser-tab.attach-before::after { top: -2px; }
+.browser-tab.attach-after::after { bottom: -2px; }
+.layout-comfortable .browser-tab:is(.attach-before, .attach-after)::after {
+  inset-block: 4px;
+  inset-inline: auto;
+  width: 2px;
+  height: auto;
+}
+.layout-comfortable .browser-tab.attach-before::after { left: -2px; }
+.layout-comfortable .browser-tab.attach-after::after { right: -2px; }
 .browser-drag-preview {
   position: absolute;
   inset: 0 auto auto 0;
@@ -5446,6 +5602,21 @@ function browserWheel(event: WheelEvent) {
   background: color-mix(in srgb, var(--space) 20%, var(--surface));
   font-weight: 630;
 }
+.browser-drag-preview.detached {
+  position: fixed;
+  z-index: 250;
+  transform-origin: top left;
+  border-color: #c8d8e1;
+  background: #e4eff5;
+  color: #455968;
+  font: 600 12px/1.2 "Inter Variable", sans-serif;
+  box-shadow: 0 6px 18px rgb(32 52 65 / 18%);
+}
+.browser-split-drag-shield {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+}
 .browser-split-target {
   position: absolute;
   inset: 0;
@@ -5458,39 +5629,17 @@ function browserWheel(event: WheelEvent) {
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: var(--split) minmax(0, 1fr);
 }
-.split-drop-pane {
-  display: grid;
-  place-items: center;
+.browser-split-target .split-drop-zone {
   min-width: 0;
-  margin: 8px;
-  border: 1px dashed var(--accent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--surface) 45%, transparent);
-  color: var(--ink);
-  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
-}
-.split-drop-pane span {
-  padding: 6px 10px;
-  border-radius: 6px;
-  background: var(--surface);
-  font-weight: 600;
-}
-.split-drop-pane.drop-selected {
-  border: 2px solid var(--ink);
-  background: color-mix(in srgb, var(--selection) 85%, transparent);
-}
-.split-drop-pane.drop-selected span {
-  background: #455968;
-  color: #fff;
+  transition: background 140ms ease, border-color 140ms ease;
 }
 .browser-split-target-enter-active,
 .browser-split-target-leave-active {
-  transition: opacity 190ms var(--ease), transform 190ms var(--ease);
+  transition: opacity 140ms var(--ease);
 }
 .browser-split-target-enter-from,
 .browser-split-target-leave-to {
   opacity: 0;
-  transform: scale(0.97);
 }
 /* Overlays span the whole app, not just the page column. */
 .browser-view > :is(.browser-menu, .browser-scrim, .browser-notice, .browser-tip, .browser-drawer, .browser-drag-preview) {
@@ -5828,7 +5977,7 @@ function browserWheel(event: WheelEvent) {
 }
 @media (prefers-reduced-motion: reduce) {
   .browser-reorder-move,
-  .split-drop-pane,
+  .browser-split-target .split-drop-zone,
   .browser-split-target-enter-active,
   .browser-split-target-leave-active {
     transition: none !important;

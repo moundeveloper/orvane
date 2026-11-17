@@ -2126,23 +2126,21 @@ function applyPan(dx: number, dy: number) {
   wheelPanTimer = setTimeout(() => (movingCamera.value = false), 140);
 }
 // A press in a code app or Browser page makes it the app in use.
-// Ctrl+T / Ctrl+Shift+T when a Browser app is the one in use but the key
-// went to the canvas (its frame was clicked, not its page or toolbar):
-// the Browser opens or reopens a tab. Keys inside the Browser itself are
-// handled there first and never arrive here.
+// Browser shortcuts (Ctrl+W, Ctrl+T, Ctrl+Tab, Ctrl+L…) when a Browser app
+// is the one in use but the key went to the canvas (its frame was clicked,
+// not its page or toolbar): the Browser runs them on its current tab. Keys
+// inside the Browser itself are handled there first and never arrive here.
 function browserTabKeys(e: KeyboardEvent) {
-  const mod = e.ctrlKey || e.metaKey;
-  if (!mod || e.altKey || e.key.toLowerCase() !== "t" || typing(e.target)) return false;
+  if (!(e.ctrlKey || e.metaKey || e.altKey) || typing(e.target)) return false;
   const app = apps.value.find((a) => a.id === active.value);
   const browser = app && flatten(app.blocks).find((block) => block.kind === "browser");
   if (!browser) return false;
   const inside = e.target instanceof Element ? e.target.closest(".canvas-app") : null;
   if (inside && (inside as HTMLElement).dataset.appId !== app.id) return false;
-  e.preventDefault();
-  window.dispatchEvent(
-    new CustomEvent(BROWSER_SHORTCUT, { detail: { blockId: browser.id, name: e.shiftKey ? "reopen-tab" : "new-tab" } }),
-  );
-  return true;
+  const detail = { blockId: browser.id, key: e, handled: false };
+  window.dispatchEvent(new CustomEvent(BROWSER_SHORTCUT, { detail }));
+  if (detail.handled) e.preventDefault();
+  return detail.handled;
 }
 function activatedApp(event: Event) {
   const appId = (event as CustomEvent<{ appId: string }>).detail?.appId;
@@ -3581,24 +3579,8 @@ onBeforeUnmount(() => {
     <div class="topbar-frost" aria-hidden="true"></div>
     <header class="topbar" @pointerdown.stop>
       <div class="wordmark">
-        <svg
-          width="22"
-          height="22"
-          viewBox="0 0 22 22"
-          fill="none"
-          aria-hidden="true"
-        >
-          <path
-            d="M4 15.5V6.5L11 3l7 3.5v9L11 19l-7-3.5Z"
-            stroke="currentColor"
-            stroke-width="1.3"
-          />
-          <path
-            d="m4 6.5 7 3.7 7-3.7M11 10.2V19"
-            stroke="currentColor"
-            stroke-width="1.3"
-          /></svg
-        ><span>orvane</span><span class="workspace-label">Personal canvas</span>
+        <img src="/favicon.png" width="18" height="18" alt="" />
+        <span>orvane</span><span class="workspace-label">Personal canvas</span>
       </div>
       <div
         v-if="hint && canEdit"

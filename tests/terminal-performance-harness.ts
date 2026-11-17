@@ -17,11 +17,14 @@ export function mountTerminalFixture(count = 50, open = true) {
   const sessions = new Map<string, { cwd: string; draft: string; last: string; output: string; listener?: SessionListener }>();
   const opened: string[] = [];
   const killed: string[] = [];
+  const attached: string[] = [];
+  const resizes: { id: string; cols: number; rows: number }[] = [];
   const originalClient = { ...client };
   client.open = (id, options, listener) => {
     const existing = sessions.get(id);
     if (existing) {
       existing.listener = listener;
+      attached.push(id);
       listener.attached(existing.output);
       return;
     }
@@ -44,7 +47,8 @@ export function mountTerminalFixture(count = 50, open = true) {
       });
     } else session.draft += data;
   };
-  client.resize = () => {};
+  client.listen = (id, listener) => { const session = sessions.get(id); if (session) session.listener = listener; };
+  client.resize = (id, cols, rows) => { resizes.push({ id, cols, rows }); };
   client.detach = (id) => { const session = sessions.get(id); if (session) delete session.listener; };
   client.kill = (id) => { killed.push(id); sessions.delete(id); };
   const originalOpen = Terminal.prototype.open;
@@ -101,6 +105,11 @@ export function mountTerminalFixture(count = 50, open = true) {
     calls,
     opened,
     killed,
+    attached,
+    resizes,
+    get xterms() {
+      return terminals.length;
+    },
     get fits() {
       return fits;
     },
@@ -113,8 +122,17 @@ export function mountTerminalFixture(count = 50, open = true) {
     resetFits() {
       fits = 0;
     },
+    write(host: Element, text: string) {
+      const terminal = terminals.find(({ terminal }) => terminal.element?.parentElement === host)!.terminal;
+      return new Promise<void>((resolve) => terminal.write(text, resolve));
+    },
     focus() {
       active()?.terminal.focus();
+    },
+    viewportY(paneId: string) {
+      return terminals.find(({ host }) =>
+        host.isConnected && host.closest<HTMLElement>("[data-terminal-pane]")?.dataset.terminalPane === paneId,
+      )?.terminal.buffer.active.viewportY;
     },
     text(cwd: string) {
       const index = paths.indexOf(cwd);

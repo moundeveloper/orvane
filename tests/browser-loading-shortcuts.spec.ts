@@ -126,6 +126,36 @@ test("Ctrl+T and Ctrl+Shift+T reach a Browser app selected by its frame", async 
     await expect(tabs).toHaveCount(2);
     await press("Control+Shift+t");
     await expect(tabs).toHaveCount(3);
+
+    // The other Browser shortcuts act on the current tab too, without first
+    // clicking a tab or the page.
+    const active = browser.locator(".browser-tab.active");
+    const activeId = await active.getAttribute("data-drag-tab");
+    // The closed tab slides out, then leaves the list.
+    await page.evaluate(() => {
+      const w = window as unknown as { slid?: string[] };
+      w.slid = [];
+      new MutationObserver((records) => records.forEach((r) => {
+        const el = r.target as HTMLElement;
+        if (el.dataset?.closing !== undefined) w.slid!.push(el.dataset.dragTab ?? "");
+      })).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["data-closing"] });
+    });
+    await press("Control+w");
+    await expect(tabs).toHaveCount(2);
+    expect(await page.evaluate(() => (window as unknown as { slid: string[] }).slid)).toContain(activeId);
+    // A short list has nothing to scroll: no scrollbar on the tabs.
+    expect(await browser.locator(".browser-side .browser-tabs").evaluate((list) => list.scrollHeight - list.clientHeight)).toBeLessThanOrEqual(0);
+    await expect(browser.locator(`[data-drag-tab="${activeId}"]`)).toHaveCount(0);
+    const first = await tabs.first().getAttribute("data-drag-tab");
+    await press("Control+1");
+    await expect(active).toHaveAttribute("data-drag-tab", first!);
+    const second = await tabs.nth(1).getAttribute("data-drag-tab");
+    await press("Control+2");
+    await expect(active).toHaveAttribute("data-drag-tab", second!);
+    // Ctrl+Tab's switcher commits when Ctrl is released on the canvas.
+    await press("Control+Tab");
+    await expect(browser.locator(".browser-switcher")).toHaveCount(0);
+    await expect(active).toHaveAttribute("data-drag-tab", first!);
   } finally {
     await app.close();
   }

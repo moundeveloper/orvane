@@ -1377,10 +1377,6 @@ kbd {
   margin: 2px 0 12px;
   font-size: 11px;
 }
-.wordmark > svg {
-  width: 18px;
-  height: 18px;
-}
 .search-input {
   display: flex;
   align-items: center;

@@ -72,6 +72,10 @@ export const terminal = {
     if (socket?.readyState === WebSocket.OPEN) send({ t: "open", id, ...opening });
     else connect();
   },
+  /** Hand a live session's output to a new listener without re-attaching. */
+  listen(id: string, listener: SessionListener) {
+    if (openings.has(id)) listeners.set(id, listener);
+  },
   input(id: string, data: string) {
     send({ t: "in", id, d: data });
   },

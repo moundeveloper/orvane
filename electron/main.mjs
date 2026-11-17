@@ -825,6 +825,7 @@ function createWindow() {
     minWidth: 800,
     minHeight: 560,
     title: "Orvane",
+    icon: join(root, "public/favicon.ico"),
     backgroundColor: "#e9eef1",
     // No system title bar: Orvane's own top bar carries the drag area and
     // the close button. Shown once maximized, so it never flashes small.
@@ -910,6 +911,17 @@ function createWindow() {
 
 // No menu bar, not even on Alt: Alt+drag moves apps on the canvas. The menu
 // stays installed so its shortcuts (copy, paste, reload…) still work.
+// Electron's default menu, minus its "Close" item: Ctrl+W closed Orvane.
+function installMenu() {
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      ...(process.platform === "darwin" ? [{ role: "appMenu" }] : [{ label: "File", submenu: [{ role: "quit" }] }]),
+      { role: "editMenu" },
+      { role: "viewMenu" },
+      { label: "Window", submenu: [{ role: "minimize" }, { role: "zoom" }] },
+    ]),
+  );
+}
 app.on("browser-window-created", (_event, window) => {
   window.setAutoHideMenuBar(false);
   window.setMenuBarVisibility(false);
@@ -930,6 +942,7 @@ else {
     .whenReady()
     .then(async () => {
       secure();
+      installMenu();
       await startServer();
       createWindow();
       createTray();

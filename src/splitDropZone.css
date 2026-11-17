@@ -1,0 +1,15 @@
+.split-drop-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 2px dashed transparent;
+  background: #eef5f880;
+  color: #4f7b93;
+  font-weight: 600;
+}
+
+.split-drop-zone.drop-selected {
+  border-color: #6f9ab0;
+  background: #d8e9f1d9;
+}

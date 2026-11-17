@@ -9,40 +9,48 @@ defineOptions({ name: "TerminalSplit" });
 const props = defineProps<{
   node: LayoutNode;
   movable?: boolean;
+  resizing?: boolean;
   drop?: { id: string; edge: "left" | "right" | "top" | "bottom" };
 }>();
 const emit = defineEmits<{ resized: [] }>();
 const box = ref<HTMLDivElement>();
+const draggingDivider = ref(false);
 function drag(event: PointerEvent) {
-  if (props.node.type !== "split" || event.button !== 0) return;
+  if (props.node.type !== "split" || event.button !== 0 || draggingDivider.value) return;
   event.preventDefault();
   event.stopPropagation();
   const node = props.node;
   const target = event.currentTarget as HTMLElement;
   target.setPointerCapture(event.pointerId);
+  draggingDivider.value = true;
   const move = (e: PointerEvent) => {
+    if (e.pointerId !== event.pointerId) return;
     const r = box.value!.getBoundingClientRect();
     const ratio = node.dir === "row" ? (e.clientX - r.left) / r.width : (e.clientY - r.top) / r.height;
     node.ratio = Math.round(Math.max(0.1, Math.min(0.9, ratio)) * 1000) / 1000;
   };
-  const up = () => {
+  const up = (e: PointerEvent) => {
+    if (e.pointerId !== event.pointerId) return;
     target.removeEventListener("pointermove", move);
     target.removeEventListener("pointerup", up);
     target.removeEventListener("pointercancel", up);
+    target.removeEventListener("lostpointercapture", up);
+    draggingDivider.value = false;
     emit("resized");
   };
   target.addEventListener("pointermove", move);
   target.addEventListener("pointerup", up);
   target.addEventListener("pointercancel", up);
+  target.addEventListener("lostpointercapture", up);
 }
 </script>
 
 <template>
   <TerminalPane v-if="node.type === 'pane'" :key="node.id" :pane="node"
-    :movable="movable" :drop-edge="drop?.id === node.id ? drop.edge : undefined" />
+    :movable="movable" :resizing="resizing" :drop-edge="drop?.id === node.id ? drop.edge : undefined" />
   <div v-else ref="box" class="terminal-split" :class="node.dir">
     <div class="terminal-split-part" :style="{ flexBasis: node.ratio * 100 + '%' }">
-      <TerminalSplit :node="node.a" :drop="drop" movable @resized="emit('resized')" />
+      <TerminalSplit :node="node.a" :drop="drop" :resizing="resizing || draggingDivider" movable @resized="emit('resized')" />
     </div>
     <div
       class="terminal-divider"
@@ -51,7 +59,7 @@ function drag(event: PointerEvent) {
       @pointerdown="drag"
     ></div>
     <div class="terminal-split-part" :style="{ flexBasis: (1 - node.ratio) * 100 + '%' }">
-      <TerminalSplit :node="node.b" :drop="drop" movable @resized="emit('resized')" />
+      <TerminalSplit :node="node.b" :drop="drop" :resizing="resizing || draggingDivider" movable @resized="emit('resized')" />
     </div>
   </div>
 </template>
