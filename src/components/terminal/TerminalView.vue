@@ -88,62 +88,195 @@ const tabMime = "application/x-orvane-terminal-tab";
 const terminalBody = ref<HTMLElement>();
 const dragging = ref<{ tabId: string; paneId?: string }>();
 const tabDrop = ref<{ id: string; after: boolean }>();
-const paneDrop = ref<{ id: string; edge: "left" | "right" | "top" | "bottom" }>();
-let shiftDrag: { pointer: number; paneId: string; tabId: string; x: number; y: number } | undefined;
+type PaneDrop = { id: string; edge: "left" | "right" | "top" | "bottom" };
+type PaneRect = { x: number; y: number; width: number; height: number };
+const paneDrop = ref<PaneDrop>();
+const previewFrames = ref<(PaneRect & { id: string })[]>([]);
+const dropGuide = ref<(PaneRect & { id: string; compact: boolean })>();
+const dropDirections = [
+  { edge: "left", icon: "back", label: "Split left" },
+  { edge: "right", icon: "forward", label: "Split right" },
+  { edge: "top", icon: "up", label: "Split above" },
+  { edge: "bottom", icon: "down", label: "Split below" },
+] as const;
+let paneDrag: {
+  pointer: number; paneId: string; tabId: string; x: number; y: number;
+  pane: HTMLElement; scale: number; bounds: DOMRect;
+  source: DOMRect; lift: number;
+  targets: { pane: HTMLElement; rect: DOMRect }[];
+} | undefined;
+
+function clearPanePreview() {
+  if (!paneDrag) return;
+  for (const { pane } of paneDrag.targets) {
+    pane.classList.remove("terminal-pane-preview-moving", "terminal-pane-lifted");
+    pane.style.removeProperty("--terminal-preview-transform");
+    pane.style.removeProperty("--terminal-preview-clip");
+  }
+  previewFrames.value = [];
+  dropGuide.value = undefined;
+}
+
 function resetDrag() {
+  clearPanePreview();
+  paneDrag = undefined;
   dragging.value = undefined;
   tabDrop.value = undefined;
   paneDrop.value = undefined;
 }
-function startDrag(event: DragEvent, tabId: string, paneId?: string) {
-  if (!event.dataTransfer || (!paneId && (event.target as Element).closest("input, button"))) {
+function startDrag(event: DragEvent, tabId: string) {
+  if (!event.dataTransfer || (event.target as Element).closest("input, button")) {
     event.preventDefault();
     return;
   }
-  dragging.value = { tabId, paneId };
+  dragging.value = { tabId };
   event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData(tabMime, paneId ?? tabId);
+  event.dataTransfer.setData(tabMime, tabId);
 }
-function startPaneDrag(event: DragEvent) {
-  const id = (event.target as Element).closest<HTMLElement>("[data-drag-terminal-pane]")?.dataset.dragTerminalPane;
-  if (id && activeTab.value) startDrag(event, activeTab.value.id, id);
-}
-function beginShiftDrag(event: PointerEvent) {
-  if (!event.shiftKey || event.button !== 0 || !activeTab.value ||
-      (event.target as Element).closest("button")) return;
-  const pane = (event.target as Element).closest<HTMLElement>(".terminal-pane.has-pane-handle");
-  if (!pane?.dataset.terminalPane) return;
+function beginPaneDrag(event: PointerEvent) {
+  const body = terminalBody.value;
+  const target = event.target as Element;
+  const handle = target.closest("[data-drag-terminal-pane]");
+  if (paneDrag || event.button !== 0 || !activeTab.value || !body ||
+      (!handle && (!event.shiftKey || target.closest("button")))) return;
+  const pane = target.closest<HTMLElement>(".terminal-pane.has-pane-handle");
+  const tabBody = pane?.closest<HTMLElement>(".terminal-tab-body");
+  if (!pane?.dataset.terminalPane || !tabBody) return;
+  const bounds = tabBody.getBoundingClientRect();
+  const source = pane.getBoundingClientRect();
+  const targets = [...tabBody.querySelectorAll<HTMLElement>("[data-terminal-pane]")]
+    .map((pane) => ({ pane, rect: pane.getBoundingClientRect() }));
   event.preventDefault();
   event.stopPropagation();
-  shiftDrag = {
+  paneDrag = {
     pointer: event.pointerId, paneId: pane.dataset.terminalPane, tabId: activeTab.value.id,
-    x: event.clientX, y: event.clientY,
+    x: event.clientX, y: event.clientY, pane, bounds, targets,
+    source, lift: Math.min(0.72, 360 / source.width, 200 / source.height),
+    scale: bounds.width / tabBody.offsetWidth || 1,
   };
-  terminalBody.value?.setPointerCapture(event.pointerId);
+  body.setPointerCapture(event.pointerId);
 }
-function moveShiftDrag(event: PointerEvent) {
-  if (!shiftDrag || shiftDrag.pointer !== event.pointerId) return;
+function movePaneDrag(event: PointerEvent) {
+  const drag = paneDrag;
+  if (!drag || drag.pointer !== event.pointerId) return;
   if (!dragging.value) {
-    if (Math.hypot(event.clientX - shiftDrag.x, event.clientY - shiftDrag.y) < 4) return;
-    dragging.value = { tabId: shiftDrag.tabId, paneId: shiftDrag.paneId };
+    if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 4) return;
+    dragging.value = { tabId: drag.tabId, paneId: drag.paneId };
+    drag.pane.classList.add("terminal-pane-lifted");
   }
-  const target = document.elementFromPoint(event.clientX, event.clientY);
+  const { source, lift } = drag;
+  const dx = (event.clientX - drag.x + (drag.x - source.left) * (1 - lift)) / drag.scale;
+  const dy = (event.clientY - drag.y + (drag.y - source.top) * (1 - lift)) / drag.scale;
+  drag.pane.style.setProperty("--terminal-preview-transform", `translate(${dx}px, ${dy}px) scale(${lift})`);
+
+  const target = event.clientY < drag.bounds.top
+    ? document.elementFromPoint(event.clientX, event.clientY)
+    : null;
   const tab = target?.closest<HTMLElement>("[data-terminal-tab]");
+  const previous = paneDrop.value;
   if (tab && terminalBody.value?.parentElement?.contains(tab)) {
     paneDrop.value = undefined;
+    dropGuide.value = undefined;
     positionTabDrop(tab, tab.dataset.terminalTab!, event.clientX);
-    return;
+  } else {
+    tabDrop.value = undefined;
+    // Keep the hit regions fixed while the painted frames move underneath them.
+    const hit = drag.targets.find(({ rect }) =>
+      event.clientX >= rect.left && event.clientX < rect.right &&
+      event.clientY >= rect.top && event.clientY < rect.bottom);
+    const id = hit?.pane.dataset.terminalPane;
+    if (!hit || !id || id === drag.paneId || hit.rect.width < 48 || hit.rect.height < 48) {
+      dropGuide.value = undefined;
+    } else if (dropGuide.value?.id !== id) {
+      const { rect } = hit;
+      dropGuide.value = {
+        id, compact: rect.width < 200 || rect.height < 100,
+        x: (rect.left - drag.bounds.left) / drag.scale, y: (rect.top - drag.bounds.top) / drag.scale,
+        width: rect.width / drag.scale, height: rect.height / drag.scale,
+      };
+    }
+    positionPaneDrop(hit?.pane ?? null, event.clientX, event.clientY, hit?.rect);
   }
-  tabDrop.value = undefined;
-  const pane = target?.closest<HTMLElement>("[data-terminal-pane]");
-  positionPaneDrop(pane && terminalBody.value?.contains(pane) ? pane : null, event.clientX, event.clientY);
+  if (previous !== paneDrop.value) previewPaneDrop();
 }
-function endShiftDrag(event: PointerEvent, cancel = false) {
-  if (!shiftDrag || shiftDrag.pointer !== event.pointerId) return;
-  shiftDrag = undefined;
-  if (cancel) resetDrag();
-  else if (tabDrop.value) dropTab(event, tabDrop.value.id);
+function endPaneDrag(event: PointerEvent, cancel = false) {
+  if (!paneDrag || paneDrag.pointer !== event.pointerId) return;
+  if (cancel) return resetDrag();
+  if (dragging.value) movePaneDrag(event);
+  if (tabDrop.value) dropTab(event, tabDrop.value.id);
   else dropPane(event);
+}
+function cancelPaneDrag(event: KeyboardEvent) {
+  if (event.key !== "Escape" || !paneDrag) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const body = terminalBody.value;
+  if (body?.hasPointerCapture(paneDrag.pointer)) body.releasePointerCapture(paneDrag.pointer);
+  resetDrag();
+}
+
+function splitAtDrop(root: LayoutNode, moving: LayoutNode, drop: PaneDrop, id: string) {
+  const target = panes(root).find((pane) => pane.id === drop.id);
+  if (!target) return root;
+  const before = drop.edge === "left" || drop.edge === "top";
+  return replacePane(root, target.id, {
+    type: "split", id, ratio: 0.5,
+    dir: drop.edge === "left" || drop.edge === "right" ? "row" : "column",
+    a: before ? moving : target, b: before ? target : moving,
+  })!;
+}
+
+function previewPaneDrop() {
+  const drag = paneDrag;
+  const tab = activeTab.value;
+  if (!drag || !tab) return;
+  const { scale, bounds } = drag;
+  const moving = panes(tab.root).find((pane) => pane.id === drag.paneId);
+  const remaining = moving && paneDrop.value && replacePane(tab.root, moving.id, null);
+  const projected = new Map<string, PaneRect>();
+  const gap = parseFloat(getComputedStyle(terminalBody.value!).getPropertyValue("--terminal-divider-size"));
+  function place(node: LayoutNode, rect: PaneRect) {
+    if (node.type === "pane") {
+      projected.set(node.id, rect);
+      return;
+    }
+    if (node.dir === "row") {
+      const width = Math.max(0, rect.width - gap);
+      const first = width * node.ratio;
+      place(node.a, { ...rect, width: first });
+      place(node.b, { ...rect, x: rect.x + first + gap, width: width - first });
+    } else {
+      const height = Math.max(0, rect.height - gap);
+      const first = height * node.ratio;
+      place(node.a, { ...rect, height: first });
+      place(node.b, { ...rect, y: rect.y + first + gap, height: height - first });
+    }
+  }
+  if (remaining && moving && paneDrop.value) {
+    place(splitAtDrop(remaining, moving, paneDrop.value, "preview"), {
+      x: 0, y: 0, width: bounds.width / scale, height: bounds.height / scale,
+    });
+  }
+  const frames: typeof previewFrames.value = [];
+  for (const { pane, rect } of drag.targets) {
+    const id = pane.dataset.terminalPane!;
+    const next = projected.get(id);
+    if (pane !== drag.pane) {
+      const dx = next ? next.x - (rect.left - bounds.left) / scale : 0;
+      const dy = next ? next.y - (rect.top - bounds.top) / scale : 0;
+      const width = rect.width / scale;
+      const height = rect.height / scale;
+      pane.classList.add("terminal-pane-preview-moving");
+      pane.style.setProperty("--terminal-preview-transform", `translate(${dx}px, ${dy}px)`);
+      pane.style.setProperty("--terminal-preview-clip", next
+        ? `inset(0 ${Math.max(0, width - next.width)}px ${Math.max(0, height - next.height)}px 0 round 6px)`
+        : "inset(0 round 6px)");
+      if (!next || (Math.abs(dx) < 1 && Math.abs(dy) < 1 &&
+          Math.abs(next.width - width) < 1 && Math.abs(next.height - height) < 1)) continue;
+    }
+    if (next) frames.push({ id, ...next });
+  }
+  previewFrames.value = frames;
 }
 function animatePaneMove() {
   const body = terminalBody.value;
@@ -218,17 +351,20 @@ function overPane(event: DragEvent) {
   event.preventDefault();
   event.dataTransfer.dropEffect = "move";
 }
-function positionPaneDrop(target: HTMLElement | null, clientX: number, clientY: number) {
+function positionPaneDrop(target: HTMLElement | null, clientX: number, clientY: number, bounds?: DOMRect) {
   if (!target || target.dataset.terminalPane === dragging.value?.paneId) {
     paneDrop.value = undefined;
     return;
   }
-  const rect = target.getBoundingClientRect();
+  const rect = bounds ?? target.getBoundingClientRect();
   const x = (clientX - rect.left) / rect.width;
   const y = (clientY - rect.top) / rect.height;
   const edges = { left: x, right: 1 - x, top: y, bottom: 1 - y };
   const edge = (Object.keys(edges) as (keyof typeof edges)[]).reduce((a, b) => edges[a] < edges[b] ? a : b);
   const id = target.dataset.terminalPane!;
+  const previous = paneDrop.value;
+  if (bounds && previous?.id === id && edges[previous.edge] < 0.36 &&
+      edges[previous.edge] - edges[edge] < 0.04) return;
   if (edges[edge] >= 0.32) paneDrop.value = undefined;
   else if (paneDrop.value?.id !== id || paneDrop.value.edge !== edge) paneDrop.value = { id, edge };
 }
@@ -237,21 +373,15 @@ function dropPane(event: MouseEvent) {
   const drop = paneDrop.value;
   const source = state.tabs.find((tab) => tab.id === drag?.tabId);
   const target = activeTab.value;
-  resetDrag();
-  if (!drop || !source || !target || (!drag?.paneId && source === target) || drop.id === drag?.paneId) return;
+  if (!drop || !source || !target || (!drag?.paneId && source === target) || drop.id === drag?.paneId) return resetDrag();
   const pane = panes(target.root).find((item) => item.id === drop.id);
-  if (!pane) return;
+  if (!pane) return resetDrag();
   event.preventDefault();
   const animate = animatePaneMove();
+  resetDrag();
   const moving = drag?.paneId ? takePane(source, drag.paneId) : source.root;
   if (!moving) return;
-  const before = drop.edge === "left" || drop.edge === "top";
-  const node: LayoutNode = {
-    type: "split", id: uid(), ratio: 0.5,
-    dir: drop.edge === "left" || drop.edge === "right" ? "row" : "column",
-    a: before ? moving : pane, b: before ? pane : moving,
-  };
-  const root = replacePane(target.root, pane.id, node)!;
+  const root = splitAtDrop(target.root, moving, drop, uid());
   // Remove the tab without closing any of its live shell sessions.
   if (!drag?.paneId) state.tabs.splice(state.tabs.indexOf(source), 1);
   target.root = root;
@@ -503,6 +633,11 @@ onMounted(async () => {
   if (!state.tabs.length && !props.block.value) newTab();
 });
 onBeforeUnmount(stopCommands);
+onMounted(() => window.addEventListener("keydown", cancelPaneDrag, true));
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", cancelPaneDrag, true);
+  resetDrag();
+});
 // The block can be replaced (undo of a whole workspace, import): follow it.
 watch(
   () => props.block.value,
@@ -692,18 +827,37 @@ const kindIcon = (kind?: string) => (kind === "wsl" ? "desktop" : "terminal");
         <Icon name="close" :size="12" />
       </button>
     </div>
-    <div ref="terminalBody" class="terminal-body" @click="detachPaneClick" @dragstart="startPaneDrag" @dragend="resetDrag" @dragover="overPane" @drop="dropPane"
-      @pointerdown.capture="beginShiftDrag" @pointermove="moveShiftDrag" @pointerup="endShiftDrag($event)"
-      @pointercancel="endShiftDrag($event, true)" @lostpointercapture="endShiftDrag($event, true)"
+    <div ref="terminalBody" class="terminal-body" @click="detachPaneClick" @dragend="resetDrag" @dragover="overPane" @drop="dropPane"
+      @pointerdown.capture="beginPaneDrag" @pointermove="movePaneDrag" @pointerup="endPaneDrag($event)"
+      @pointercancel="endPaneDrag($event, true)" @lostpointercapture="endPaneDrag($event, true)"
       @dragleave="!($event.currentTarget as HTMLElement).contains($event.relatedTarget as Node) && (paneDrop = undefined)">
       <div
         v-for="tab in state.tabs"
         v-show="tab.id === state.active"
         :key="tab.id"
         class="terminal-tab-body"
+        :class="{ 'previewing-split': tab.id === state.active && previewFrames.length }"
       >
         <TerminalSplit v-if="visitedTabs.has(tab.id)" :node="tab.root"
-          :drop="tab.id === state.active ? paneDrop : undefined" @resized="save" />
+          :drop="tab.id === state.active && !dragging?.paneId ? paneDrop : undefined" @resized="save" />
+        <div v-if="tab.id === state.active" class="terminal-split-preview" aria-hidden="true">
+          <div v-for="frame in previewFrames" :key="frame.id" class="terminal-split-preview-frame"
+            :class="{ destination: frame.id === dragging?.paneId }"
+            :style="{ width: frame.width + 'px', height: frame.height + 'px',
+              transform: `translate(${frame.x}px, ${frame.y}px)` }" />
+        </div>
+        <div v-if="tab.id === state.active && dropGuide" class="terminal-drop-guide"
+          :class="{ compact: dropGuide.compact }" aria-hidden="true"
+          :style="{ left: dropGuide.x + 'px', top: dropGuide.y + 'px',
+            width: dropGuide.width + 'px', height: dropGuide.height + 'px' }">
+          <span v-for="direction in dropDirections" :key="direction.edge" class="terminal-drop-marker"
+            :class="[direction.edge, { selected: paneDrop?.edge === direction.edge }]">
+            <Icon :name="direction.icon" :size="14" />
+          </span>
+          <span v-if="!dropGuide.compact" class="terminal-drop-hint">
+            {{ dropDirections.find((direction) => direction.edge === paneDrop?.edge)?.label ?? "Drag to an edge to split" }}
+          </span>
+        </div>
       </div>
       <div v-if="!state.tabs.length" class="terminal-empty">
         <p>No terminals open.</p>
@@ -849,14 +1003,107 @@ const kindIcon = (kind?: string) => (kind === "wsl" ? "desktop" : "terminal");
   opacity: 0.4;
 }
 .terminal-body {
+  --terminal-divider-size: 6px;
   flex: 1;
   min-height: 0;
   position: relative;
   padding: 0 6px 6px;
 }
 .terminal-tab-body {
+  position: relative;
   width: 100%;
   height: 100%;
+}
+.previewing-split :deep(.terminal-divider) {
+  visibility: hidden;
+}
+.terminal-split-preview {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+.terminal-split-preview-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgb(111 137 152 / 42%);
+  transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.terminal-split-preview-frame.destination {
+  background: rgb(111 137 152 / 14%);
+  box-shadow: inset 0 0 0 1px #6f8998;
+}
+.terminal-drop-guide {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+}
+.terminal-drop-marker,
+.terminal-drop-hint {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  background: #f7f9fa;
+  color: #455968;
+  border: 1px solid #b5c5cf;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgb(69 89 104 / 14%);
+}
+.terminal-drop-marker {
+  width: 24px;
+  height: 24px;
+}
+.terminal-drop-marker.selected {
+  background: #c5d8e3;
+  color: #223744;
+  border-color: #6f8998;
+}
+.terminal-drop-marker.left,
+.terminal-drop-marker.right {
+  top: 50%;
+  translate: 0 -50%;
+}
+.terminal-drop-marker.top,
+.terminal-drop-marker.bottom {
+  left: 50%;
+  translate: -50% 0;
+}
+.terminal-drop-marker.left { left: min(8px, 8%); }
+.terminal-drop-marker.right { right: min(8px, 8%); }
+.terminal-drop-marker.top { top: min(8px, 8%); }
+.terminal-drop-marker.bottom { bottom: min(8px, 8%); }
+.terminal-drop-hint {
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  padding: 3px 7px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.terminal-drop-guide.compact .terminal-drop-marker {
+  width: 20px;
+  height: 20px;
+}
+.terminal-body :deep(.terminal-pane-preview-moving) {
+  clip-path: var(--terminal-preview-clip);
+  transform: var(--terminal-preview-transform);
+  transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1), clip-path 150ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.terminal-body :deep(.terminal-pane-lifted) {
+  z-index: 3;
+  pointer-events: none;
+  transform-origin: top left;
+  transform: var(--terminal-preview-transform);
+  background: #f7f9fa;
+  box-shadow: 0 6px 18px rgb(69 89 104 / 24%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .terminal-split-preview-frame,
+  .terminal-body :deep(.terminal-pane-preview-moving) {
+    transition: none;
+  }
 }
 .terminal-search {
   position: absolute;

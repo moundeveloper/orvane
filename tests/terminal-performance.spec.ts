@@ -254,7 +254,7 @@ test("Projects Hub uses live terminal tabs that reorder and dock without restart
     const bounds = (await otherPane.boundingBox())!;
     await page.mouse.down();
     await page.mouse.move(bounds.x + bounds.width - 20, bounds.y + bounds.height / 2, { steps: 10 });
-    await expect(otherPane.locator(".terminal-pane-drop.right")).toBeVisible();
+    await expect(root.locator(".terminal-split-preview-frame.destination")).toBeVisible();
     await page.mouse.up();
   } finally {
     await page.keyboard.up("Shift");
@@ -268,11 +268,11 @@ test("Projects Hub uses live terminal tabs that reorder and dock without restart
   expect(await page.evaluate(() => (window as any).terminalFixture.killed)).toEqual([]);
 });
 
-test("moving a split pane keeps its live terminal instead of replaying the shell", async ({ page }) => {
+test("moving a split pane previews the layout without resizing or replaying live shells", async ({ page }, info) => {
   const root = await mount(page, 1);
   const fixture = () => page.evaluate(() => {
     const f = (window as any).terminalFixture;
-    return { xterms: f.xterms, attached: f.attached.slice(), opened: f.opened.slice() };
+    return { xterms: f.xterms, attached: f.attached.slice(), opened: f.opened.slice(), resizes: f.resizes.length };
   });
   await root.getByRole("button", { name: "Split right", exact: true }).click();
   await root.locator(".terminal-pane:visible").last().click();
@@ -285,16 +285,55 @@ test("moving a split pane keeps its live terminal instead of replaying the shell
   const [moved] = opened;
   const source = root.locator(`[data-terminal-pane="${moved}"]`);
   const target = root.locator(`[data-terminal-pane="${opened[2]}"]`);
+  const bounds = (await target.boundingBox())!;
+  const originalSource = (await source.boundingBox())!;
+  const before = await fixture();
+  const destination = root.locator(".terminal-split-preview-frame.destination");
+  const guide = root.locator(".terminal-drop-guide");
   await page.keyboard.down("Shift");
   try {
     await source.hover();
-    const bounds = (await target.boundingBox())!;
     await page.mouse.down();
+    await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2, { steps: 10 });
+    await expect(guide.locator(".terminal-drop-marker")).toHaveCount(4);
+    await expect(guide.locator(".selected")).toHaveCount(0);
+    await expect(destination).toHaveCount(0);
     await page.mouse.move(bounds.x + bounds.width - 20, bounds.y + bounds.height / 2, { steps: 10 });
+    await expect(source).toHaveClass(/terminal-pane-lifted/);
+    expect((await source.boundingBox())!.width).toBeLessThanOrEqual(361);
+    await expect(guide.locator(".right.selected")).toBeVisible();
+    await expect(destination).toBeVisible();
+    const right = (await destination.boundingBox())!;
+    await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + 10, { steps: 5 });
+    await expect(guide.locator(".top.selected")).toBeVisible();
+    await expect.poll(async () => (await destination.boundingBox())!.width).toBeGreaterThan(right.width + 20);
+    await expect.poll(async () => (await target.boundingBox())!.y).toBeGreaterThan(bounds.y + 20);
+    expect(await fixture()).toEqual(before);
+    const screenshot = info.outputPath("live-split-preview.png");
+    await root.screenshot({ path: screenshot });
+    await info.attach("live-split-preview", { path: screenshot, contentType: "image/png" });
+    await page.keyboard.press("Escape");
     await page.mouse.up();
+    await expect(destination).toHaveCount(0);
+    await expect(guide).toHaveCount(0);
+    await expect(source).not.toHaveClass(/terminal-pane-lifted/);
+    expect((await source.boundingBox())!.x).toBeCloseTo(originalSource.x, 0);
+    expect(await fixture()).toEqual(before);
   } finally {
     await page.keyboard.up("Shift");
   }
+  // The grip uses the same preview and commits the previewed geometry.
+  await source.getByRole("button", { name: "Drag pane", exact: true }).hover();
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width - 20, bounds.y + bounds.height / 2, { steps: 10 });
+  await expect(destination).toBeVisible();
+  await destination.evaluate(async (element) => {
+    await Promise.all(element.getAnimations().map((animation) => animation.finished));
+  });
+  const finalPreview = (await destination.boundingBox())!;
+  await page.mouse.up();
+  await expect(destination).toHaveCount(0);
+  await expect.poll(async () => Math.abs((await source.boundingBox())!.x - finalPreview.x)).toBeLessThan(2);
   await expect.poll(async () => (await source.boundingBox())!.x - (await target.boundingBox())!.x).toBeGreaterThan(0);
   const after = await fixture();
   expect(after.attached).toEqual([]);

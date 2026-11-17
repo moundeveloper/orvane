@@ -85,11 +85,11 @@ function drag(event: PointerEvent) {
   position: relative;
 }
 .row > .terminal-divider {
-  width: 6px;
+  width: var(--terminal-divider-size, 6px);
   cursor: col-resize;
 }
 .column > .terminal-divider {
-  height: 6px;
+  height: var(--terminal-divider-size, 6px);
   cursor: row-resize;
 }
 .terminal-divider::after {

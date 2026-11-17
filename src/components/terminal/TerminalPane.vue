@@ -497,8 +497,8 @@ onBeforeUnmount(() => {
         :style="powerShell ? { fontFamily: terminalFont, fontSize: ctl.fontSize.value + 'px' } : undefined"></div>
     </div>
     <div v-if="movable" class="terminal-pane-controls">
-      <button type="button" class="terminal-pane-handle" draggable="true" :data-drag-terminal-pane="pane.id"
-        aria-label="Drag pane" title="Drag pane · Shift-drag from inside the pane">
+      <button type="button" class="terminal-pane-handle" :data-drag-terminal-pane="pane.id"
+        aria-label="Drag pane" title="Drag pane to a split edge · Shift-drag from inside the pane">
         <Icon name="grip" :size="13" />
       </button>
       <button type="button" :data-untile-terminal-pane="pane.id"
@@ -552,6 +552,7 @@ onBeforeUnmount(() => {
 .terminal-pane-controls button:hover { background: #dbe8ee; }
 .terminal-pane-controls .terminal-pane-handle {
   cursor: grab;
+  touch-action: none;
 }
 .terminal-pane-controls .terminal-pane-handle:active { cursor: grabbing; }
 .terminal-pane-drop {
