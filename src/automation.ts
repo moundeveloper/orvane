@@ -33,6 +33,7 @@ const kind = z.enum([
   "git",
   "projects",
   "notes",
+  "uimaker",
   "browser",
   "netsuite",
   "certificates",
@@ -180,7 +181,7 @@ export const operationDescriptions: Record<Operation, string> = {
   app_restore:
     "Restore an archived or trashed app with its original IDs, content, connections and position.",
   component_create:
-    "Create a component in an app or nested layout container. kind=git creates the local Git viewer; properties.gitWorkspaceId links a saved git_workspace_list/add ID. kind=projects creates Projects Hub; properties.value is its absolute local projects root, or empty to choose it in the app. kind=notes creates the Notes workspace; properties.value is optional JSON {active, tabs} of page IDs from notes_data. kind=browser creates a web browser; properties.value is optional JSON {tabs:[{id,url}], active} with http(s) URLs. Return includes its ID. Optional IDs enable references within atomic batches.",
+    "Create a component in an app or nested layout container. kind=git creates the local Git viewer; properties.gitWorkspaceId links a saved git_workspace_list/add ID. kind=projects creates Projects Hub; properties.value is its absolute local projects root, or empty to choose it in the app. kind=notes creates the Notes workspace; properties.value is optional JSON {active, tabs} of page IDs from notes_data. kind=uimaker creates the UI Maker editor (its data is read and written with the uimaker_* tools); properties.value is optional JSON {c, v} for the open component and iteration. kind=browser creates a web browser; properties.value is optional JSON {tabs:[{id,url}], active} with http(s) URLs. Return includes its ID. Optional IDs enable references within atomic batches.",
   component_update:
     "Patch component content, data, code or layout properties. This preserves IDs, children and existing rules. Use rules_set for behavior.",
   component_get:

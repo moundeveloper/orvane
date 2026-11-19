@@ -12,6 +12,7 @@ const CertificateManager = defineAsyncComponent(
   () => import("./CertificateManager.vue"),
 );
 const NotesView = defineAsyncComponent(() => import("./notes/NotesView.vue"));
+const UiMakerView = defineAsyncComponent(() => import("./uimaker/UiMakerView.vue"));
 const NetSuiteView = defineAsyncComponent(() => import("./NetSuiteView.vue"));
 const NetSuiteRecordPreview = defineAsyncComponent(() => import("./NetSuiteRecordPreview.vue"));
 const BrowserClip = defineAsyncComponent(() => import("./BrowserClip.vue"));
@@ -168,6 +169,7 @@ const sandboxDocument = (code: string) => {
       :block="block"
       :editing="editing"
     />
+    <UiMakerView v-else-if="block.kind === 'uimaker'" :block="block" />
     <NetSuiteView v-else-if="block.kind === 'netsuite'" :block="block" />
     <NetSuiteRecordPreview v-else-if="block.kind === 'netsuite-record'" :block="block" />
     <BrowserClip v-else-if="block.kind === 'browser-clip'" :block="block" />

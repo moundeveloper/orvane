@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>UI Maker render</title>
+<style>
+  html, body { margin: 0; background: #e9edf0; }
+  #shot { display: inline-block; position: relative; }
+  #shot.annot { padding: 70px 300px 70px 300px; background: #e9edf0; }
+  #wrap { position: relative; }
+  iframe { border: 0; display: block; }
+  #ov { position: absolute; left: 0; top: 0; overflow: visible; }
+  #bsvg { display: block; background: #f7f9fa; }
+</style>
+</head>
+<body>
+<div id="shot"><div id="wrap"><iframe id="frame"></iframe><svg id="ov"></svg></div></div>
+<script type="module">
+// Served by UiMakerService's private render server: /state.json is the
+// workspace state (or the one being exported), /c/ and /refs/ are its files.
+import { renderOverlay, applyTweaks, measureFrame, ensureBoard, renderBoardSvg, renderBoardPins, boardBounds, sv, noteName } from './overlay.js';
+const q = new URLSearchParams(location.search);
+const c = q.get('c'), v = +q.get('v'), annot = q.get('annot') === '1', board = q.get('board');
+const state = await (await fetch('state.json')).json();
+const comp = state.components.find(x => x.id === c) || { width: 800, height: null };
+const of = a => (a || []).filter(x => x.c === c && x.v === v);
+const ready = () => requestAnimationFrame(() => requestAnimationFrame(() => { window.__ready = true; }));
+
+if (board) {
+  // Render one reference board (a note's, or the component's) with the user's marks.
+  const notes = of(state.notes), i = notes.findIndex(n => n.id === board);
+  const o = ensureBoard(board === 'global' ? comp : notes[i]);
+  const title = board === 'global' ? comp.name : noteName(notes[i], i);
+  const b = boardBounds(o, title), pad = 30, s = Math.min(3, 1400 / (b.w + pad * 2));
+  const shot = document.getElementById('shot');
+  shot.replaceChildren();
+  const svg = sv('svg', { id: 'bsvg', width: (b.w + pad * 2) * s, height: (b.h + pad * 2) * s }, shot);
+  const world = sv('g', { transform: `scale(${s}) translate(${pad - b.x},${pad - b.y})` }, svg);
+  renderBoardSvg(world, o, { title, color: board === 'global' ? '#8a9aa6' : notes[i].color, target: comp.target });
+  renderBoardPins(sv('g', {}, world), o, { k: Math.min(4, Math.max(0.5, 1.15 / s)) });
+  await Promise.race([
+    Promise.all([...svg.querySelectorAll('image')].map(im => new Promise(r => { im.addEventListener('load', r); im.addEventListener('error', r); }))),
+    new Promise(r => setTimeout(r, 6000)),
+  ]);
+  try { await document.fonts.ready; } catch {}
+  ready();
+} else {
+  const frame = document.getElementById('frame'), ov = document.getElementById('ov');
+  frame.style.width = comp.width + 'px';
+  frame.onload = async () => {
+    const d = frame.contentDocument;
+    try { await d.fonts.ready; } catch {}
+    applyTweaks(d, of(state.tweaks));
+    const h = comp.height || measureFrame(frame);
+    frame.style.height = h + 'px';
+    if (annot) {
+      document.getElementById('shot').classList.add('annot');
+      ov.setAttribute('width', comp.width); ov.setAttribute('height', h);
+      renderOverlay(ov, { notes: of(state.notes), strokes: of(state.strokes) });
+      try { await document.fonts.ready; } catch {}
+    }
+    ready();
+  };
+  frame.src = `c/${encodeURIComponent(c)}/v${v}/index.html`;
+}
+</script>
+</body>
+</html>

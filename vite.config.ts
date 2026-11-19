@@ -7,6 +7,7 @@ import { localStorageApi } from "./server/storage-api.ts";
 import { gitApi } from "./server/git-api.ts";
 import { projectsApi } from "./server/projects-api.ts";
 import { notesApi } from "./server/notes-api.ts";
+import { uimakerApi } from "./server/uimaker-api.ts";
 import { certificatesApi } from "./server/certificates-api.ts";
 import { claudeApi } from "./server/claude-api.ts";
 import { filesApi } from "./server/files-api.ts";
@@ -36,6 +37,10 @@ export default defineConfig({
         fileURLToPath(new URL("./.orvane", import.meta.url)),
     ),
     notesApi(
+      process.env.ORVANE_DATA_DIR ||
+        fileURLToPath(new URL("./.orvane", import.meta.url)),
+    ),
+    uimakerApi(
       process.env.ORVANE_DATA_DIR ||
         fileURLToPath(new URL("./.orvane", import.meta.url)),
     ),

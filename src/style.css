@@ -1832,10 +1832,21 @@ kbd {
   width: min(360px, calc(100vw - 32px));
   padding: 18px;
 }
+/* Compact, like the dropdown popovers. */
 .dock-context {
   display: flex;
   flex-direction: column;
-  width: 190px;
+  width: 140px;
+  padding: 4px;
+  border-radius: 6px;
+  background: #f4f8fa;
+  box-shadow: 0 10px 30px -10px #43576445;
+}
+.dock-context .subtle-button {
+  justify-content: flex-start;
+  min-height: 26px;
+  padding: 5px 9px;
+  border-radius: 3px;
 }
 .import-preview h2,
 .management-panel h2 {

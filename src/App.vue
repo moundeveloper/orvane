@@ -172,6 +172,22 @@ const statusIsProblem = computed(
     loadError.value ||
     !/ (moved to trash|archived)\. Restore it/.test(status.value),
 );
+// Same conditions as the status action buttons in the template.
+const statusHasActions = computed(
+  () => loadError.value || !canEdit.value || status.value.startsWith("Saving"),
+);
+// Advisory statuses with no actions go away on their own.
+let statusTimer: ReturnType<typeof setTimeout> | undefined;
+watch([status, statusHasActions], ([text, actions]) => {
+  clearTimeout(statusTimer);
+  if (!text || actions) return;
+  statusTimer = setTimeout(
+    () => {
+      if (status.value === text) status.value = "";
+    },
+    statusIsProblem.value ? 6000 : 4000,
+  );
+});
 const workspace = reactive<Workspace>(emptyWorkspace());
 const minimumWatches = new Map<CanvasApp, () => void>();
 watch(
@@ -604,11 +620,16 @@ function flushSave() {
   clearTimeout(saveTimer);
   void persist();
 }
+// A failed save is retried quietly a few times; the warning appears only
+// when saving keeps failing.
+const SAVE_RETRIES = [500, 1000, 2000];
+let saveFailures = 0;
 async function persist() {
   if (!canEdit.value || loadError.value || applying) return;
   const revision = workspaceRevision.value;
   try {
     await store.write(workspace);
+    saveFailures = 0;
     if (revision === workspaceRevision.value) unsavedChanges.value = false;
     if (
       status.value.startsWith("Saving") ||
@@ -617,6 +638,13 @@ async function persist() {
       status.value = "";
   } catch {
     if (store.conflicted) return;
+    const retry = SAVE_RETRIES[saveFailures++];
+    if (retry !== undefined) {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => void persist(), retry);
+      return;
+    }
+    saveFailures = 0;
     status.value =
       "Saving is unavailable. Your changes are still here; export a backup from Workspace or retry saving.";
   }
@@ -789,6 +817,7 @@ const toolApps = {
   git: { name: "Git viewer", icon: "git" },
   projects: { name: "Projects Hub", icon: "folder" },
   notes: { name: "Notes", icon: "text" },
+  uimaker: { name: "UI Maker", icon: "edit", width: 1280, height: 800 },
   browser: { name: "Browser", icon: "globe" },
   netsuite: { name: "NetSuite", icon: "globe" },
   certificates: { name: "Certificate manager", icon: "key" },
@@ -1214,6 +1243,7 @@ const stopCanvasCommands = registerCommands("canvas", () => {
   const tools: [keyof typeof toolApps, string][] = [
     ["files", "folder-open"],
     ["notes", "text"],
+    ["uimaker", "edit"],
     ["browser", "globe"],
     ["git", "git"],
     ["projects", "folder"],
@@ -2561,6 +2591,21 @@ const resize = () => {
 };
 const managedApp = ref<CanvasApp>();
 const dockContext = ref<CanvasApp>();
+// The quick actions open right above the dock tab they belong to.
+const dockContextAt = ref<{ left: string; right: string; bottom: string }>();
+function openDockContext(app: CanvasApp, event: Event) {
+  if (!canEdit.value) return;
+  const target = event.currentTarget as HTMLElement;
+  const tab = target.getBoundingClientRect();
+  const bar = target.closest(".dock")?.getBoundingClientRect();
+  const width = 140;
+  dockContextAt.value = {
+    left: `${Math.min(Math.max(8, tab.left + tab.width / 2 - width / 2), innerWidth - width - 8)}px`,
+    right: "auto",
+    bottom: `${innerHeight - (bar ?? tab).top + 8}px`,
+  };
+  dockContext.value = app;
+}
 const dockTabs = ref<HTMLElement>();
 const dockMeasure = ref<HTMLElement>();
 const dockOverflow = ref<HTMLElement>();
@@ -4171,6 +4216,13 @@ onBeforeUnmount(() => {
       <button
         class="subtle-button"
         :disabled="!canEdit || importBusy"
+        @click="createGitViewer('uimaker')"
+      >
+        <Icon name="edit" :size="14" />Create UI Maker
+      </button>
+      <button
+        class="subtle-button"
+        :disabled="!canEdit || importBusy"
         @click="createGitViewer('browser')"
       >
         <Icon name="globe" :size="14" />Create Browser
@@ -4602,6 +4654,7 @@ onBeforeUnmount(() => {
     <section
       v-if="dockContext && canEdit"
       class="dock-context floating-panel"
+      :style="dockContextAt"
       aria-label="App quick actions"
       @pointerdown.stop
     >
@@ -4697,8 +4750,8 @@ onBeforeUnmount(() => {
           @dragover.prevent
           @drop.prevent="reorder(a.id)"
           @dragend="dockDrag = ''"
-          @contextmenu.prevent="canEdit && (dockContext = a)"
-          @keydown.shift.f10.prevent="canEdit && (dockContext = a)"
+          @contextmenu.prevent="openDockContext(a, $event)"
+          @keydown.shift.f10.prevent="openDockContext(a, $event)"
           @click="chooseDockApp(a, index >= dockVisibleCount)"
           :title="a.group ? `${a.name} · ${a.group}` : a.name"
         >

@@ -68,6 +68,7 @@ const block: z.ZodType<Block> = z.lazy(() =>
       "git",
       "projects",
       "notes",
+      "uimaker",
       "browser",
       "netsuite",
       "certificates",

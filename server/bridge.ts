@@ -127,14 +127,26 @@ export class BrowserBridge {
       });
     });
   }
-  async listen(port: number) {
-    await new Promise<void>((resolve, reject) => {
+  private bind(port: number) {
+    return new Promise<void>((resolve, reject) => {
       this.http.once("error", reject);
       this.http.listen(port, "127.0.0.1", () => {
         this.http.off("error", reject);
         resolve();
       });
     });
+  }
+  async listen(port: number) {
+    // Every MCP client (Claude Desktop, Claude Code, Codex...) runs its own
+    // server. When another one already holds the preferred port, use a free
+    // one; the editing window connects to every running bridge.
+    try {
+      await this.bind(port);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE" || port === 0)
+        throw error;
+      await this.bind(0);
+    }
     const address = this.http.address();
     if (!address || typeof address === "string")
       throw Error("Bridge did not bind a local TCP port.");
@@ -148,6 +160,14 @@ export class BrowserBridge {
     const temporary = join(this.directory, `bridge-${this.instanceId}.tmp`);
     await writeFile(temporary, JSON.stringify(config), { mode: 0o600 });
     await rename(temporary, join(this.directory, "mcp-bridge.json"));
+    // One discovery file per running server, so several can be connected at once.
+    const bridges = join(this.directory, "mcp-bridges");
+    await mkdir(bridges, { recursive: true, mode: 0o700 });
+    const own = join(bridges, `${this.instanceId}.tmp`);
+    await writeFile(own, JSON.stringify({ ...config, pid: process.pid }), {
+      mode: 0o600,
+    });
+    await rename(own, join(bridges, `${this.instanceId}.json`));
     // Detect stale browser processes without keeping silent dead sessions forever.
     const alive = new WeakSet<WebSocket>();
     this.sockets.on("connection", (socket) => {
@@ -228,5 +248,8 @@ export class BrowserBridge {
     } catch {
       /* Another server may own discovery now. */
     }
+    await rm(join(this.directory, "mcp-bridges", `${this.instanceId}.json`), {
+      force: true,
+    }).catch(() => {});
   }
 }

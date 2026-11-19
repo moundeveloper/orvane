@@ -15,8 +15,9 @@ export function connectMcpBridge(options: {
   ) => Promise<unknown>;
 }) {
   const id = uid();
-  let socket: WebSocket | undefined,
-    timer: ReturnType<typeof setTimeout> | undefined,
+  // One socket per running MCP server (Claude Desktop, Claude Code, Codex...).
+  const sockets = new Map<string, WebSocket>();
+  let timer: ReturnType<typeof setTimeout> | undefined,
     closed = false;
   let queue = Promise.resolve();
   const responses = new Map<string, string>();
@@ -42,24 +43,34 @@ export function connectMcpBridge(options: {
         return;
       }
       const config = await response.json();
-      if (!config.available) {
-        schedule();
-        return;
+      const bridges: { url?: string; token?: unknown }[] = !config.available
+        ? []
+        : Array.isArray(config.bridges)
+          ? config.bridges
+          : [config];
+      for (const bridge of bridges) {
+        if (typeof bridge.url !== "string" || sockets.has(bridge.url)) continue;
+        open(bridge.url, bridge.token);
       }
-      const url = new URL(config.url);
+    } catch {
+      /* Discovery failed; try again shortly. */
+    }
+    schedule();
+  }
+  function open(address: string, token: unknown) {
+    {
+      const url = new URL(address);
       if (
         url.protocol !== "ws:" ||
         url.hostname !== "127.0.0.1" ||
         url.pathname !== "/workspace" ||
-        typeof config.token !== "string" ||
+        typeof token !== "string" ||
         !options.writable() ||
         closed
-      ) {
-        schedule();
+      )
         return;
-      }
-      socket = new WebSocket(url, ["orvane", config.token]);
-      const connection = socket;
+      const connection = new WebSocket(url, ["orvane", token]);
+      sockets.set(address, connection);
       connection.onopen = () => {
         if (!options.writable() || closed) {
           connection.close();
@@ -78,8 +89,7 @@ export function connectMcpBridge(options: {
       };
       connection.onerror = () => connection.close();
       connection.onclose = () => {
-        if (socket === connection) socket = undefined;
-        schedule();
+        if (sockets.get(address) === connection) sockets.delete(address);
       };
       connection.onmessage = (event) => {
         queue = queue
@@ -165,8 +175,6 @@ export function connectMcpBridge(options: {
             /* Every command has its own error response; keep the queue usable. */
           });
       };
-    } catch {
-      schedule();
     }
   }
   void connect();
@@ -174,7 +182,8 @@ export function connectMcpBridge(options: {
     close() {
       closed = true;
       clearTimeout(timer);
-      socket?.close();
+      for (const socket of sockets.values()) socket.close();
+      sockets.clear();
     },
   };
 }

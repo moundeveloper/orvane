@@ -483,3 +483,95 @@ test("real stdio MCP tools edit the browser, reject stale/invalid writes, recove
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("several MCP clients drive the same workspace at once, even on one preferred port", async ({
+  page,
+}) => {
+  test.setTimeout(120000);
+  const directory = await mkdtemp(join(tmpdir(), "orvane-mcp-test-"));
+  const vite = await createServer({
+    configFile: false,
+    cacheDir: join(directory, "vite-cache"),
+    root: resolve("."),
+    plugins: [vue(), localStorageApi(directory), mcpDiscovery(directory)],
+    server: { host: "127.0.0.1", port: 0 },
+    logLevel: "error",
+  });
+  // A port nobody else uses, shared by both servers like the default 43765.
+  const blocker = (await import("node:net")).createServer();
+  await new Promise<void>((r) => blocker.listen(0, "127.0.0.1", r));
+  const sharedPort = (blocker.address() as { port: number }).port;
+  await new Promise<void>((r) => blocker.close(() => r()));
+  const clients: { client: Client; transport: StdioClientTransport }[] = [];
+  try {
+    await vite.listen();
+    const address = vite.httpServer!.address();
+    if (!address || typeof address === "string")
+      throw Error("Test server has no port");
+    const origin = `http://127.0.0.1:${address.port}`;
+    for (const name of ["claude", "codex"]) {
+      const transport = new StdioClientTransport({
+        command: process.execPath,
+        args: [resolve("server/launch.mjs")],
+        env: {
+          ...Object.fromEntries(
+            Object.entries(process.env).filter(
+              (entry): entry is [string, string] => entry[1] !== undefined,
+            ),
+          ),
+          ORVANE_MCP_STATE_DIR: directory,
+          ORVANE_DATA_DIR: directory,
+          ORVANE_MCP_PORT: String(sharedPort),
+          ORVANE_MCP_ORIGINS: origin,
+        },
+        stderr: "pipe",
+      });
+      const client = new Client({ name, version: "1.0.0" });
+      await client.connect(transport);
+      clients.push({ client, transport });
+    }
+    const call = async (
+      client: Client,
+      name: string,
+      args: Record<string, unknown> = {},
+    ) => {
+      const result = await client.callTool({ name, arguments: args });
+      if (result.isError) throw Error(JSON.stringify(result.content));
+      return (result.structuredContent as { result: any }).result;
+    };
+    await page.addInitScript(() => {
+      if (window === window.top)
+        localStorage.setItem("orvane.examples.v1", "installed");
+    });
+    await page.goto(origin);
+    for (const { client } of clients)
+      await expect
+        .poll(async () => (await call(client, "workspace_status")).sessions.length, {
+          timeout: 15000,
+        })
+        .toBe(1);
+    await call(clients[0]!.client, "workspace_batch", {
+      commands: [command("app_create", { id: "from-claude", properties: { name: "From Claude" } })],
+    });
+    await call(clients[1]!.client, "workspace_batch", {
+      commands: [command("app_create", { id: "from-codex", properties: { name: "From Codex" } })],
+    });
+    await expect(page.locator(".dock-tab")).toHaveText(["From Claude", "From Codex"]);
+    // Closing one client leaves the other connected.
+    await clients[0]!.client.close();
+    await clients[0]!.transport.close();
+    const names = (await call(clients[1]!.client, "app_list")).results[0].map(
+      (app: { name: string }) => app.name,
+    );
+    expect(names).toEqual(["From Claude", "From Codex"]);
+  } finally {
+    for (const { client, transport } of clients) {
+      await client.close().catch(() => {});
+      await transport.close().catch(() => {});
+    }
+    await vite.close();
+    if (!directory.startsWith(join(tmpdir(), "orvane-mcp-test-")))
+      throw Error("Unexpected test directory.");
+    await rm(directory, { recursive: true, force: true });
+  }
+});

@@ -476,3 +476,28 @@ test("storage failure is visible without blocking app use", async ({
     .fill("Still usable");
   await expect(page.locator(".dock-tab")).toContainText("Still usable");
 });
+
+test("dock quick actions open right above the right-clicked tab", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Create app", exact: true }).click();
+  await page.getByRole("button", { name: "Create app", exact: true }).click();
+  const tabs = page.locator(".dock-tab");
+  await expect(tabs).toHaveCount(2);
+  for (const index of [0, 1]) {
+    const tab = tabs.nth(index);
+    await tab.click({ button: "right" });
+    const menu = page.getByRole("region", { name: "App quick actions" });
+    await expect(menu).toBeVisible();
+    const t = (await tab.boundingBox())!,
+      m = (await menu.boundingBox())!;
+    expect(Math.abs(m.x + m.width / 2 - (t.x + t.width / 2))).toBeLessThan(2);
+    expect(t.y - (m.y + m.height)).toBeGreaterThan(0);
+    expect(t.y - (m.y + m.height)).toBeLessThan(30);
+    const dock = (await page.locator(".dock").boundingBox())!;
+    expect(Math.round(dock.y - (m.y + m.height))).toBe(8);
+    if (index === 1) await page.screenshot({ path: "artifacts/dock-quick-actions.png" });
+    await menu.getByRole("button", { name: "Close", exact: true }).click();
+  }
+});

@@ -11,6 +11,7 @@ export type Kind =
   | "git"
   | "projects"
   | "notes"
+  | "uimaker"
   | "browser"
   | "netsuite"
   | "certificates"
@@ -116,6 +117,7 @@ export function appMinimum(app: CanvasApp) {
   );
   const git = flatten(app.blocks).some((block) => block.kind === "git");
   const notes = flatten(app.blocks).some((block) => block.kind === "notes");
+  const uimaker = flatten(app.blocks).some((block) => block.kind === "uimaker");
   const browser = flatten(app.blocks).some((block) => block.kind === "browser");
   const files = flatten(app.blocks).some((block) => block.kind === "files");
   const calendar = flatten(app.blocks).some((block) => block.kind === "calendar");
@@ -127,12 +129,12 @@ export function appMinimum(app: CanvasApp) {
     width: Math.max(
       180,
       app.minWidth ??
-        (claude ? 360 : certificates ? 640 : projects ? 900 : git ? 720 : notes ? 640 : files ? 560 : browser ? 480 : calendar ? 360 : terminal ? 420 : 180),
+        (uimaker ? 900 : claude ? 360 : certificates ? 640 : projects ? 900 : git ? 720 : notes ? 640 : files ? 560 : browser ? 480 : calendar ? 360 : terminal ? 420 : 180),
     ),
     height: Math.max(
       160,
       app.minHeight ??
-        (claude ? 440 : certificates ? 480 : projects ? 580 : git ? 440 : notes ? 440 : files ? 360 : browser ? 320 : calendar ? 380 : terminal ? 240 : 160),
+        (uimaker ? 560 : claude ? 440 : certificates ? 480 : projects ? 580 : git ? 440 : notes ? 440 : files ? 360 : browser ? 320 : calendar ? 380 : terminal ? 240 : 160),
     ),
   };
 }
@@ -250,6 +252,11 @@ export const kinds: { kind: Kind; name: string; description: string }[] = [
       "Local certificate and private key pairs, organized by NetSuite environment",
   },
   {
+    kind: "uimaker",
+    name: "UI Maker",
+    description: "Draw the brief on a live component; an agent builds the next iteration",
+  },
+  {
     kind: "notes",
     name: "Notes workspace",
     description: "Nested pages, rich text, databases, search and trash",
@@ -334,6 +341,7 @@ export function makeBlock(kind: Kind): Block {
       git: "Git viewer",
       projects: "Projects Hub",
       notes: "Notes workspace",
+      uimaker: "UI Maker",
       browser: "Web browser",
       netsuite: "NetSuite",
       certificates: "Certificate manager",

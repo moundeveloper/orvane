@@ -1,0 +1,257 @@
+/* UI Maker in Orvane's light language (DESIGN.md): cool blue-gray canvas,
+   off-white surfaces, slate text, muted blue accent, compact 12–13px Inter,
+   6–10px radii, sparse 1px dividers, soft shadows. Annotation colours keep
+   their meaning (red wrong, green want, amber attention, blue layout). */
+.uimaker {
+  --um-canvas: #e9edf0; --um-surface: #f7f9fa; --um-card: #ffffff; --um-well: #eef2f4; --um-hover: #e4eaee;
+  --um-ink: #455968; --um-strong: #2f4250; --um-mut: #687d8a; --um-dim: #8b9ba6;
+  --um-line: #dde4e8; --um-line2: #cfd8de; --um-accent: #6f8998;
+  --um-green: #2f9a5c; --um-orange: #c8743c; --um-teal: #3c9a95; --um-red: #d94b50;
+  --um-shadow: 0 12px 38px -16px #43576435, 0 3px 9px -5px #43576424;
+  position: relative; height: 100%; min-height: 0; display: grid; grid-template-columns: 172px minmax(0, 1fr) 336px;
+  background: var(--um-surface); color: var(--um-ink); font-size: 12px; line-height: 1.45; overflow: hidden;
+}
+.uimaker * { box-sizing: border-box; }
+.uimaker button, .uimaker input, .uimaker textarea { font: inherit; color: inherit; }
+.uimaker button { cursor: pointer; background: none; border: 0; padding: 0; }
+.uimaker button:disabled { cursor: default; opacity: .5; }
+.uimaker :focus-visible { outline: 1.5px solid var(--um-accent); outline-offset: 1px; }
+.uimaker .spacer { flex: 1; }
+.uimaker .um-icon { display: inline-flex; width: 14px; height: 14px; flex: none; }
+.uimaker .um-icon svg { width: 100%; height: 100%; }
+.uimaker ::-webkit-scrollbar { width: 6px; height: 6px; }
+.uimaker ::-webkit-scrollbar-button { display: none; }
+.uimaker ::-webkit-scrollbar-thumb { background: #c3ced5; border-radius: 3px; }
+.uimaker ::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- shared pieces ---------- */
+.uimaker .pills { display: flex; gap: 2px; }
+.uimaker .pills button { padding: 3px 11px; border-radius: 999px; color: var(--um-mut); font-size: 12px; line-height: 18px; }
+.uimaker .pills button:hover { color: var(--um-strong); }
+.uimaker .pills button.on { color: var(--um-strong); font-weight: 500; box-shadow: inset 0 0 0 1px var(--um-line2); background: var(--um-card); }
+.uimaker .seg { display: flex; padding: 2px; border-radius: 7px; background: var(--um-well); box-shadow: inset 0 0 0 1px var(--um-line); }
+.uimaker .seg button { padding: 2px 10px; border-radius: 5px; color: var(--um-mut); font-size: 11.5px; }
+.uimaker .seg button.on { color: var(--um-strong); background: var(--um-card); box-shadow: 0 1px 2px #43576420, inset 0 0 0 1px var(--um-line); }
+.uimaker .field { display: flex; align-items: center; gap: 1px; background: var(--um-well); border-radius: 7px; padding: 0 4px; color: var(--um-mut); height: 26px; }
+.uimaker .field button { padding: 1px 7px; border-radius: 5px; color: var(--um-mut); line-height: 18px; }
+.uimaker .field button:hover { color: var(--um-strong); background: var(--um-hover); }
+.uimaker .zoom span { width: 40px; text-align: center; color: var(--um-strong); font-variant-numeric: tabular-nums; }
+.uimaker .size { display: flex; align-items: center; gap: 4px; color: var(--um-dim); }
+.uimaker .size > .number-field { width: 104px; flex: none; }
+.uimaker .size .auto { padding: 3px 8px; border-radius: 6px; color: var(--um-mut); font-size: 11.5px; box-shadow: inset 0 0 0 1px var(--um-line); }
+.uimaker .size .auto.on { color: var(--um-strong); background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-line2); }
+.uimaker .chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px 1px 5px; border-radius: 5px; font-size: 11px; line-height: 16px; background: var(--um-well); color: var(--um-mut); white-space: nowrap; }
+.uimaker .chip .um-icon { width: 11px; height: 11px; }
+.uimaker .chip.green { background: #2f9a5c1a; color: var(--um-green); }
+.uimaker .btn { padding: 6px 10px; border-radius: 7px; font-weight: 500; font-size: 12px; color: var(--um-strong); background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-line2); display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+.uimaker .btn:hover { background: var(--um-hover); }
+.uimaker .btn.primary { color: #fff; background: var(--um-accent); box-shadow: 0 2px 6px -2px #43576460; }
+.uimaker .btn.primary:hover { background: #637d8c; }
+.uimaker .iconbtn { width: 24px; height: 24px; border-radius: 6px; display: inline-grid; place-items: center; color: var(--um-mut); flex: none; }
+.uimaker .iconbtn:hover { color: var(--um-strong); background: var(--um-hover); }
+.uimaker .iconbtn.active { color: var(--um-green); }
+.uimaker input[type=text], .uimaker .newinput input, .uimaker .refbar input, .uimaker .editor input, .uimaker .editor textarea, .uimaker .prop input, .uimaker .um-menu input {
+  border: 0; outline: 0; background: var(--um-well); box-shadow: inset 0 -1px 0 var(--um-line2); border-radius: 6px;
+}
+.uimaker input:focus, .uimaker textarea:focus { box-shadow: inset 0 -1.5px 0 var(--um-accent); }
+
+/* ---------- sidebar ---------- */
+.uimaker .side { display: flex; flex-direction: column; padding: 0 6px 6px; gap: 2px; border-right: 1px solid var(--um-line); min-height: 0; background: var(--um-surface); }
+.uimaker .sidehead { min-height: 36px; display: flex; align-items: center; gap: 2px; }
+.uimaker .side-title { flex: 1; text-align: left; padding-left: 5px; font-weight: 600; color: var(--um-strong); }
+.uimaker .sidebar-content { display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; min-width: 0; }
+.uimaker .sidebar-search { display: flex; align-items: center; gap: 2px; }
+.uimaker .sidebar-search input { min-width: 0; width: 100%; padding: 4px 7px; }
+.uimaker .newinput { display: flex; align-items: center; gap: 8px; padding: 2px 4px; color: var(--um-mut); }
+.uimaker .newinput input { flex: 1; min-width: 0; padding: 4px 7px; }
+.uimaker .nav { display: flex; flex-direction: column; gap: 1px; overflow: auto; min-height: 0; }
+.uimaker .nav-row { display: flex; align-items: center; border-radius: 6px; min-width: 0; }
+.uimaker .nav-row.on { background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-line); }
+.uimaker .nav-item { display: flex; align-items: center; gap: 8px; padding: 5px 7px; border-radius: 6px; color: var(--um-mut); text-align: left; flex: 1; min-width: 0; }
+.uimaker .nav-item:hover { color: var(--um-strong); }
+.uimaker .nav-row.on .nav-item { color: var(--um-strong); font-weight: 500; }
+.uimaker .nav-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.uimaker .nav-item small { font-size: 10.5px; color: var(--um-dim); background: var(--um-well); border-radius: 4px; padding: 0 4px; line-height: 15px; font-weight: 400; }
+.uimaker .row-menu { font-size: 15px; opacity: .7; }
+.uimaker .sidebar-help { margin-top: auto; flex: none; }
+.uimaker .sidebar-empty { color: var(--um-mut); margin: 4px; }
+.uimaker.side-collapsed { grid-template-columns: 36px minmax(0, 1fr) 336px; }
+.uimaker.library-open { grid-template-columns: 172px minmax(0, 1fr); }
+.uimaker.library-open.side-collapsed { grid-template-columns: 36px minmax(0, 1fr); }
+
+/* ---------- main ---------- */
+.uimaker .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
+.uimaker .top { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 3px 8px; flex-wrap: wrap; border-bottom: 1px solid var(--um-line); }
+.uimaker .crumb { display: flex; align-items: center; gap: 5px; white-space: nowrap; min-width: 0; margin-right: 4px; }
+.uimaker .crumb button, .uimaker .crumb span { color: var(--um-mut); }
+.uimaker .crumb button:hover { color: var(--um-strong); }
+.uimaker .crumb em { color: var(--um-dim); font-style: normal; }
+.uimaker .crumb b { font-weight: 500; color: var(--um-strong); overflow: hidden; text-overflow: ellipsis; }
+.uimaker .editor-controls { display: flex; align-items: center; flex: 1; gap: 6px; min-width: 0; flex-wrap: wrap; }
+
+.uimaker .viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; touch-action: none;
+  background: radial-gradient(#9fb0bb55 .85px, transparent 1.1px) center/24px 24px, var(--um-canvas); }
+.uimaker .stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.uimaker .artboard { position: relative; border-radius: 3px; box-shadow: 0 0 0 1px var(--um-line2), 0 18px 44px -18px #43576470; background: #fff; }
+.uimaker .artboard > iframe { display: block; border: 0; background: #fff; border-radius: 3px; }
+.uimaker .overlay { position: absolute; left: 0; top: 0; overflow: visible; }
+.uimaker .cmp-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.uimaker .cmp-layer iframe, .uimaker .cmp-layer img { position: absolute; left: 0; top: 0; width: 100%; border: 0; background: #fff; }
+.uimaker .split-divider { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--um-accent); z-index: 4; pointer-events: none; }
+.uimaker .split-handle { position: absolute; top: 50%; left: 0; transform: translate(-50%, -50%) scale(var(--handle-scale)); display: grid; place-items: center; width: 31px; height: 28px; border-radius: 7px; background: var(--um-card) !important; box-shadow: inset 0 0 0 1px var(--um-line2), var(--um-shadow); color: var(--um-strong); font-size: 15px; line-height: 1; pointer-events: auto; cursor: ew-resize !important; touch-action: none; user-select: none; }
+
+/* pin labels — HTML so they stay readable at any zoom */
+.uimaker .labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 3; }
+.uimaker .plabel { position: absolute; transform: translate(0,-50%); pointer-events: auto; display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px 0 4px; border-radius: 13px;
+  max-width: min(280px, calc(100% - 16px)); white-space: nowrap; cursor: grab; user-select: none; font-size: 12px; font-weight: 500; color: var(--um-strong);
+  background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-line2), 0 6px 16px -8px #43576460; }
+.uimaker .plabel.left { transform: translate(-100%,-50%); }
+.uimaker .plabel.on { box-shadow: inset 0 0 0 1.5px var(--c), 0 6px 16px -8px #43576460; }
+.uimaker .plabel b { width: 18px; height: 18px; border-radius: 50%; background: var(--c); color: #1d2a33; display: grid; place-items: center; font-size: 10.5px; font-weight: 700; flex: none; }
+.uimaker .plabel span { overflow: hidden; text-overflow: ellipsis; outline: none; min-width: 8px; }
+.uimaker .plabel span.ph { color: var(--um-dim); font-weight: 400; }
+.uimaker .plabel span[contenteditable] { cursor: text; user-select: text; text-overflow: clip; }
+.uimaker .plabel em { font-style: normal; display: flex; align-items: center; gap: 3px; color: var(--um-mut); font-size: 10.5px; font-weight: 400; padding-left: 6px; border-left: 1px solid var(--um-line); }
+.uimaker .plabel em i { width: 11px; height: 11px; display: inline-flex; }
+
+/* tool rails */
+.uimaker .rail { position: absolute; z-index: 5; left: 10px; top: 10px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px; border-radius: 10px;
+  background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-line), var(--um-shadow); }
+.uimaker .rail button { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; color: var(--um-mut); }
+.uimaker .rail button:hover { color: var(--um-strong); background: var(--um-well); }
+.uimaker .rail button.on { color: var(--um-strong); background: var(--um-hover); box-shadow: inset 0 0 0 1px var(--um-line2); }
+.uimaker .rail hr { width: 16px; border: 0; border-top: 1px solid var(--um-line); margin: 3px 0; }
+.uimaker .rail .sw { height: 20px; }
+.uimaker .rail .sw span { width: 11px; height: 11px; border-radius: 50%; display: block; margin: auto; }
+.uimaker .rail .sw.on { background: none; box-shadow: none; }
+.uimaker .rail .sw.on span { box-shadow: 0 0 0 2px var(--um-card), 0 0 0 3.5px currentColor; }
+.uimaker .stroke-size { -webkit-appearance: none; appearance: none; writing-mode: vertical-lr; direction: rtl; width: 16px; height: 52px; margin: 3px 0; background: transparent; }
+.uimaker .stroke-size::-webkit-slider-runnable-track { width: 3px; border-radius: 2px; background: var(--um-line2); }
+.uimaker .stroke-size::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 11px; margin-left: -4px; border-radius: 50%; background: var(--um-accent); box-shadow: 0 0 0 2px var(--um-card); }
+.uimaker .rail.mini { left: 8px; top: 8px; padding: 3px; border-radius: 9px; }
+.uimaker .rail.mini button { width: 24px; height: 24px; border-radius: 6px; }
+.uimaker .rail.mini .sw { height: 18px; }
+
+.uimaker .cmpbar { position: absolute; z-index: 5; left: 50%; top: 10px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border-radius: 10px; color: var(--um-mut);
+  width: max-content; max-width: calc(100% - 76px); flex-wrap: wrap; justify-content: center; background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-line), var(--um-shadow); }
+.uimaker .cmp-select { min-width: 120px; }
+.uimaker .cmpbar .match { color: var(--um-green); font-variant-numeric: tabular-nums; }
+.uimaker .hint { position: absolute; z-index: 4; right: 12px; bottom: 50px; color: var(--um-dim); font-size: 11px; pointer-events: none; }
+
+.uimaker .timeline { position: absolute; z-index: 5; left: 50%; bottom: 10px; transform: translateX(-50%); display: flex; gap: 2px; padding: 3px; border-radius: 10px; max-width: calc(100% - 90px); overflow-x: auto;
+  background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-line), var(--um-shadow); }
+.uimaker .timeline button { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 7px; color: var(--um-mut); font-size: 11.5px; white-space: nowrap; }
+.uimaker .timeline button:hover { color: var(--um-strong); }
+.uimaker .timeline button.on { color: var(--um-strong); background: var(--um-hover); box-shadow: inset 0 0 0 1px var(--um-line2); font-weight: 500; }
+.uimaker .timeline button.cmp { box-shadow: inset 0 0 0 1px var(--um-accent); color: var(--um-strong); }
+.uimaker .timeline .who { width: 5px; height: 5px; border-radius: 50%; background: var(--um-dim); }
+.uimaker .timeline .who.ai { background: var(--um-teal); }
+.uimaker .timeline small { color: var(--um-orange); font-size: 10.5px; }
+
+/* ---------- library ---------- */
+.uimaker .library { width: min(100%, 920px); margin-inline: auto; padding: 18px; overflow: auto; }
+.uimaker .library > header { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding-bottom: 10px; }
+.uimaker .library h1 { margin: 0; font-size: 15px; font-weight: 600; color: var(--um-strong); }
+.uimaker .library-list { border-top: 1px solid var(--um-line); }
+.uimaker .library-row { display: flex; align-items: center; gap: 4px; padding: 3px 0; border-bottom: 1px solid var(--um-line); }
+.uimaker .library-item { display: flex; align-items: center; text-align: left; padding: 7px 6px; flex: 1; gap: 8px; min-width: 0; border-radius: 6px; }
+.uimaker .library-item b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--um-strong); }
+.uimaker .library-item:hover { background: var(--um-well); }
+.uimaker .library-item span { color: var(--um-dim); margin-left: auto; white-space: nowrap; font-size: 11px; }
+.uimaker .empty { color: var(--um-dim); padding: 8px 4px; font-size: 12px; line-height: 1.55; }
+
+/* ---------- right ---------- */
+.uimaker .right { display: flex; flex-direction: column; gap: 6px; padding: 6px; border-left: 1px solid var(--um-line); min-height: 0; min-width: 0; background: var(--um-surface); }
+.uimaker .card { border-radius: 9px; padding: 8px 9px; background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-line); }
+.uimaker .card .head { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.uimaker .card h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--um-strong); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uimaker .card textarea { display: block; width: 100%; background: none; border: 0; outline: 0; box-shadow: none; resize: none; color: var(--um-mut); font-size: 12px; line-height: 1.5; padding: 0; height: 36px; }
+.uimaker .card textarea:focus { color: var(--um-ink); height: 72px; box-shadow: none; }
+.uimaker .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin: 8px 0 9px; }
+.uimaker .tile { border-left: 1px solid var(--um-line); padding: 2px 8px; min-width: 0; }
+.uimaker .tile b { display: block; font-size: 13px; font-weight: 600; color: var(--um-strong); font-variant-numeric: tabular-nums; }
+.uimaker .tile span { color: var(--um-dim); font-size: 10.5px; white-space: nowrap; }
+.uimaker .tile.accent b { color: var(--um-orange); }
+.uimaker .actions { display: grid; grid-template-columns: 1.35fr 1fr; gap: 6px; }
+.uimaker .tabs { flex: none; }
+
+.uimaker .panel { flex: 0 1 auto; min-height: 54px; overflow: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 2px; }
+.uimaker .nrow { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; cursor: pointer; background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-line); flex: none; }
+.uimaker .nrow:hover { box-shadow: inset 0 0 0 1px var(--um-line2); }
+.uimaker .nrow.on { box-shadow: inset 0 0 0 1px var(--um-accent); border-radius: 8px 8px 0 0; }
+.uimaker .nrow .num { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; color: #1d2a33; font-size: 10.5px; font-weight: 700; flex: none; }
+.uimaker .nrow .tt { flex: 1; min-width: 0; }
+.uimaker .nrow .tt b { display: block; font-weight: 500; color: var(--um-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uimaker .nrow .tt b.ph { color: var(--um-dim); font-weight: 400; }
+.uimaker .nrow .tt small { display: block; color: var(--um-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uimaker .editor { background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-accent); border-radius: 0 0 8px 8px; padding: 9px; margin-top: -5px; display: grid; gap: 8px; flex: none; }
+.uimaker .editor label { display: grid; gap: 3px; color: var(--um-dim); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; }
+.uimaker .editor input.title, .uimaker .editor textarea { width: 100%; padding: 6px 8px; font-size: 12px; text-transform: none; letter-spacing: 0; color: var(--um-strong); }
+.uimaker .editor textarea { resize: vertical; min-height: 44px; line-height: 1.5; }
+.uimaker .editor .foot { display: flex; align-items: center; gap: 5px; }
+.uimaker .kind { padding: 2px 8px; border-radius: 999px; font-size: 11px; color: var(--um-mut); box-shadow: inset 0 0 0 1px var(--um-line); display: flex; align-items: center; gap: 5px; }
+.uimaker .kind::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
+.uimaker .kind.on { color: var(--um-strong); box-shadow: inset 0 0 0 1.5px var(--c); }
+.uimaker .where { display: flex; align-items: center; gap: 6px; color: var(--um-mut); font-size: 11.5px; min-width: 0; }
+.uimaker .where code, .uimaker .sheet code { font: 11px ui-monospace, Consolas, monospace; color: #3f6f9c; background: #5b8cc818; padding: 1px 5px; border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uimaker .reply { border-left: 2px solid var(--um-teal); padding: 1px 0 1px 8px; color: var(--um-ink); font-size: 12px; }
+.uimaker .reply b { color: var(--um-teal); font-weight: 500; display: block; font-size: 11px; }
+
+.uimaker .insp .sel { font: 11px ui-monospace, Consolas, monospace; color: #3f6f9c; padding: 4px 2px 6px; word-break: break-all; }
+.uimaker .insp h4 { margin: 8px 2px 2px; font-size: 10.5px; font-weight: 500; color: var(--um-dim); text-transform: uppercase; letter-spacing: .05em; }
+.uimaker .prop { display: grid; grid-template-columns: 108px 1fr; align-items: center; gap: 6px; padding: 1px 2px; color: var(--um-mut); font-size: 12px; }
+.uimaker .prop input { padding: 3px 7px; font: 11px ui-monospace, Consolas, monospace; min-width: 0; color: var(--um-ink); }
+.uimaker .prop.changed input { color: var(--um-orange); box-shadow: inset 0 -1.5px 0 var(--um-orange); }
+.uimaker .tweak { display: flex; align-items: center; gap: 6px; padding: 1px 2px; font: 11px ui-monospace, Consolas, monospace; color: var(--um-orange); }
+.uimaker .tweak span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.uimaker .fitem { display: flex; gap: 9px; padding: 5px 4px; align-items: flex-start; flex: none; }
+.uimaker .fitem .um-icon { margin-top: 1px; color: var(--um-dim); }
+.uimaker .fitem .t { flex: 1; color: var(--um-ink); white-space: pre-wrap; word-break: break-word; }
+.uimaker .fitem time { color: var(--um-dim); font-size: 11px; white-space: nowrap; }
+.uimaker .k-brief .um-icon { color: var(--um-orange); }
+.uimaker .k-iteration .um-icon { color: var(--um-teal); }
+.uimaker .k-error .um-icon, .uimaker .k-error .t { color: var(--um-red); }
+
+/* ---------- reference board ---------- */
+.uimaker .splitter { height: 9px; margin: -4px 0; cursor: row-resize; position: relative; flex: none; z-index: 2; }
+.uimaker .splitter::after { content: ''; position: absolute; left: 50%; top: 3px; width: 34px; height: 3px; border-radius: 2px; background: var(--um-line2); transform: translateX(-50%); }
+.uimaker .splitter:hover::after { background: var(--um-accent); }
+.uimaker .boardwrap { border-radius: 9px; background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-line); display: flex; flex-direction: column; flex: 1 0 44%; min-height: 150px; overflow: hidden; }
+.uimaker .right:has(.boardwrap.resized, .boardwrap.max) .panel { flex: 1 1 0; }
+.uimaker .boardwrap.resized { flex: 0 0 auto; max-height: max(150px, calc(100% - 260px)); }
+/* Maximised inside the app, never over the rest of the canvas. */
+.uimaker .boardwrap.max { position: absolute; inset: 0; z-index: 40; max-height: none; height: auto !important; border-radius: 0; }
+.uimaker .boardhead { display: flex; align-items: center; gap: 4px; padding: 5px 6px; border-bottom: 1px solid var(--um-line); }
+.uimaker .board { position: relative; flex: 1; min-height: 0; overflow: hidden; outline: none; touch-action: none;
+  background: radial-gradient(#9fb0bb4d .85px, transparent 1.1px) center/22px 22px, var(--um-surface); }
+.uimaker .board:focus-visible:not(.pointer-focus), .uimaker .board.drop { box-shadow: inset 0 0 0 1.5px var(--um-accent); }
+.uimaker .bsvg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.uimaker .bempty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 20px 40px; color: var(--um-mut); pointer-events: none; }
+.uimaker .bempty b { color: var(--um-strong); font-weight: 500; font-size: 13px; }
+.uimaker .bempty kbd { font: 11px "Inter Variable", Inter, sans-serif; padding: 1px 6px; border-radius: 5px; background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-line2), 0 1px 0 var(--um-line2); color: var(--um-strong); }
+.uimaker .floatedit { position: absolute; z-index: 6; height: 26px; width: 250px; border-radius: 13px; border: 0; outline: 0; padding: 0 12px; font-size: 12px; background: var(--um-card); box-shadow: inset 0 0 0 1.5px var(--um-accent), var(--um-shadow); }
+.uimaker .floatedit.capedit { box-sizing: border-box; color: #687d8a; background: #ffffff; box-shadow: inset 0 0 0 1.5px var(--um-accent); }
+.uimaker .refbar { display: flex; align-items: center; gap: 4px; padding: 5px 6px; border-top: 1px solid var(--um-line); }
+.uimaker .refbar input { flex: 1; min-width: 0; padding: 5px 8px; }
+
+/* ---------- menu, toast, help ---------- */
+.uimaker .um-menu { position: absolute; z-index: 60; width: 166px; padding: 4px; border-radius: 8px; background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-line), var(--um-shadow); display: grid; gap: 2px; }
+.uimaker .um-menu button { display: block; padding: 6px 8px; width: 100%; text-align: left; border-radius: 5px; color: var(--um-ink); }
+.uimaker .um-menu button:hover, .uimaker .um-menu button:focus-visible { background: var(--um-well); }
+.uimaker .um-menu button.danger { color: var(--um-red); }
+.uimaker .um-menu input { padding: 5px 7px; width: 100%; }
+.uimaker .toast { position: absolute; left: 50%; bottom: 58px; transform: translate(-50%, 8px); padding: 8px 14px; border-radius: 9px; opacity: 0; transition: opacity .16s, transform .16s; pointer-events: none; z-index: 70; max-width: 70%;
+  background: var(--um-strong); color: #fff; box-shadow: var(--um-shadow); }
+.uimaker .toast.show { opacity: 1; transform: translate(-50%, 0); }
+.uimaker .help { position: absolute; inset: 0; z-index: 80; display: grid; place-items: center; background: #e9edf0b8; }
+.uimaker .sheet { width: min(560px, 90%); border-radius: 10px; padding: 20px 22px; background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-line), var(--um-shadow); }
+.uimaker .sheet h2 { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--um-strong); }
+.uimaker .sheet ol { margin: 0 0 12px; padding-left: 18px; color: var(--um-mut); display: grid; gap: 6px; font-size: 12.5px; line-height: 1.5; }
+.uimaker .sheet b { color: var(--um-strong); font-weight: 500; }
+.uimaker .sheet .keys { color: var(--um-dim); font-size: 11.5px; margin: 0 0 14px; }
+.uimaker .c-red { color: var(--um-red); } .uimaker .c-green { color: var(--um-green); }
+
+@media (prefers-reduced-motion: reduce) {
+  .uimaker .toast { transition: none; }
+}

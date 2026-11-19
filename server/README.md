@@ -13,7 +13,7 @@ This local **stdio MCP server** creates and edits the same workspace displayed i
 3. Add the entry in [mcp.json](../mcp.json) to your MCP client's server configuration. It launches `node C:/Projects/Orvane/server/launch.mjs`. Update the absolute path if you move the repository. The launcher works independently of the client's working directory.
 4. Let the MCP client launch the process, then call `workspace_status`. A connected session indicates which browser workspace will be edited.
 
-`pnpm mcp` also starts the stdio process for manual development, but do not start a second process on the same default bridge port when the MCP client already manages one. The default bridge port is **43765**, bound only to **127.0.0.1**. It is a private browser WebSocket bridge, **not an HTTP MCP endpoint**. The MCP client uses stdin/stdout; logs go to stderr.
+`pnpm mcp` also starts the stdio process for manual development. Several MCP clients (Claude Desktop, Claude Code, Codex, `pnpm mcp`) can run their own server process at the same time: the first takes the default bridge port and later ones fall back to a free port. Each process announces itself in `mcp-bridges/<instance>.json` under the state directory, and the editing window connects to every running bridge, so all clients can read and edit the workspace together. The default bridge port is **43765**, bound only to **127.0.0.1**. It is a private browser WebSocket bridge, **not an HTTP MCP endpoint**. The MCP client uses stdin/stdout; logs go to stderr.
 
 The browser connects automatically while its tab owns editing. There is no account or cloud service. `pnpm preview` is also supported after `pnpm build`. A deployed static host without the discovery integration does not connect to the local server.
 
@@ -25,7 +25,7 @@ Configuration environment variables, if needed:
 | `ORVANE_MCP_STATE_DIR` | Repository `.orvane/`                          | Private discovery directory. Set the same absolute directory for Vite and the MCP process when overriding it.    |
 | `ORVANE_MCP_ORIGINS`   | localhost and 127.0.0.1 on ports 5173 and 4173 | Comma-separated exact browser origins permitted to connect, e.g. `http://127.0.0.1:5174` for a custom Vite port. |
 
-Use one MCP server process per workspace/discovery directory. To operate separate workspaces independently, use separate state directories and ports for their Vite/MCP process pairs. No global MCP client settings are installed or edited by this implementation.
+Any number of MCP server processes can share one workspace/discovery directory. To operate separate workspaces independently, use separate state directories and ports for their Vite/MCP process pairs. No global MCP client settings are installed or edited by this implementation.
 
 ## Tools
 

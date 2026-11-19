@@ -85,8 +85,12 @@ export class WorkspaceStorage {
       cache: "no-store",
       headers: json ? { "Content-Type": "application/json" } : undefined,
       body: json,
+      // keepalive only while the window is hiding or closing. Chromium caps
+      // all in-flight keepalive bodies at 64 KB together, so routine saves
+      // using it fail with "Failed to fetch" whenever they overlap.
       keepalive:
         json !== undefined &&
+        (this.closed || document.visibilityState === "hidden") &&
         json.length < 60_000 &&
         new TextEncoder().encode(json).length < 60_000,
     });

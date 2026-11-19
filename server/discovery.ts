@@ -1,8 +1,56 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { Plugin, Connect } from "vite";
 import type { IncomingMessage } from "node:http";
 
+type BridgeConfig = {
+  instanceId?: string;
+  url?: string;
+  token?: string;
+  origins?: unknown;
+  pid?: number;
+};
+const alive = (pid: unknown) => {
+  if (typeof pid !== "number") return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+};
+/** Every running MCP server's bridge; files left by crashed servers are removed. */
+async function runningBridges(directory: string) {
+  const folder = join(directory, "mcp-bridges");
+  const bridges: BridgeConfig[] = [];
+  let names: string[] = [];
+  try {
+    names = await readdir(folder);
+  } catch {
+    /* No server has started yet. */
+  }
+  for (const name of names.filter((n) => n.endsWith(".json"))) {
+    try {
+      const config = JSON.parse(
+        await readFile(join(folder, name), "utf8"),
+      ) as BridgeConfig;
+      if (alive(config.pid)) bridges.push(config);
+      else await rm(join(folder, name), { force: true });
+    } catch {
+      /* Skip a file that is being written. */
+    }
+  }
+  // Servers from before per-instance discovery only wrote the single file.
+  if (!bridges.length)
+    try {
+      bridges.push(
+        JSON.parse(await readFile(join(directory, "mcp-bridge.json"), "utf8")),
+      );
+    } catch {
+      /* None running. */
+    }
+  return bridges;
+}
 export function mcpDiscovery(directory: string): Plugin {
   const middleware: Connect.NextHandleFunction = async (
     request,
@@ -32,20 +80,22 @@ export function mcpDiscovery(directory: string): Plugin {
       return;
     }
     try {
-      const config = JSON.parse(
-        await readFile(join(directory, "mcp-bridge.json"), "utf8"),
-      );
       const localOrigin = `${req.socket instanceof Object && "encrypted" in req.socket ? "https" : "http"}://${host}`;
-      if (
-        !Array.isArray(config.origins) ||
-        !config.origins.includes(localOrigin)
-      ) {
-        response.writeHead(200, { "Content-Type": "application/json" });
-        response.end(JSON.stringify({ available: false }));
-        return;
-      }
+      const bridges = (await runningBridges(directory))
+        .filter(
+          (config) =>
+            Array.isArray(config.origins) &&
+            config.origins.includes(localOrigin),
+        )
+        .map(({ instanceId, url, token }) => ({ instanceId, url, token }));
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ available: true, ...config }));
+      response.end(
+        JSON.stringify(
+          bridges.length
+            ? { available: true, ...bridges[0], bridges }
+            : { available: false },
+        ),
+      );
     } catch {
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({ available: false }));
