@@ -10,6 +10,7 @@ export interface TerminalController {
   profileOf: (profileId: string) => TerminalProfileInfo | undefined;
   focus: (paneId: string) => void;
   title: (paneId: string, title: string) => void;
+  pinFolder: (paneId: string, path: string) => void;
   activity: (paneId: string) => void;
   bell: (paneId: string) => void;
   /** Close a standalone tab after a clean shell exit, keeping split layouts intact. */

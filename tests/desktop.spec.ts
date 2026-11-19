@@ -66,7 +66,7 @@ test("Desktop Browser app loads frame-blocking sites in a webview", async ({}, i
     expect(
       await page.evaluate(
         () =>
-          document.querySelector(".workspace-options")!.nextElementSibling
+          document.querySelector(".top-actions")!.lastElementChild
             ?.className,
       ),
     ).toContain("window-close");
@@ -252,7 +252,7 @@ test("Desktop Browser app loads frame-blocking sites in a webview", async ({}, i
     expect(new URL(signIn.external!).origin).toBe(origin);
 
     // A window.open popup is not affected by the canvas zoom.
-    const popupZoom = await app.evaluate(async ({ webContents, BrowserWindow }) => {
+    const popup = await app.evaluate(async ({ webContents, BrowserWindow }) => {
       const guests = webContents
         .getAllWebContents()
         .filter((c) => c.getType() === "webview");
@@ -266,13 +266,34 @@ test("Desktop Browser app loads frame-blocking sites in a webview", async ({}, i
         await new Promise((done) => setTimeout(done, 100));
         popup = BrowserWindow.getAllWindows().find((w) => !before.has(w.id));
       }
-      if (!popup) return -1;
+      if (!popup) return null;
       await new Promise((done) => setTimeout(done, 500));
-      const factor = popup.webContents.getZoomFactor();
-      popup.close();
-      return factor;
+      return { id: popup.id, zoom: popup.webContents.getZoomFactor() };
     });
-    expect(popupZoom).toBe(1);
+    expect(popup?.zoom).toBe(1);
+
+    // A site can request a native popup even while Orvane is in the tray.
+    // Existing dialogs should stay out of the way without losing their state.
+    const workspaceId = await app.evaluate(({ BrowserWindow }, popupId) =>
+      BrowserWindow.getAllWindows().find((window) => window.id !== popupId)!.id, popup!.id);
+    await close.click();
+    await expect.poll(() => app.evaluate(({ BrowserWindow }, id) =>
+      BrowserWindow.fromId(id)!.isVisible(), workspaceId)).toBe(false);
+    const openedInTray = await app.evaluate(({ webContents }) => {
+      const guest = webContents.getAllWebContents().filter((contents) => contents.getType() === "webview")
+        .sort((a, b) => b.id - a.id)[0]!;
+      return guest.mainFrame.executeJavaScript("!!window.open(location.href, 'hidden-request', 'width=420,height=320')", true);
+    });
+    expect(openedInTray).toBe(false);
+    await app.evaluate(({ app }) => { app.emit("second-instance"); });
+    await expect.poll(() => app.evaluate(({ BrowserWindow }, ids) => ({
+      workspaceVisible: BrowserWindow.fromId(ids.workspace)!.isVisible(),
+      popupMinimized: BrowserWindow.fromId(ids.popup)!.isMinimized(),
+    }), { workspace: workspaceId, popup: popup!.id })).toEqual({
+      workspaceVisible: true,
+      popupMinimized: true,
+    });
+    await app.evaluate(({ BrowserWindow }, id) => { BrowserWindow.fromId(id)!.close(); }, popup!.id);
 
     // Clicking elsewhere and coming back: the page still scrolls, and canvas
     // gestures made over it (Ctrl+wheel, middle-drag) move the canvas.

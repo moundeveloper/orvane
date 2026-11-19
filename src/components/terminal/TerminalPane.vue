@@ -135,6 +135,9 @@ function sessionListener(): SessionListener {
         term?.reset();
         term?.write(replay);
       },
+      pin(path) {
+        ctl.pinFolder(props.pane.id, path);
+      },
       output(data) {
         term?.write(data);
         if (!ctl.visible(props.pane.id)) ctl.activity(props.pane.id);
@@ -498,12 +501,16 @@ onBeforeUnmount(() => {
     </div>
     <div v-if="movable" class="terminal-pane-controls">
       <button type="button" class="terminal-pane-handle" :data-drag-terminal-pane="pane.id"
-        aria-label="Drag pane" title="Drag pane to a split edge · Shift-drag from inside the pane">
+        aria-label="Drag pane" title="Drag pane to reposition it · Shift-drag from inside the pane">
         <Icon name="grip" :size="13" />
       </button>
       <button type="button" :data-untile-terminal-pane="pane.id"
         aria-label="Move pane to its own tab" title="Move pane to its own tab">
         <Icon name="external" :size="12" />
+      </button>
+      <button type="button" aria-label="Close pane" title="Close pane (Ctrl+Shift+W)"
+        @pointerdown.left.stop @click.stop="ctl.command('close-pane', pane.id)">
+        <Icon name="close" :size="12" />
       </button>
     </div>
     <Transition name="terminal-tile">
@@ -591,6 +598,9 @@ onBeforeUnmount(() => {
   min-width: calc(80ch + 14px);
 }
 .terminal-scroll.powershell :deep(.xterm-rows > div:has(.xterm-cursor)) {
+  /* The translation isolates the row. Keep it above xterm's z-index 1 selection. */
+  position: relative;
+  z-index: 2;
   translate: var(--terminal-input-offset, 0px) 0;
 }
 /* Composite the character grid together to avoid row seams when zoomed out. */

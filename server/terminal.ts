@@ -11,6 +11,7 @@ import type { Plugin } from "vite";
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { execFile } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -40,6 +41,27 @@ const powerShellStartup = `
 & {
   $options = Get-Command Set-PSReadLineOption -ErrorAction Ignore
   if (!$options) { return }
+  # Let PSReadLine edit the command as usual, then consume an exact "pin"
+  # before it reaches the shell's command execution or history.
+  $enter = Get-PSReadLineKeyHandler -Bound | Where-Object Key -eq 'Enter'
+  if ($enter.Function -eq 'AcceptLine') {
+    Set-PSReadLineKeyHandler -Chord Enter -ScriptBlock {
+      param($key, $arg)
+      $line = ''
+      $cursor = 0
+      [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+      if ($line -ceq 'pin') {
+        $location = Get-Location
+        $path = if ($location.Provider.Name -eq 'FileSystem') { $location.ProviderPath } else { '' }
+        $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($path))
+        [Microsoft.PowerShell.PSConsoleReadLine]::Replace(0, $line.Length, '')
+        [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine($key, $arg)
+        [Console]::Write(([string][char]27) + ']627;orvane;' + $env:ORVANE_TERMINAL_PIN + ';' + $encoded + [char]7)
+      } else {
+        [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine($key, $arg)
+      }
+    }
+  }
   try {
     if (!(Get-PSReadLineKeyHandler | Where-Object Key -eq 'Ctrl+Spacebar')) {
       Set-PSReadLineKeyHandler -Chord Ctrl+Spacebar -Function MenuComplete -ErrorAction Stop
@@ -283,6 +305,7 @@ interface Session {
   proc: pty.IPty;
   output: string;
   clients: Set<WebSocket>;
+  inputClient?: WebSocket;
   idle?: ReturnType<typeof setTimeout>;
 }
 const sessions = new Map<string, Session>();
@@ -300,6 +323,7 @@ function end(session: Session) {
 }
 function release(session: Session, ws: WebSocket) {
   session.clients.delete(ws);
+  if (session.inputClient === ws) session.inputClient = undefined;
   if (!session.clients.size) {
     clearTimeout(session.idle);
     session.idle = setTimeout(() => end(session), SESSION_IDLE_MS);
@@ -307,6 +331,43 @@ function release(session: Session, ws: WebSocket) {
 }
 const validId = (id: unknown): id is string => typeof id === "string" && /^[\w-]{6,64}$/.test(id);
 const size = (n: unknown, max: number) => Math.max(2, Math.min(max, Math.floor(Number(n)) || 0));
+
+// Strip command frames before storing scrollback. Reattaching to a shell
+// must never repeat commands, and the marker belongs to just this shell.
+function terminalOutput(pinToken: string, pin: (path: string) => void) {
+  const marker = `\x1b]627;orvane;${pinToken};`;
+  const limit = 180_000; // UTF-8 and base64 can expand even a long Windows path.
+  let pending = "";
+  return (chunk: string) => {
+    let data = pending + chunk;
+    pending = "";
+    let output = "";
+    for (;;) {
+      const start = data.indexOf(marker);
+      if (start < 0) {
+        const tail = data.lastIndexOf("\x1b");
+        if (tail >= 0 && marker.startsWith(data.slice(tail))) {
+          pending = data.slice(tail);
+          data = data.slice(0, tail);
+        }
+        return output + data;
+      }
+      output += data.slice(0, start);
+      const payload = start + marker.length;
+      const end = data.indexOf("\x07", payload);
+      if (end < 0) {
+        if (data.length - payload <= limit) pending = data.slice(start);
+        return output;
+      }
+      if (end - payload <= limit) {
+        const encoded = data.slice(payload, end);
+        if (/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) pin(Buffer.from(encoded, "base64").toString("utf8"));
+      }
+      data = data.slice(end + 1);
+    }
+  };
+}
+
 async function open(ws: WebSocket, message: Record<string, unknown>) {
   const id = message.id;
   if (!validId(id)) return;
@@ -333,20 +394,26 @@ async function open(ws: WebSocket, message: Record<string, unknown>) {
     cwd = homedir();
   }
   let proc: pty.IPty;
+  const pinToken = randomBytes(16).toString("hex");
   try {
     proc = pty.spawn(profile.file, shellArgs(profile), {
       name: "xterm-256color",
       cols,
       rows,
       cwd,
-      env: { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor", TERM_PROGRAM: "Orvane" } as Record<string, string>,
+      env: { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor", TERM_PROGRAM: "Orvane", ORVANE_TERMINAL_PIN: pinToken } as Record<string, string>,
     });
   } catch (error) {
     return send(ws, { t: "error", id, message: `Could not start ${profile.name}: ${error instanceof Error ? error.message : error}` });
   }
   const session: Session = { id, proc, output: "", clients: new Set([ws]) };
   sessions.set(id, session);
-  proc.onData((data) => {
+  const readOutput = terminalOutput(pinToken, (path) => {
+    if (session.inputClient) send(session.inputClient, { t: "pin", id, path });
+  });
+  proc.onData((chunk) => {
+    const data = readOutput(chunk);
+    if (!data) return;
     session.output += data;
     if (session.output.length > SCROLLBACK_CHARS * 1.2) session.output = session.output.slice(-SCROLLBACK_CHARS);
     for (const client of session.clients) send(client, { t: "o", id, d: data });
@@ -371,7 +438,10 @@ function handle(ws: WebSocket, raw: string) {
     case "open":
       return void open(ws, message);
     case "in":
-      if (session && typeof message.d === "string" && message.d.length <= MAX_INPUT) session.proc.write(message.d);
+      if (session && typeof message.d === "string" && message.d.length <= MAX_INPUT) {
+        if (session.clients.has(ws) && message.d.includes("\r")) session.inputClient = ws;
+        session.proc.write(message.d);
+      }
       return;
     case "resize":
       try {

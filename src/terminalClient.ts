@@ -14,6 +14,7 @@ export interface SessionListener {
   started(name: string): void;
   /** Re-attached to a running shell: its recent output. */
   attached(replay: string): void;
+  pin(path: string): void;
   output(data: string): void;
   exit(code: number): void;
   error(message: string): void;
@@ -43,7 +44,7 @@ function connect() {
     for (const [id, o] of openings) send({ t: "open", id, ...o });
   };
   ws.onmessage = (event) => {
-    let message: { t: string; id: string; d?: string; replay?: string; code?: number; name?: string; message?: string };
+    let message: { t: string; id: string; d?: string; replay?: string; code?: number; name?: string; message?: string; path?: string };
     try {
       message = JSON.parse(String(event.data));
     } catch {
@@ -54,6 +55,7 @@ function connect() {
     if (message.t === "o") listener.output(message.d ?? "");
     else if (message.t === "attached") listener.attached(message.replay ?? "");
     else if (message.t === "started") listener.started(message.name ?? "");
+    else if (message.t === "pin" && typeof message.path === "string") listener.pin(message.path);
     else if (message.t === "exit") listener.exit(Number(message.code ?? 0));
     else if (message.t === "error") listener.error(message.message ?? "The terminal failed.");
   };

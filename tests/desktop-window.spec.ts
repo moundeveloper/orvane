@@ -6,6 +6,8 @@ import { pathToFileURL } from "node:url";
 
 type TestWindowState = {
   trayClick: () => void;
+  cursor: { x: number; y: number };
+  dragStarted: boolean;
 };
 
 async function launchTray(info: TestInfo) {
@@ -35,6 +37,87 @@ await import(${JSON.stringify(pathToFileURL(resolve("electron/main.mjs")).href)}
     },
   });
 }
+
+test("the tray reopens Orvane and its header can restore the window into a drag", async ({}, info) => {
+  test.skip(process.platform !== "win32", "The restore-on-drag gesture is for Windows");
+  test.setTimeout(150_000);
+  const desktop = await launchTray(info);
+  try {
+    const page = await desktop.firstWindow();
+    await expect(page.locator('main[data-ready="true"]')).toBeVisible({ timeout: 60_000 });
+    const ids = await desktop.evaluate(({ BrowserWindow }) => {
+      const [workspace] = BrowserWindow.getAllWindows();
+      const popup = new BrowserWindow({
+        parent: workspace,
+        show: false,
+        webPreferences: { backgroundThrottling: false },
+      });
+      // Processing windows are hidden children and can come first in this list.
+      const getAllWindows = BrowserWindow.getAllWindows.bind(BrowserWindow);
+      BrowserWindow.getAllWindows = () => [popup, ...getAllWindows().filter((window) => window !== popup)];
+      return { workspace: workspace!.id, popup: popup.id };
+    });
+    const read = () => desktop.evaluate(({ BrowserWindow }, ids) => {
+      const workspace = BrowserWindow.fromId(ids.workspace)!;
+      return {
+        visible: workspace.isVisible(),
+        maximized: workspace.isMaximized(),
+        bounds: workspace.getBounds(),
+        popupVisible: BrowserWindow.fromId(ids.popup)!.isVisible(),
+      };
+    }, ids);
+    const trayClick = () => desktop.evaluate(() =>
+      (globalThis as unknown as { windowTest: TestWindowState }).windowTest.trayClick());
+    const close = page.getByRole("button", { name: "Close Orvane", exact: true });
+
+    await close.click();
+    await expect.poll(async () => (await read()).visible).toBe(false);
+    await trayClick();
+    await expect.poll(read).toMatchObject({ visible: true, maximized: true, popupVisible: false });
+
+    await page.getByRole("button", { name: "Restore Orvane window", exact: true }).click();
+    await expect.poll(async () => (await read()).maximized).toBe(false);
+    const normal = (await read()).bounds;
+    await close.click();
+    await expect.poll(async () => (await read()).visible).toBe(false);
+    await trayClick();
+    await expect.poll(read).toEqual({ visible: true, maximized: false, bounds: normal, popupVisible: false });
+
+    await page.getByRole("button", { name: "Maximize Orvane window", exact: true }).click();
+    await expect.poll(async () => (await read()).maximized).toBe(true);
+    await expect(page.locator(".wordmark")).toHaveClass(/restore-drag/);
+    const maximized = (await read()).bounds;
+    const wordmark = (await page.locator(".wordmark").boundingBox())!;
+    const point = { x: wordmark.x + 35, y: wordmark.y + wordmark.height / 2 };
+    await desktop.evaluate(({ ipcMain, screen }, { bounds, point }) => {
+      const fixture = (globalThis as unknown as { windowTest: TestWindowState }).windowTest;
+      fixture.cursor = { x: bounds.x + point.x, y: bounds.y + point.y };
+      screen.getCursorScreenPoint = () => ({ ...fixture.cursor });
+      ipcMain.on("orvane:window-drag", (_event, phase) => {
+        if (phase === "start") fixture.dragStarted = true;
+      });
+    }, { bounds: maximized, point });
+    await page.mouse.move(point.x, point.y);
+    await page.mouse.down();
+    try {
+      await expect.poll(() => desktop.evaluate(() =>
+        (globalThis as unknown as { windowTest: TestWindowState }).windowTest.dragStarted)).toBe(true);
+      await desktop.evaluate(() => {
+        const { cursor } = (globalThis as unknown as { windowTest: TestWindowState }).windowTest;
+        cursor.x += 140;
+        cursor.y += 100;
+      });
+      await page.mouse.move(point.x + 140, point.y + 100);
+      await expect.poll(async () => (await read()).maximized).toBe(false);
+      await expect.poll(async () => (await read()).bounds.y).toBeGreaterThan(maximized.y + 50);
+    } finally {
+      await page.mouse.up();
+    }
+    await expect(page.locator(".wordmark")).toHaveCSS("app-region", "drag");
+  } finally {
+    await desktop.close();
+  }
+});
 
 test("tray reopen hides nested Browser login windows and keeps the processing tab alive", async ({}, info) => {
   test.setTimeout(120_000);

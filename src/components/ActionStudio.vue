@@ -15,6 +15,7 @@ const NodeGraph = defineAsyncComponent(() => import("./NodeGraph.vue"));
 const props = defineProps<{
   workspace: Workspace;
   initialId: string;
+  createOnOpen?: boolean;
   writable: boolean;
   notice: string;
   running: boolean;
@@ -90,6 +91,7 @@ function create(navigation = false) {
   selected.value = id;
   emit("created", id);
 }
+if (props.createOnOpen) create();
 function setInputs(event: Event) {
   if (!action.value) return;
   const names = (event.target as HTMLInputElement).value

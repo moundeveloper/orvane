@@ -8,6 +8,15 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
   /** The window has no system title bar; Orvane draws its own controls. */
   frameless: true,
   closeWindow: () => ipcRenderer.invoke("orvane:window-close"),
+  isWindowMaximized: () => ipcRenderer.invoke("orvane:window-maximized"),
+  toggleWindowMaximized: () => ipcRenderer.invoke("orvane:window-toggle-maximize"),
+  onWindowMaximized(callback) {
+    const listener = (_event, maximized) => callback(maximized);
+    ipcRenderer.on("orvane:window-maximized", listener);
+    return () => ipcRenderer.removeListener("orvane:window-maximized", listener);
+  },
+  canRestoreByDrag: process.platform === "win32",
+  dragWindow: (phase) => ipcRenderer.send("orvane:window-drag", phase),
   readInboxClipboard: () => ipcRenderer.invoke("orvane:inbox-clipboard"),
   setTabLogin: (id, rootUrl, loginId) => ipcRenderer.invoke("orvane:tab-login", id, rootUrl, loginId),
   onInboxCapture(callback) {

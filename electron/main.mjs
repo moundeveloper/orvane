@@ -564,11 +564,30 @@ function chosenDisplay() {
     screen.getPrimaryDisplay()
   );
 }
+function normalWindowBounds(display, size = { width: 1440, height: 900 }) {
+  const area = display.workArea;
+  const width = Math.min(size.width, Math.max(800, area.width - 64));
+  const height = Math.min(size.height, Math.max(560, area.height - 64));
+  return {
+    x: area.x + Math.round((area.width - width) / 2),
+    y: area.y + Math.round((area.height - height) / 2),
+    width,
+    height,
+  };
+}
 function placeOn(window, display) {
+  const maximized = window.isMaximized() || window.isFullScreen();
+  const bounds = normalWindowBounds(display, window.getNormalBounds());
   if (window.isFullScreen()) window.setFullScreen(false);
   if (window.isMaximized()) window.unmaximize();
-  window.setBounds(display.workArea);
-  window.maximize();
+  window.setBounds(bounds);
+  if (maximized) window.maximize();
+}
+function workspaceWindow(event) {
+  if (mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents &&
+      event.senderFrame === event.sender.mainFrame && isOrvane(event.senderFrame?.url || "")) {
+    return mainWindow;
+  }
 }
 ipcMain.handle("orvane:displays", (event) => {
   if (!isOrvane(event.senderFrame?.url || "")) return [];
@@ -581,10 +600,10 @@ ipcMain.handle("orvane:displays", (event) => {
   }));
 });
 ipcMain.handle("orvane:display-set", (event, id) => {
-  if (!isOrvane(event.senderFrame?.url || "")) return false;
+  const window = workspaceWindow(event);
+  if (!window) return false;
   const display = screen.getAllDisplays().find((item) => item.id === id);
-  const window = BrowserWindow.fromWebContents(event.sender);
-  if (!display || !window) return false;
+  if (!display) return false;
   try {
     writeFileSync(windowSettings(), JSON.stringify({ displayId: display.id }));
   } catch {
@@ -698,8 +717,41 @@ ipcMain.handle("orvane:notify", (event, data) => {
   notification.show();
 });
 ipcMain.handle("orvane:window-close", (event) => {
-  if (!isOrvane(event.senderFrame?.url || "")) return;
-  BrowserWindow.fromWebContents(event.sender)?.close();
+  workspaceWindow(event)?.close();
+});
+ipcMain.handle("orvane:window-maximized", (event) => workspaceWindow(event)?.isMaximized() ?? false);
+ipcMain.handle("orvane:window-toggle-maximize", (event) => {
+  const window = workspaceWindow(event);
+  if (!window) return;
+  if (window.isMaximized()) window.unmaximize();
+  else window.maximize();
+});
+
+// Once a maximized Windows window is grabbed, restore it under the cursor.
+// Electron's native draggable region takes over again on the next press.
+let windowDrag;
+ipcMain.on("orvane:window-drag", (event, phase) => {
+  const window = workspaceWindow(event);
+  if (!window || process.platform !== "win32") return;
+  if (phase === "end") {
+    windowDrag = undefined;
+  } else if (phase === "start" && window.isMaximized()) {
+    const start = screen.getCursorScreenPoint();
+    const bounds = window.getBounds();
+    windowDrag = { start, bounds, normal: window.getNormalBounds(), restored: false };
+  } else if (phase === "move" && windowDrag) {
+    const { start, bounds, normal, restored } = windowDrag;
+    const cursor = screen.getCursorScreenPoint();
+    const dx = cursor.x - start.x, dy = cursor.y - start.y;
+    if (!restored && Math.hypot(dx, dy) < 5) return;
+    const x = bounds.x + dx, y = bounds.y + dy;
+    if (restored) window.setPosition(x, y);
+    else {
+      windowDrag.restored = true;
+      window.unmaximize();
+      window.setBounds({ ...normal, x, y });
+    }
+  }
 });
 ipcMain.handle("orvane:inbox-clipboard", (event) => {
   if (
@@ -843,6 +895,7 @@ let quitting = false;
 let tray;
 // Started by "Launch at login": stay in the tray until shown.
 const startedFromLogin = process.argv.includes("--from-login");
+let firstShow = true;
 const loginItem = () => ({
   path: process.execPath,
   args: [join(root, "electron/main.mjs"), "--from-login"],
@@ -852,19 +905,21 @@ function showWindow() {
   if (!window || window.isDestroyed()) return;
   if (!window.isVisible()) minimizeBrowserPopups();
   if (window.isMinimized()) window.restore();
-  // A window started hidden is maximized the first time it is shown.
-  if (!window.isVisible() && !window.isMaximized()) window.maximize();
+  if (firstShow) {
+    firstShow = false;
+    window.maximize();
+  }
   window.show();
   window.focus();
+  return window;
 }
 function quitOrvane() {
   quitting = true;
   app.quit();
 }
 function captureClipboard() {
-  const [window] = BrowserWindow.getAllWindows();
+  const window = showWindow();
   if (!window) return;
-  showWindow();
   const contents = window.webContents;
   const send = () => contents.send("orvane:inbox-capture");
   if (contents.isLoadingMainFrame()) contents.once("did-finish-load", send);
@@ -895,13 +950,9 @@ function createTray() {
 }
 
 function createWindow() {
-  const area = chosenDisplay().workArea;
   const window = new BrowserWindow({
     // Start on the chosen monitor so maximizing fills that one.
-    x: area.x,
-    y: area.y,
-    width: Math.min(1440, area.width),
-    height: Math.min(900, area.height),
+    ...normalWindowBounds(chosenDisplay()),
     minWidth: 800,
     minHeight: 560,
     title: "Orvane",
@@ -920,6 +971,10 @@ function createWindow() {
     },
   });
   mainWindow = window;
+  const sendMaximized = () => window.webContents.send("orvane:window-maximized", window.isMaximized());
+  window.on("maximize", sendMaximized);
+  window.on("unmaximize", sendMaximized);
+  window.on("hide", () => { windowDrag = undefined; });
   window.on("closed", () => { mainWindow = undefined; });
   // Orvane stays on its own origin; anything else opens in the system browser.
   window.webContents.on("will-navigate", (event, url) => {
@@ -986,10 +1041,7 @@ function createWindow() {
     // Already confirmed above; let the page unload (and release its lease).
     if (leaveAnyway || closing) event.preventDefault();
   });
-  if (!startedFromLogin) {
-    window.maximize();
-    window.show();
-  }
+  if (!startedFromLogin) showWindow();
   void window.loadURL(origin);
   return window;
 }

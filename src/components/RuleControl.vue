@@ -148,6 +148,7 @@ const missingInputs = computed(() =>
         <CustomSelect
           v-model="rule.appId"
           aria-label="Target app"
+          search-label="Search apps"
           @change="rule.target = ''"
           ><option value="">Choose an app</option>
           <option
@@ -194,6 +195,7 @@ const missingInputs = computed(() =>
         ><CustomSelect
           v-model="rule.appId"
           aria-label="Target app"
+          search-label="Search apps"
           @change="rule.target = ''"
         >
           <option v-if="app.id !== '__workspace__'" value="">This app</option>

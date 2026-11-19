@@ -12,6 +12,7 @@
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from "vue";
 import Icon from "../Icon.vue";
 import TerminalSplit from "./TerminalSplit.vue";
+import { api as filesApi, label as folderLabel, samePath } from "../files/explorer";
 import { TERMINAL, type PaneHandle, type TerminalController } from "./controller";
 import { usePopover } from "../pickers/usePopover";
 import { registerCommands } from "../../commands";
@@ -84,6 +85,78 @@ function newTab(profileId?: string, cwd?: string, name?: string) {
 }
 defineExpose({ openTab: (cwd: string, name?: string) => newTab(undefined, cwd, name) });
 
+const bookmarksOpen = ref(false);
+const bookmarks = computed(() => state.bookmarks ?? []);
+const bookmarkQuery = ref("");
+const matchingBookmarks = computed(() => {
+  const query = bookmarkQuery.value.trim().toLowerCase();
+  return bookmarks.value.filter((path) =>
+    folderLabel(path).toLowerCase().includes(query) || path.toLowerCase().includes(query));
+});
+const folderInput = ref<HTMLInputElement>();
+const folderPath = ref("");
+const folderError = ref("");
+const bookmarkBusy = ref(false);
+
+function showBookmarkInput() {
+  bookmarksOpen.value = true;
+  void nextTick(() => folderInput.value?.focus());
+}
+
+async function addBookmark(input: string, fromShell = false) {
+  if (fromShell) {
+    bookmarksOpen.value = true;
+    bookmarkQuery.value = "";
+  }
+  if (!input) {
+    if (fromShell) folderError.value = "Move to a filesystem folder before running pin.";
+    return;
+  }
+  if (!fromShell && bookmarkBusy.value) return;
+  if (!fromShell) bookmarkBusy.value = true;
+  folderError.value = "";
+  try {
+    const { path } = await filesApi<{ path: string }>("directory", { path: input });
+    if (bookmarks.value.some((item) => samePath(item, path))) {
+      folderError.value = "This folder is already pinned.";
+      return;
+    }
+    state.bookmarks = [...bookmarks.value, path];
+    if (!fromShell) folderPath.value = "";
+    save();
+  } catch {
+    folderError.value = fromShell
+      ? "The shell’s current folder could not be pinned."
+      : "Enter the absolute path of an existing folder.";
+  } finally {
+    if (!fromShell) bookmarkBusy.value = false;
+  }
+}
+
+function removeBookmark(path: string) {
+  state.bookmarks = bookmarks.value.filter((item) => item !== path);
+  folderError.value = "";
+  save();
+}
+
+async function openBookmark(path: string, inNewTab = false) {
+  if (bookmarkBusy.value) return;
+  const tab = inNewTab ? undefined : activeTab.value;
+  bookmarkBusy.value = true;
+  folderError.value = "";
+  try {
+    await filesApi("directory", { path });
+    if (!bookmarks.value.includes(path)) return;
+    if (tab && state.tabs.includes(tab)) split(tab.focus, "auto", path);
+    else newTab(undefined, path, folderLabel(path));
+  } catch {
+    bookmarksOpen.value = true;
+    folderError.value = "Couldn’t open that folder. Check that it still exists.";
+  } finally {
+    bookmarkBusy.value = false;
+  }
+}
+
 const tabMime = "application/x-orvane-terminal-tab";
 const terminalBody = ref<HTMLElement>();
 const dragging = ref<{ tabId: string; paneId?: string }>();
@@ -92,18 +165,13 @@ type PaneDrop = { id: string; edge: "left" | "right" | "top" | "bottom" };
 type PaneRect = { x: number; y: number; width: number; height: number };
 const paneDrop = ref<PaneDrop>();
 const previewFrames = ref<(PaneRect & { id: string })[]>([]);
-const dropGuide = ref<(PaneRect & { id: string; compact: boolean })>();
-const dropDirections = [
-  { edge: "left", icon: "back", label: "Split left" },
-  { edge: "right", icon: "forward", label: "Split right" },
-  { edge: "top", icon: "up", label: "Split above" },
-  { edge: "bottom", icon: "down", label: "Split below" },
-] as const;
 let paneDrag: {
   pointer: number; paneId: string; tabId: string; x: number; y: number;
   pane: HTMLElement; scale: number; bounds: DOMRect;
   source: DOMRect; lift: number;
   targets: { pane: HTMLElement; rect: DOMRect }[];
+  moving: PaneNode; remaining: LayoutNode; area: PaneRect; gap: number;
+  dropTargets: Map<string, PaneRect>;
 } | undefined;
 
 function clearPanePreview() {
@@ -114,7 +182,6 @@ function clearPanePreview() {
     pane.style.removeProperty("--terminal-preview-clip");
   }
   previewFrames.value = [];
-  dropGuide.value = undefined;
 }
 
 function resetDrag() {
@@ -135,32 +202,42 @@ function startDrag(event: DragEvent, tabId: string) {
 }
 function beginPaneDrag(event: PointerEvent) {
   const body = terminalBody.value;
+  const tab = activeTab.value;
   const target = event.target as Element;
   const handle = target.closest("[data-drag-terminal-pane]");
-  if (paneDrag || event.button !== 0 || !activeTab.value || !body ||
+  if (paneDrag || event.button !== 0 || !tab || !body ||
       (!handle && (!event.shiftKey || target.closest("button")))) return;
   const pane = target.closest<HTMLElement>(".terminal-pane.has-pane-handle");
   const tabBody = pane?.closest<HTMLElement>(".terminal-tab-body");
   if (!pane?.dataset.terminalPane || !tabBody) return;
+  const paneId = pane.dataset.terminalPane;
+  const moving = panes(tab.root).find((node) => node.id === paneId);
+  const remaining = moving && replacePane(tab.root, paneId, null);
+  if (!moving || !remaining) return;
   const bounds = tabBody.getBoundingClientRect();
+  const scale = bounds.width / tabBody.offsetWidth || 1;
+  const area = { x: 0, y: 0, width: bounds.width / scale, height: bounds.height / scale };
+  const gap = parseFloat(getComputedStyle(body).getPropertyValue("--terminal-divider-size"));
   const source = pane.getBoundingClientRect();
   const targets = [...tabBody.querySelectorAll<HTMLElement>("[data-terminal-pane]")]
     .map((pane) => ({ pane, rect: pane.getBoundingClientRect() }));
   event.preventDefault();
   event.stopPropagation();
   paneDrag = {
-    pointer: event.pointerId, paneId: pane.dataset.terminalPane, tabId: activeTab.value.id,
+    pointer: event.pointerId, paneId, tabId: tab.id,
     x: event.clientX, y: event.clientY, pane, bounds, targets,
     source, lift: Math.min(0.72, 360 / source.width, 200 / source.height),
-    scale: bounds.width / tabBody.offsetWidth || 1,
+    scale, moving, remaining, area, gap, dropTargets: layoutRects(remaining, area, gap),
   };
   body.setPointerCapture(event.pointerId);
 }
 function movePaneDrag(event: PointerEvent) {
   const drag = paneDrag;
   if (!drag || drag.pointer !== event.pointerId) return;
-  if (!dragging.value) {
-    if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 4) return;
+  const atPickup = Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 4;
+  const lifting = !dragging.value;
+  if (lifting) {
+    if (atPickup) return;
     dragging.value = { tabId: drag.tabId, paneId: drag.paneId };
     drag.pane.classList.add("terminal-pane-lifted");
   }
@@ -174,30 +251,41 @@ function movePaneDrag(event: PointerEvent) {
     : null;
   const tab = target?.closest<HTMLElement>("[data-terminal-tab]");
   const previous = paneDrop.value;
-  if (tab && terminalBody.value?.parentElement?.contains(tab)) {
+  if (tab && terminalBody.value?.closest(".terminal-view")?.contains(tab)) {
     paneDrop.value = undefined;
-    dropGuide.value = undefined;
     positionTabDrop(tab, tab.dataset.terminalTab!, event.clientX);
   } else {
     tabDrop.value = undefined;
-    // Keep the hit regions fixed while the painted frames move underneath them.
-    const hit = drag.targets.find(({ rect }) =>
-      event.clientX >= rect.left && event.clientX < rect.right &&
-      event.clientY >= rect.top && event.clientY < rect.bottom);
-    const id = hit?.pane.dataset.terminalPane;
-    if (!hit || !id || id === drag.paneId || hit.rect.width < 48 || hit.rect.height < 48) {
-      dropGuide.value = undefined;
-    } else if (dropGuide.value?.id !== id) {
-      const { rect } = hit;
-      dropGuide.value = {
-        id, compact: rect.width < 200 || rect.height < 100,
-        x: (rect.left - drag.bounds.left) / drag.scale, y: (rect.top - drag.bounds.top) / drag.scale,
-        width: rect.width / drag.scale, height: rect.height / drag.scale,
-      };
-    }
-    positionPaneDrop(hit?.pane ?? null, event.clientX, event.clientY, hit?.rect);
+    const x = (event.clientX - drag.bounds.left) / drag.scale;
+    const y = (event.clientY - drag.bounds.top) / drag.scale;
+    const inside = x >= 0 && x < drag.area.width && y >= 0 && y < drag.area.height;
+    positionReflowDrop(drag, x, y, inside && !atPickup);
   }
-  if (previous !== paneDrop.value) previewPaneDrop();
+  if (lifting || previous !== paneDrop.value) previewPaneDrop();
+}
+
+function positionReflowDrop(drag: NonNullable<typeof paneDrag>, x: number, y: number, inside: boolean) {
+  if (inside) {
+    // Hit the layout with the lifted pane removed. Keep these regions steady
+    // while preview tiles move, and give each tile half of the adjacent divider.
+    const halfGap = drag.gap / 2;
+    for (const [id, rect] of drag.dropTargets) {
+      if (x < rect.x - halfGap || x > rect.x + rect.width + halfGap ||
+          y < rect.y - halfGap || y > rect.y + rect.height + halfGap) continue;
+      const nx = (x - rect.x) / rect.width - 0.5;
+      const ny = (y - rect.y) / rect.height - 0.5;
+      const previous = paneDrop.value;
+      // Dwindle's four triangles meet at the center. Keep the last side at
+      // the exact center, where all four choices are equally close.
+      if (nx === 0 && ny === 0 && previous?.id === id) return;
+      const edge = Math.abs(nx) > Math.abs(ny)
+        ? (nx < 0 ? "left" : "right")
+        : (ny < 0 ? "top" : "bottom");
+      if (previous?.id !== id || previous.edge !== edge) paneDrop.value = { id, edge };
+      return;
+    }
+  }
+  paneDrop.value = undefined;
 }
 function endPaneDrag(event: PointerEvent, cancel = false) {
   if (!paneDrag || paneDrag.pointer !== event.pointerId) return;
@@ -226,15 +314,8 @@ function splitAtDrop(root: LayoutNode, moving: LayoutNode, drop: PaneDrop, id: s
   })!;
 }
 
-function previewPaneDrop() {
-  const drag = paneDrag;
-  const tab = activeTab.value;
-  if (!drag || !tab) return;
-  const { scale, bounds } = drag;
-  const moving = panes(tab.root).find((pane) => pane.id === drag.paneId);
-  const remaining = moving && paneDrop.value && replacePane(tab.root, moving.id, null);
+function layoutRects(root: LayoutNode, area: PaneRect, gap: number) {
   const projected = new Map<string, PaneRect>();
-  const gap = parseFloat(getComputedStyle(terminalBody.value!).getPropertyValue("--terminal-divider-size"));
   function place(node: LayoutNode, rect: PaneRect) {
     if (node.type === "pane") {
       projected.set(node.id, rect);
@@ -252,11 +333,17 @@ function previewPaneDrop() {
       place(node.b, { ...rect, y: rect.y + first + gap, height: height - first });
     }
   }
-  if (remaining && moving && paneDrop.value) {
-    place(splitAtDrop(remaining, moving, paneDrop.value, "preview"), {
-      x: 0, y: 0, width: bounds.width / scale, height: bounds.height / scale,
-    });
-  }
+  place(root, area);
+  return projected;
+}
+
+function previewPaneDrop() {
+  const drag = paneDrag;
+  if (!drag) return;
+  const { scale, bounds } = drag;
+  const projected = paneDrop.value
+    ? layoutRects(splitAtDrop(drag.remaining, drag.moving, paneDrop.value, "preview"), drag.area, drag.gap)
+    : drag.dropTargets;
   const frames: typeof previewFrames.value = [];
   for (const { pane, rect } of drag.targets) {
     const id = pane.dataset.terminalPane!;
@@ -278,7 +365,7 @@ function previewPaneDrop() {
   }
   previewFrames.value = frames;
 }
-function animatePaneMove() {
+function animatePaneMove(entering?: { id: string; dir: "row" | "column" }) {
   const body = terminalBody.value;
   if (!body || matchMedia("(prefers-reduced-motion: reduce)").matches) return () => {};
   const visiblePanes = () => [...body.querySelectorAll<HTMLElement>("[data-terminal-pane]")]
@@ -291,8 +378,9 @@ function animatePaneMove() {
       const previous = before.get(pane.dataset.terminalPane);
       if (previous && previous.x === rect.x && previous.y === rect.y &&
           previous.width === rect.width && previous.height === rect.height) continue;
-      const x = previous ? (previous.x - rect.x) / scale : 0;
-      const y = previous ? (previous.y - rect.y) / scale : 0;
+      const direction = entering?.id === pane.dataset.terminalPane ? entering?.dir : undefined;
+      const x = previous ? (previous.x - rect.x) / scale : direction === "row" ? -12 : 0;
+      const y = previous ? (previous.y - rect.y) / scale : direction === "column" ? -12 : 0;
       pane.animate([
         { transform: `translate(${x}px, ${y}px)`, opacity: 0.76 },
         { transform: "translate(0, 0)", opacity: 1 },
@@ -351,20 +439,17 @@ function overPane(event: DragEvent) {
   event.preventDefault();
   event.dataTransfer.dropEffect = "move";
 }
-function positionPaneDrop(target: HTMLElement | null, clientX: number, clientY: number, bounds?: DOMRect) {
+function positionPaneDrop(target: HTMLElement | null, clientX: number, clientY: number) {
   if (!target || target.dataset.terminalPane === dragging.value?.paneId) {
     paneDrop.value = undefined;
     return;
   }
-  const rect = bounds ?? target.getBoundingClientRect();
+  const rect = target.getBoundingClientRect();
   const x = (clientX - rect.left) / rect.width;
   const y = (clientY - rect.top) / rect.height;
   const edges = { left: x, right: 1 - x, top: y, bottom: 1 - y };
   const edge = (Object.keys(edges) as (keyof typeof edges)[]).reduce((a, b) => edges[a] < edges[b] ? a : b);
   const id = target.dataset.terminalPane!;
-  const previous = paneDrop.value;
-  if (bounds && previous?.id === id && edges[previous.edge] < 0.36 &&
-      edges[previous.edge] - edges[edge] < 0.04) return;
   if (edges[edge] >= 0.32) paneDrop.value = undefined;
   else if (paneDrop.value?.id !== id || paneDrop.value.edge !== edge) paneDrop.value = { id, edge };
 }
@@ -427,7 +512,7 @@ function closePane(paneId: string, kill = true) {
   save();
   void nextTick(() => handles.get(tab.focus)?.focus());
 }
-function split(paneId: string, dir: "row" | "column" | "auto") {
+function split(paneId: string, dir: "row" | "column" | "auto", cwd?: string) {
   const tab = tabOf(paneId);
   const pane = tab && panes(tab.root).find((p) => p.id === paneId);
   if (!tab || !pane) return;
@@ -436,11 +521,13 @@ function split(paneId: string, dir: "row" | "column" | "auto") {
     dir = r && r.height > r.width ? "column" : "row";
   }
   // Like Windows Terminal: the new pane uses the same profile.
-  const added = newPane(pane.profile, pane.cwd);
+  const added = newPane(pane.profile, cwd ?? pane.cwd);
+  const animate = tab === activeTab.value ? animatePaneMove({ id: added.id, dir }) : undefined;
   const node: LayoutNode = { type: "split", id: uid(), dir, ratio: 0.5, a: pane, b: added };
   tab.root = replacePane(tab.root, paneId, node)!;
   tab.focus = added.id;
   save();
+  animate?.();
   void nextTick(() => handles.get(added.id)?.focus());
 }
 function moveFocus(paneId: string, direction: "left" | "right" | "up" | "down") {
@@ -557,6 +644,9 @@ const controller: TerminalController = {
     }
   },
   title: (paneId, title) => titles.set(paneId, title),
+  pinFolder(paneId, path) {
+    if (tabOf(paneId)) void addBookmark(path, true);
+  },
   activity(paneId) {
     const tab = tabOf(paneId);
     if (tab && tab.id !== state.active) activity.add(tab.id);
@@ -589,6 +679,23 @@ function pickProfile(id: string) {
 
 // ---- Ctrl+K ----
 const stopCommands = registerCommands(`terminal:${props.block.id}`, () => [
+  {
+    id: `terminal-pin-folder:${props.block.id}`,
+    title: "Pin a terminal folder",
+    icon: "pin",
+    blockId: props.block.id,
+    keywords: "terminal bookmarks directory",
+    run: showBookmarkInput,
+  },
+  ...bookmarks.value.flatMap((path) => [false, true].map((inNewTab) => ({
+    id: `terminal-bookmark:${props.block.id}:${Number(inNewTab)}:${path}`,
+    title: `Open ${folderLabel(path)} in ${inNewTab ? "a terminal tab" : "a terminal split"}`,
+    detail: path,
+    icon: "folder",
+    blockId: props.block.id,
+    keywords: "terminal bookmarks pinned directory",
+    run: () => openBookmark(path, inNewTab),
+  }))),
   ...profiles.value.map((p) => ({
     id: `terminal-new:${props.block.id}:${p.id}`,
     title: `New terminal tab: ${p.name}`,
@@ -672,7 +779,9 @@ const kindIcon = (kind?: string) => (kind === "wsl" ? "desktop" : "terminal");
           @dragend="resetDrag"
           @click="selectTab(tab.id)"
           @dblclick="renameTab(tab)"
-          @auxclick.prevent="$event.button === 1 && closeTab(tab.id)"
+          @pointerdown.middle.stop
+          @mousedown.middle.prevent
+          @auxclick.middle.stop.prevent="closeTab(tab.id)"
           @keydown.enter.self="selectTab(tab.id)"
           @keydown.f2.self="renameTab(tab)"
         >
@@ -726,6 +835,11 @@ const kindIcon = (kind?: string) => (kind === "wsl" ? "desktop" : "terminal");
         </button>
       </div>
       <div class="terminal-actions">
+        <button type="button" class="terminal-icon-button" :class="{ on: bookmarksOpen }"
+          aria-label="Pinned folders" title="Pinned folders" :aria-expanded="bookmarksOpen"
+          @click="bookmarksOpen = !bookmarksOpen">
+          <Icon name="pin" :size="14" />
+        </button>
         <button v-if="editable?.()" type="button" class="terminal-icon-button" aria-label="Pin Playwright results"
           title="Pin Playwright results" @click="openTestResults"><Icon name="play" :size="14" /></button>
         <button
@@ -827,44 +941,68 @@ const kindIcon = (kind?: string) => (kind === "wsl" ? "desktop" : "terminal");
         <Icon name="close" :size="12" />
       </button>
     </div>
-    <div ref="terminalBody" class="terminal-body" @click="detachPaneClick" @dragend="resetDrag" @dragover="overPane" @drop="dropPane"
-      @pointerdown.capture="beginPaneDrag" @pointermove="movePaneDrag" @pointerup="endPaneDrag($event)"
-      @pointercancel="endPaneDrag($event, true)" @lostpointercapture="endPaneDrag($event, true)"
-      @dragleave="!($event.currentTarget as HTMLElement).contains($event.relatedTarget as Node) && (paneDrop = undefined)">
-      <div
-        v-for="tab in state.tabs"
-        v-show="tab.id === state.active"
-        :key="tab.id"
-        class="terminal-tab-body"
-        :class="{ 'previewing-split': tab.id === state.active && previewFrames.length }"
-      >
-        <TerminalSplit v-if="visitedTabs.has(tab.id)" :node="tab.root"
-          :drop="tab.id === state.active && !dragging?.paneId ? paneDrop : undefined" @resized="save" />
-        <div v-if="tab.id === state.active" class="terminal-split-preview" aria-hidden="true">
-          <div v-for="frame in previewFrames" :key="frame.id" class="terminal-split-preview-frame"
-            :class="{ destination: frame.id === dragging?.paneId }"
-            :style="{ width: frame.width + 'px', height: frame.height + 'px',
-              transform: `translate(${frame.x}px, ${frame.y}px)` }" />
-        </div>
-        <div v-if="tab.id === state.active && dropGuide" class="terminal-drop-guide"
-          :class="{ compact: dropGuide.compact }" aria-hidden="true"
-          :style="{ left: dropGuide.x + 'px', top: dropGuide.y + 'px',
-            width: dropGuide.width + 'px', height: dropGuide.height + 'px' }">
-          <span v-for="direction in dropDirections" :key="direction.edge" class="terminal-drop-marker"
-            :class="[direction.edge, { selected: paneDrop?.edge === direction.edge }]">
-            <Icon :name="direction.icon" :size="14" />
-          </span>
-          <span v-if="!dropGuide.compact" class="terminal-drop-hint">
-            {{ dropDirections.find((direction) => direction.edge === paneDrop?.edge)?.label ?? "Drag to an edge to split" }}
-          </span>
-        </div>
-      </div>
-      <div v-if="!state.tabs.length" class="terminal-empty">
-        <p>No terminals open.</p>
-        <div class="terminal-empty-profiles">
-          <button v-for="p in profiles" :key="p.id" type="button" class="subtle-button" @click="newTab(p.id)">
-            <Icon :name="kindIcon(p.kind)" :size="13" />{{ p.name }}
+    <div class="terminal-content">
+      <section v-if="bookmarksOpen" class="terminal-bookmarks" aria-label="Pinned folders">
+        <h2>Pinned folders</h2>
+        <form class="terminal-bookmark-form" @submit.prevent="addBookmark(folderPath.trim())">
+          <input ref="folderInput" v-model="folderPath" type="text" aria-label="Folder path" placeholder="Folder path"
+            autocomplete="off" spellcheck="false" :readonly="bookmarkBusy" @input="folderError = ''" />
+          <button type="submit" class="terminal-icon-button" aria-label="Pin folder" title="Pin folder"
+            :disabled="!folderPath.trim() || bookmarkBusy">
+            <Icon name="plus" :size="14" />
           </button>
+        </form>
+        <input v-if="bookmarks.length" v-model="bookmarkQuery" class="terminal-bookmark-search" type="text"
+          aria-label="Search pinned folders" placeholder="Search name or path" autocomplete="off" spellcheck="false"
+          @keydown.esc.stop="bookmarkQuery = ''" />
+        <p v-if="folderError" class="terminal-bookmark-error" role="status">{{ folderError }}</p>
+        <p v-if="bookmarks.length && !matchingBookmarks.length" class="terminal-bookmark-empty" role="status">No matching folders.</p>
+        <ul v-if="matchingBookmarks.length" class="terminal-bookmark-list">
+          <li v-for="path in matchingBookmarks" :key="path">
+            <button type="button" class="terminal-bookmark-open" :aria-label="`Open ${folderLabel(path)}`"
+              :title="path" :aria-description="path"
+              @click="openBookmark(path)" @pointerdown.middle.stop @mousedown.middle.prevent
+              @auxclick.middle.stop.prevent="openBookmark(path, true)">
+              <Icon name="folder" :size="14" />
+              <span>
+                <strong>{{ folderLabel(path) }}</strong>
+                <small>{{ path }}</small>
+              </span>
+            </button>
+            <button type="button" class="terminal-icon-button" :aria-label="`Unpin ${folderLabel(path)}`"
+              title="Unpin folder" @click="removeBookmark(path)">
+              <Icon name="close" :size="12" />
+            </button>
+          </li>
+        </ul>
+      </section>
+      <div ref="terminalBody" class="terminal-body" @click="detachPaneClick" @dragend="resetDrag" @dragover="overPane" @drop="dropPane"
+        @pointerdown.capture="beginPaneDrag" @pointermove="movePaneDrag" @pointerup="endPaneDrag($event)"
+        @pointercancel="endPaneDrag($event, true)" @lostpointercapture="endPaneDrag($event, true)"
+        @dragleave="!($event.currentTarget as HTMLElement).contains($event.relatedTarget as Node) && (paneDrop = undefined)">
+        <div
+          v-for="tab in state.tabs"
+          v-show="tab.id === state.active"
+          :key="tab.id"
+          class="terminal-tab-body"
+          :class="{ 'previewing-split': tab.id === state.active && previewFrames.length }"
+        >
+          <TerminalSplit v-if="visitedTabs.has(tab.id)" :node="tab.root"
+            :drop="tab.id === state.active && !dragging?.paneId ? paneDrop : undefined" @resized="save" />
+          <div v-if="tab.id === state.active" class="terminal-split-preview" aria-hidden="true">
+            <div v-for="frame in previewFrames" :key="frame.id" class="terminal-split-preview-frame"
+              :class="{ destination: frame.id === dragging?.paneId }"
+              :style="{ width: frame.width + 'px', height: frame.height + 'px',
+                transform: `translate(${frame.x}px, ${frame.y}px)` }" />
+          </div>
+        </div>
+        <div v-if="!state.tabs.length" class="terminal-empty">
+          <p>No terminals open.</p>
+          <div class="terminal-empty-profiles">
+            <button v-for="p in profiles" :key="p.id" type="button" class="subtle-button" @click="newTab(p.id)">
+              <Icon :name="kindIcon(p.kind)" :size="13" />{{ p.name }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1002,9 +1140,122 @@ const kindIcon = (kind?: string) => (kind === "wsl" ? "desktop" : "terminal");
 .terminal-icon-button:disabled {
   opacity: 0.4;
 }
+.terminal-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.terminal-bookmarks {
+  display: flex;
+  flex-direction: column;
+  width: min(204px, 44%);
+  min-width: 0;
+  margin: 0 0 6px 6px;
+  padding: 6px;
+  gap: 6px;
+  border-right: 1px solid rgb(69 89 104 / 14%);
+  color: #455968;
+}
+.terminal-bookmarks h2 {
+  margin: 0;
+  padding-inline: 3px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.terminal-bookmark-form,
+.terminal-bookmark-list li {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.terminal-bookmark-form input,
+.terminal-bookmark-search {
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: rgb(255 255 255 / 54%);
+  box-shadow: inset 0 -1px rgb(69 89 104 / 22%);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}
+.terminal-bookmark-search {
+  flex: 0 0 26px;
+  width: 100%;
+}
+.terminal-bookmark-form input::placeholder,
+.terminal-bookmark-search::placeholder {
+  color: #556c7a;
+}
+.terminal-bookmark-form input:focus-visible,
+.terminal-bookmark-search:focus-visible,
+.terminal-bookmark-open:focus-visible {
+  outline: 1px solid #6f8998;
+  outline-offset: -1px;
+}
+.terminal-bookmark-error {
+  margin: 0 3px;
+  color: #8b413e;
+  font-size: 11px;
+}
+.terminal-bookmark-empty {
+  margin: 0 3px;
+  color: #556c7a;
+  font-size: 11px;
+}
+.terminal-bookmark-list {
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.terminal-bookmark-open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 5px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.terminal-bookmark-open:hover {
+  background: rgb(255 255 255 / 55%);
+}
+.terminal-bookmark-open > svg {
+  flex: none;
+}
+.terminal-bookmark-open span {
+  min-width: 0;
+}
+.terminal-bookmark-open strong,
+.terminal-bookmark-open small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.terminal-bookmark-open strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.terminal-bookmark-open small {
+  color: #556c7a;
+  font-size: 11px;
+}
 .terminal-body {
   --terminal-divider-size: 6px;
   flex: 1;
+  min-width: 0;
   min-height: 0;
   position: relative;
   padding: 0 6px 6px;
@@ -1034,57 +1285,6 @@ const kindIcon = (kind?: string) => (kind === "wsl" ? "desktop" : "terminal");
 .terminal-split-preview-frame.destination {
   background: rgb(111 137 152 / 14%);
   box-shadow: inset 0 0 0 1px #6f8998;
-}
-.terminal-drop-guide {
-  position: absolute;
-  z-index: 4;
-  pointer-events: none;
-}
-.terminal-drop-marker,
-.terminal-drop-hint {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  background: #f7f9fa;
-  color: #455968;
-  border: 1px solid #b5c5cf;
-  border-radius: 6px;
-  box-shadow: 0 2px 6px rgb(69 89 104 / 14%);
-}
-.terminal-drop-marker {
-  width: 24px;
-  height: 24px;
-}
-.terminal-drop-marker.selected {
-  background: #c5d8e3;
-  color: #223744;
-  border-color: #6f8998;
-}
-.terminal-drop-marker.left,
-.terminal-drop-marker.right {
-  top: 50%;
-  translate: 0 -50%;
-}
-.terminal-drop-marker.top,
-.terminal-drop-marker.bottom {
-  left: 50%;
-  translate: -50% 0;
-}
-.terminal-drop-marker.left { left: min(8px, 8%); }
-.terminal-drop-marker.right { right: min(8px, 8%); }
-.terminal-drop-marker.top { top: min(8px, 8%); }
-.terminal-drop-marker.bottom { bottom: min(8px, 8%); }
-.terminal-drop-hint {
-  top: 50%;
-  left: 50%;
-  translate: -50% -50%;
-  padding: 3px 7px;
-  font-size: 11px;
-  white-space: nowrap;
-}
-.terminal-drop-guide.compact .terminal-drop-marker {
-  width: 20px;
-  height: 20px;
 }
 .terminal-body :deep(.terminal-pane-preview-moving) {
   clip-path: var(--terminal-preview-clip);

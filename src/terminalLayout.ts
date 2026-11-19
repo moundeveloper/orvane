@@ -29,6 +29,7 @@ export interface TerminalState {
   active: string;
   defaultProfile?: string;
   fontSize?: number;
+  bookmarks?: string[];
 }
 
 const ID = /^[\w-]{6,64}$/;
@@ -57,9 +58,12 @@ export function readTerminal(value: string): TerminalState {
       active: tabs.some((t) => t.id === data.active) ? data.active! : (tabs[0]?.id ?? ""),
       defaultProfile: typeof data.defaultProfile === "string" ? data.defaultProfile : undefined,
       fontSize: typeof data.fontSize === "number" ? Math.max(8, Math.min(32, data.fontSize)) : undefined,
+      bookmarks: Array.isArray(data.bookmarks)
+        ? [...new Set(data.bookmarks.filter((path) => typeof path === "string" && path.trim()))]
+        : undefined,
     };
   } catch {
-    return { tabs: [], active: "" };
+    return { tabs: [], active: "", bookmarks: undefined };
   }
 }
 export function panes(node: LayoutNode): PaneNode[] {

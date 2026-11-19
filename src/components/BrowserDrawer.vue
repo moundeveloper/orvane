@@ -485,7 +485,7 @@ watch(
   background: var(--surface);
   box-shadow: var(--floating);
 }
-.drawer-select :deep(.select-popover > button) {
+.drawer-select :deep(.select-options > button) {
   justify-content: flex-start;
   gap: 9px;
   min-height: 34px;
@@ -493,14 +493,14 @@ watch(
   color: var(--sub);
   font-size: 11.5px;
 }
-.drawer-select :deep(.select-popover > button[data-highlighted="true"]) {
+.drawer-select :deep(.select-options > button[data-highlighted="true"]) {
   background: var(--selection);
   color: var(--ink);
 }
-.drawer-select :deep(.select-popover > button > span) {
+.drawer-select :deep(.select-options > button > span) {
   flex: 1;
 }
-.drawer-select :deep(.select-popover > button > svg) {
+.drawer-select :deep(.select-options > button > svg) {
   color: var(--faint);
 }
 .library-tabs {

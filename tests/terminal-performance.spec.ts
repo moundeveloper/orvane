@@ -1,4 +1,5 @@
 import { test, expect } from "./fixtures";
+import { mkdir } from "node:fs/promises";
 
 test.beforeEach(async ({ page }) => {
   await page.route("**/__orvane/terminal/profiles", (route) =>
@@ -268,8 +269,113 @@ test("Projects Hub uses live terminal tabs that reorder and dock without restart
   expect(await page.evaluate(() => (window as any).terminalFixture.killed)).toEqual([]);
 });
 
+test("middle-click closes a terminal tab before canvas panning can capture it", async ({ page }) => {
+  test.setTimeout(90_000);
+  const root = await mountIsolated(page);
+  await root.evaluate((canvas) => {
+    canvas.addEventListener("pointerdown", (event) => {
+      if (event.button === 1) canvas.setPointerCapture(event.pointerId);
+    });
+  });
+  const tabs = root.getByRole("tab");
+  await expect(tabs).toHaveCount(1);
+  const first = await tabs.first().getAttribute("data-terminal-tab");
+  await root.getByRole("button", { name: /^New tab/ }).click();
+  await expect(tabs).toHaveCount(2);
+  await tabs.first().click({ button: "middle" });
+  await expect(tabs).toHaveCount(1);
+  await expect(tabs.first()).not.toHaveAttribute("data-terminal-tab", first!);
+  await expect(tabs.first()).toHaveAttribute("aria-selected", "true");
+});
+
+test("pinned terminal folders open in an animated split or in a new tab", async ({ page }, info) => {
+  test.setTimeout(90_000);
+  const folder = info.outputPath("Terminal bookmarks fixture", "Pinned project");
+  await mkdir(folder, { recursive: true });
+  const root = await mountIsolated(page);
+  await page.evaluate(() => {
+    const animate = HTMLElement.prototype.animate;
+    const animated: string[] = [];
+    (window as any).animatedTerminalPanes = animated;
+    HTMLElement.prototype.animate = function (...args) {
+      if (this.dataset.terminalPane) animated.push(this.dataset.terminalPane);
+      return animate.apply(this, args);
+    };
+  });
+  const layout = () => page.evaluate(() => JSON.parse((window as any).terminalFixture.state.layout));
+  const expectSplit = async (dir: "row" | "column", path?: string) => {
+    const { active, tabs } = await layout();
+    const tab = tabs.find((tab: any) => tab.id === active);
+    const findSplit = (node: any): any => node.type === "split"
+      ? (node.b.id === tab.focus ? node : findSplit(node.b) ?? findSplit(node.a))
+      : undefined;
+    const node = findSplit(tab.root);
+    expect(node.dir).toBe(dir);
+    if (path) expect(node.b.cwd).toBe(path);
+    await expect.poll(() => page.evaluate(() => (window as any).animatedTerminalPanes.slice()))
+      .toContain(tab.focus);
+  };
+
+  await root.getByRole("button", { name: "Split right", exact: true }).click();
+  await expectSplit("row");
+  await root.getByRole("button", { name: "Split down", exact: true }).click();
+  await expectSplit("column");
+
+  await root.getByRole("button", { name: "Pinned folders", exact: true }).click();
+  const pins = root.getByRole("region", { name: "Pinned folders" });
+  const input = pins.getByRole("textbox", { name: "Folder path" });
+  await input.fill(folder);
+  await input.press("Enter");
+  const bookmark = pins.getByRole("button", { name: "Open Pinned project", exact: true });
+  await expect(bookmark).toBeVisible();
+  expect((await layout()).bookmarks).toEqual([folder]);
+  const search = pins.getByRole("textbox", { name: "Search pinned folders" });
+  await expect(bookmark).toHaveAttribute("title", folder);
+  await search.fill("pINNED Proj");
+  await expect(bookmark).toBeVisible();
+  await search.fill("does not exist");
+  await expect(bookmark).toHaveCount(0);
+  await expect(pins.getByText("No matching folders.")).toBeVisible();
+  await search.fill("bookmarks fixture");
+  await expect(bookmark).toBeVisible();
+  await search.press("Escape");
+  await expect(search).toHaveValue("");
+  const checkedFolder = page.waitForResponse((response) =>
+    response.url().endsWith("/__orvane/files/directory"));
+  await bookmark.click();
+  expect((await checkedFolder).ok()).toBe(true);
+  await expect(root.locator(".terminal-pane:visible")).toHaveCount(4);
+  await expectSplit("row", folder);
+  await expect(root.getByRole("tab")).toHaveCount(1);
+
+  const screenshot = info.outputPath("terminal-pinned-folders.png");
+  await page.setViewportSize({ width: 720, height: 500 });
+  await root.locator(".terminal-view").screenshot({ path: screenshot });
+  await page.evaluate(async () => {
+    const fixture = (window as any).terminalFixture;
+    const saved = fixture.state.layout;
+    fixture.unmount();
+    const module = "/tests/terminal-performance-harness.ts";
+    (window as any).terminalFixture = (await import(module)).mountTerminalFixture(1, true, saved);
+  });
+  await root.getByRole("button", { name: "Pinned folders", exact: true }).click();
+  await expect(bookmark).toBeVisible();
+  await bookmark.click({ button: "middle" });
+  await expect(root.getByRole("tab", { name: "Pinned project" })).toHaveAttribute("aria-selected", "true");
+  const opened = await layout();
+  expect(opened.tabs.find((tab: any) => tab.id === opened.active).root.cwd).toBe(folder);
+  await pins.getByRole("button", { name: "Unpin Pinned project", exact: true }).click();
+  await expect(bookmark).toHaveCount(0);
+  expect((await layout()).bookmarks).toEqual([]);
+  const pane = opened.tabs.find((tab: any) => tab.id === opened.active).focus;
+  await root.getByRole("button", { name: "Pinned folders", exact: true }).click();
+  await page.evaluate(({ pane, folder }) => (window as any).terminalFixture.pin(pane, folder), { pane, folder });
+  await expect(bookmark).toBeVisible();
+  expect((await layout()).bookmarks).toEqual([folder]);
+});
+
 test("moving a split pane previews the layout without resizing or replaying live shells", async ({ page }, info) => {
-  const root = await mount(page, 1);
+  const root = await mountIsolated(page);
   const fixture = () => page.evaluate(() => {
     const f = (window as any).terminalFixture;
     return { xterms: f.xterms, attached: f.attached.slice(), opened: f.opened.slice(), resizes: f.resizes.length };
@@ -286,26 +392,27 @@ test("moving a split pane previews the layout without resizing or replaying live
   const source = root.locator(`[data-terminal-pane="${moved}"]`);
   const target = root.locator(`[data-terminal-pane="${opened[2]}"]`);
   const bounds = (await target.boundingBox())!;
+  const area = (await root.locator(".terminal-tab-body:visible").boundingBox())!;
   const originalSource = (await source.boundingBox())!;
   const before = await fixture();
   const destination = root.locator(".terminal-split-preview-frame.destination");
-  const guide = root.locator(".terminal-drop-guide");
+  const targetCenterY = bounds.y + bounds.height / 2;
+  // Inside the old center dead zone, on the right of the expanded tile's center.
+  const nearCenterX = area.x + area.width * 0.7;
   await page.keyboard.down("Shift");
   try {
     await source.hover();
     await page.mouse.down();
-    await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2, { steps: 10 });
-    await expect(guide.locator(".terminal-drop-marker")).toHaveCount(4);
-    await expect(guide.locator(".selected")).toHaveCount(0);
-    await expect(destination).toHaveCount(0);
-    await page.mouse.move(bounds.x + bounds.width - 20, bounds.y + bounds.height / 2, { steps: 10 });
+    await page.mouse.move(nearCenterX, targetCenterY, { steps: 10 });
+    await expect(destination).toBeVisible();
+    await expect(root.locator(".terminal-drop-marker")).toHaveCount(0);
     await expect(source).toHaveClass(/terminal-pane-lifted/);
     expect((await source.boundingBox())!.width).toBeLessThanOrEqual(361);
-    await expect(guide.locator(".right.selected")).toBeVisible();
-    await expect(destination).toBeVisible();
+    await expect.poll(async () => (await destination.boundingBox())!.x).toBeGreaterThan(area.x + area.width / 2);
     const right = (await destination.boundingBox())!;
-    await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + 10, { steps: 5 });
-    await expect(guide.locator(".top.selected")).toBeVisible();
+    expect(right.x).toBeLessThan(nearCenterX);
+    // The former source area is now occupied by the expanded split.
+    await page.mouse.move(area.x + area.width * 0.4, bounds.y + bounds.height * 0.25, { steps: 5 });
     await expect.poll(async () => (await destination.boundingBox())!.width).toBeGreaterThan(right.width + 20);
     await expect.poll(async () => (await target.boundingBox())!.y).toBeGreaterThan(bounds.y + 20);
     expect(await fixture()).toEqual(before);
@@ -315,7 +422,6 @@ test("moving a split pane previews the layout without resizing or replaying live
     await page.keyboard.press("Escape");
     await page.mouse.up();
     await expect(destination).toHaveCount(0);
-    await expect(guide).toHaveCount(0);
     await expect(source).not.toHaveClass(/terminal-pane-lifted/);
     expect((await source.boundingBox())!.x).toBeCloseTo(originalSource.x, 0);
     expect(await fixture()).toEqual(before);
@@ -325,7 +431,7 @@ test("moving a split pane previews the layout without resizing or replaying live
   // The grip uses the same preview and commits the previewed geometry.
   await source.getByRole("button", { name: "Drag pane", exact: true }).hover();
   await page.mouse.down();
-  await page.mouse.move(bounds.x + bounds.width - 20, bounds.y + bounds.height / 2, { steps: 10 });
+  await page.mouse.move(nearCenterX, targetCenterY, { steps: 10 });
   await expect(destination).toBeVisible();
   await destination.evaluate(async (element) => {
     await Promise.all(element.getAnimations().map((animation) => animation.finished));
@@ -346,6 +452,30 @@ test("moving a split pane previews the layout without resizing or replaying live
   await expect.poll(() => page.evaluate(() => (window as any).terminalFixture.calls.length)).toBe(1);
   await page.evaluate(() => (window as any).terminalFixture.complete(0, "moved output"));
   await expect(source.locator(".xterm-rows")).toContainText("moved output");
+});
+
+test("the pane close button removes only its split and leaves the tab open", async ({ page }) => {
+  test.setTimeout(90_000);
+  const root = await mountIsolated(page);
+  const panes = root.locator(".terminal-pane:visible");
+  const close = (pane: typeof panes) => pane.getByRole("button", { name: "Close pane", exact: true });
+  await expect(close(panes)).toHaveCount(0);
+  await root.getByRole("button", { name: "Split right", exact: true }).click();
+  await root.getByRole("button", { name: "Split down", exact: true }).click();
+  await expect(panes).toHaveCount(3);
+  const ids = await panes.evaluateAll((elements) => elements.map((element) => element.getAttribute("data-terminal-pane")));
+
+  await close(panes.first()).click();
+  await expect(panes).toHaveCount(2);
+  await expect(panes.last()).toHaveClass(/focused/);
+  await expect(panes.last()).toHaveAttribute("data-terminal-pane", ids[2]!);
+
+  await close(panes.last()).press("Enter");
+  await expect(panes).toHaveCount(1);
+  await expect(panes.first()).toHaveAttribute("data-terminal-pane", ids[1]!);
+  await expect(root.getByRole("tab")).toHaveCount(1);
+  await expect(close(panes)).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).terminalFixture.killed)).toEqual([ids[0], ids[2]]);
 });
 
 test("a shell exiting successfully keeps its split and can restart in place", async ({ page }) => {
@@ -471,6 +601,47 @@ test("shrinking and expanding a split preserves output on the cursor line", asyn
   await moveDivider(450);
   await expect.poll(width).toBeGreaterThan(initialWidth - 20);
   await expect(pane.locator(".xterm-rows > div").filter({ hasText: output })).toHaveCount(1);
+});
+
+test("selected PowerShell input stays readable above its highlight", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.route("**/__orvane/terminal/profiles", (route) =>
+    route.fulfill({
+      json: { profiles: [{ id: "fixture", name: "PowerShell", kind: "powershell", source: "detected" }] },
+    }),
+  );
+  const root = await mountIsolated(page);
+  const host = root.locator(".terminal-scroll.powershell .terminal-host");
+  await host.evaluate((element) =>
+    (window as any).terminalFixture.write(element, "PS C:\\fixture> SELECTED"),
+  );
+  const prompt = host.locator(".xterm-rows > div").filter({ hasText: "SELECTED" });
+  const bounds = (await prompt.locator("span").filter({ hasText: "PS C:" }).first().boundingBox())!;
+  const y = bounds.y + bounds.height / 2;
+  await page.mouse.move(bounds.x + 1, y);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width - 1, y, { steps: 8 });
+  await page.mouse.up();
+  const letters = prompt.locator(".xterm-decoration-top").filter({ hasText: "PS C:" });
+  await expect(letters).toBeVisible();
+  const screenshot = await letters.screenshot();
+  const inkPixels = await page.evaluate(async (encoded) => {
+    const image = new Image();
+    image.src = "data:image/png;base64," + encoded;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(image, 0, 0);
+    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let count = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i]! < 100 && pixels[i + 1]! < 100 && pixels[i + 2]! < 110) count++;
+    }
+    return count;
+  }, screenshot.toString("base64"));
+  expect(inkPixels).toBeGreaterThan(10);
 });
 
 test("horizontal PowerShell scroll moves output and keeps the input line in place", async ({ page }) => {

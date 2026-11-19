@@ -55,7 +55,11 @@ async function seed(
   }, w);
   await page.goto("/");
 }
-async function graph(page: import("@playwright/test").Page, count = 3) {
+async function graph(
+  page: import("@playwright/test").Page,
+  count = 3,
+  timeout?: number,
+) {
   await page.getByRole("button", { name: "Build app", exact: true }).click();
   await page
     .locator(".tree-select")
@@ -64,8 +68,66 @@ async function graph(page: import("@playwright/test").Page, count = 3) {
   await page
     .getByRole("button", { name: "Expand to graph", exact: true })
     .click();
-  await expect(page.locator(".vue-flow__node")).toHaveCount(count);
+  await expect(page.locator(".vue-flow__node")).toHaveCount(count, { timeout });
 }
+
+test("dropping a new wire on empty graph space inserts and connects the chosen node", async ({
+  page,
+}) => {
+  const { w, button } = fixture();
+  await seed(page, w);
+  await graph(page, 3, 30000);
+  await expect(page.locator(".node-workspace")).toHaveAttribute(
+    "data-ready",
+    "true",
+  );
+  await expect(page.locator(".node-workspace")).toHaveCSS("transform", "none");
+  const stage = page.locator(".node-stage");
+  const menu = stage.locator(".node-add-menu");
+  const trigger = stage.locator('[data-id="trigger"] .vue-flow__handle.source');
+  await expect(trigger).toBeVisible();
+  const origin = (await trigger.boundingBox())!;
+  const drop = await stage.evaluate((stage) => {
+    const rect = stage.getBoundingClientRect();
+    for (const row of [0.7, 0.5, 0.2]) {
+      for (const column of [0.5, 0.3, 0.7]) {
+        const x = rect.left + rect.width * column;
+        const y = rect.top + rect.height * row;
+        if (document.elementFromPoint(x, y)?.matches(".vue-flow__pane"))
+          return { x, y };
+      }
+    }
+    throw Error("No empty space in the graph");
+  });
+  await page.mouse.move(
+    origin.x + origin.width / 2,
+    origin.y + origin.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(drop.x, drop.y, { steps: 8 });
+  await page.mouse.up();
+  await expect(menu).toBeVisible();
+  await menu.getByRole("button", { name: "Show message", exact: true }).click();
+  await expect(menu).toBeHidden();
+  const inserted = stage.locator(".vue-flow__node").filter({
+    has: page.getByRole("textbox", { name: "Message", exact: true }),
+  });
+  await expect(inserted).toBeVisible();
+  const bounds = (await inserted.boundingBox())!;
+  expect(Math.abs(bounds.x - drop.x)).toBeLessThan(3);
+  expect(Math.abs(bounds.y - drop.y)).toBeLessThan(3);
+  const id = await inserted.getAttribute("data-id");
+  await expect
+    .poll(async () => {
+      const saved = (await readStored(page)).apps[0]?.blocks.find(
+        (block) => block.id === button.id,
+      );
+      return saved?.graph?.edges.some(
+        (edge) => edge.source === "trigger" && edge.target === id,
+      );
+    })
+    .toBe(true);
+});
 
 test("app headers drag directly and titles are editable only in Build mode", async ({
   page,

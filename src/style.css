@@ -309,6 +309,10 @@ button:hover {
   -webkit-app-region: drag;
   user-select: none;
 }
+.frameless .wordmark.restore-drag {
+  -webkit-app-region: no-drag;
+}
+.window-size,
 .window-close {
   color: #556c7a;
   margin-left: -8px;

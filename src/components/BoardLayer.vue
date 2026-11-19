@@ -1,6 +1,5 @@
 <script setup lang="ts">
-// Board items in canvas coordinates, beneath the apps: arrows, freehand
-// strokes and sticky notes. Lives inside the transformed canvas plane.
+// Arrows, freehand strokes and sticky notes in the transformed canvas plane.
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import Icon from "./Icon.vue";
 import CustomSelect from "./CustomSelect.vue";
@@ -21,6 +20,7 @@ const props = defineProps<{
   editable: boolean;
   selected: string;
   editNote: string;
+  stackLevel: (id: string) => number | undefined;
 }>();
 const emit = defineEmits<{
   select: [id: string];
@@ -44,6 +44,11 @@ function pick(id: string, event: Event) {
   if (props.tool !== "select") return;
   event.stopPropagation();
   emit("select", id);
+}
+function pickNoteControl(id: string, event: PointerEvent) {
+  if (event.button === 1) return;
+  event.stopPropagation();
+  if (event.button === 0 && props.tool === "select") emit("select", id);
 }
 
 // ---- Sticky notes: drag by the top strip, resize from the corner ----
@@ -257,8 +262,8 @@ function commitLabel() {
     class="board-note"
     :class="{ selected: selected === note.id, erasing: tool === 'eraser' }"
     :data-note-id="note.id"
-    :style="{ left: note.x + 'px', top: note.y + 'px', width: note.width + 'px', height: note.height + 'px', background: note.color }"
-    @pointerdown="$event.button === 0 && (tool === 'eraser' ? emit('erase', note.id) : tool === 'select' && ($event.stopPropagation(), emit('select', note.id)))"
+    :style="{ left: note.x + 'px', top: note.y + 'px', width: note.width + 'px', height: note.height + 'px', background: note.color, zIndex: stackLevel(note.id) }"
+    @pointerdown="pick(note.id, $event)"
     @dblclick.stop="startEdit(note.id)"
     @dragover="noteDragOver($event, note.id)"
     @dragleave="dropNote === note.id && (dropNote = '')"
@@ -294,7 +299,7 @@ function commitLabel() {
       maxlength="20000"
       @keydown.stop
       @keydown.esc="emit('editNote', '')"
-      @pointerdown="$event.button !== 1 && $event.stopPropagation()"
+      @pointerdown="pickNoteControl(note.id, $event)"
       @blur="emit('editNote', '')"
     ></textarea>
     <div v-else class="board-note-text read" :class="{ empty: !note.text }">{{ note.text || "Double-click to write" }}</div>
@@ -304,7 +309,7 @@ function commitLabel() {
         class="board-note-link-open"
         :title="note.link.target"
         :aria-label="`Open ${note.link.label}`"
-        @pointerdown="$event.button !== 1 && $event.stopPropagation()"
+        @pointerdown="pickNoteControl(note.id, $event)"
         @dblclick.stop
         @click="emit('openLink', note.link)"
       >
@@ -316,7 +321,7 @@ function commitLabel() {
         class="board-note-unlink"
         title="Remove link"
         aria-label="Remove link"
-        @pointerdown="$event.button !== 1 && $event.stopPropagation()"
+        @pointerdown="pickNoteControl(note.id, $event)"
         @click="delete note.link"
       >
         <Icon name="unlink" :size="11" />

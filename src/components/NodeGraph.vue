@@ -65,6 +65,11 @@ const notice = ref(""),
   selectedEdge = ref("");
 const addTrigger = ref<HTMLButtonElement>();
 const addMenu = ref<HTMLDivElement>();
+const wireDrop = shallowRef<{
+  from: ReturnType<typeof handleDetails>;
+  position: { x: number; y: number };
+  style: { left: string; top: string; right: string; maxHeight: string };
+}>();
 const ready = ref(false);
 const connectionsOpen = ref(false);
 const connectionsButton = ref<HTMLButtonElement>();
@@ -90,6 +95,7 @@ async function prepareGraph() {
 }
 function closeAddMenu() {
   addOpen.value = false;
+  wireDrop.value = undefined;
 }
 function outsideAddMenu(event: PointerEvent) {
   if (!addOpen.value) return;
@@ -268,7 +274,14 @@ function viewportPoint(clientX: number, clientY: number) {
   };
 }
 let wireDrag:
-  { pointerId: number; handle: HTMLElement; edgeId?: string } | undefined;
+  | {
+      pointerId: number;
+      handle: HTMLElement;
+      edgeId?: string;
+      x: number;
+      y: number;
+    }
+  | undefined;
 function handleDetails(handle: HTMLElement) {
   return {
     nodeId: handle.dataset.nodeid!,
@@ -302,7 +315,13 @@ function startWire(event: PointerEvent) {
   event.preventDefault();
   event.stopPropagation();
   measureSockets(handle.dataset.nodeid!);
-  wireDrag = { pointerId: event.pointerId, handle, edgeId };
+  wireDrag = {
+    pointerId: event.pointerId,
+    handle,
+    edgeId,
+    x: event.clientX,
+    y: event.clientY,
+  };
   const point = viewportPoint(event.clientX, event.clientY);
   startConnection({ ...handleDetails(handle), ...point }, point);
   document.addEventListener("pointermove", moveWire, true);
@@ -347,11 +366,32 @@ function finishWire(event: PointerEvent) {
   event.preventDefault();
   event.stopPropagation();
   const candidate = wireTarget(event),
-    edgeId = wireDrag.edgeId;
+    { edgeId, handle, x, y } = wireDrag;
   cancelWire();
   if (candidate) {
     if (edgeId) replaceWire(edgeId, candidate.connection);
     else connect(candidate.connection);
+  } else if (!edgeId && Math.hypot(event.clientX - x, event.clientY - y) >= 4) {
+    const flow = vueFlowRef.value;
+    const hit = document.elementFromPoint(event.clientX, event.clientY);
+    if (!flow || !hit?.matches(".vue-flow__pane") || !flow.contains(hit))
+      return;
+    const point = viewportPoint(event.clientX, event.clientY);
+    const top = Math.max(8, Math.min(point.y, flow.clientHeight - 260));
+    wireDrop.value = {
+      from: handleDetails(handle),
+      position: graphPoint(point),
+      style: {
+        left: `${Math.max(8, Math.min(point.x, flow.clientWidth - 198))}px`,
+        top: `${top}px`,
+        right: "auto",
+        maxHeight: `${flow.clientHeight - top - 8}px`,
+      },
+    };
+    addOpen.value = true;
+    nextTick(() =>
+      addMenu.value?.querySelector("button")?.focus({ preventScroll: true }),
+    );
   }
 }
 function cancelWire() {
@@ -438,24 +478,52 @@ function remove(id: string) {
   );
   delete graph.value.positions[id];
 }
+function graphPoint(point: { x: number; y: number }) {
+  const { x, y, zoom } = viewport.value;
+  return { x: (point.x - x) / zoom, y: (point.y - y) / zoom };
+}
 function add(action: ActionKind) {
+  const drop = wireDrop.value;
+  closeAddMenu();
+  if (
+    drop &&
+    drop.from.nodeId !== "trigger" &&
+    !props.block.rules.some((rule) => rule.id === drop.from.nodeId)
+  )
+    return;
   commitGraph();
   const rule: Rule = { id: uid(), action, target: "", appId: "", value: "" };
   props.block.rules.push(rule);
+  if (drop) {
+    graph.value.positions[rule.id] = drop.position;
+    const { from } = drop;
+    connect(
+      from.type === "source"
+        ? {
+            source: from.nodeId,
+            sourceHandle: from.id,
+            target: rule.id,
+            targetHandle: null,
+          }
+        : {
+            source: rule.id,
+            sourceHandle: null,
+            target: from.nodeId,
+            targetHandle: from.id,
+          },
+    );
+    return;
+  }
   const bounds = document
     .querySelector(`[data-flow-id="${flowId}"]`)
     ?.getBoundingClientRect();
   graph.value.positions[rule.id] = bounds
-    ? (() => {
-        const point = viewportPoint(
+    ? graphPoint(
+        viewportPoint(
           bounds.x + bounds.width * 0.5,
           bounds.y + bounds.height * 0.4,
-        );
-        return {
-          x: (point.x - viewport.value.x) / viewport.value.zoom,
-          y: (point.y - viewport.value.y) / viewport.value.zoom,
-        };
-      })()
+        ),
+      )
     : { x: 320, y: 100 };
   const position = graph.value.positions[rule.id]!;
   while (
@@ -466,7 +534,6 @@ function add(action: ActionKind) {
     )
   )
     position.y += 260;
-  addOpen.value = false;
   nextTick(() => {
     sync();
     requestAnimationFrame(() =>
@@ -544,7 +611,7 @@ function disconnectInput(id: string) {
           ref="addTrigger"
           class="subtle-button"
           :aria-expanded="addOpen"
-          @click="addOpen = !addOpen"
+          @click="addOpen ? closeAddMenu() : (addOpen = true)"
         >
           <Icon name="plus" :size="13" />Add node
         </button>
@@ -714,7 +781,10 @@ function disconnectInput(id: string) {
         v-if="addOpen"
         ref="addMenu"
         class="node-add-menu floating-panel"
+        :class="{ 'node-add-menu-at-drop': wireDrop }"
+        :style="wireDrop?.style"
         v-motion="{ kind: 'popover' }"
+        @wheel.stop
       >
         <span>Add an action</span
         ><button v-for="a in actions" :key="a.value" @click="add(a.value)">

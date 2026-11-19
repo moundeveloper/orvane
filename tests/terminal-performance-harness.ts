@@ -7,7 +7,7 @@ import { makeBlock } from "../src/model";
 import { terminal as client, type SessionListener } from "../src/terminalClient";
 import "../src/components/projects/projects.css";
 
-export function mountTerminalFixture(count = 50, open = true) {
+export function mountTerminalFixture(count = 50, open = true, layout?: string) {
   const terminals: { host: HTMLElement; terminal: Terminal }[] = [];
   let fits = 0;
   let changes = 0;
@@ -69,6 +69,7 @@ export function mountTerminalFixture(count = 50, open = true) {
     isOpen: open,
     isMaximized: false,
     height: 230,
+    layout,
     activeCwd: paths[0],
     tabs: paths.map((cwd) => ({ cwd, title: cwd.split("\\").at(-1)! })),
   };
@@ -107,6 +108,9 @@ export function mountTerminalFixture(count = 50, open = true) {
     killed,
     attached,
     resizes,
+    pin(paneId: string, path: string) {
+      sessions.get(paneId)?.listener?.pin(path);
+    },
     get xterms() {
       return terminals.length;
     },

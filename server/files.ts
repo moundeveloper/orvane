@@ -428,6 +428,11 @@ export function createFilesService(directory: string) {
   const operations: Record<string, (args: Record<string, unknown>) => Promise<unknown> | unknown> = {
     roots: () => ({ token, home: homedir(), separator: sep, platform: platform(), places: places(), drives: drives() }),
     list: (a) => list(absolute(a.path)),
+    directory: async (a) => {
+      const path = absolute(a.path);
+      if (!(await stat(path)).isDirectory()) throw new Error("Select an existing folder.");
+      return { path };
+    },
     preview: (a) => preview(absolute(a.path)),
     mkdir: async (a) => {
       const path = await unique(absolute(a.path), validName(a.name));

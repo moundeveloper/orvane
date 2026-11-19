@@ -23,6 +23,7 @@ const props = defineProps<{
   modelValue?: T;
   options?: Option[];
   placeholder?: string;
+  searchLabel?: string;
   inline?: boolean;
   teleportTo?: HTMLElement;
 }>();
@@ -30,6 +31,9 @@ const emit = defineEmits<{ "update:modelValue": [value: T]; change: [] }>();
 const attrs = useAttrs(),
   trigger = ref<HTMLButtonElement>(),
   menu = ref<HTMLDivElement>(),
+  listbox = ref<HTMLDivElement>(),
+  search = ref<HTMLInputElement>(),
+  query = ref(""),
   open = ref(false),
   highlighted = ref(0);
 const slots = useSlots();
@@ -62,6 +66,12 @@ function collect(nodes: VNode[]): Option[] {
 const options = computed(
   () => props.options || collect(slots.default?.() || []),
 );
+const visibleOptions = computed(() => {
+  const term = query.value.trim().toLowerCase();
+  return term
+    ? options.value.filter((o) => o.label.toLowerCase().includes(term))
+    : options.value;
+});
 const position = ref({
   left: "0px",
   top: "0px",
@@ -85,7 +95,9 @@ function place() {
   // scale so it matches the app at any canvas zoom. CSS zoom also scales
   // left/top, so those are given in unzoomed pixels.
   const scale = r.width / (trigger.value.offsetWidth || r.width) || 1;
-  const height = Math.min(248, options.value.length * 32 + 10) * scale;
+  const height =
+    Math.min(248, options.value.length * 32 + (props.searchLabel ? 46 : 10)) *
+    scale;
   const below = innerHeight - r.bottom;
   // Under the trigger, as wide as it, but only its part inside the window
   // (a wide trigger can run past the edge when zoomed in).
@@ -143,20 +155,29 @@ function show() {
     return;
   }
   if (!props.inline) place();
+  query.value = "";
   open.value = true;
   highlighted.value = Math.max(
     0,
     options.value.findIndex((o) => o.value === props.modelValue),
   );
-  nextTick(() => menu.value?.focus({ preventScroll: true }));
+  nextTick(() =>
+    (search.value || listbox.value)?.focus({ preventScroll: true }),
+  );
 }
 function choose(index: number) {
-  const option = options.value[index];
+  const option = visibleOptions.value[index];
   if (!option || option.disabled) return;
   emit("update:modelValue", option.value as T);
   emit("change");
   open.value = false;
   trigger.value?.focus({ preventScroll: true });
+}
+function filter(event: Event) {
+  query.value = (event.target as HTMLInputElement).value;
+  highlighted.value = visibleOptions.value.findIndex(
+    (option) => !option.disabled,
+  );
 }
 function key(e: KeyboardEvent) {
   if (e.key === "Escape") {
@@ -171,6 +192,12 @@ function key(e: KeyboardEvent) {
     open.value = false;
     return;
   }
+  if (
+    search.value &&
+    e.target === search.value &&
+    !["ArrowDown", "ArrowUp", "Enter"].includes(e.key)
+  )
+    return;
   if (["ArrowDown", "ArrowUp", "Home", "End", "Enter", " "].includes(e.key)) {
     e.preventDefault();
     if (!open.value) {
@@ -181,7 +208,8 @@ function key(e: KeyboardEvent) {
       choose(highlighted.value);
       return;
     }
-    const length = options.value.length;
+    const length = visibleOptions.value.length;
+    if (!length) return;
     highlighted.value =
       e.key === "Home"
         ? 0
@@ -242,35 +270,69 @@ onBeforeUnmount(() => {
   <Teleport :to="teleportTo || 'body'" :disabled="inline"
     ><div
       v-if="open"
-      :id="id"
       ref="menu"
       class="select-popover"
       v-motion="{ kind: 'popover' }"
-      role="listbox"
-      tabindex="-1"
-      :aria-label="String(attrs['aria-label'] || 'Options')"
       :style="inline ? undefined : position"
-      :aria-activedescendant="`${id}-${highlighted}`"
       @pointerdown.stop
       @keydown.stop="key"
       @wheel.stop
     >
-      <button
-        v-for="(option, index) in options"
-        :id="`${id}-${index}`"
-        :key="option.value"
-        type="button"
-        role="option"
-        :tabindex="inline ? -1 : undefined"
-        :aria-selected="option.value === modelValue"
-        :disabled="option.disabled"
-        :data-highlighted="highlighted === index"
-        @pointermove="highlighted = index"
-        @click="choose(index)"
+      <input
+        v-if="searchLabel"
+        ref="search"
+        type="text"
+        role="combobox"
+        class="select-search"
+        autocomplete="off"
+        :aria-label="searchLabel"
+        :placeholder="searchLabel"
+        aria-autocomplete="list"
+        aria-expanded="true"
+        :aria-controls="id"
+        :aria-activedescendant="
+          visibleOptions[highlighted] ? `${id}-${highlighted}` : undefined
+        "
+        :value="query"
+        @input="filter"
+      />
+      <div
+        v-if="searchLabel && !visibleOptions.length"
+        class="select-no-results"
+        role="status"
       >
-        <Icon v-if="option.icon" :name="option.icon" :size="14" />
-        <span>{{ option.label }}</span
-        ><Icon v-if="option.value === modelValue" name="check" :size="12" />
-      </button></div
+        No matches
+      </div>
+      <div
+        :id="id"
+        ref="listbox"
+        class="select-options"
+        role="listbox"
+        tabindex="-1"
+        :aria-label="String(attrs['aria-label'] || 'Options')"
+        :aria-activedescendant="
+          !searchLabel && visibleOptions[highlighted]
+            ? `${id}-${highlighted}`
+            : undefined
+        "
+      >
+        <button
+          v-for="(option, index) in visibleOptions"
+          :id="`${id}-${index}`"
+          :key="option.value"
+          type="button"
+          role="option"
+          :tabindex="inline || searchLabel ? -1 : undefined"
+          :aria-selected="option.value === modelValue"
+          :disabled="option.disabled"
+          :data-highlighted="highlighted === index"
+          @pointermove="highlighted = index"
+          @click="choose(index)"
+        >
+          <Icon v-if="option.icon" :name="option.icon" :size="14" />
+          <span>{{ option.label }}</span
+          ><Icon v-if="option.value === modelValue" name="check" :size="12" />
+        </button>
+      </div></div
   ></Teleport>
 </template>

@@ -57,13 +57,17 @@ import {
   type NoteLink,
 } from "./model";
 const STORAGE = LEGACY_STORAGE;
-// Desktop shell without a system title bar: the top bar is the drag area
-// and carries the close button.
+// Desktop window controls for the frameless top bar.
 const desktopWindow = (
   window as unknown as {
     orvaneDesktop?: {
       frameless?: boolean;
       closeWindow?: () => void;
+      isWindowMaximized?: () => Promise<boolean>;
+      toggleWindowMaximized?: () => Promise<void>;
+      onWindowMaximized?: (callback: (maximized: boolean) => void) => () => void;
+      canRestoreByDrag?: boolean;
+      dragWindow?: (phase: "start" | "move" | "end") => void;
       readInboxClipboard?: () => Promise<ClipboardCapture | null>;
       onInboxCapture?: (callback: () => void) => () => void;
       displays?: () => Promise<
@@ -76,6 +80,25 @@ const desktopWindow = (
   }
 ).orvaneDesktop;
 const frameless = !!desktopWindow?.frameless && !!desktopWindow.closeWindow;
+const windowMaximized = ref(false);
+const windowDragPointer = ref<number>();
+const restoreDrag = computed(() =>
+  desktopWindow?.canRestoreByDrag && (windowMaximized.value || windowDragPointer.value !== undefined));
+let stopWindowMaximized: (() => void) | undefined;
+function beginWindowDrag(event: PointerEvent) {
+  if (!restoreDrag.value || event.button !== 0 || windowDragPointer.value !== undefined) return;
+  windowDragPointer.value = event.pointerId;
+  (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  desktopWindow?.dragWindow?.("start");
+}
+function moveWindowDrag(event: PointerEvent) {
+  if (event.pointerId === windowDragPointer.value) desktopWindow?.dragWindow?.("move");
+}
+function endWindowDrag(event?: Event) {
+  if (windowDragPointer.value === undefined || (event instanceof PointerEvent && event.pointerId !== windowDragPointer.value)) return;
+  windowDragPointer.value = undefined;
+  desktopWindow?.dragWindow?.("end");
+}
 // The monitor Orvane opens on, chosen in Workspace options.
 const displays = ref<{ value: string; label: string }[]>([]),
   displayChoice = ref("");
@@ -98,6 +121,14 @@ const actionStudio = ref(false),
   studioActionId = ref(""),
   studioWheelEntry = ref(""),
   actionNotice = ref("");
+watch(
+  () => !actionStudio.value && actionNotice.value,
+  (notice, _, onCleanup) => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => (actionNotice.value = ""), 3000);
+    onCleanup(() => clearTimeout(timeout));
+  },
+);
 const actionRunning = ref(false);
 const studioOrigin = ref<{
   x: number;
@@ -318,14 +349,22 @@ provide(workbenchEditable, () => canEdit.value && !importBusy.value);
 const active = ref(""),
   camera = reactive({ x: 0, y: 0, zoom: 1 }),
   movingCamera = ref(false);
-// Front-to-back order: each app activated moves to the top of the stack;
-// the rest keep their relative order.
+// Apps and sticky notes share the canvas stacking order.
 const stack = ref<string[]>([]);
-watch(active, (id) => {
-  if (!id) return;
-  stack.value = [...stack.value.filter((other) => other !== id), id];
-});
-const stackLevel = (id: string) => stack.value.indexOf(id) + 2;
+function raiseCanvasItem(kind: "app" | "note", id: string) {
+  const key = `${kind}:${id}`;
+  if (stack.value.at(-1) === key) return;
+  stack.value = [...stack.value.filter((other) => other !== key), key];
+}
+function activateApp(id: string) {
+  active.value = id;
+  raiseCanvasItem("app", id);
+}
+function stackLevel(kind: "app" | "note", id: string) {
+  const index = stack.value.indexOf(`${kind}:${id}`);
+  return index < 0 ? undefined : index + 2;
+}
+const noteStackLevel = (id: string) => stackLevel("note", id);
 // ---- Focus mode: one app fills the window between the top bar and dock ----
 // Only how the app is drawn changes: its saved position and size stay as
 // they are, and the canvas view comes back exactly as it was.
@@ -361,7 +400,7 @@ function enterFocus(app: CanvasApp) {
   stopZoom();
   const saved = focused.value?.camera ?? { x: camera.x, y: camera.y, zoom: camera.zoom };
   mountedApps.add(app.id);
-  active.value = app.id;
+  activateApp(app.id);
   canvasScroll.owner = app.id;
   panel.value = null;
   focused.value = { id: app.id, camera: saved, rect: focusArea() };
@@ -740,7 +779,7 @@ function createApp() {
   workspace.apps.push(a);
   void offerHint("move");
   createdAppId.value = a.id;
-  active.value = a.id;
+  activateApp(a.id);
   panel.value = null;
 }
 let panFrame = 0;
@@ -889,8 +928,12 @@ watch(boardTool, (tool) => {
   if (tool !== "select" && canEdit.value) ensureBoard(workspace);
   if (tool !== "select") boardSelected.value = "";
 });
-function boardCreated(id: string, kind: "note" | "arrow" | "stroke") {
+function selectBoardItem(id: string) {
   boardSelected.value = id;
+  if (boardView.value.notes.some((note) => note.id === id)) raiseCanvasItem("note", id);
+}
+function boardCreated(id: string, kind: "note" | "arrow" | "stroke") {
+  selectBoardItem(id);
   if (kind === "note") boardEditNote.value = id;
 }
 function eraseBoardItem(id: string) {
@@ -915,7 +958,7 @@ function addStickyNote(text = "", link?: NoteLink, point?: { x: number; y: numbe
     ...(link ? { link } : {}),
   };
   board.notes.push(note);
-  if (text) boardSelected.value = note.id;
+  if (text) selectBoardItem(note.id);
   else boardCreated(note.id, "note");
 }
 function stickyAtPointer() {
@@ -1597,7 +1640,7 @@ async function focusApp(a: CanvasApp, locate = false, alongside?: CanvasApp) {
   const sequence = navigationSequence;
   clearLocator();
   mountedApps.add(a.id);
-  active.value = a.id;
+  activateApp(a.id);
   panel.value = null;
   movingCamera.value = true;
   if (canEdit.value && !hint.value) await offerHint("dock");
@@ -1681,7 +1724,7 @@ function dismissOnBlur() {
   space.value = false;
   if (gesture || dragging.value) pointerUp();
   wheelOpen.value = false;
-  wheelTabHeld = false;
+  wheelKeyHeld = false;
 }
 function visibilityChanged() {
   if (document.hidden) {
@@ -1889,7 +1932,7 @@ function pointerDown(e: PointerEvent, app?: CanvasApp, edge = "") {
   const panning = e.button === 1 || space.value;
   if (panning) edge = "";
   // Panning only moves the view; it never brings an app to the front.
-  if (app && !panning) active.value = app.id;
+  if (app && !panning) activateApp(app.id);
   const target = e.target as HTMLElement;
   const headerDrag =
     !!app &&
@@ -1901,7 +1944,6 @@ function pointerDown(e: PointerEvent, app?: CanvasApp, edge = "") {
     !!app && !panning && e.button === 0 && (e.altKey || headerDrag);
   if ((moveApp || edge) && hint.value === "move") dismissHint();
   if (!edge && app && !moveApp && !space.value && e.button !== 1) {
-    active.value = app.id;
     return;
   }
   if (
@@ -2157,7 +2199,7 @@ function activatedApp(event: Event) {
   const appId = (event as CustomEvent<{ appId: string }>).detail?.appId;
   if (!appId || !apps.value.some((a) => a.id === appId)) return;
   canvasScroll.owner = appId;
-  active.value = appId;
+  activateApp(appId);
 }
 onBeforeUnmount(() => clearTimeout(wheelPanTimer));
 function wheel(e: WheelEvent) {
@@ -2291,11 +2333,11 @@ function wheelConfigKeys(event: KeyboardEvent) {
     first?.focus();
   }
 }
-let wheelTabHeld = false;
-function captureWheelTab(e: KeyboardEvent) {
+let wheelKeyHeld = false;
+function captureWheelKey(e: KeyboardEvent) {
   // The wheel owns this entire key hold, including browser auto-repeat after
   // clicking a group or cancelling with Escape.
-  if (e.key === "Tab" && wheelTabHeld) {
+  if (e.code === "KeyQ" && wheelKeyHeld) {
     e.preventDefault();
     e.stopImmediatePropagation();
   }
@@ -2394,10 +2436,10 @@ function keydown(e: KeyboardEvent) {
     return;
   }
   if (
-    e.key === "Tab" &&
+    e.code === "KeyQ" &&
     !e.repeat &&
     !e.ctrlKey &&
-    !e.altKey &&
+    e.altKey &&
     !e.metaKey &&
     !e.shiftKey &&
     !panel.value &&
@@ -2409,7 +2451,7 @@ function keydown(e: KeyboardEvent) {
         e.target.classList.contains("canvas-background")))
   ) {
     e.preventDefault();
-    wheelTabHeld = true;
+    wheelKeyHeld = true;
     wheelParent.value = "";
     wheelOpen.value = true;
     return;
@@ -2488,9 +2530,10 @@ function keydown(e: KeyboardEvent) {
   }
 }
 const keyup = (e: KeyboardEvent) => {
-  if (e.key === "Tab") wheelTabHeld = false;
+  const releaseWheel = wheelKeyHeld && (e.code === "KeyQ" || e.key === "Alt");
+  if (e.code === "KeyQ") wheelKeyHeld = false;
   if (e.code === "Space") space.value = false;
-  if (e.key === "Tab" && wheelOpen.value) {
+  if (releaseWheel && wheelOpen.value) {
     e.preventDefault();
     const entry = wheelSelected.value;
     if (wheelCenterSelected.value) {
@@ -3179,7 +3222,7 @@ async function executeMcp(request: BridgeRequest, revision: string) {
         )
         .at(-1);
       if (created) {
-        active.value = created.id;
+        activateApp(created.id);
         createdAppId.value = created.id;
       }
       if (geometryApp.value)
@@ -3246,7 +3289,7 @@ async function run(app: CanvasApp, block: Block) {
   }
 }
 function focusIn(e: FocusEvent, app: CanvasApp) {
-  active.value = app.id;
+  activateApp(app.id);
   canvasScroll.owner = app.id;
   if (e.target instanceof HTMLElement && typing(e.target))
     lastFocus.set(app.id, e.target);
@@ -3292,6 +3335,10 @@ onMounted(() => {
   dockResize = new ResizeObserver(measureDock);
   if (dockTabs.value) dockResize.observe(dockTabs.value);
   if (dockMeasure.value) dockResize.observe(dockMeasure.value);
+  const setMaximized = (maximized: boolean) => { windowMaximized.value = maximized; };
+  stopWindowMaximized = desktopWindow?.onWindowMaximized?.(setMaximized);
+  void desktopWindow?.isWindowMaximized?.().then(setMaximized).catch(() => undefined);
+  window.addEventListener("blur", endWindowDrag);
   window.addEventListener("beforeunload", beforeUnload);
   window.addEventListener("blur", flushSave);
   window.addEventListener("pageshow", restorePage);
@@ -3307,7 +3354,7 @@ onMounted(() => {
   });
   document.addEventListener("visibilitychange", visibilityChanged);
   window.addEventListener("keydown", keydown);
-  window.addEventListener("keydown", captureWheelTab, true);
+  window.addEventListener("keydown", captureWheelKey, true);
   window.addEventListener("keyup", keyup);
   window.addEventListener("pointermove", trackWheelPointer);
   window.addEventListener("resize", resize);
@@ -3333,6 +3380,9 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   dockResize?.disconnect();
+  stopWindowMaximized?.();
+  window.removeEventListener("blur", endWindowDrag);
+  endWindowDrag();
   window.removeEventListener("beforeunload", beforeUnload);
   window.removeEventListener("blur", flushSave);
   window.removeEventListener("pageshow", restorePage);
@@ -3359,7 +3409,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("blur", dismissOnBlur);
   void persist().finally(() => store.close());
   window.removeEventListener("keydown", keydown);
-  window.removeEventListener("keydown", captureWheelTab, true);
+  window.removeEventListener("keydown", captureWheelKey, true);
   window.removeEventListener("keyup", keyup);
   window.removeEventListener("pointermove", trackWheelPointer);
   window.removeEventListener("resize", resize);
@@ -3420,6 +3470,7 @@ onBeforeUnmount(() => {
       v-if="actionStudio"
       :workspace="workspace"
       :initial-id="studioActionId"
+      :create-on-open="!!studioWheelEntry && !studioActionId"
       :writable="canEdit && !importBusy"
       :notice="actionNotice"
       :running="actionRunning"
@@ -3463,7 +3514,7 @@ onBeforeUnmount(() => {
           <Icon name="settings" :size="18" /><strong>Edit config</strong>
           <small>{{
             wheelCenterSelected
-              ? "Release Tab to edit"
+              ? "Release Alt+Q to edit"
               : wheelSelected?.name || "Point to select"
           }}</small>
           <small v-if="wheelParent">Right-click to go back</small>
@@ -3544,7 +3595,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <p class="field-help">
-          Hold Tab on the canvas. Point to an action and release. Click groups;
+          Hold Alt+Q on the canvas. Point to an action and release. Click groups;
           right-click to go back.
         </p>
         <button v-if="wheelParent" class="subtle-button" @click="wheelBack">
@@ -3565,6 +3616,7 @@ onBeforeUnmount(() => {
             v-model="entry.appId"
             :disabled="!canEdit"
             aria-label="Destination app"
+            search-label="Search apps"
             :options="apps.map((app) => ({ value: app.id, label: app.name }))"
             placeholder="Choose an app"
           />
@@ -3654,7 +3706,10 @@ onBeforeUnmount(() => {
     </div>
     <div class="topbar-frost" aria-hidden="true"></div>
     <header class="topbar" @pointerdown.stop>
-      <div class="wordmark">
+      <div class="wordmark" :class="{ 'restore-drag': restoreDrag }"
+        @pointerdown="beginWindowDrag" @pointermove="moveWindowDrag" @pointerup="endWindowDrag($event)"
+        @pointercancel="endWindowDrag($event)" @lostpointercapture="endWindowDrag($event)"
+        @dblclick="restoreDrag && desktopWindow?.toggleWindowMaximized?.()">
         <img src="/favicon.png" width="18" height="18" alt="" />
         <span>orvane</span><span class="workspace-label">Personal canvas</span>
       </div>
@@ -3697,6 +3752,16 @@ onBeforeUnmount(() => {
         >
           <Icon name="settings" /></button
         ><button
+          v-if="desktopWindow?.toggleWindowMaximized"
+          type="button"
+          class="icon-button window-size"
+          :aria-label="windowMaximized ? 'Restore Orvane window' : 'Maximize Orvane window'"
+          :title="windowMaximized ? 'Restore window' : 'Maximize window'"
+          @click="desktopWindow.toggleWindowMaximized()"
+        >
+          <Icon :name="windowMaximized ? 'shrink' : 'expand'" />
+        </button
+        ><button
           v-if="frameless"
           class="icon-button window-close"
           aria-label="Close Orvane"
@@ -3735,7 +3800,8 @@ onBeforeUnmount(() => {
         :editable="canEdit && !importBusy"
         :selected="boardSelected"
         :edit-note="boardEditNote"
-        @select="boardSelected = $event"
+        :stack-level="noteStackLevel"
+        @select="selectBoardItem"
         @erase="eraseBoardItem"
         @edit-note="boardEditNote = $event"
         @open-link="openNoteLink"
@@ -3800,7 +3866,7 @@ onBeforeUnmount(() => {
           top: app.y + 'px',
           width: (focused?.id === app.id ? focused.rect.width : app.width) + 'px',
           height: (focused?.id === app.id ? focused.rect.height : app.height) + 'px',
-          zIndex: focused?.id === app.id ? stack.length + 4 : stackLevel(app.id),
+          zIndex: focused?.id === app.id ? stack.length + 4 : (stackLevel('app', app.id) ?? 1),
         }"
         @pointerdown.stop="pointerDown($event, app)"
         @focusin="focusIn($event, app)"
