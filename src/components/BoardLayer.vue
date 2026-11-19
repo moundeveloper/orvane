@@ -1,9 +1,13 @@
 <script setup lang="ts">
 // Board items in canvas coordinates, beneath the apps: arrows, freehand
 // strokes and sticky notes. Lives inside the transformed canvas plane.
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import Icon from "./Icon.vue";
-import type { Board, CanvasApp, NoteLink } from "../model";
+import CustomSelect from "./CustomSelect.vue";
+import { uid, type Board, type CanvasApp, type NoteLink } from "../model";
+import { db } from "./notes/db";
+import { NOTES_WORKSPACE_CHANGED_EVENT } from "./notes/stores/workspace";
+import type { Page } from "./notes/types";
 import { arrowPoints, NOTE_COLORS, strokePath, type Tool } from "../board";
 import { DRAG_MIME } from "./files/explorer";
 import { PAGE_DRAG_MIME } from "../commands";
@@ -23,6 +27,7 @@ const emit = defineEmits<{
   erase: [id: string];
   editNote: [id: string];
   openLink: [link: NoteLink];
+  savedNote: [pageId: string];
 }>();
 const arrows = computed(() =>
   props.board.arrows.flatMap((arrow) => {
@@ -72,11 +77,69 @@ function cycleColor(note: Board["notes"][number]) {
   note.color = NOTE_COLORS[(NOTE_COLORS.indexOf(note.color) + 1) % NOTE_COLORS.length]!;
 }
 const textareas = ref<HTMLTextAreaElement[]>();
+watch(() => props.editNote, (id) => {
+  if (id) void nextTick(() => textareas.value?.find((textarea) => textarea.dataset.id === id)?.focus({ preventScroll: true }));
+}, { immediate: true, flush: "post" });
 function startEdit(id: string) {
   if (!props.editable) return;
   emit("editNote", id);
   void nextTick(() => textareas.value?.find((t) => t.dataset.id === id)?.focus());
 }
+
+const capture = ref<{ noteId: string; key: string; destination: string; pages: Page[]; loading: boolean; saving: boolean; error: string }>();
+let captureButton: HTMLButtonElement | undefined;
+function dismissCapture(restoreFocus = false) {
+  capture.value = undefined;
+  document.removeEventListener("pointerdown", captureOutside, true);
+  if (restoreFocus) captureButton?.focus({ preventScroll: true });
+  captureButton = undefined;
+}
+function captureOutside(event: PointerEvent) {
+  if (!(event.target as Element)?.closest(".sticky-save, .sticky-save-control, .select-popover")) dismissCapture();
+}
+async function openCapture(noteId: string, event: MouseEvent) {
+  if (capture.value?.noteId === noteId) return dismissCapture(true);
+  captureButton = event.currentTarget as HTMLButtonElement;
+  capture.value = { noteId, key: uid(), destination: "new", pages: [], loading: true, saving: false, error: "" };
+  const request = capture.value;
+  document.addEventListener("pointerdown", captureOutside, true);
+  try {
+    request.pages = (await db.pages.toArray()).filter((page) => page.type === "page" && !page.trashedAt);
+  } catch (error) {
+    request.error = error instanceof Error ? error.message : "Notes pages could not load.";
+  } finally {
+    request.loading = false;
+    if (capture.value === request) await nextTick(() => captureButton?.closest(".board-note")?.querySelector<HTMLButtonElement>(".sticky-save button")?.focus());
+  }
+}
+function pageLabel(page: Page, pages: Page[]) {
+  const titles = [page.title || "Untitled"];
+  const visited = new Set([page.id]);
+  let parent = pages.find((item) => item.id === page.parentId);
+  while (parent && !visited.has(parent.id)) {
+    visited.add(parent.id);
+    titles.unshift(parent.title || "Untitled");
+    parent = pages.find((item) => item.id === parent?.parentId);
+  }
+  return titles.join(" / ");
+}
+async function saveCapture(note: Board["notes"][number]) {
+  const request = capture.value;
+  if (!request || request.saving || !note.text.trim() || !props.editable) return;
+  request.saving = true;
+  try {
+    const existing = request.destination !== "new";
+    const { pageId } = await db.saveCapture(request.key, note.text, existing ? request.destination : undefined);
+    window.dispatchEvent(new CustomEvent(NOTES_WORKSPACE_CHANGED_EVENT, { detail: { source: "sticky-note", pages: !existing, blocksPageId: pageId } }));
+    if (capture.value === request) dismissCapture(true);
+    emit("savedNote", pageId);
+  } catch (error) {
+    request.error = error instanceof Error ? error.message : "The sticky note could not be saved.";
+  } finally {
+    request.saving = false;
+  }
+}
+onBeforeUnmount(() => dismissCapture());
 // ---- Links: drop a File Explorer item or a Browser tab on a note ----
 const dropNote = ref("");
 const linkable = (event: DragEvent) =>
@@ -204,6 +267,9 @@ function commitLabel() {
     <div v-if="dropNote === note.id" class="board-note-drop" aria-hidden="true">Link to this note</div>
     <div class="board-note-bar" @pointerdown="dragNote($event, note, 'move')">
       <template v-if="editable && selected === note.id">
+        <button type="button" class="sticky-save-control" title="Save to Notes" aria-label="Save to Notes" :aria-expanded="capture?.noteId === note.id" :disabled="!note.text.trim()" @pointerdown.stop @click="openCapture(note.id, $event)">
+          <Icon name="text" :size="12" />
+        </button>
         <button type="button" title="Change colour" aria-label="Change note colour" @pointerdown.stop @click="cycleColor(note)">
           <span class="board-swatch" :style="{ background: note.color }"></span>
         </button>
@@ -211,6 +277,11 @@ function commitLabel() {
           <Icon name="trash" :size="12" />
         </button>
       </template>
+    </div>
+    <div v-if="capture?.noteId === note.id" class="sticky-save select-popover" role="group" aria-label="Save sticky note to Notes" @pointerdown.stop @keydown.esc.stop.prevent="dismissCapture(true)">
+      <CustomSelect v-model="capture.destination" aria-label="Notes destination" :disabled="capture.loading || capture.saving" :options="[{ value: 'new', label: 'New Notes page' }, ...capture.pages.map((page) => ({ value: page.id, label: pageLabel(page, capture!.pages) }))]" />
+      <button type="button" class="subtle-button" :disabled="capture.loading || capture.saving" @click="saveCapture(note)">Save to Notes</button>
+      <p v-if="capture.error" class="field-help" role="status">{{ capture.error }}</p>
     </div>
     <textarea
       v-if="editNote === note.id"
@@ -330,6 +401,23 @@ function commitLabel() {
   border-radius: 3px;
   background: rgb(255 255 255 / 55%);
   color: #5d6a52;
+}
+.board-note-bar button:disabled {
+  opacity: 0.55;
+}
+.sticky-save {
+  position: absolute;
+  inset: 22px 4px auto auto;
+  width: 210px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  z-index: 2;
+  padding: 5px;
+}
+.sticky-save .field-help {
+  grid-column: 1 / -1;
 }
 .board-swatch {
   width: 10px;

@@ -901,13 +901,13 @@ function eraseBoardItem(id: string) {
   board.arrows = board.arrows.filter((a) => a.id !== id && a.from.noteId !== id && a.to.noteId !== id);
   if (boardSelected.value === id) boardSelected.value = "";
 }
-function addStickyNote(text = "", link?: NoteLink) {
+function addStickyNote(text = "", link?: NoteLink, point?: { x: number; y: number }) {
   if (!canEdit.value) return;
   const board = ensureBoard(workspace);
   const note = {
     id: uid(),
-    x: Math.round((viewport.width / 2 - camera.x) / camera.zoom - 100),
-    y: Math.round((viewport.height / 2 - camera.y) / camera.zoom - 80),
+    x: Math.round(((point?.x ?? viewport.width / 2) - camera.x) / camera.zoom - (point ? 0 : 100)),
+    y: Math.round(((point?.y ?? viewport.height / 2) - camera.y) / camera.zoom - (point ? 0 : 80)),
     width: 200,
     height: 160,
     text,
@@ -917,6 +917,16 @@ function addStickyNote(text = "", link?: NoteLink) {
   board.notes.push(note);
   if (text) boardSelected.value = note.id;
   else boardCreated(note.id, "note");
+}
+function stickyAtPointer() {
+  if (!canEdit.value || importBusy.value) return;
+  exitFocus();
+  boardTool.value = "select";
+  const pointer = lastPointer ?? { x: viewport.width / 2, y: viewport.height / 2 };
+  addStickyNote("", undefined, {
+    x: Math.max(0, Math.min(pointer.x, viewport.width - 200 * camera.zoom)),
+    y: Math.max(0, Math.min(pointer.y, viewport.height - 160 * camera.zoom)),
+  });
 }
 
 const inboxOpen = ref(false);
@@ -1202,7 +1212,7 @@ const stopCanvasCommands = registerCommands("canvas", () => {
       : []),
     ...(writable
       ? [
-          { id: "board-note", title: "Add sticky note", icon: "text", detail: "Board", keywords: "whiteboard postit", run: () => addStickyNote() },
+          { id: "board-note", title: "Add sticky note", icon: "text", detail: "Board", hint: "Ctrl Shift N", keywords: "whiteboard postit", run: stickyAtPointer },
           { id: "board-arrow", title: "Draw an arrow between apps", icon: "forward", detail: "Board", keywords: "connect connector link whiteboard", run: () => (boardTool.value = "arrow") },
           { id: "board-pen", title: "Draw on the canvas", icon: "edit", detail: "Board", keywords: "pen freehand sketch whiteboard", run: () => (boardTool.value = "pen") },
           { id: "board-eraser", title: "Erase board items", icon: "trash", detail: "Board", keywords: "whiteboard delete", run: () => (boardTool.value = "eraser") },
@@ -1652,6 +1662,7 @@ function addExamples() {
 }
 function dismissOutside(event: PointerEvent) {
   const target = event.target as HTMLElement;
+  if (!target.closest(".dock-overflow, .dock-overflow-trigger")) dockOverflowOpen.value = false;
   const focused = document.activeElement;
   if (
     focused instanceof HTMLInputElement &&
@@ -2364,8 +2375,13 @@ function wheelRemove(id: string) {
   );
 }
 function keydown(e: KeyboardEvent) {
-  if (!ready.value) return;
+  if (!ready.value || e.defaultPrevented) return;
   if (browserTabKeys(e)) return;
+  if (e.code === "KeyN" && (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && !e.repeat && !typing(e.target)) {
+    e.preventDefault();
+    stickyAtPointer();
+    return;
+  }
   // Delete removes the selected sticky note, arrow or drawing.
   if (
     (e.key === "Delete" || e.key === "Backspace") &&
@@ -2405,20 +2421,35 @@ function keydown(e: KeyboardEvent) {
   }
   if (
     e.target instanceof Element &&
-    e.target.closest(".node-workspace,.code-editor,.select-popover")
+    e.target.closest(".node-workspace,.code-editor,.select-popover:not(.dock-overflow)")
   )
     return;
   if (e.key === "Escape") {
+    if (dockContext.value) {
+      dockContext.value = undefined;
+      e.preventDefault();
+      return;
+    }
+    if (dockOverflowOpen.value) {
+      closeDockOverflow(true);
+      e.preventDefault();
+      return;
+    }
+    if (panel.value || managedApp.value || pendingImport.value || inboxOpen.value || actionStudio.value) {
+      actionStudio.value = false;
+      inboxOpen.value = false;
+      pendingImport.value = undefined;
+      managedApp.value = undefined;
+      panel.value = null;
+      e.preventDefault();
+      return;
+    }
     if (focused.value && !typing(e.target)) {
       exitFocus();
       e.preventDefault();
       return;
     }
     canvasScroll.owner = "";
-    pendingImport.value = undefined;
-    managedApp.value = undefined;
-    dockContext.value = undefined;
-    panel.value = null;
     (document.activeElement as HTMLElement)?.blur();
     return;
   }
@@ -2484,6 +2515,47 @@ const resize = () => {
 };
 const managedApp = ref<CanvasApp>();
 const dockContext = ref<CanvasApp>();
+const dockTabs = ref<HTMLElement>();
+const dockMeasure = ref<HTMLElement>();
+const dockOverflow = ref<HTMLElement>();
+const dockOverflowButton = ref<HTMLButtonElement>();
+const dockOverflowOpen = ref(false);
+const dockVisibleCount = ref(Infinity);
+let dockResize: ResizeObserver | undefined;
+function measureDock() {
+  const strip = dockMeasure.value;
+  const available = dockTabs.value?.clientWidth;
+  if (!strip || available === undefined) return;
+  const sizes = Array.from(strip.querySelectorAll<HTMLElement>(".dock-measure-tab"), (tab) => tab.getBoundingClientRect().width);
+  if (strip.scrollWidth <= available + 1) {
+    dockVisibleCount.value = sizes.length;
+    closeDockOverflow(dockOverflowOpen.value);
+    return;
+  }
+  const gap = Number.parseFloat(getComputedStyle(strip).columnGap) || 0;
+  const capacity = available - (dockOverflowButton.value?.offsetWidth || 31) - gap;
+  let width = 0;
+  let visible = 0;
+  for (const size of sizes) {
+    width += size + (visible ? gap : 0);
+    if (width > capacity) break;
+    visible++;
+  }
+  dockVisibleCount.value = visible;
+}
+function closeDockOverflow(restoreFocus: boolean) {
+  dockOverflowOpen.value = false;
+  if (restoreFocus) dockOverflowButton.value?.focus({ preventScroll: true });
+}
+function toggleDockOverflow() {
+  if (dockOverflowOpen.value) return closeDockOverflow(true);
+  dockOverflowOpen.value = true;
+  nextTick(() => dockOverflow.value?.querySelector<HTMLButtonElement>("button")?.focus());
+}
+function chooseDockApp(app: CanvasApp, overflow: boolean) {
+  if (overflow) closeDockOverflow(true);
+  void focusApp(app);
+}
 const managementName = ref<HTMLInputElement>();
 const managementDependencies = computed(() => {
   const id = managedApp.value?.id;
@@ -3217,6 +3289,9 @@ function hidePage() {
   void store.close();
 }
 onMounted(() => {
+  dockResize = new ResizeObserver(measureDock);
+  if (dockTabs.value) dockResize.observe(dockTabs.value);
+  if (dockMeasure.value) dockResize.observe(dockMeasure.value);
   window.addEventListener("beforeunload", beforeUnload);
   window.addEventListener("blur", flushSave);
   window.addEventListener("pageshow", restorePage);
@@ -3257,6 +3332,7 @@ onMounted(() => {
   window.addEventListener("pointermove", trackPointer, { passive: true });
 });
 onBeforeUnmount(() => {
+  dockResize?.disconnect();
   window.removeEventListener("beforeunload", beforeUnload);
   window.removeEventListener("blur", flushSave);
   window.removeEventListener("pageshow", restorePage);
@@ -3663,6 +3739,7 @@ onBeforeUnmount(() => {
         @erase="eraseBoardItem"
         @edit-note="boardEditNote = $event"
         @open-link="openNoteLink"
+        @saved-note="status = 'Sticky note saved to Notes.'"
       />
       <template v-for="group in spatialGroups" :key="group.id"
         ><div
@@ -4526,11 +4603,19 @@ onBeforeUnmount(() => {
       >
         <Icon name="box" :size="18" /></button
       ><span class="dock-divider"></span>
-      <div class="dock-tabs">
+      <div ref="dockTabs" class="dock-tabs">
+        <div ref="dockMeasure" class="dock-measure" aria-hidden="true">
+          <span v-for="a in apps" :key="a.id" class="dock-measure-tab">
+            <Icon :name="a.icon" :size="15" /><span>{{ a.name || "Untitled" }}</span>
+          </span>
+          <span v-if="!apps.length" class="empty-dock-label">Your canvas</span>
+        </div>
+        <div class="dock-primary">
+        <template v-for="(a, index) in apps" :key="a.id">
+        <Teleport :to="dockOverflow || 'body'" :disabled="index < dockVisibleCount || !dockOverflow">
         <button
-          v-for="a in apps"
-          :key="a.id"
           class="dock-tab"
+          :style="{ order: index }"
           :class="{ active: active === a.id }"
           draggable="true"
           @keydown.alt.left.prevent="moveDock(a, -1)"
@@ -4544,13 +4629,27 @@ onBeforeUnmount(() => {
           @dragend="dockDrag = ''"
           @contextmenu.prevent="canEdit && (dockContext = a)"
           @keydown.shift.f10.prevent="canEdit && (dockContext = a)"
-          @click="focusApp(a)"
+          @click="chooseDockApp(a, index >= dockVisibleCount)"
           :title="a.group ? `${a.name} · ${a.group}` : a.name"
         >
           <Icon :name="a.icon" :size="15" /><span>{{
             a.name || "Untitled"
-          }}</span></button
-        ><span v-if="!apps.length" class="empty-dock-label">Your canvas</span>
+          }}</span></button>
+        </Teleport>
+        </template>
+        <span v-if="!apps.length" class="empty-dock-label">Your canvas</span>
+        </div>
+        <button
+          v-show="dockVisibleCount < apps.length"
+          ref="dockOverflowButton"
+          type="button"
+          class="icon-button dock-action dock-overflow-trigger"
+          aria-label="More apps"
+          title="More apps"
+          :aria-expanded="dockOverflowOpen"
+          aria-controls="dock-overflow"
+          @click="toggleDockOverflow"
+        ><Icon name="more" :size="17" /></button>
       </div>
       <span class="dock-divider"></span
       ><button
@@ -4571,6 +4670,7 @@ onBeforeUnmount(() => {
       >
         <Icon name="plus" :size="19" />
       </button>
+      <div v-show="dockOverflowOpen" id="dock-overflow" ref="dockOverflow" class="dock-overflow select-popover" role="group" aria-label="More canvas apps"></div>
     </nav>
     <input
       ref="importInput"

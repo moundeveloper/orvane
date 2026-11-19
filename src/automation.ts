@@ -260,6 +260,7 @@ function insert(blocks: Block[], block: Block, index?: number) {
 }
 function ruleCollections(
   w: Workspace,
+  includeWorkspaceActions = false,
 ): { owner: string; rules: Rule[]; graph?: Block["graph"] }[] {
   const result: { owner: string; rules: Rule[]; graph?: Block["graph"] }[] = [];
   function add(
@@ -285,14 +286,16 @@ function ruleCollections(
     if (n.rules) add("", n as { rules: Rule[]; graph?: Block["graph"] });
   });
   w.library.forEach((l) => flatten([l.block]).forEach((b) => add("", b)));
+  if (includeWorkspaceActions) w.actions?.forEach((action) => add("", action));
   return result;
 }
 function pruneRules(
   w: Workspace,
   matches: (rule: Rule, owner: string) => boolean,
   disconnect: boolean,
+  includeWorkspaceActions = false,
 ) {
-  const impacted = ruleCollections(w).filter((c) =>
+  const impacted = ruleCollections(w, includeWorkspaceActions).filter((c) =>
     c.rules.some((r) => matches(r, c.owner)),
   );
   if (impacted.length && !disconnect)
@@ -311,6 +314,17 @@ function pruneRules(
       removed.forEach((id) => delete c.graph!.positions[id]);
     }
   });
+}
+export function removeWorkspaceAction(workspace: Workspace, id: string) {
+  const index = workspace.actions?.findIndex((action) => action.id === id) ?? -1;
+  if (index < 0) return;
+  workspace.actions!.splice(index, 1);
+  pruneRules(workspace, (rule) => !rule.flow && rule.action === "workspace-action" && rule.nodeId === id, true, true);
+  for (const entry of workspace.wheel ?? []) {
+    if (entry.actionId !== id) continue;
+    delete entry.actionId;
+    entry.bindings = {};
+  }
 }
 function dependencies(w: Workspace, appId: string) {
   return [

@@ -265,9 +265,16 @@ function onTabDrop(id: string, e: DragEvent) {
 }
 
 function onKeydown(e: KeyboardEvent) {
-  if (!tabFocused.value || !appRoot.value?.contains(document.activeElement))
-    return;
   const mod = e.ctrlKey || e.metaKey;
+  if (mod && !e.altKey && e.key.toLowerCase() === "q") return;
+  if (e.key === "Escape" && !searchOpen.value) return;
+  e.stopPropagation();
+  if (!tabFocused.value || !appRoot.value?.contains(document.activeElement)) return;
+  if (e.key === "Escape") {
+    e.preventDefault();
+    searchOpen.value = false;
+    return;
+  }
   if (mod && e.key.toLowerCase() === "k") {
     e.preventDefault();
     searchOpen.value = !searchOpen.value;
@@ -382,7 +389,7 @@ onBeforeUnmount(() => {
     ref="appRoot"
     class="notes-workspace app"
     v-if="ws.loaded"
-    @keydown.stop="onKeydown"
+    @keydown="onKeydown"
     @wheel="$event.ctrlKey || $event.metaKey || $event.stopPropagation()"
   >
     <aside

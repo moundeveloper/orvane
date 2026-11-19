@@ -10,6 +10,7 @@ import {
 } from "../model";
 import Icon from "./Icon.vue";
 import CustomSelect from "./CustomSelect.vue";
+import { removeWorkspaceAction } from "../automation";
 const NodeGraph = defineAsyncComponent(() => import("./NodeGraph.vue"));
 const props = defineProps<{
   workspace: Workspace;
@@ -54,6 +55,16 @@ onMounted(() => {
   );
 });
 const error = ref("");
+function removeAction() {
+  const id = action.value?.id;
+  if (!props.writable || props.running || !id) return;
+  const actions = props.workspace.actions!;
+  const index = actions.findIndex((item) => item.id === id);
+  removeWorkspaceAction(props.workspace, id);
+  selected.value = (actions[index] ?? actions[index - 1])?.id ?? "";
+  inputs.value = {};
+  error.value = "";
+}
 function create(navigation = false) {
   if (!props.writable) return;
   props.workspace.actions ||= [];
@@ -244,6 +255,7 @@ function groupNodes(ids: string[]) {
     ref="studio"
     aria-label="Workspace action library"
     @pointerdown.stop
+    @keydown.esc.stop.prevent="emit('close')"
   >
     <header class="action-studio-header">
       <div>
@@ -323,6 +335,9 @@ function groupNodes(ids: string[]) {
           </p>
           <button class="subtle-button" @click="duplicate">
             <Icon name="copy" :size="13" />Duplicate action
+          </button>
+          <button class="subtle-button" :disabled="running" @click="removeAction">
+            <Icon name="trash" :size="13" />Remove action
           </button>
         </div>
         <div class="action-test-inputs">

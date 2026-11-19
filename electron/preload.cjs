@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
   frameless: true,
   closeWindow: () => ipcRenderer.invoke("orvane:window-close"),
   readInboxClipboard: () => ipcRenderer.invoke("orvane:inbox-clipboard"),
+  setTabLogin: (id, rootUrl, loginId) => ipcRenderer.invoke("orvane:tab-login", id, rootUrl, loginId),
   onInboxCapture(callback) {
     const listener = () => callback();
     ipcRenderer.on("orvane:inbox-capture", listener);

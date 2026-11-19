@@ -115,6 +115,8 @@ test("phone navigation fits a tall app between the actual chrome and dock", asyn
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await seed(page);
+  const moreApps = page.getByRole("button", { name: "More apps" });
+  if (await moreApps.isVisible()) await moreApps.click();
   await page.getByRole("button", { name: "Tall app", exact: true }).click();
   await fits(page, "tall");
   await page.screenshot({ path: "artifacts/app-navigation-fit-mobile.png" });

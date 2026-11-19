@@ -13,6 +13,7 @@ import {
 import { useNotesWorkspace } from "../stores/workspace";
 import { escapeHtml } from "../stores/workspace";
 import type { Block, BlockType } from "../types";
+import { IMAGE_ID, imageSource, NOTES_IMAGE_MIME } from "../../../imageDrop";
 import IconPicker from "./IconPicker.vue";
 
 const props = defineProps<{
@@ -54,6 +55,10 @@ const menuPos = ref<{ x: number; y: number } | null>(null);
 const portal = useNotesPortal();
 const imageInput = ref<HTMLInputElement>();
 const imageFrame = ref<HTMLElement>();
+const imageElement = ref<HTMLImageElement>();
+const imageMenu = ref(false);
+const copyImageButton = ref<HTMLButtonElement>();
+const imageCopyError = ref("");
 const imageWidth = ref(
   Math.max(20, Math.min(100, props.block.imageWidth ?? 100)),
 );
@@ -311,6 +316,23 @@ function onInput() {
     () => ws.updateBlock(props.block.id, { html }),
     250,
   );
+}
+
+function cutLine(e: ClipboardEvent) {
+  const selection = window.getSelection();
+  const el = contentEl.value;
+  if (!e.clipboardData || !selection?.isCollapsed || !el?.contains(selection.anchorNode)) return;
+  selection.modify("move", "backward", "lineboundary");
+  selection.modify("extend", "forward", "lineboundary");
+  if (!el.contains(selection.anchorNode) || !el.contains(selection.focusNode)) return;
+  const text = selection.toString();
+  if (!text) return;
+  e.preventDefault();
+  e.clipboardData.setData("text/plain", text);
+  if (!document.execCommand("delete")) {
+    selection.deleteFromDocument();
+    onInput();
+  }
 }
 
 const MD_MAP: [RegExp, BlockType][] = [
@@ -611,8 +633,23 @@ function stopImageResize() {
 
 function closeMenu() {
   menuPos.value = null;
-  window.removeEventListener("click", closeMenu);
+  imageMenu.value = false;
+  window.removeEventListener("pointerdown", onMenuPointerDown, true);
   window.removeEventListener("scroll", onMenuViewportScroll, true);
+  window.removeEventListener("keydown", onMenuKey, true);
+}
+
+function onMenuPointerDown(e: PointerEvent) {
+  if (!(e.target as Element)?.closest(".block-handle-menu")) closeMenu();
+}
+
+function onMenuKey(e: KeyboardEvent) {
+  if (e.key !== "Escape") return;
+  e.preventDefault();
+  e.stopPropagation();
+  const restoreImage = imageMenu.value;
+  closeMenu();
+  if (restoreImage) imageElement.value?.focus({ preventScroll: true });
 }
 
 function onMenuViewportScroll(e: Event) {
@@ -624,10 +661,45 @@ function onMenuViewportScroll(e: Event) {
 function openMenu(e: MouseEvent) {
   closeMenu();
   menuPos.value = portal.local(e.clientX, e.clientY);
-  setTimeout(() => {
-    window.addEventListener("click", closeMenu);
-    window.addEventListener("scroll", onMenuViewportScroll, true);
-  });
+  window.addEventListener("pointerdown", onMenuPointerDown, true);
+  window.addEventListener("scroll", onMenuViewportScroll, true);
+  window.addEventListener("keydown", onMenuKey, true);
+}
+
+function openImageMenu(e: MouseEvent) {
+  openMenu(e);
+  imageMenu.value = true;
+  imageCopyError.value = "";
+  nextTick(() => copyImageButton.value?.focus({ preventScroll: true }));
+}
+
+function dragImage(e: DragEvent) {
+  if (!e.dataTransfer) return;
+  const name = props.block.caption?.trim().split(/\r?\n/)[0] || "Notes image";
+  const source = props.block.html;
+  const localId = source.match(/^\/__orvane\/files\/image\/([^/]+)$/)?.[1];
+  const value = localId && IMAGE_ID.test(localId) ? localId : source;
+  e.dataTransfer.effectAllowed = "copy";
+  e.dataTransfer.setData(NOTES_IMAGE_MIME, JSON.stringify({ value, name }));
+}
+
+async function copyImage() {
+  const image = imageElement.value;
+  if (!image?.naturalWidth) return void (imageCopyError.value = "The image has not loaded.");
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    canvas.getContext("2d")!.drawImage(image, 0, 0);
+    const png = new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("The image could not be encoded.")), "image/png"),
+    );
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+    closeMenu();
+    image.focus({ preventScroll: true });
+  } catch {
+    imageCopyError.value = "The image could not be copied.";
+  }
 }
 
 onBeforeUnmount(() => {
@@ -637,7 +709,7 @@ onBeforeUnmount(() => {
 
 function onBlockMouseDown(e: MouseEvent) {
   const target = e.target as HTMLElement;
-  if (target.closest(".block-content, input, button, a")) return;
+  if (target.closest(".block-content, input, textarea, button, a, img")) return;
   emit("select-block", props.index, e.shiftKey || e.ctrlKey || e.metaKey);
 }
 
@@ -745,9 +817,13 @@ function copyCode() {
       <template v-if="block.html">
         <div ref="imageFrame" class="img-frame" :style="imageFrameStyle">
           <img
-            :src="block.html"
+            ref="imageElement"
+            :src="imageSource(block.html) || block.html"
             :alt="block.caption ?? 'image'"
-            draggable="false"
+            tabindex="0"
+            draggable="true"
+            @dragstart.stop="dragImage"
+            @contextmenu.stop.prevent="openImageMenu"
           />
           <button
             class="img-resize-handle"
@@ -756,13 +832,14 @@ function copyCode() {
             @pointerdown="startImageResize"
           />
         </div>
-        <input
+        <textarea
           class="img-caption"
+          rows="1"
           :value="block.caption ?? ''"
           placeholder="Add a caption…"
           @change="
             ws.updateBlock(block.id, {
-              caption: ($event.target as HTMLInputElement).value,
+              caption: ($event.target as HTMLTextAreaElement).value,
             })
           "
         />
@@ -812,6 +889,7 @@ function copyCode() {
         @keydown="onKeydown"
         @keyup="onNavigationKeyup"
         @paste="onPaste"
+        @cut="cutLine"
         @click="onClickContent"
         @mousedown="preventMiddleContent"
         @pointerdown="preventMiddleContent"
@@ -826,7 +904,13 @@ function copyCode() {
         v-if="menuPos"
         class="menu notes-portal block-handle-menu"
         :style="{ left: menuPos.x + 'px', top: menuPos.y + 'px' }"
+        @click="!imageMenu && closeMenu()"
       >
+        <template v-if="imageMenu">
+          <button ref="copyImageButton" class="menu-item" type="button" @click="copyImage">Copy image</button>
+          <p v-if="imageCopyError" class="menu-label" role="status">{{ imageCopyError }}</p>
+        </template>
+        <template v-else>
         <div class="menu-label">Turn into</div>
         <button
           v-for="t in TURN_INTO"
@@ -853,6 +937,7 @@ function copyCode() {
         >
           <span class="mi-icon">🗑</span> Delete
         </button>
+        </template>
       </div>
     </Teleport>
   </div>
@@ -1018,6 +1103,14 @@ function copyCode() {
 .type-callout .block-content[data-empty="true"]::before {
   content: attr(data-placeholder);
 }
+.type-todo .block-content {
+  position: relative;
+  min-height: calc(1.55em + 6px);
+}
+.type-todo .block-content[data-empty="true"]::before {
+  position: absolute;
+  inset: 3px 2px auto;
+}
 .block-content.done {
   text-decoration: line-through;
   color: var(--notes-text-faint);
@@ -1165,6 +1258,9 @@ function copyCode() {
   background: transparent;
   font-size: 12px;
   color: var(--notes-text-secondary);
+  font-family: inherit;
+  field-sizing: content;
+  resize: none;
 }
 .img-placeholder {
   padding: 24px;

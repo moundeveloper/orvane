@@ -181,6 +181,10 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
     await expect(tabs.first()).toContainText("NetSuite Login", { timeout: 20000 });
     await page.waitForTimeout(1000);
     expect(posts).toEqual([]);
+    const loginPopupUrl = loginUrl("1964539-sb1.app.netsuite.com");
+    expect(await guest<boolean>(`!!window.open(${JSON.stringify(loginPopupUrl)}, 'startup-login', 'width=380,height=260')`)).toBe(false);
+    await tabs.first().click({ button: "right" });
+    await browser.getByRole("menu").getByText("Lock tab to this URL", { exact: true }).click();
     await guest(
       `document.querySelector('#email').value = ${JSON.stringify(USER)};` +
         `document.querySelector('#password').value = ${JSON.stringify(PASS)};` +
@@ -198,8 +202,26 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
     const panel = browser.getByRole("region", { name: "Saved passwords" });
     const toggle = panel.getByRole("button", { name: `Auto sign-in for ${USER}` });
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await toggle.click();
     await addressBar.click();
     await expect(panel).toHaveCount(0);
+
+    // The locked tab has its own selected saved login and starts at the
+    // original login URL even though the last page was the dashboard.
+    await tabs.first().click({ button: "right" });
+    await browser.getByRole("menu").getByText("Auto-login", { exact: true }).click();
+    await browser.getByRole("menu").getByText(USER, { exact: true }).click();
+    await expect(page.locator('main[data-saved="true"]')).toBeVisible();
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(tabs.first()).toContainText("NetSuite Home", { timeout: 30_000 });
+    expect(posts).toEqual(["1964539-sb1.app.netsuite.com"]);
+    await tabs.first().click({ button: "right" });
+    await browser.getByRole("menu").getByText("Unlock tab", { exact: true }).click();
+    await browser.getByRole("button", { name: "Saved passwords" }).click();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await addressBar.click();
+    posts.length = 0;
 
     // Fill and submit: the login page signs in by itself, once.
     await visit(loginUrl("1964539-sb1.app.netsuite.com"));

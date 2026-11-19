@@ -14,9 +14,11 @@ export const notesSchema = z
       "bulkAdd",
       "deletePage",
       "replaceBlocks",
+      "saveCapture",
     ]),
     key: z.string().min(1).max(200).optional(),
     pageId: z.string().min(1).max(200).optional(),
+    text: z.string().min(1).max(20000).optional(),
     rows: z.array(z.record(z.string(), z.unknown())).max(10000).default([]),
   })
   .strict();
@@ -37,6 +39,10 @@ export class NotesService {
     )
       throw Error("A block page ID is required.");
     this.db ||= new LocalDatabase(join(this.directory, this.filename));
+    if (p.action === "saveCapture") {
+      if (p.collection !== "blocks" || !p.key || !p.text?.trim()) throw Error("A note with text is required.");
+      return this.db.saveNotesCapture(p.key, p.pageId, p.text);
+    }
     return this.db.notesData(p.collection, p.action, p.key, p.rows, p.pageId);
   }
   close() {

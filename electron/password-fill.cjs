@@ -256,12 +256,18 @@ if (window.top === window) {
   async function autoLogin(fields) {
     autoAsked = true;
     const login = await ipcRenderer.invoke("orvane:pw-auto").catch(() => undefined);
+    await submitLogin(fields, login);
+  }
+  async function submitLogin(fields, login, sameOrigin = false) {
     if (!login || !fields.username.isConnected || !fields.password.isConnected) return;
+    const form = fields.password.form;
+    if (!form || (sameOrigin && fields.username.form !== form)) return;
+    const maySubmit = (submit) => !sameOrigin || [form.action, submit?.getAttribute("formaction")]
+      .filter(Boolean).every((action) => new URL(action, document.baseURI).origin === location.origin);
+    if (!maySubmit()) return;
     setValue(fields.username, login.username);
     setValue(fields.password, login.password);
     filled = fields.password;
-    const form = fields.password.form;
-    if (!form) return;
     // NetSuite enables its Log In button a moment after the fields change.
     const button = () =>
       [...form.elements].find((el) => el.type === "submit" && visible(el) && !el.disabled);
@@ -269,6 +275,7 @@ if (window.top === window) {
       await new Promise((done) => setTimeout(done, 100));
     if (!form.isConnected) return;
     const submit = button();
+    if (!maySubmit(submit)) return;
     autoSubmitting = true;
     try {
       form.requestSubmit(submit);
@@ -291,13 +298,22 @@ if (window.top === window) {
   }
 
   // ---- Watch the page for login forms appearing and disappearing ----
+  let tabArmed = false, tabAsked = false;
+  ipcRenderer.on("orvane:pw-tab-ready", () => {
+    tabArmed = true;
+    schedule();
+  });
   let timer;
   function scan() {
     timer = undefined;
     if (menu && !visible(menu.field)) hide();
     const fields = loginFields();
     if (fields && !logins) void query(!!fields.password);
-    if (netSuite && fields?.password && fields.username) {
+    if (tabArmed && !tabAsked && fields?.password?.form && fields.username?.form === fields.password.form) {
+      tabAsked = true;
+      void ipcRenderer.invoke("orvane:pw-tab-auto")
+        .then((login) => submitLogin(fields, login, true)).catch(() => undefined);
+    } else if (netSuite && !tabArmed && fields?.password && fields.username) {
       if (!autoAsked) void autoLogin(fields);
     } else if (netSuite && !challengeSent && loginFlow() && challenge()) {
       challengeSent = true;

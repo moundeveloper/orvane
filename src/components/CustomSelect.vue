@@ -160,6 +160,7 @@ function choose(index: number) {
 }
 function key(e: KeyboardEvent) {
   if (e.key === "Escape") {
+    if (!open.value) return;
     e.preventDefault();
     e.stopPropagation();
     open.value = false;

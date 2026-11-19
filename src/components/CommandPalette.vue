@@ -184,9 +184,11 @@ async function searchFiles(q: string) {
   roots ??= await api<{ home: string; places: { path: string }[] }>("roots");
   const order = [...explorerFolders(), ...roots.places.map((p) => p.path).filter((p) => p !== roots!.home), roots.home];
   const data = await api<{ entries: FileEntry[] }>("search", { paths: [...new Set(order)], query: q, budget: 2500, limit: 60 });
-  return data.entries.slice(0, 12).map((e) => ({
+  const folders = data.entries.filter((entry) => entry.dir).slice(0, 8);
+  const matches = data.entries.filter((entry) => !entry.dir).slice(0, 12);
+  return [...folders, ...matches].map((e) => ({
     key: `file:${e.path}`,
-    section: "Files",
+    section: e.dir ? "Folders" : "Files",
     title: e.name,
     detail: e.path,
     icon: iconOf(e),
@@ -200,8 +202,9 @@ function openInExplorer(entry: FileEntry) {
     void api("open", { path: entry.dir ? entry.path : folder });
     return;
   }
-  emit("focusBlock", target.block.id);
-  requestOpen({ kind: "explorer-path", blockId: target.block.id, path: folder, select: entry.dir ? undefined : entry.path });
+  window.dispatchEvent(new CustomEvent("orvane:open-link", {
+    detail: { link: { kind: entry.dir ? "folder" : "file", target: entry.path, label: entry.name } },
+  }));
 }
 async function searchCommits(q: string) {
   const response = await fetch("/__orvane/git/git_search", {
@@ -297,7 +300,7 @@ function keydown(event: KeyboardEvent) {
 onMounted(() => void nextTick(() => input.value?.focus()));
 </script>
 <template>
-  <div class="cp-backdrop" @pointerdown.self="emit('close')">
+  <div class="cp-backdrop" @pointerdown.stop.self="emit('close')">
     <div class="cp" role="dialog" aria-label="Search and commands" @keydown="keydown">
       <div class="cp-input">
         <Icon :name="commandsOnly ? 'forward' : 'search'" :size="16" />

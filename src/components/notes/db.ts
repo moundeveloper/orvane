@@ -95,6 +95,8 @@ export const db = {
   settings: new NotesTable<Settings>("settings"),
   replaceBlocks: (pageId: string, rows: Block[]) =>
     request({ collection: "blocks", action: "replaceBlocks", pageId, rows }),
+  saveCapture: (key: string, text: string, pageId?: string) =>
+    request<{ pageId: string }>({ collection: "blocks", action: "saveCapture", key, text, pageId }),
 };
 export function uid() {
   return crypto.randomUUID();

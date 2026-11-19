@@ -14,6 +14,14 @@ const emit = defineEmits<{
 
 const open = ref(false);
 const rootEl = ref<HTMLElement>();
+const trigger = ref<HTMLButtonElement>();
+function onEscape(event: KeyboardEvent) {
+  if (!open.value) return;
+  event.preventDefault();
+  event.stopPropagation();
+  open.value = false;
+  trigger.value?.focus();
+}
 
 const ICONS = [
   "📄",
@@ -59,8 +67,9 @@ onBeforeUnmount(() => window.removeEventListener("pointerdown", onPointerDown));
 </script>
 
 <template>
-  <span ref="rootEl" class="icon-picker">
+  <span ref="rootEl" class="icon-picker" @keydown.esc="onEscape">
     <button
+      ref="trigger"
       class="icon-trigger"
       :aria-label="title ?? 'Change icon'"
       @click.stop="open = !open"

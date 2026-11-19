@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // A live clip: the real page in a <webview>, shown through a window cropped
-// to the pinned area or element. It is the page itself, so it never needs
-// refreshing and everything in it (players, forms, menus) works.
+// to the pinned area or element. It updates with the live page and retries
+// if loading or tracking the clipped area fails.
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import type { Block } from "../model";
 import { activateApp, appOf } from "../canvasScroll";
@@ -144,6 +144,7 @@ function cameraChanged(event: Event) {
 // report where that is). A paused page stays paused across loads, so after
 // each load the wanted state is sent again rather than assumed.
 let onScreen = true,
+  hasShown = false,
   playing = false,
   sent: boolean | undefined,
   pauseTimer: ReturnType<typeof setTimeout> | undefined;
@@ -155,20 +156,36 @@ function setActive(want: boolean) {
 }
 function updateActivity() {
   clearTimeout(pauseTimer);
-  if (onScreen || playing || !target.value) setActive(true);
+  if (onScreen || playing || !hasShown) setActive(true);
   else pauseTimer = setTimeout(() => setActive(false), 5000);
 }
 
 // A page that has not said where the clipped part is: wake it and ask again
 // a few times, then say so instead of loading forever.
 const silent = ref(false);
+const failed = ref(false);
+let retryTimer: ReturnType<typeof setTimeout> | undefined;
+let retries = 0;
+function retryWhenVisible() {
+  if (!onScreen || retryTimer !== undefined || retries >= 3 || !(failed.value || silent.value)) return;
+  retryTimer = setTimeout(() => {
+    retryTimer = undefined;
+    if (!onScreen || !(failed.value || silent.value)) return;
+    retries++;
+    reloadPage();
+  }, 2000 * 2 ** retries);
+}
 let askTimer: ReturnType<typeof setTimeout> | undefined,
   asked = 0;
 function askAgain() {
   clearTimeout(askTimer);
   askTimer = setTimeout(() => {
-    if (target.value) return;
-    if (asked++ >= 3) return void (silent.value = true);
+    if (target.value || !onScreen) return;
+    if (asked++ >= 3) {
+      silent.value = true;
+      retryWhenVisible();
+      return;
+    }
     sent = undefined;
     setActive(true);
     track();
@@ -186,9 +203,26 @@ function openLink(link: string) {
 function openOriginal() {
   if (url.value) openLink(url.value);
 }
-function reload() {
+function reloadPage() {
+  if (!view.value) return;
+  clearTimeout(askTimer);
+  target.value = undefined;
+  found.value = true;
   silent.value = false;
-  view.value?.reload();
+  failed.value = false;
+  updateActivity();
+  try {
+    view.value.reload();
+  } catch {
+    failed.value = true;
+    retryWhenVisible();
+  }
+}
+function reload() {
+  clearTimeout(retryTimer);
+  retryTimer = undefined;
+  retries = 0;
+  reloadPage();
 }
 function toggleMute() {
   muted.value = !muted.value;
@@ -216,7 +250,30 @@ let stopInput: (() => void) | undefined,
   resize: ResizeObserver | undefined,
   visible: IntersectionObserver | undefined;
 function bind(element: WebviewElement) {
+  function loadFailed() {
+    clearTimeout(askTimer);
+    target.value = undefined;
+    failed.value = true;
+    retryWhenVisible();
+  }
+  element.addEventListener("did-fail-load", (event) => {
+    const { isMainFrame, errorCode } = event as Event & { isMainFrame: boolean; errorCode: number };
+    if (!isMainFrame || errorCode === -3) return; // Chromium reports cancelled navigations as failures.
+    loadFailed();
+  });
+  element.addEventListener("render-process-gone", loadFailed);
+  element.addEventListener("did-start-navigation", (event) => {
+    const { isMainFrame, isInPlace } = event as Event & { isMainFrame: boolean; isInPlace: boolean };
+    if (!isMainFrame || isInPlace) return;
+    clearTimeout(askTimer);
+    clearTimeout(retryTimer);
+    retryTimer = undefined;
+    target.value = undefined;
+    failed.value = false;
+    silent.value = false;
+  });
   element.addEventListener("dom-ready", () => {
+    if (failed.value) return;
     sent = undefined;
     updateActivity();
     track();
@@ -230,8 +287,13 @@ function bind(element: WebviewElement) {
     if (!message) return;
     if ("open" in message) return openLink(message.open);
     target.value = message.rect;
+    hasShown = true;
     found.value = message.found;
     silent.value = false;
+    failed.value = false;
+    retries = 0;
+    clearTimeout(retryTimer);
+    retryTimer = undefined;
     clearTimeout(askTimer);
   });
   element.addEventListener("media-started-playing", () => ((playing = true), updateActivity()));
@@ -249,6 +311,10 @@ onMounted(() => {
   visible = new IntersectionObserver(([entry]) => {
     onScreen = !!entry?.isIntersecting;
     updateActivity();
+    if (onScreen) {
+      retryWhenVisible();
+      if (!target.value && !failed.value && !silent.value) askAgain();
+    }
   });
   if (root.value) visible.observe(root.value);
   window.addEventListener("orvane-camera", cameraChanged);
@@ -288,6 +354,7 @@ onBeforeUnmount(() => {
   clearTimeout(densityTimer);
   clearTimeout(pauseTimer);
   clearTimeout(askTimer);
+  clearTimeout(retryTimer);
   resize?.disconnect();
   visible?.disconnect();
   stopInput?.();
@@ -339,7 +406,7 @@ onBeforeUnmount(() => {
           ></webview>
         </div>
         <p v-if="!layout" class="live-clip-note">
-          {{ silent ? "The page isn't showing the clipped part. Try Reload." : "Loading the page…" }}
+          {{ failed ? "The clipped page could not load. You can also retry with Reload." : silent ? "The page isn't showing the clipped part. Try Reload." : "Loading the page…" }}
         </p>
         <div
           v-if="!interacting"

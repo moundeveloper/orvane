@@ -6,6 +6,7 @@ import { IMAGE_ID } from "./imageId";
 export { IMAGE_ID } from "./imageId";
 
 export type PlacedImage = { value: string; name: string };
+export const NOTES_IMAGE_MIME = "application/x-orvane-notes-image";
 export function imageSource(value: string) {
   if (IMAGE_ID.test(value)) return `/__orvane/files/image/${value}`;
   return /^https?:\/\//i.test(value) ? value : "";
@@ -15,7 +16,7 @@ export function imageSource(value: string) {
 export function mayHoldImage(dt: DataTransfer | null) {
   if (!dt) return false;
   const types = [...dt.types];
-  return types.includes(DRAG_MIME) || types.includes("Files") || types.includes("text/uri-list") || types.includes("text/html");
+  return types.includes(NOTES_IMAGE_MIME) || types.includes(DRAG_MIME) || types.includes("Files") || types.includes("text/uri-list") || types.includes("text/html");
 }
 
 function readDataUrl(file: File) {
@@ -51,6 +52,19 @@ export function importDrop(dt: DataTransfer): { jobs: Promise<PlacedImage>[]; fi
   const jobs: Promise<PlacedImage>[] = [];
   const files: string[] = [];
   let skipped = 0;
+  const notesImage = dt.getData(NOTES_IMAGE_MIME);
+  if (notesImage) {
+    try {
+      const { value, name } = JSON.parse(notesImage) as PlacedImage;
+      if (typeof value === "string" && typeof name === "string") {
+        if (/^data:image\//i.test(value)) jobs.push(importImageData(value, name));
+        else if (imageSource(value)) jobs.push(Promise.resolve({ value, name }));
+      }
+    } catch {
+      // Ignore malformed transfers.
+    }
+    return { jobs, files, skipped };
+  }
   const internal = dt.getData(DRAG_MIME);
   if (internal) {
     try {

@@ -52,7 +52,7 @@ const related = (a, b) => a !== b && !!siteKey(a) && siteKey(a) === siteKey(b);
  * @returns {(contents: Electron.WebContents) => void} call for every page
  *   contents (webviews and their popups) in the Browser session.
  */
-export function setupPasswords({ partition, isOrvane, isProcessing = () => false, folder }) {
+export function setupPasswords({ partition, isOrvane, isProcessing = () => false, ownGuest, folder }) {
   const file = join(folder, "passwords.vault");
   const sites = session.fromPartition(partition);
   sites.registerPreloadScript({
@@ -223,6 +223,10 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
    * stops signing in by itself and the login is paused, so a wrong password
    * can never loop (or lock the NetSuite user out). */
   const attempts = new Map();
+  const tabLogins = new Map();
+  const configuredTabs = new Set();
+  const startupUrls = new Map();
+  const usedTabLogins = new Set();
   /** Logins whose last auto sign-in failed (until they sign in or change). */
   const failing = new Set();
   /** The NetSuite account each tab last headed to: signed out, NetSuite
@@ -238,7 +242,41 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
     (event.sender.getType() === "webview" && !!event.sender.hostWebContents) ||
     isProcessing(event.sender);
 
+  ipcMain.handle("orvane:tab-login", (event, id, rootUrl, loginId) => {
+    const guest = ownGuest(event, id);
+    if (!guest || event.senderFrame?.parent || !isOrvane(event.senderFrame?.url ?? "")) return;
+    if (!loginId) {
+      tabLogins.delete(id);
+      configuredTabs.delete(id);
+      return;
+    }
+    if (typeof loginId !== "string" || usedTabLogins.has(id)) return;
+    try {
+      const root = new URL(rootUrl);
+      if (root.protocol !== "https:" || root.href !== startupUrls.get(id) || isOrvane(root.href)) return;
+      if (guest.getURL() && new URL(guest.getURL()).origin !== root.origin) return;
+      configuredTabs.add(id);
+      tabLogins.set(id, { origin: root.origin, loginId });
+      guest.send("orvane:pw-tab-ready");
+    } catch {
+      // The guest has not reached a usable startup page.
+    }
+  });
+
+  ipcMain.handle("orvane:pw-tab-auto", async (event) => {
+    const id = event.sender.id;
+    const config = tabLogins.get(id);
+    if (!config || !autoLoginTab(event) || siteOf(event) !== config.origin || !(await ready())) return;
+    if (tabLogins.get(id) !== config || siteOf(event) !== config.origin) return;
+    const login = vault.logins.find((saved) => saved.id === config.loginId && saved.origin === config.origin);
+    if (!login) return;
+    tabLogins.delete(id);
+    usedTabLogins.add(id);
+    return { username: login.username, password: login.password };
+  });
+
   ipcMain.handle("orvane:pw-auto", async (event) => {
+    if (configuredTabs.has(event.sender.id)) return;
     const origin = siteOf(event);
     const page = origin && autoLoginTab(event) && netSuiteLogin(event.senderFrame.url);
     if (!page || page.origin !== origin) return;
@@ -248,7 +286,7 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
     // be one auto sign-in covers.
     if (login.account ? !autoLoginAccount(login.account) : origin !== "https://system.netsuite.com")
       return;
-    if (!(await ready())) return;
+    if (!(await ready()) || configuredTabs.has(event.sender.id)) return;
     const contents = event.sender;
     let pending = attempts.get(contents.id);
     if (pending && !pending.stopped && !pending.challenge && Date.now() - pending.at > ATTEMPT_LIFE) {
@@ -307,6 +345,11 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
       if (account) headedTo.set(contents.id, account);
     };
     contents.on("did-start-navigation", headed);
+    contents.on("did-start-navigation", (event) => {
+      if (!event.isMainFrame || event.isSameDocument) return;
+      if (!startupUrls.has(contents.id)) startupUrls.set(contents.id, event.url);
+      else tabLogins.delete(contents.id);
+    });
     contents.on("did-redirect-navigation", headed);
     contents.on("did-create-window", (window) => {
       owners.set(window.webContents.id, ownerOf(contents.id));
@@ -328,6 +371,10 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
       owners.delete(contents.id);
       usernames.delete(contents.id);
       attempts.delete(contents.id);
+      tabLogins.delete(contents.id);
+      configuredTabs.delete(contents.id);
+      startupUrls.delete(contents.id);
+      usedTabLogins.delete(contents.id);
       headedTo.delete(contents.id);
     });
   }

@@ -222,6 +222,35 @@ test("Desktop Browser app loads frame-blocking sites in a webview", async ({}, i
       }, { timeout: 10000 })
       .toBe(true);
 
+    const inspected = await app.evaluate(({ webContents, Menu }) => {
+      const guest = webContents.getAllWebContents().find((contents) => contents.getType() === "webview")!;
+      const build = Menu.buildFromTemplate;
+      const inspect = guest.inspectElement;
+      let chosen: { id: number; x: number; y: number } | undefined;
+      guest.inspectElement = (x, y) => { chosen = { id: guest.id, x, y }; };
+      Menu.buildFromTemplate = (items) => ({
+        popup() { (items.find((item) => item.label === "Inspect") as Electron.MenuItemConstructorOptions)?.click?.(undefined as never, undefined as never, undefined as never); },
+      }) as Electron.Menu;
+      try { guest.emit("context-menu", {}, { x: 30, y: 40, isEditable: false }); }
+      finally { Menu.buildFromTemplate = build; guest.inspectElement = inspect; }
+      return chosen?.id === guest.id ? { x: chosen.x, y: chosen.y } : null;
+    });
+    expect(inspected).toEqual({ x: 30, y: 40 });
+    const signIn = await app.evaluate(async ({ webContents, shell }) => {
+      const guest = webContents.getAllWebContents().find((contents) => contents.getType() === "webview")!;
+      const original = shell.openExternal;
+      let external: string | undefined;
+      shell.openExternal = async (url) => { external = url; };
+      try {
+        const popup = await guest.mainFrame.executeJavaScript(
+          "!!window.open('https://accounts.google.com/o/oauth2/v2/auth', 'google', 'width=500,height=500')", true,
+        );
+        return { popup, external };
+      } finally { shell.openExternal = original; }
+    });
+    expect(signIn.popup).toBe(false);
+    expect(new URL(signIn.external!).origin).toBe(origin);
+
     // A window.open popup is not affected by the canvas zoom.
     const popupZoom = await app.evaluate(async ({ webContents, BrowserWindow }) => {
       const guests = webContents

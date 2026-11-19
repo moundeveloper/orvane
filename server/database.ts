@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { randomUUID } from "node:crypto";
 import { parseWorkspace } from "../src/validation.ts";
 import type { Workspace } from "../src/model.ts";
 
@@ -117,6 +118,31 @@ export class LocalDatabase {
         }
       }
       return { saved: true };
+    })();
+  }
+  saveNotesCapture(id: string, pageId: string | undefined, text: string) {
+    const read = this.db.prepare("SELECT data FROM notes_records WHERE collection=? AND key=?");
+    const insert = this.db.prepare("INSERT INTO notes_records(collection,key,data) VALUES(?,?,?)");
+    const nextPosition = (collection: string, field: "pageId" | "parentId", parent: string | null) => {
+      const row = this.db.prepare(`SELECT COALESCE(MAX(json_extract(data,'$.position')), -1) + 1 AS position FROM notes_records WHERE collection=? AND json_extract(data,'$.${field}') IS ?`).get(collection, parent) as { position: number };
+      return row.position;
+    };
+    return this.db.transaction(() => {
+      const duplicate = read.get("blocks", id) as { data: string } | undefined;
+      if (duplicate) return { pageId: JSON.parse(duplicate.data).pageId as string };
+      const now = new Date().toISOString();
+      if (pageId) {
+        const record = read.get("pages", pageId) as { data: string } | undefined;
+        const page = record && JSON.parse(record.data);
+        if (page?.type !== "page" || page.trashedAt) throw Error("Choose an available Notes page.");
+      } else {
+        pageId = randomUUID();
+        const title = text.trim().split(/\r?\n/)[0]!.slice(0, 120);
+        insert.run("pages", pageId, JSON.stringify({ id: pageId, parentId: null, type: "page", title, icon: null, isFavorite: false, trashedAt: null, position: nextPosition("pages", "parentId", null), createdAt: now, updatedAt: now }));
+      }
+      const html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r\n|\r|\n/g, "<br>");
+      insert.run("blocks", id, JSON.stringify({ id, pageId, type: "paragraph", html, indent: 0, position: nextPosition("blocks", "pageId", pageId), createdAt: now, updatedAt: now }));
+      return { pageId };
     })();
   }
   saveAppData(key: string, value: unknown) {

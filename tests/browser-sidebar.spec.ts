@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 // The Browser app's sidebar, layouts, pinned tabs, groups, spaces, Peek,
 // Split View and tab search, in the iframe build (desktop-only parts such as
 // link Shift-click inside a page are covered in desktop.spec.ts).
-async function open(page: Page) {
+async function open(page: Page, warmDevComponent = true) {
   const server = createServer((request, response) => {
     response.setHeader("content-type", "text/html");
     response.end(
@@ -23,11 +23,12 @@ async function open(page: Page) {
     await page.goto("/", { waitUntil: "domcontentloaded" });
     // Load the lazy view before creating workspace state, since Vite may
     // reload the page when it optimizes the view's first-use dependencies.
-    await page.waitForFunction(async () => {
+    if (warmDevComponent) await page.waitForFunction(async () => {
       const component = "/src/components/BrowserView.vue";
       const view = await import(component).catch(() => null);
       return !!view && document.querySelector('main[data-ready="true"]') !== null;
     });
+    await expect(page.locator('main[data-editable="true"]')).toBeVisible({ timeout: 30_000 });
     await page.getByRole("button", { name: "Workspace options" }).click();
     await page.getByRole("button", { name: "Create Browser", exact: true }).click();
     await expect(browser).toBeVisible({ timeout: 20000 });
@@ -64,6 +65,31 @@ async function open(page: Page) {
     });
   return { server, origin, browser, go, tab, menu, more, saved };
 }
+
+test("locked tabs resist closing and reopen at their root URL", async ({ page }) => {
+  test.setTimeout(120_000);
+  const { server, origin, browser, go, menu } = await open(page, false);
+  try {
+    await tabNavigate("/root");
+    const row = browser.locator(".browser-tab.active");
+    await menu(row, "Lock tab to this URL");
+    await tabNavigate("/latest");
+    await row.click({ button: "middle" });
+    await expect(row.getByLabel("Locked tab")).toBeVisible();
+    await page.reload({ waitUntil: "domcontentloaded" });
+    const address = browser.getByRole("textbox", { name: "Address" });
+    await expect(address).toHaveValue(`${origin}/root`);
+    await menu(row, "Unlock tab");
+    await row.getByRole("button", { name: /Close/ }).click();
+    await expect(address).toHaveValue("");
+  } finally {
+    server.close();
+  }
+  async function tabNavigate(path: string) {
+    await go(path);
+    await expect(browser.getByRole("textbox", { name: "Address" })).toHaveValue(`${origin}${path}`);
+  }
+});
 
 test("sidebar layouts keep every control and remember the choice", async ({
   page,

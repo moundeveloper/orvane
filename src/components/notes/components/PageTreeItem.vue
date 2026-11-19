@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useNotesPortal } from "../portal";
-import { computed, inject, ref, type ComputedRef } from "vue";
+import { computed, inject, onBeforeUnmount, ref, type ComputedRef } from "vue";
 import { TREE_EXPANDED } from "../pageTree";
 import { useNotesWorkspace } from "../stores/workspace";
 import type { Page } from "../types";
@@ -54,15 +54,25 @@ async function addChild() {
   openPageTab?.(p.id, true);
 }
 
+function closeMenu() {
+  menuPos.value = null;
+  window.removeEventListener("click", closeMenu);
+  window.removeEventListener("keydown", escapeMenu, true);
+}
+function escapeMenu(event: KeyboardEvent) {
+  if (event.key !== "Escape") return;
+  event.preventDefault();
+  event.stopPropagation();
+  closeMenu();
+}
 function openMenu(e: MouseEvent) {
   e.preventDefault();
+  e.stopPropagation();
   menuPos.value = portal.local(e.clientX, e.clientY);
-  const close = () => {
-    menuPos.value = null;
-    window.removeEventListener("click", close);
-  };
-  setTimeout(() => window.addEventListener("click", close));
+  window.addEventListener("click", closeMenu);
+  window.addEventListener("keydown", escapeMenu, true);
 }
+onBeforeUnmount(closeMenu);
 
 async function duplicate() {
   const copy = await ws.createPage(

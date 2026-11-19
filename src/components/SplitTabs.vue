@@ -245,10 +245,20 @@ function keys(event: KeyboardEvent) {
 function outside(event: PointerEvent) {
   if (!(event.target as Element)?.closest?.(".st-menu")) menu.value = null;
 }
-onMounted(() => document.addEventListener("pointerdown", outside, true));
+function escapeMenu(event: KeyboardEvent) {
+  if (event.key !== "Escape" || !menu.value) return;
+  event.preventDefault();
+  event.stopPropagation();
+  menu.value = null;
+}
+onMounted(() => {
+  document.addEventListener("pointerdown", outside, true);
+  document.addEventListener("keydown", escapeMenu, true);
+});
 onBeforeUnmount(() => {
   stopResize?.();
   document.removeEventListener("pointerdown", outside, true);
+  document.removeEventListener("keydown", escapeMenu, true);
 });
 </script>
 <template>

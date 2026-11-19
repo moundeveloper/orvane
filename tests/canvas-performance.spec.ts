@@ -151,7 +151,8 @@ test("startup mounts the app in view first and the rest while idle", async ({
 test("an app opened during startup mounts immediately", async ({ page }) => {
   await seed(page, 40);
   // Do not wait for the idle queue: go straight to the last app.
-  await page.locator(".dock-tab", { hasText: /^far-39$/ }).click();
+  await page.getByRole("button", { name: "More apps" }).click();
+  await page.getByRole("group", { name: "More canvas apps" }).getByRole("button", { name: "far-39", exact: true }).click();
   await expect(
     page.locator('[data-app-id="far-39"]').getByLabel("Far field 39"),
   ).toHaveValue("kept 39");

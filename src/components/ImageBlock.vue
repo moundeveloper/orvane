@@ -236,6 +236,12 @@ function commitCaption(event: Event) {
   editingCaption.value = false;
 }
 const menuOpen = ref(false);
+function escapeMenu(event: KeyboardEvent) {
+  if (!menuOpen.value) return;
+  event.preventDefault();
+  event.stopPropagation();
+  menuOpen.value = false;
+}
 function setFrame(id: Frame) {
   save({ frame: id === "none" ? undefined : id });
   menuOpen.value = false;
@@ -248,6 +254,7 @@ function setFrame(id: Frame) {
     @dragover="dragover"
     @dragleave.self="over = false"
     @drop="drop"
+    @keydown.esc="escapeMenu"
   >
     <template v-if="src && !broken">
       <figure class="image-figure">

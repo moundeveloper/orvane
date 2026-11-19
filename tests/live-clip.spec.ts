@@ -203,8 +203,10 @@ test("Desktop pins a picked element live and can let it fill the clip", async ({
 
 test("A live clip whose page reloads while paused off-screen shows again when back on screen", async ({}, info) => {
   test.setTimeout(150_000);
+  let failNavigation = false;
   const site = createServer((request, response) => {
     if (request.url === "/never") return; // Left open until the test ends.
+    if (failNavigation) return response.destroy();
     response.setHeader("content-type", "text/html");
     response.end(fixture);
   });
@@ -248,6 +250,13 @@ test("A live clip whose page reloads while paused off-screen shows again when ba
     await pan(6000);
     await expect.poll(responds, { timeout: 15000 }).toBe(true);
     await expect(clip.locator(".live-clip-window.ready")).toBeVisible({ timeout: 15000 });
+    failNavigation = true;
+    await app.evaluate(({ webContents }, url) => {
+      webContents.getAllWebContents().find((w) => w.getType() === "webview" && w.getURL() === url)!.reload();
+    }, url);
+    await expect(clip.getByText("The clipped page could not load.", { exact: false })).toBeVisible({ timeout: 15_000 });
+    failNavigation = false;
+    await expect(clip.locator(".live-clip-window.ready")).toBeVisible({ timeout: 15_000 });
     // And it still follows the element.
     await app.evaluate(({ webContents }, url) => {
       void webContents.getAllWebContents().find((w) => w.getType() === "webview" && w.getURL() === url)!

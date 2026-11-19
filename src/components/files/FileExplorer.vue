@@ -438,6 +438,12 @@ function placeMenu(event: MouseEvent, path: string) {
 function outside(event: PointerEvent) {
   if (!(event.target as Element)?.closest?.(".fx-menu")) menu.value = null;
 }
+function escapeMenu(event: KeyboardEvent) {
+  if (event.key !== "Escape" || !menu.value) return;
+  event.preventDefault();
+  event.stopPropagation();
+  menu.value = null;
+}
 
 // ---- Sidebar resize ---------------------------------------------------------------
 let stopResize: (() => void) | undefined;
@@ -510,12 +516,14 @@ onBeforeUnmount(() => (stopCommands(), stopOpen()));
 onMounted(() => {
   void loadRoots();
   document.addEventListener("pointerdown", outside, true);
+  document.addEventListener("keydown", escapeMenu, true);
   window.addEventListener("focus", windowFocus);
 });
 onBeforeUnmount(() => {
   stopResize?.();
   clearTimeout(saveTimer);
   document.removeEventListener("pointerdown", outside, true);
+  document.removeEventListener("keydown", escapeMenu, true);
   window.removeEventListener("focus", windowFocus);
   dialog.value?.resolve(false);
 });

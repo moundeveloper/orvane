@@ -117,6 +117,8 @@ interface BrowserTab {
   title?: string;
   /** Pinned: the address a double-click returns it to. */
   pinned?: string;
+  rootUrl?: string;
+  loginId?: string;
   group?: string;
   space?: string;
   peek?: { id: string; url: string; title?: string; space?: string };
@@ -202,6 +204,7 @@ interface OrvaneDesktop {
     callback: (request: { from: number; url: string; background: boolean }) => void,
   ): () => void;
   passwords?: PasswordsApi;
+  setTabLogin?(id: number, rootUrl: string, loginId: string): Promise<void>;
 }
 
 // Inside the Orvane desktop app pages load in <webview>, which sites can't
@@ -330,10 +333,14 @@ function readState(imported?: Record<string, unknown>) {
         typeof tab.url === "string" && (tab.url === START || !!safeUrl(tab.url)),
     )
     .slice(0, MAX_TABS * MAX_SPACES)
-    .map((tab) => ({
+    .map((tab) => {
+      const rootUrl = typeof tab.rootUrl === "string" ? safeUrl(tab.rootUrl) : undefined;
+      return {
       id: tab.id as string,
-      url: tab.url as string,
-      ...(typeof tab.title === "string" ? { title: tab.title } : {}),
+      url: rootUrl ?? (tab.url as string),
+      ...(rootUrl ? { rootUrl } : {}),
+      ...(rootUrl && typeof tab.loginId === "string" ? { loginId: tab.loginId } : {}),
+      ...(typeof tab.title === "string" && (!rootUrl || tab.url === rootUrl) ? { title: tab.title } : {}),
       ...(typeof tab.pinned === "string" && safeUrl(tab.pinned)
         ? { pinned: tab.pinned }
         : {}),
@@ -345,7 +352,8 @@ function readState(imported?: Record<string, unknown>) {
       typeof tab.peek.url === "string" && safeUrl(tab.peek.url)
         ? { peek: { id: uid(), url: tab.peek.url, space: inSpace(tab.space) } }
         : {}),
-    }));
+      };
+    });
   // Every space always has a tab to show.
   for (const space of spaces)
     if (!tabs.some((tab) => tab.space === space.id))
@@ -492,6 +500,7 @@ for (const tab of state.value.tabs) {
   if (tab.peek) started[tab.peek.id] = tab.peek.url;
 }
 const webviews = new Map<string, WebviewElement>();
+const loginStartupTabs = new Set<string>();
 /** Tabs whose page was discarded to save memory: a picture until reloaded. */
 const discarded = reactive<Record<string, { image: string }>>({});
 const webviewNav = reactive<Record<string, { back: boolean; forward: boolean }>>(
@@ -652,6 +661,7 @@ function closeTab(id: string) {
   const tabs = state.value.tabs;
   const index = tabs.findIndex((t) => t.id === id);
   if (index < 0) return;
+  if (tabs[index]!.rootUrl) return say("Unlock this tab before closing it.");
   rememberClosed(tabs[index]!, index);
   const space = tabs[index]!.space;
   const siblings = tabs.filter((t) => t.space === space);
@@ -679,6 +689,7 @@ function flushPendingClose() {
 }
 function closeTabSliding(id: string) {
   flushPendingClose();
+  if (state.value.tabs.find((tab) => tab.id === id)?.rootUrl) return closeTab(id);
   const row = root.value?.querySelector<HTMLElement>(`.browser-tab[data-drag-tab="${CSS.escape(id)}"]`);
   if (!row?.offsetParent || matchMedia("(prefers-reduced-motion: reduce)").matches) return closeTab(id);
   const across = root.value!.classList.contains("layout-comfortable");
@@ -711,6 +722,9 @@ function bindWebview(tab: BrowserTab, element: unknown) {
   const view = element as WebviewElement;
   if (webviews.get(tab.id) === view) return;
   webviews.set(tab.id, view);
+  const startup = started[tab.id];
+  const configureStartupLogin = !loginStartupTabs.has(tab.id) && startup === tab.rootUrl && !!tab.loginId;
+  if (configureStartupLogin) loginStartupTabs.add(tab.id);
   addLivePageFor(tab, view);
   const sync = () => {
     try {
@@ -774,6 +788,15 @@ function bindWebview(tab: BrowserTab, element: unknown) {
   view.addEventListener("media-paused", () => {
     playing[tab.id] = false;
   });
+  const configureLogin = () => {
+    if (!configureStartupLogin || !tab.rootUrl || startup !== tab.rootUrl || !tab.loginId) return;
+    try {
+      void desktop?.setTabLogin?.(view.getWebContentsId(), tab.rootUrl, tab.loginId).catch(() => undefined);
+    } catch {
+      // The first load can start before the element exposes its guest ID.
+    }
+  };
+  view.addEventListener("did-start-loading", configureLogin, { once: true });
   view.addEventListener("dom-ready", () => {
     sync();
     applyZoom(view);
@@ -784,6 +807,7 @@ function bindWebview(tab: BrowserTab, element: unknown) {
       updateActivity();
     }
   });
+  view.addEventListener("dom-ready", configureLogin, { once: true });
 }
 function webviewFor(id: number) {
   return [...webviews.values()].find((view) => {
@@ -1482,6 +1506,39 @@ function closeMenuOutside(event: PointerEvent) {
   if (!(event.target as Element | null)?.closest?.(".browser-menu"))
     menu.value = null;
 }
+function loginMenu(tab: BrowserTab): MenuItem[] {
+  const rootUrl = tab.rootUrl;
+  if (!rootUrl || !passwords) return [];
+  const clear: MenuItem[] = tab.loginId ? [{ label: "Turn off auto-login", icon: "close", run: () => {
+    clearTabLogin(tab);
+    save();
+  } }] : [];
+  void passwords.list().then((list) => {
+    if (menu.value?.items !== waiting || tab.rootUrl !== rootUrl) return;
+    const origin = new URL(rootUrl).origin;
+    const options = (list?.logins ?? []).filter((login) => login.origin === origin);
+    menu.value.items = [...clear, ...options.map((login) => ({
+      label: login.username || login.origin,
+      icon: "key",
+      checked: tab.loginId === login.id,
+      run: () => { tab.loginId = login.id; save(); say("Auto-login will run when Browser next opens this tab."); },
+    })), ...(!options.length ? [{ label: "No saved logins for this site", disabled: true }] : [])];
+    nextTick(() => positionMenu(true));
+  }).catch(() => {
+    if (menu.value?.items === waiting) menu.value.items = [...clear, { label: "Saved passwords are unavailable", disabled: true }];
+  });
+  const waiting = reactive<MenuItem[]>([{ label: "Loading saved logins…", disabled: true }]);
+  return waiting;
+}
+function clearTabLogin(tab: BrowserTab) {
+  delete tab.loginId;
+  try {
+    const view = webviews.get(tab.id);
+    if (view) void desktop?.setTabLogin?.(view.getWebContentsId(), "", "").catch(() => undefined);
+  } catch {
+    // An unattached tab cannot have an active login request.
+  }
+}
 onMounted(() =>
   document.addEventListener("pointerdown", closeMenuOutside, true),
 );
@@ -1516,6 +1573,22 @@ function tabMenu(event: MouseEvent, tab: BrowserTab) {
             disabled: !tab.url,
             run: () => togglePin(tab),
           },
+          {
+            label: tab.rootUrl ? "Unlock tab" : "Lock tab to this URL",
+            icon: "lock",
+            disabled: !tab.url && !tab.rootUrl,
+            run: () => {
+              if (tab.rootUrl) {
+                delete tab.rootUrl;
+                clearTabLogin(tab);
+              }
+              else tab.rootUrl = tab.url;
+              save();
+            },
+          },
+          ...(tab.rootUrl && passwords && new URL(tab.rootUrl).protocol === "https:"
+            ? [{ label: "Auto-login", icon: "key", children: () => loginMenu(tab) }]
+            : []),
           {
             label: "Open in Split View",
             icon: "columns",
@@ -1552,6 +1625,7 @@ function tabMenu(event: MouseEvent, tab: BrowserTab) {
       icon: "close",
       hint: many ? undefined : "Ctrl W",
       danger: true,
+      disabled: !ids.some((id) => state.value.tabs.some((item) => item.id === id && !item.rootUrl)),
       run: () => ids.forEach(closeTab),
     },
   ], many ? "Selected tabs" : label(tab));
@@ -2957,7 +3031,8 @@ function shortcut(name: string) {
   // Orvane's Ctrl+K search and Ctrl+Shift+P commands, pressed inside a page.
   if (name === "palette" || name === "commands")
     return void window.dispatchEvent(new CustomEvent("orvane:palette", { detail: name === "commands" ? ">" : "" }));
-  if (name === "address") focusAddress();
+  if (name === "google-sign-in") say("Continue sign-in on the site in your system browser.");
+  else if (name === "address") focusAddress();
   else if (name === "new-tab") addTab();
   else if (name === "close-tab") {
     if (peek.value) closePeek();
@@ -2993,7 +3068,7 @@ function hostKey(event: KeyboardEvent) {
   if (event.key === "Tab") tipResumeAt = undefined;
   if (event.key === "Escape") {
     hideTip();
-    if (!(menu.value || switcher.value || dialog.value || drawer.value || peek.value || cropArming.value)) return;
+    if (!(menu.value || switcher.value || dialog.value || drawer.value || peek.value || cropArming.value || processingOpen.value || showPasswords.value)) return;
     if ((event.target as Element)?.closest(".browser-drawer") && !menu.value) return;
     event.preventDefault();
     event.stopPropagation();
@@ -3001,6 +3076,8 @@ function hostKey(event: KeyboardEvent) {
     else if (dialog.value) dismissDialog();
     else if (switcher.value) switcher.value = null;
     else if (drawer.value) closeDrawer();
+    else if (processingOpen.value) processingOpen.value = false;
+    else if (showPasswords.value) showPasswords.value = false;
     else if (cropArming.value) {
       cropping.value = null;
       cropArming.value = false;
@@ -3276,6 +3353,7 @@ function browserWheel(event: WheelEvent) {
                 <template v-else>{{ glyph(tab) }}</template>
               </span>
               <span class="tab-text">{{ label(tab) }}</span>
+              <Icon v-if="tab.rootUrl" name="lock" :size="12" aria-label="Locked tab" />
               <span class="pane-tag">{{
                 state.stacked
                   ? pane
@@ -3345,7 +3423,8 @@ function browserWheel(event: WheelEvent) {
               name="sound"
               :size="12"
             />
-            <button
+            <Icon v-if="row.tab.rootUrl" name="lock" :size="12" aria-label="Locked tab" />
+            <button v-else
               class="browser-tab-close"
               :aria-label="`Close ${label(row.tab)}`"
               @click.stop="closeTabSliding(row.tab.id)"

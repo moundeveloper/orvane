@@ -23,6 +23,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { setupPasswords } from "./passwords.mjs";
+import { netSuiteLogin } from "./netsuite-login.mjs";
 import { setupNetSuite } from "./netsuite.mjs";
 import { setupProcessing } from "./processing.mjs";
 import { startNetSuiteBroker } from "./netsuite-broker.mjs";
@@ -32,6 +33,27 @@ import { setupTouchpad } from "./touchpad.mjs";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.ORVANE_PORT || 5173);
 const origin = `http://localhost:${port}`;
+let mainWindow;
+const browserPopups = new Set();
+function workspaceAllowsPopups() {
+  return mainWindow && mainWindow.isVisible() && !mainWindow.isMinimized();
+}
+function minimizeBrowserPopups() {
+  for (const popup of browserPopups) {
+    if (!popup.isDestroyed() && popup.isVisible() && !popup.isMinimized()) popup.minimize();
+  }
+}
+function trackBrowserPopup(popup) {
+  browserPopups.add(popup);
+  popup.once("closed", () => browserPopups.delete(popup));
+  // A selector or sign-in dialog can open another native window. Track the
+  // whole chain, and keep minimized dialogs from opening windows on restore.
+  popup.webContents.setWindowOpenHandler(() => ({
+    action: workspaceAllowsPopups() && popup.isVisible() && !popup.isMinimized() ? "allow" : "deny",
+  }));
+  popup.webContents.on("did-create-window", trackBrowserPopup);
+  if (!workspaceAllowsPopups() && popup.isVisible() && !popup.isMinimized()) popup.minimize();
+}
 export const BROWSER_PARTITION = "persist:orvane-browser";
 const CANVAS_WORLD = 1987;
 const CANVAS_PREFIX = "\u0000orvane-canvas:";
@@ -220,6 +242,7 @@ function secure() {
 
   // Saved logins: offered on sign-in forms, saved after a sign-in works.
   const trackPasswords = setupPasswords({
+    ownGuest,
     partition: BROWSER_PARTITION,
     isOrvane,
     isProcessing: processing.owns,
@@ -396,16 +419,58 @@ function secure() {
           { label: "Forward", enabled: contents.navigationHistory.canGoForward(), click: () => contents.navigationHistory.goForward() },
           { label: "Reload", click: () => contents.reload() },
         );
+        items.push(
+          { type: "separator" },
+          { label: "Inspect", click: () => {
+            if (!contents.isDestroyed()) contents.inspectElement(params.x, params.y);
+          } },
+        );
         Menu.buildFromTemplate(items).popup({ window: BrowserWindow.fromWebContents(contents.hostWebContents) || undefined });
       });
+      let googleHandoffAt = -Infinity;
+      function openGoogleSignIn(url) {
+        try {
+          const target = new URL(url);
+          if (target.origin !== "https://accounts.google.com" ||
+              !/^\/(?:o\/oauth2|signin\/oauth|gsi\/(?:select|transform))(?:\/|$)/i.test(target.pathname)) return false;
+          const current = contents.getURL();
+          const destination = web(current) && !isOrvane(current) && new URL(current).origin !== target.origin ? current : url;
+          if (Date.now() - googleHandoffAt > 3000 && mainWindow?.isVisible() && !mainWindow.isMinimized()) {
+            googleHandoffAt = Date.now();
+            void shell.openExternal(destination).catch(() => undefined);
+          }
+          contents.hostWebContents?.send("orvane:guest-input", { from: contents.id, kind: "key", name: "google-sign-in" });
+          return true;
+        } catch {
+          return false;
+        }
+      }
       contents.on("will-navigate", (event, url) => {
+        if (openGoogleSignIn(url)) return event.preventDefault();
         if (!web(url) || isOrvane(url)) event.preventDefault();
       });
+      contents.on("will-redirect", (event) => {
+        if (event.isMainFrame && openGoogleSignIn(event.url)) event.preventDefault();
+      });
+      let popupGestureAt = -Infinity;
+      contents.on("before-mouse-event", (_event, input) => {
+        if (input.type === "mouseDown" && input.button === "left") popupGestureAt = Date.now();
+      });
+      contents.on("before-input-event", (_event, input) => {
+        if (input.type === "keyDown" && ["Enter", " "].includes(input.key)) popupGestureAt = Date.now();
+      });
+      const hasPopupGesture = () => Date.now() - popupGestureAt < 1500;
       contents.setWindowOpenHandler(({ url, disposition }) => {
         if (!web(url) || isOrvane(url)) return { action: "deny" };
+        if (openGoogleSignIn(url)) return { action: "deny" };
         // window.open popups (NetSuite selectors, sign-in flows) keep their
         // opener; links meant for a new tab open as a Browser tab instead.
-        if (disposition === "new-window")
+        if (disposition === "new-window") {
+          if (contents.hostWebContents !== mainWindow?.webContents ||
+              !workspaceAllowsPopups() ||
+              (netSuiteLogin(url) && !hasPopupGesture())) {
+            return { action: "deny" };
+          }
           return {
             action: "allow",
             overrideBrowserWindowOptions: {
@@ -417,12 +482,26 @@ function secure() {
               },
             },
           };
+        }
         contents.hostWebContents?.send("orvane:open-tab", {
           from: contents.id,
           url,
           background: disposition === "background-tab",
         });
         return { action: "deny" };
+      });
+      contents.on("did-create-window", (popup) => {
+        trackBrowserPopup(popup);
+        const authorized = hasPopupGesture();
+        const handleNavigation = (event, url) => {
+          if (!openGoogleSignIn(url) && (authorized || !netSuiteLogin(url))) return;
+          event.preventDefault();
+          if (!popup.isDestroyed()) popup.close();
+        };
+        popup.webContents.on("will-navigate", handleNavigation);
+        popup.webContents.on("will-redirect", (event) => {
+          if (event.isMainFrame) handleNavigation(event, event.url);
+        });
       });
       return;
     }
@@ -769,8 +848,9 @@ const loginItem = () => ({
   args: [join(root, "electron/main.mjs"), "--from-login"],
 });
 function showWindow() {
-  const [window] = BrowserWindow.getAllWindows();
-  if (!window) return;
+  const window = mainWindow;
+  if (!window || window.isDestroyed()) return;
+  if (!window.isVisible()) minimizeBrowserPopups();
   if (window.isMinimized()) window.restore();
   // A window started hidden is maximized the first time it is shown.
   if (!window.isVisible() && !window.isMaximized()) window.maximize();
@@ -839,6 +919,8 @@ function createWindow() {
       webviewTag: true,
     },
   });
+  mainWindow = window;
+  window.on("closed", () => { mainWindow = undefined; });
   // Orvane stays on its own origin; anything else opens in the system browser.
   window.webContents.on("will-navigate", (event, url) => {
     if (isOrvane(url)) return;
@@ -865,6 +947,9 @@ function createWindow() {
     // Closing hides Orvane to the tray; it keeps running (reminders too).
     if (!quitting) {
       event.preventDefault();
+      // Keep open dialogs available from the taskbar without leaving them
+      // on screen or bringing them back when the workspace reopens.
+      minimizeBrowserPopups();
       window.hide();
       return;
     }

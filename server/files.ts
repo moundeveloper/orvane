@@ -361,10 +361,21 @@ function rank(entries: FileEntry[], query: string) {
 async function search(roots: string[], query: string, hidden: boolean, budget = 6000, limit = 500) {
   const matches = matcher(query);
   const results: FileEntry[] = [];
+  const matched = new Set<string>();
   const seen = new Set<string>();
+  const pathKey = (path: string) => process.platform === "win32" ? path.toLowerCase() : path;
   const started = Date.now();
   const queue: string[] = [];
-  for (const root of roots) if (!seen.has(root.toLowerCase())) (seen.add(root.toLowerCase()), queue.push(root));
+  for (const root of roots) if (!seen.has(pathKey(root))) (seen.add(pathKey(root)), queue.push(root));
+  for (const root of queue) {
+    const name = basename(root);
+    if (!name || (!hidden && name.startsWith(".")) || !matches(name)) continue;
+    const item = await entry(dirname(root), name);
+    if (!item?.dir) continue;
+    results.push(item);
+    matched.add(pathKey(root));
+    if (results.length >= limit) break;
+  }
   let visited = 0;
   let complete = true;
   for (let head = 0; head < queue.length; head++) {
@@ -383,13 +394,17 @@ async function search(roots: string[], query: string, hidden: boolean, budget = 
     for (const d of dirents) {
       if (!hidden && d.name.startsWith(".")) continue;
       const path = join(dir, d.name);
-      if (d.isDirectory() && !d.isSymbolicLink() && !SKIP.has(d.name.toLowerCase()) && !seen.has(path.toLowerCase())) {
-        seen.add(path.toLowerCase());
+      const key = pathKey(path);
+      if (d.isDirectory() && !d.isSymbolicLink() && !SKIP.has(d.name.toLowerCase()) && !seen.has(key)) {
+        seen.add(key);
         queue.push(path);
       }
-      if (matches(d.name)) {
+      if (matches(d.name) && !matched.has(key)) {
         const item = await entry(dir, d.name);
-        if (item) results.push(item);
+        if (item) {
+          results.push(item);
+          matched.add(key);
+        }
         if (results.length >= limit) break;
       }
     }
