@@ -176,3 +176,50 @@ test("tray reopen hides nested Browser login windows and keeps the processing ta
     site.close();
   }
 });
+
+test("processing tabs run without a native window that Windows could draw", async ({}, info) => {
+  test.setTimeout(120_000);
+  const site = createServer((_request, response) => {
+    response.setHeader("Content-Type", "text/html");
+    response.end("<!doctype html><title>NetSuite Login</title><h1>Signed-out fixture</h1>");
+  });
+  await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
+  const address = site.address();
+  if (!address || typeof address === "string") throw Error("Fixture port unavailable");
+  const desktop = await launchTray(info);
+  try {
+    const page = await desktop.firstWindow();
+    await expect(page.locator('main[data-editable="true"]')).toBeVisible({ timeout: 60_000 });
+    await page.getByRole("button", { name: "Workspace options" }).click();
+    await page.getByRole("button", { name: "Create Browser", exact: true }).click();
+    const browser = page.locator(".browser-view");
+    const url = `http://127.0.0.1:${address.port}/`;
+    const addressBar = browser.getByRole("textbox", { name: "Address" });
+    await addressBar.fill(url);
+    await addressBar.press("Enter");
+    await expect(browser.locator(".browser-tab.active")).toContainText("NetSuite Login");
+    await browser.getByRole("button", { name: "Use current tab" }).click();
+    await expect(browser.locator(".processing-list")).toContainText("ready");
+    // The hidden processing page used to be a real (owned) native window.
+    // Windows could draw it as a dark "NetSuite Login" box after a tray
+    // reopen even while it reported itself hidden: it must not exist at all.
+    const state = () => desktop.evaluate(async ({ BrowserWindow, webContents }, url) => {
+      const processing = webContents.getAllWebContents().find((contents) => contents.getType() !== "webview" && contents.getURL() === url);
+      return {
+        windows: BrowserWindow.getAllWindows().map((window) => window.getTitle()),
+        processingWindow: processing ? BrowserWindow.fromWebContents(processing)?.getTitle() ?? null : "missing",
+        processingRuns: processing ? await processing.executeJavaScript("document.title") : "missing",
+        processingId: processing?.id,
+      };
+    }, url);
+    const before = await state();
+    expect(before).toMatchObject({ windows: [expect.stringContaining("Orvane")], processingWindow: null, processingRuns: "NetSuite Login" });
+    await page.getByRole("button", { name: "Close Orvane", exact: true }).click();
+    await desktop.evaluate(() => (globalThis as unknown as { windowTest: TestWindowState }).windowTest.trayClick());
+    await expect.poll(state).toEqual(before);
+  } finally {
+    await desktop.close();
+    site.closeAllConnections();
+    site.close();
+  }
+});

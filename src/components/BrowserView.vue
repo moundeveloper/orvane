@@ -26,13 +26,14 @@ function browserSetting(name: "liveLimit" | "discardAfterMs" | "pauseAfterMs") {
 }
 let sweepTimer: ReturnType<typeof setTimeout> | undefined;
 let sweeping = false;
-// A page can keep unsaved state in JavaScript, outside any form we can
-// inspect. Unloading is therefore opt-in; pausing preserves the live page.
+// Unloading long-hidden pages is on unless turned off. A page can keep
+// unsaved state in JavaScript outside any form we can inspect: such tabs use
+// "Keep tab live", and the tab behind a processing tab is always kept.
 function discardEnabled() {
   try {
-    return localStorage.getItem("orvane.browser.discardEnabled") === "true";
+    return localStorage.getItem("orvane.browser.discardEnabled") !== "false";
   } catch {
-    return false;
+    return true;
   }
 }
 async function sweep() {
@@ -122,6 +123,8 @@ interface BrowserTab {
   group?: string;
   space?: string;
   peek?: { id: string; url: string; title?: string; space?: string };
+  /** Never unloaded to save memory (chats, dashboards…). */
+  keepLive?: boolean;
 }
 interface TabGroup {
   id: string;
@@ -197,9 +200,13 @@ interface OrvaneDesktop {
         | { from: number; kind: "focus" }
         | { from: number; kind: "peek"; url: string }
         | { from: number; kind: "split"; url: string }
-        | { from: number; kind: "key"; name: string },
+        | { from: number; kind: "key"; name: string }
+        | { from: number; kind: "inspect"; x: number; y: number },
     ) => void,
   ): () => void;
+  devtoolsSrc?: string;
+  openDevTools?(webContentsId: number, devtoolsId: number, x?: number, y?: number): Promise<boolean>;
+  closeDevTools?(webContentsId: number): Promise<void>;
   onOpenTab(
     callback: (request: { from: number; url: string; background: boolean }) => void,
   ): () => void;
@@ -214,6 +221,13 @@ const desktop = (window as unknown as { orvaneDesktop?: OrvaneDesktop })
 const useWebview = !!desktop?.webview;
 const processing = desktop?.processing;
 const processingTabs = ref<ProcessingTab[]>([]), processingOpen = ref(false), processingError = ref(''), processingGroup = ref<HTMLElement>();
+const originOf = (url: string) => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return "";
+  }
+};
 async function refreshProcessing() {
   if (!processing) return;
   try { processingTabs.value = await processing.list(); } catch (e) { processingError.value = String(e); }
@@ -344,6 +358,7 @@ function readState(imported?: Record<string, unknown>) {
       ...(typeof tab.pinned === "string" && safeUrl(tab.pinned)
         ? { pinned: tab.pinned }
         : {}),
+      ...(tab.keepLive === true ? { keepLive: true } : {}),
       ...(groups.some((group) => group.id === tab.group)
         ? { group: tab.group as string }
         : {}),
@@ -915,6 +930,7 @@ onMounted(() => {
   stopGuestInput = desktop?.onGuestInput((input) => {
     const view = webviewFor(input.from);
     if (!view) return;
+    if (input.kind === "inspect") return startInspect(view, input.x, input.y);
     // A press in a page makes this the app in use, like a press anywhere in it.
     if (input.kind === "focus") activateApp(appOf(root.value));
     if (input.kind === "focus" || input.kind === "peek" || input.kind === "split") {
@@ -1137,6 +1153,10 @@ function addLivePageFor(tab: BrowserTab, view: WebviewElement) {
     kept: () =>
       seenNow(tab.id) ||
       Date.now() < skipUntil ||
+      !!tab.keepLive ||
+      // The MCP and NetSuite apps create a processing tab from a live tab
+      // of that account: keep the tab behind one.
+      processingTabs.value.some((p) => p.id === originOf(tab.url)) ||
       (tab.id === state.value.active &&
         (interacting.value || document.activeElement === view)),
     remember: () => {
@@ -1589,6 +1609,15 @@ function tabMenu(event: MouseEvent, tab: BrowserTab) {
           ...(tab.rootUrl && passwords && new URL(tab.rootUrl).protocol === "https:"
             ? [{ label: "Auto-login", icon: "key", children: () => loginMenu(tab) }]
             : []),
+          {
+            label: tab.keepLive ? "Allow unloading" : "Keep tab live",
+            icon: "clock",
+            run: () => {
+              if (tab.keepLive) delete tab.keepLive;
+              else tab.keepLive = true;
+              save();
+            },
+          },
           {
             label: "Open in Split View",
             icon: "columns",
@@ -2506,6 +2535,77 @@ function goHome() {
 }
 const embedHintDismissed = ref(false);
 watch(() => activeTab.value.id, () => { embedHintDismissed.value = false; });
+
+// ---- Inspect: DevTools docked under the page, like other browsers ----
+// Electron renders the page's DevTools into a DevTools <webview> placed in
+// the row under the page; the page area shrinks to make room.
+const inspect = ref<{ tabId: string; guestId: number; x: number; y: number; key: number }>();
+const devtoolsHeight = ref(300);
+let devtoolsKey = 0;
+let devtoolsReady = false;
+function startInspect(view: WebviewElement, x: number, y: number) {
+  const tab = state.value.tabs.find((item) => webviews.get(item.id) === view);
+  if (!tab || !desktop?.openDevTools || !desktop.devtoolsSrc) return;
+  const guestId = view.getWebContentsId();
+  const open = inspect.value;
+  // Already docked for this page: just reveal the element.
+  if (open && open.guestId === guestId && devtoolsReady) {
+    void desktop.openDevTools(guestId, devtoolsElement!.getWebContentsId(), x, y);
+    return;
+  }
+  if (open) void desktop.closeDevTools?.(open.guestId);
+  devtoolsReady = false;
+  inspect.value = { tabId: tab.id, guestId, x, y, key: ++devtoolsKey };
+}
+let devtoolsElement: WebviewElement | undefined;
+function bindDevtools(element: unknown) {
+  const view = element as WebviewElement | null;
+  if (!view || view === devtoolsElement) return;
+  devtoolsElement = view;
+  const target = inspect.value;
+  view.addEventListener("dom-ready", () => {
+    const current = inspect.value;
+    if (!current || current !== target || devtoolsReady || !desktop?.openDevTools) return;
+    devtoolsReady = true;
+    void desktop.openDevTools(current.guestId, view.getWebContentsId(), current.x, current.y);
+  }, { once: true });
+}
+function closeInspect() {
+  const open = inspect.value;
+  if (!open) return;
+  void desktop?.closeDevTools?.(open.guestId);
+  inspect.value = undefined;
+  devtoolsElement = undefined;
+  devtoolsReady = false;
+}
+// DevTools belong to the page they inspect: switching away closes them.
+watch(() => state.value.active, (active) => {
+  if (inspect.value && inspect.value.tabId !== active) closeInspect();
+});
+watch(() => state.value.tabs.map((tab) => tab.id), (ids) => {
+  if (inspect.value && !ids.includes(inspect.value.tabId)) closeInspect();
+});
+function startDevtoolsResize(event: PointerEvent) {
+  const grip = event.currentTarget as HTMLElement;
+  const box = root.value;
+  if (!box) return;
+  event.preventDefault();
+  grip.setPointerCapture(event.pointerId);
+  const scale = box.getBoundingClientRect().height / box.offsetHeight || 1;
+  const startY = event.clientY, start = devtoolsHeight.value;
+  const max = Math.max(120, box.clientHeight - 160);
+  const move = (next: PointerEvent) => {
+    devtoolsHeight.value = Math.round(Math.min(max, Math.max(120, start - (next.clientY - startY) / scale)));
+  };
+  const end = () => {
+    grip.removeEventListener("pointermove", move);
+    grip.removeEventListener("pointerup", end);
+    grip.removeEventListener("pointercancel", end);
+  };
+  grip.addEventListener("pointermove", move);
+  grip.addEventListener("pointerup", end);
+  grip.addEventListener("pointercancel", end);
+}
 
 // ---- Tooltips, drawn inside the app so they follow its zoom ----
 const tip = ref<{ text: string; meta: string; shortcut: boolean; x: number; y: number }>();
@@ -4064,6 +4164,39 @@ function browserWheel(event: WheelEvent) {
       @update:search-engine="state.searchEngine = $event; save()"
       @update:pip="state.pip = $event; save()"
     />
+    <section
+      v-if="inspect && useWebview"
+      class="browser-devtools"
+      aria-label="Developer tools"
+      :style="{ height: devtoolsHeight + 'px' }"
+    >
+      <div
+        class="devtools-grip"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize developer tools"
+        @pointerdown="startDevtoolsResize"
+      ></div>
+      <header class="devtools-bar">
+        <span>Developer tools</span>
+        <button
+          type="button"
+          class="icon-button"
+          aria-label="Close developer tools"
+          data-tip="Close developer tools"
+          @click="closeInspect"
+        >
+          <Icon name="close" :size="13" />
+        </button>
+      </header>
+      <webview
+        :key="inspect.key"
+        :ref="bindDevtools"
+        class="devtools-view"
+        partition="orvane-devtools"
+        :src="desktop!.devtoolsSrc"
+      ></webview>
+    </section>
     <div
       v-if="tip"
       ref="tipBox"
@@ -4344,8 +4477,48 @@ function browserWheel(event: WheelEvent) {
   position: relative;
   display: grid;
   grid-template-columns: var(--side) minmax(0, 1fr);
-  grid-template-rows: auto auto auto auto auto auto auto minmax(0, 1fr);
+  /* Row 9 holds docked DevTools (Inspect); empty, it takes no space. */
+  grid-template-rows: auto auto auto auto auto auto auto minmax(0, 1fr) auto;
   color: var(--ink);
+}
+.browser-devtools {
+  grid-row: 9;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.devtools-grip {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: row-resize;
+  z-index: 2;
+  touch-action: none;
+}
+.devtools-grip:hover {
+  background: linear-gradient(to bottom, transparent 2px, var(--accent) 2px 3px, transparent 3px);
+}
+.devtools-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 28px;
+  padding: 0 4px 0 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--faint, #687d8a);
+}
+.devtools-view {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
 }
 .browser-view.theme-dark {
   color-scheme: dark;

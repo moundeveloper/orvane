@@ -92,3 +92,85 @@ It does not exercise the desktop bridge, `<webview>` guests or processing pages,
 - All benchmark runs kept focus and visibility, reported no page errors, and kept the header's `backdrop-filter`. The end-of-run screenshot was reviewed.
 
 Not verified: the tests ran in Chrome and the benchmark in a bare Electron window, so pan, zoom and startup were not timed inside the full desktop shell with live `<webview>` pages, and nothing was run against a signed-in NetSuite session. The three `tests/desktop.spec.ts` tests in the passing run do use the real shell: a frame-blocking site loading in a webview with links opening as tabs, server shutdown, and saved logins. Touch input and displays above 60 Hz were not available. One behavior differs slightly: while Space is held, the cursor over the top bar and dock is their own rather than the grab hand, because the overlay sits beneath them.
+
+## Desktop shell baseline (19 November 2026)
+
+Step 0 of [PERFORMANCE-PLAN.md](PERFORMANCE-PLAN.md). `node --import tsx research/desktop-baseline.ts --idle 60` launches the real desktop shell (`electron/main.mjs`, production build) on a disposable data folder and profile, builds a workspace through the UI (one Browser app with 10 local pages of about 1,600 elements, a CSS animation and a 1 s timer; 3 terminals each printing 50 lines a second; Notes; a Git viewer; the first-run examples), and records processes, server traffic, saving and pan cadence. Two runs, Electron 45.1.0 / Chrome 156, 1920×1080 at 60 Hz, scale 1. Raw results are in `artifacts/baseline/`.
+
+**Memory (private bytes, idle with terminals printing)**
+
+| Process | Run 1 | Run 2 |
+|---|---|---|
+| 10 Browser pages (one process each) | 384 MB | 393 MB |
+| GPU | 309 MB | 312 MB |
+| Workspace renderer | 276 MB | 214 MB |
+| Local Node server | 348 MB | 354 MB |
+| Main process, utility, spare renderer | 135 MB | 139 MB |
+| **Total** | **1,452 MB** | **1,412 MB** |
+
+Each local page costs about 39 MB; real sites cost more, so this is a lower bound for plan step 1. The server reaches about 1.5 GB when it rebuilds the front end at startup (sources newer than `dist`) and keeps that memory afterwards.
+
+**CPU (% of one core, 60 s average)**
+
+| | Terminals printing | All quiet (30 s) |
+|---|---|---|
+| Workspace renderer | 10.9–11.1 | |
+| GPU | 9.8–9.9 | |
+| Local server | 5.7–6.9 | |
+| Browser pages (10) | 1.1 | |
+| Main, utility | 2.3 | |
+| **Total** | **≈ 31** | **2.8–2.9** (Electron processes) |
+
+Three busy terminals cost about 28% of a core, carried as about 12,100 socket messages a minute (one per output chunk). A quiet workspace is cheap.
+
+**Local server requests while idle:** 90–96 a minute: the storage lease 60 (every second), the MCP bridge 28–30 (it retries every 2 s while no MCP server answers, which the fixture has none of; a connected setup would not poll), and workspace saves 2–6.
+
+**Typing 180 characters in Notes:** 57–203 requests and 45–84 KB sent in about 21 s: workspace state 17–34 KB plus Notes data 10–65 KB. The spread between runs comes from save timing; both write whole documents for each change.
+
+**Panning at overview (zoom ≈ 0.2, all apps on screen, about 900 frames each):** p50 16.7 ms and p95 16.9–17.0 ms in every run. Frames over 20 ms: 4–18 with terminals printing, 0–3 with them quiet. Terminal output adds a few late frames; the camera otherwise holds 60 Hz in the full shell with live pages.
+
+What this changes in the plan: Browser pages (step 1) and terminal output (step 3) are the measured costs; idle polling (step 5) is a request-count cost more than a CPU one; terminal blur (step 4) shows no cost at 60 Hz and waits for a 120 Hz measurement.
+
+Not measured: 120 Hz (the display runs at 60 Hz), NetSuite processing pages (they need a signed-in account), terminals printing while off screen (all apps were on screen), and real websites.
+
+### Step 1: unloading Browser tabs by default
+
+Long-hidden Browser tabs are now unloaded by default once more than 6 pages are live, after 2 minutes out of view (`orvane.browser.discardEnabled` set to `"false"` turns it off). Never unloaded: the tab on screen or in use, pages with edited form fields, tabs set to **Keep tab live** (tab menu), and a tab whose site has a processing tab, which the MCP and NetSuite apps create from a live tab of that account.
+
+Same harness, idle 180 s so the 2-minute timeout passes: 6 Browser pages instead of 10, **231 MB instead of 384–393 MB** for pages (−155 MB on light local pages; real sites free more per tab). Total 1,333 MB against 1,412–1,452 MB. Pan cadence is unchanged within run-to-run spread (p95 16.9–17.9 ms).
+
+### Step 2 check: what one save costs
+
+Before splitting the workspace into per-app rows, one save was timed on the 50-app fixture (`seedForegroundFixture`, 50 runs each). The workspace record holds layout and settings only; app content (Notes pages, NetSuite views, terminals) is already stored in its own rows. The 50-app workspace record is **35 KB**.
+
+| Part of a save | Time |
+|---|---|
+| Client: serialise, parse and validate | 1.2 ms |
+| Server write, `synchronous = FULL` (current) | 6.9 ms |
+| Server write, `synchronous = NORMAL` | 2.5 ms |
+
+Saves run at most about once a second, after a pause in editing, and the server part runs in the separate Node process, not in the window. Per-app rows would make a 35 KB write smaller but would not move a number anyone notices, so that part of step 2 is not worth its migration risk. Typing in Notes already writes only the changed Notes records.
+
+### Step 3: terminals panned off screen
+
+A terminal pane that is laid out but outside the view (the canvas camera moved away) now holds its output and writes it in one go when it comes back (`src/terminalHold.ts`). Backlogs over 256 KB are written early, so nothing is dropped and held output stays bounded. Hidden terminal tabs and the hidden Projects terminal panel keep writing as before, so their buffers stay current.
+
+Same harness, 3 terminals each printing 50 lines a second, all panned off screen, 30 s average (% of one core):
+
+| | Before | After |
+|---|---|---|
+| Workspace renderer | 4.6 | 0.5–0.7 |
+| GPU | 0.4 | 0.2–0.3 |
+| Electron processes total | 6.3 | 1.4–2.1 |
+
+On screen nothing changes (the output is drawn, as it must be).
+
+Batching output on the server was tried and removed: Windows' ConPTY already groups output, and a 3,000-line burst arrived as one socket message with and without it.
+
+### Step 5: idle polling
+
+- The editing window renews its 15 s storage lease every 4 s instead of every second (`LEASE_RENEW_MS` in `src/storage.ts`). A read-only second window still checks every second, so it follows edits and takes over editing as quickly as before.
+- Claude Sessions stops polling while panned off screen and reads at once when it comes back.
+- Live clips needed no change: an off-screen clip already pauses its page after 5 s, which stops its 400 ms position timer. The plan's note on them was wrong.
+
+Same harness, 60 s idle: local server requests **90–96 → 45–48 a minute**; the lease alone **60 → 12–13**. The rest is the MCP bridge retrying every 2 s because the fixture runs no MCP server (30 a minute, unchanged; a connected setup does not poll) and saves. Claude Sessions is not part of the fixture; its off-screen polling stop is covered by `tests/idle-polling.spec.ts`. Idle CPU was already low (2.2–2.9%) and stays there.

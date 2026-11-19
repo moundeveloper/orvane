@@ -1,5 +1,21 @@
-import { BrowserWindow, ipcMain, webContents } from "electron";
+import { BrowserWindow, WebContentsView, ipcMain, webContents } from "electron";
 import { isNetSuitePage, netSuiteLogin } from "./netsuite-login.mjs";
+
+// A page with no native window. Processing pages used to be hidden
+// BrowserWindows owned by the workspace; after a tray reopen Windows could
+// still draw one as a dark "NetSuite Login" box while it reported itself
+// hidden. A WebContentsView never attached to a window has nothing to draw.
+// Same shape as the BrowserWindow it replaces, for the code below.
+function headlessPage(webPreferences) {
+  const contents = new WebContentsView({ webPreferences }).webContents;
+  return {
+    webContents: contents,
+    isDestroyed: () => contents.isDestroyed(),
+    destroy: () => { if (!contents.isDestroyed()) contents.close(); },
+    loadURL: url => contents.loadURL(url),
+    on: (name, listener) => contents.on(name === 'closed' ? 'destroyed' : name, listener),
+  };
+}
 
 // Headless, session-sharing browser pages owned by the Orvane window. Processing
 // pages never expose Node or a preload, and are not addressable by websites.
@@ -70,9 +86,8 @@ export function setupProcessing({ partition, isOrvane }) {
     if (existing && !existing.window.isDestroyed()) return existing;
     const ns = netSuite(u.href);
     const target = ns ? `${u.origin}/app/center/card.nl` : u.href;
-    const parent = BrowserWindow.fromWebContents(owner);
-    if (!parent) throw Error('Browser window is unavailable.');
-    const window = new BrowserWindow({ show: false, parent, webPreferences: { partition: 'persist:orvane-browser', sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
+    if (!BrowserWindow.fromWebContents(owner)) throw Error('Browser window is unavailable.');
+    const window = headlessPage({ partition: 'persist:orvane-browser', sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false });
     const entry = { origin: u.origin, label: u.hostname, owner, window, target, status: 'loading', autoRefresh: ns, busy: 0, timer: undefined, loading: undefined, retries: 0, retryTimer: undefined };
     entries.set(k, entry);
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));

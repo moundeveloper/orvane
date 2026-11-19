@@ -17,9 +17,10 @@ const props = defineProps<{
   color: string;
 }>();
 const emit = defineEmits<{ "update:tool": [Tool]; "update:color": [string]; created: [id: string, kind: "note" | "arrow" | "stroke"] }>();
-const TOOLS: { id: Tool; icon: string; label: string }[] = [
+const TOOLS: { id: Tool; icon: string; label: string; shortcut?: string }[] = [
   { id: "select", icon: "button", label: "Select (Esc)" },
-  { id: "note", icon: "text", label: "Sticky note" },
+  // Ctrl+Shift+N opens a sticky note at the pointer (App.vue stickyAtPointer).
+  { id: "note", icon: "text", label: "Sticky note", shortcut: /Mac/.test(navigator.platform) ? "Cmd+Shift+N" : "Ctrl+Shift+N" },
   { id: "arrow", icon: "forward", label: "Arrow between apps" },
   { id: "pen", icon: "edit", label: "Draw" },
   { id: "eraser", icon: "trash", label: "Eraser" },
@@ -153,8 +154,9 @@ const colorIndex = computed(() => Math.max(0, BOARD_COLORS.indexOf(props.color))
       v-for="t in TOOLS"
       :key="t.id"
       type="button"
-      :title="t.label"
+      :title="t.shortcut ? `${t.label} (${t.shortcut})` : t.label"
       :aria-label="t.label"
+      :aria-keyshortcuts="t.shortcut?.replace('Cmd', 'Meta').replace('Ctrl', 'Control')"
       :aria-pressed="tool === t.id"
       @click="emit('update:tool', tool === t.id && t.id !== 'select' ? 'select' : t.id)"
     >

@@ -1262,6 +1262,11 @@ function copyCode() {
   field-sizing: content;
   resize: none;
 }
+/* The global focused-field underline does not belong under a caption. */
+.img-caption:focus {
+  background: transparent;
+  box-shadow: none;
+}
 .img-placeholder {
   padding: 24px;
   background: var(--notes-bg-code);

@@ -225,12 +225,34 @@ test("Desktop Browser discards long-unseen pages beyond the live limit", async (
       });
     };
 
-    // Even over budget, background pages stay loaded unless unloading is enabled.
+    const tabMenu = async (index: number, item: string) => {
+      await tabs.nth(index).click({ button: "right" });
+      await browser.getByRole("menu").getByText(item, { exact: true }).click();
+    };
+    // Turned off, background pages stay loaded even over budget.
+    await page.evaluate(() => localStorage.setItem("orvane.browser.discardEnabled", "false"));
     await openInNewTab("/b");
     await page.waitForTimeout(1200);
     expect(await liveGuests(app)).toEqual(["/a", "/b"]);
-    await page.evaluate(() => localStorage.setItem("orvane.browser.discardEnabled", "true"));
-    // With explicit opt-in, the background page can be discarded.
+    // On by default; a tab set to "Keep tab live" still stays loaded.
+    await tabMenu(0, "Keep tab live");
+    await page.evaluate(() => localStorage.removeItem("orvane.browser.discardEnabled"));
+    await page.waitForTimeout(2500);
+    expect(await liveGuests(app)).toEqual(["/a", "/b"]);
+    // So does a tab whose site has a processing tab (the MCP and NetSuite
+    // apps create one from a live tab of that account).
+    await tabMenu(0, "Allow unloading");
+    await tabs.first().click();
+    await browser.getByRole("button", { name: "Use current tab" }).click();
+    await expect(browser.locator(".processing-list")).toContainText("ready", { timeout: 15000 });
+    await tabs.nth(1).click();
+    await page.waitForTimeout(2500);
+    expect(await liveGuests(app)).toEqual(["/a", "/b"]);
+    // Without either, the background page is discarded.
+    await browser.getByRole("button", { name: /Processing tabs/ }).click();
+    await browser.locator(".processing-row").getByRole("button", { name: "Close" }).click();
+    await expect(browser.locator(".processing-row")).toHaveCount(0);
+    await page.keyboard.press("Escape");
     await expect.poll(() => liveGuests(app), { timeout: 10000 }).toEqual(["/b"]);
     await expect(browser.locator(".browser-discarded")).toHaveCount(1);
     await expect(tabs.first()).toContainText("Fixture a");

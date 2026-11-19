@@ -44,7 +44,12 @@ let timer: ReturnType<typeof setTimeout> | undefined,
   stopped = false,
   generation = 0,
   first = true,
-  ticks = 0;
+  ticks = 0,
+  // Panned off screen on the canvas: no polling until it is seen again.
+  onScreen = true,
+  polling = false,
+  visibility: IntersectionObserver | undefined;
+const root = ref<HTMLElement>();
 try {
   active.value = JSON.parse(props.block.value || "{}").active || "";
 } catch {}
@@ -165,15 +170,18 @@ async function older() {
   }
 }
 async function poll() {
-  if (stopped) return;
+  if (stopped || polling) return;
+  polling = true;
   try {
-    if (!document.hidden) {
+    if (!document.hidden && onScreen) {
       if (ticks++ % 3 === 0) await list();
       if (active.value && !loading.value && !olderBusy.value) await read();
     }
   } catch (e) {
     error.value = e instanceof Error ? e.message : "Session updates paused.";
   } finally {
+    polling = false;
+    clearTimeout(timer);
     if (!stopped) timer = setTimeout(poll, 1800);
   }
 }
@@ -194,15 +202,28 @@ function back() {
 }
 onMounted(() => {
   void poll();
+  if (root.value)
+    visibility = new IntersectionObserver(([entry]) => {
+      const was = onScreen;
+      onScreen = !!entry?.isIntersecting;
+      // Back on screen: read now rather than at the next tick.
+      if (onScreen && !was) {
+        ticks = 0;
+        clearTimeout(timer);
+        void poll();
+      }
+    });
+  visibility?.observe(root.value!);
 });
 onBeforeUnmount(() => {
+  visibility?.disconnect();
   stopped = true;
   generation++;
   clearTimeout(timer);
 });
 </script>
 <template>
-  <div class="claude-app">
+  <div ref="root" class="claude-app">
     <header class="cs-toolbar">
       <strong>Claude sessions</strong
       ><span class="cs-muted">Read-only mirror</span

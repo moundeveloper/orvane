@@ -55,6 +55,18 @@ function trackBrowserPopup(popup) {
   if (!workspaceAllowsPopups() && popup.isVisible() && !popup.isMinimized()) popup.minimize();
 }
 export const BROWSER_PARTITION = "persist:orvane-browser";
+// Inspect docks DevTools inside the Browser app: the app adds a <webview>
+// with this src, and Electron renders the page's DevTools into it. It gets
+// its own in-memory session and none of the Browser page handling.
+const GOOGLE_SIGN_IN_AGENT = process.platform === "darwin"
+  ? "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0"
+  : "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0";
+const googleSignIn = (url) => {
+  try { return new URL(url).origin === "https://accounts.google.com"; } catch { return false; }
+};
+const DEVTOOLS_SRC = "about:blank#orvane-devtools";
+const DEVTOOLS_PARTITION = "orvane-devtools";
+const isDevtoolsGuest = (contents) => contents.session === session.fromPartition(DEVTOOLS_PARTITION);
 const CANVAS_WORLD = 1987;
 const CANVAS_PREFIX = "\u0000orvane-canvas:";
 // Runs inside each Browser page (isolated world): turns Ctrl/Cmd+wheel and
@@ -222,6 +234,28 @@ function secure() {
       .replace(/ Electron\/\S+/, "")
       .replace(new RegExp(` ${app.getName()}\\/\\S+`, "i"), ""),
   );
+  // Google's sign-in refuses embedded Chromium ("This browser or app may not
+  // be secure") even with the plain Chrome agent above: it also reads the
+  // Chromium brand hints. Its sign-in pages alone see a Firefox agent and
+  // no brand hints, in requests and in the page; other sites are unchanged.
+  const siteAgent = sites.getUserAgent();
+  sites.webRequest.onBeforeSendHeaders({ urls: ["https://accounts.google.com/*"] }, (details, done) => {
+    const requestHeaders = { ...details.requestHeaders, "User-Agent": GOOGLE_SIGN_IN_AGENT };
+    for (const name of Object.keys(requestHeaders))
+      if (/^sec-ch-ua/i.test(name)) delete requestHeaders[name];
+    done({ requestHeaders });
+  });
+  app.on("web-contents-created", (_event, contents) => {
+    if (contents.getType() !== "webview" || contents.session !== sites) return;
+    const agentFor = (url) => (googleSignIn(url) ? GOOGLE_SIGN_IN_AGENT : siteAgent);
+    const follow = (url) => {
+      const agent = agentFor(url);
+      if (!contents.isDestroyed() && contents.getUserAgent() !== agent) contents.setUserAgent(agent);
+    };
+    contents.on("will-navigate", (_e, url) => follow(url));
+    contents.on("will-redirect", (event) => { if (event.isMainFrame) follow(event.url); });
+    contents.on("did-start-navigation", (event) => { if (event.isMainFrame && !event.isSameDocument) follow(event.url); });
+  });
   // Websites get no camera, microphone, location or notifications.
   sites.setPermissionRequestHandler((_contents, permission, done) =>
     done(["fullscreen", "clipboard-sanitized-write"].includes(permission)),
@@ -253,6 +287,7 @@ function secure() {
 
   app.on("web-contents-created", (_event, contents) => {
     if (contents.session === sites) trackPasswords(contents);
+    if (contents.getType() === "webview" && isDevtoolsGuest(contents)) return;
     if (contents.getType() === "webview") {
       sessions.observe(contents);
       // Discovery follows the real Browser tab as login and navigation finish.
@@ -422,7 +457,12 @@ function secure() {
         items.push(
           { type: "separator" },
           { label: "Inspect", click: () => {
-            if (!contents.isDestroyed()) contents.inspectElement(params.x, params.y);
+            if (contents.isDestroyed()) return;
+            // The Browser app docks DevTools under the page, like a browser.
+            const host = contents.hostWebContents;
+            if (host && !host.isDestroyed())
+              host.send("orvane:guest-input", { from: contents.id, kind: "inspect", x: params.x, y: params.y });
+            else contents.inspectElement(params.x, params.y);
           } },
         );
         Menu.buildFromTemplate(items).popup({ window: BrowserWindow.fromWebContents(contents.hostWebContents) || undefined });
@@ -513,6 +553,11 @@ function secure() {
       preferences.nodeIntegrationInSubFrames = false;
       preferences.contextIsolation = true;
       preferences.sandbox = true;
+      if (params.src === DEVTOOLS_SRC) {
+        // The element's partition attribute decides the session; enforce it.
+        preferences.partition = DEVTOOLS_PARTITION;
+        return;
+      }
       params.partition = BROWSER_PARTITION;
       if (!web(params.src) || isOrvane(params.src)) event.preventDefault();
     });
@@ -769,6 +814,27 @@ ipcMain.handle("orvane:inbox-clipboard", (event) => {
   return text ? { kind: "text", value: text } : null;
 });
 
+// Docked DevTools: render a Browser page's DevTools into the DevTools
+// <webview> the same Orvane window placed under it, then show the element.
+ipcMain.handle("orvane:page-devtools", (event, id, devtoolsId, x, y) => {
+  const guest = ownGuest(event, id);
+  const devtools = typeof devtoolsId === "number" ? webContents.fromId(devtoolsId) : undefined;
+  if (!guest || isDevtoolsGuest(guest) || !devtools || devtools.isDestroyed() ||
+      devtools.getType() !== "webview" || devtools.hostWebContents !== event.sender || !isDevtoolsGuest(devtools)) return false;
+  // Already docked there: only reveal the element. A DevTools webview takes
+  // DevTools once, before anything else loads in it.
+  if (!guest.isDevToolsOpened()) {
+    guest.setDevToolsWebContents(devtools);
+    guest.openDevTools();
+  }
+  if (Number.isFinite(x) && Number.isFinite(y)) guest.inspectElement(Math.round(x), Math.round(y));
+  return true;
+});
+ipcMain.handle("orvane:page-devtools-close", (event, id) => {
+  const guest = ownGuest(event, id);
+  if (guest?.isDevToolsOpened()) guest.closeDevTools();
+});
+
 /** A <webview> guest of the window that sent this IPC message, or nothing. */
 function ownGuest(event, id) {
   const guest = typeof id === "number" ? webContents.fromId(id) : undefined;
@@ -826,7 +892,7 @@ ipcMain.handle("orvane:page-active", (event, id, active) => {
 });
 // A new document (cross-site navigation) starts unpaused; keep it paused.
 app.on("web-contents-created", (_event, contents) => {
-  if (contents.getType() !== "webview") return;
+  if (contents.getType() !== "webview" || isDevtoolsGuest(contents)) return;
   contents.on("dom-ready", () => {
     if (pausedGuests.has(contents.id))
       void contents.debugger.sendCommand("Debugger.pause", {}).catch(() => undefined);

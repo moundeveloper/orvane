@@ -222,20 +222,37 @@ test("Desktop Browser app loads frame-blocking sites in a webview", async ({}, i
       }, { timeout: 10000 })
       .toBe(true);
 
-    const inspected = await app.evaluate(({ webContents, Menu }) => {
+    // Inspect docks DevTools under the page inside the Browser app (no
+    // separate native window) and reveals the clicked element.
+    const windowsBefore = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
+    await app.evaluate(({ webContents, Menu }) => {
       const guest = webContents.getAllWebContents().find((contents) => contents.getType() === "webview")!;
       const build = Menu.buildFromTemplate;
-      const inspect = guest.inspectElement;
-      let chosen: { id: number; x: number; y: number } | undefined;
-      guest.inspectElement = (x, y) => { chosen = { id: guest.id, x, y }; };
+      const inspect = guest.inspectElement.bind(guest);
+      (globalThis as unknown as { inspected?: unknown }).inspected = undefined;
+      guest.inspectElement = (x, y) => { (globalThis as unknown as { inspected?: unknown }).inspected = { id: guest.id, x, y }; inspect(x, y); };
       Menu.buildFromTemplate = (items) => ({
         popup() { (items.find((item) => item.label === "Inspect") as Electron.MenuItemConstructorOptions)?.click?.(undefined as never, undefined as never, undefined as never); },
       }) as Electron.Menu;
       try { guest.emit("context-menu", {}, { x: 30, y: 40, isEditable: false }); }
-      finally { Menu.buildFromTemplate = build; guest.inspectElement = inspect; }
-      return chosen?.id === guest.id ? { x: chosen.x, y: chosen.y } : null;
+      finally { Menu.buildFromTemplate = build; }
     });
-    expect(inspected).toEqual({ x: 30, y: 40 });
+    await expect(page.getByRole("region", { name: "Developer tools" })).toBeVisible();
+    // Electron reports isDevToolsOpened() = false for DevTools rendered into
+    // a custom webview; what counts is the DevTools app loading there.
+    await expect.poll(() => app.evaluate(({ webContents, BrowserWindow }) => {
+      const inspected = (globalThis as unknown as { inspected?: { id: number; x: number; y: number } }).inspected;
+      const docked = webContents.getAllWebContents().find((contents) =>
+        contents.getType() === "webview" && contents.getURL().startsWith("devtools://devtools/"));
+      return {
+        dockedInBrowserApp: !!docked?.hostWebContents && docked.hostWebContents === webContents.fromId(inspected?.id ?? -1)?.hostWebContents,
+        windows: BrowserWindow.getAllWindows().length,
+        inspected: inspected && { x: inspected.x, y: inspected.y },
+      };
+    }), { timeout: 15000 }).toEqual({ dockedInBrowserApp: true, windows: windowsBefore, inspected: { x: 30, y: 40 } });
+    // The test app reaches below the window edge: click without scrolling.
+    await page.getByRole("button", { name: "Close developer tools" }).dispatchEvent("click");
+    await expect(page.getByRole("region", { name: "Developer tools" })).toHaveCount(0);
     const signIn = await app.evaluate(async ({ webContents, shell }) => {
       const guest = webContents.getAllWebContents().find((contents) => contents.getType() === "webview")!;
       const original = shell.openExternal;

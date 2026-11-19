@@ -54,6 +54,8 @@ async function browserData(): Promise<{
   }
 }
 
+/** How often the editing window renews its lease (the server's lasts 15 s). */
+export const LEASE_RENEW_MS = 4000;
 export class WorkspaceStorage {
   writer = false;
   conflicted = false;
@@ -62,6 +64,7 @@ export class WorkspaceStorage {
   private closed = false;
   private timer?: ReturnType<typeof setInterval>;
   private ticking = false;
+  private renewedAt = 0;
   private queue: Promise<unknown> = Promise.resolve();
   private closingData?: Workspace;
   private ordinary?: { data: Workspace; promise: Promise<void> };
@@ -105,9 +108,14 @@ export class WorkspaceStorage {
   }
   private async tick() {
     if (this.closed || this.ticking || this.conflicted) return;
+    // The editing window renews its 15 s lease every few seconds; a read-only
+    // window still checks every second, to follow edits and take over
+    // editing promptly when the other window closes.
+    if (this.writer && Date.now() - this.renewedAt < LEASE_RENEW_MS) return;
     this.ticking = true;
     try {
       const lease = await this.request<{ owned: boolean }>("lease", "POST", {});
+      if (lease.owned) this.renewedAt = Date.now();
       if (this.closed) {
         if (lease.owned) this.release();
         return;

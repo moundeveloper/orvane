@@ -81,6 +81,14 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
   captureClip(webContentsId, url, rect, fromViewport) {
     return ipcRenderer.invoke("orvane:page-clip", webContentsId, url, rect, fromViewport);
   },
+  /** Docked DevTools: the page's DevTools rendered into a DevTools webview. */
+  devtoolsSrc: "about:blank#orvane-devtools",
+  openDevTools(webContentsId, devtoolsId, x, y) {
+    return ipcRenderer.invoke("orvane:page-devtools", webContentsId, devtoolsId, x, y);
+  },
+  closeDevTools(webContentsId) {
+    return ipcRenderer.invoke("orvane:page-devtools-close", webContentsId);
+  },
   /** Canvas zoom/pan gestures made over a Browser page. */
   onGuestInput(callback) {
     const listener = (_event, input) => callback(input);

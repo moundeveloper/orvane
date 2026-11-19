@@ -267,6 +267,8 @@ function onTabDrop(id: string, e: DragEvent) {
 function onKeydown(e: KeyboardEvent) {
   const mod = e.ctrlKey || e.metaKey;
   if (mod && !e.altKey && e.key.toLowerCase() === "q") return;
+  // Alt+Q holds the workspace action wheel: let it reach the workspace.
+  if (e.code === "KeyQ" && e.altKey && !mod && !e.shiftKey) return;
   if (e.key === "Escape" && !searchOpen.value) return;
   e.stopPropagation();
   if (!tabFocused.value || !appRoot.value?.contains(document.activeElement)) return;

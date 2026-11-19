@@ -10,6 +10,7 @@ const moving = new Map<string, { term: Xterm; fit: Fit; exited: boolean; timer: 
 // One terminal pane: xterm.js bound to a live shell on the local server.
 // Output streams as it happens; the shell keeps running across reloads.
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { OutputHold } from "../../terminalHold";
 import { Terminal, type IDisposable, type ILink } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -125,6 +126,11 @@ function start() {
     sessionListener(),
   );
 }
+// Panned off screen on the canvas, output is held and written in one go when
+// the pane is seen again (see terminalHold.ts).
+const hold = new OutputHold((data) => term?.write(data));
+let visibility: IntersectionObserver | undefined;
+const writeHeld = () => hold.release();
 function sessionListener(): SessionListener {
   return {
       started() {
@@ -132,6 +138,7 @@ function sessionListener(): SessionListener {
         if (term?.buffer.active.length && term.buffer.active.length > term.rows) term.write("\r\n");
       },
       attached(replay) {
+        hold.discard();
         term?.reset();
         term?.write(replay);
       },
@@ -139,15 +146,17 @@ function sessionListener(): SessionListener {
         ctl.pinFolder(props.pane.id, path);
       },
       output(data) {
-        term?.write(data);
+        hold.output(data);
         if (!ctl.visible(props.pane.id)) ctl.activity(props.pane.id);
       },
       exit(code) {
+        writeHeld();
         exited = true;
         if (code === 0 && ctl.closeAfterExit(props.pane.id)) return;
         term?.write(`\r\n\x1b[90m[Process exited with code ${code}. Press Enter to restart.]\x1b[0m\r\n`);
       },
       error(message) {
+        writeHeld();
         exited = true;
         term?.write(`\r\n\x1b[31m${message}\x1b[0m\r\n\x1b[90m[Press Enter to try again.]\x1b[0m\r\n`);
       },
@@ -272,6 +281,7 @@ function provideLinks(y: number, callback: (links: ILink[] | undefined) => void)
 // ---- Search in the scrollback ----
 let lastFind: { row: number; col: number; needle: string } | null = null;
 function find(query: string, options: { caseSensitive: boolean; backwards: boolean }) {
+  writeHeld();
   if (!term || !query) return false;
   const buffer = term.buffer.active;
   const total = buffer.length;
@@ -429,6 +439,14 @@ onMounted(async () => {
     if (!props.resizing) fitFrame = requestAnimationFrame(fitNow);
   });
   observer.observe(host.value!);
+  visibility = new IntersectionObserver(([entry]) => {
+    // Only a pane that is laid out but outside the view (the canvas camera
+    // moved away) holds output. A hidden tab or panel has no size and keeps
+    // writing, as before, so its buffer stays current.
+    const rect = entry?.boundingClientRect;
+    hold.visible(!entry || entry.isIntersecting || !rect?.width || !rect.height);
+  });
+  visibility.observe(host.value!);
   ctl.register(props.pane.id, {
     element: host.value!,
     focus: () => term?.focus(),
@@ -436,7 +454,10 @@ onMounted(async () => {
     clearFind,
     copy: () => void copy(),
     paste: () => void paste(),
-    clear: () => term?.clear(),
+    clear: () => {
+      writeHeld();
+      term?.clear();
+    },
     restart: start,
   });
   if (ctl.focused(props.pane.id) && ctl.visible(props.pane.id)) term.focus();
@@ -459,6 +480,9 @@ watch(
 onBeforeUnmount(() => {
   cancelAnimationFrame(fitFrame);
   observer?.disconnect();
+  visibility?.disconnect();
+  // A remount (moved in the split layout) keeps this xterm: give it everything.
+  writeHeld();
   ctl.register(props.pane.id, null);
   for (const subscription of subscriptions) subscription.dispose();
   subscriptions = [];

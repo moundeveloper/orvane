@@ -165,4 +165,21 @@ test("Notes stores multiline image captions and exposes image drag and copy", as
     "data-ctrl-q-reached-window",
     "true",
   );
+  // A focused caption shows no global field underline.
+  const focusedCaption = page.locator(".img-caption");
+  await focusedCaption.focus();
+  // The global field focus style fades in over 0.16s: read it after that.
+  await page.waitForTimeout(400);
+  expect(
+    await focusedCaption.evaluate((field) => getComputedStyle(field).boxShadow),
+  ).toBe("none");
+  // Alt+Q held while writing in Notes opens the workspace action wheel.
+  await todo.click();
+  await page.keyboard.down("Alt");
+  await page.keyboard.down("q");
+  await expect(
+    page.getByRole("button", { name: "Edit wheel config" }),
+  ).toBeVisible();
+  await page.keyboard.up("q");
+  await page.keyboard.up("Alt");
 });

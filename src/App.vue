@@ -19,6 +19,7 @@ import { parseWorkspace, referenceIssues } from "./validation";
 import { mergeWorkspace } from "./imports";
 import { executeGraph } from "./flow";
 import AppSurface from "./components/AppSurface.vue";
+import AppTooltip from "./components/AppTooltip.vue";
 import { exampleApps, upgradeExampleApps } from "./examples";
 import { runIsolated } from "./sandbox";
 import Icon from "./components/Icon.vue";
@@ -2448,7 +2449,9 @@ function keydown(e: KeyboardEvent) {
     (e.target === document.body ||
       e.target === document.documentElement ||
       (e.target instanceof Element &&
-        e.target.classList.contains("canvas-background")))
+        (e.target.classList.contains("canvas-background") ||
+          // Notes passes Alt+Q on so the wheel opens while writing too.
+          !!e.target.closest(".notes-workspace"))))
   ) {
     e.preventDefault();
     wheelKeyHeld = true;
@@ -3458,6 +3461,7 @@ onBeforeUnmount(() => {
       :camera="camera"
       @created="boardCreated"
     />
+    <AppTooltip />
     <CommandPalette
       v-if="palette !== null"
       :apps="workspace.apps"
