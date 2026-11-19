@@ -3315,8 +3315,28 @@ const runtimeErrors = reactive<Record<string, string>>({});
 /** MCP: run a workflow, or press/submit/toggle a component, exactly as a
  * person would in this window. Errors are returned, never retried. */
 async function runForMcp(request: RunRequest) {
+  if (request.kind === "runs")
+    return {
+      runs: traces.value.map(({ id: _id, ...t }) => t),
+      appErrors: Object.entries(runtimeErrors).map(([appId, error]) => ({
+        appId,
+        app: workspace.apps.find((a) => a.id === appId)?.name || appId,
+        error,
+      })),
+    };
+  if (request.kind === "layout-apply") {
+    const layout = layouts.value.find((l) => l.id === request.layoutId);
+    if (!layout) throw Error(`Layout ${request.layoutId} does not exist. Call layout_list.`);
+    applyLayout(layout.id);
+    return { applied: layout.id, name: layout.name };
+  }
+  if (request.kind === "layout-save") return saveLayoutForMcp(request);
   actionNotice.value = "";
   activeExecutions.value++;
+  const label =
+    request.kind === "workflow"
+      ? workspace.actions?.find((a) => a.id === request.workflowId)?.name || request.workflowId
+      : request.componentId;
   try {
     if (request.kind === "workflow") {
       const workflow = workspace.actions?.find((a) => a.id === request.workflowId);
@@ -3343,9 +3363,54 @@ async function runForMcp(request: RunRequest) {
         : flatten(app.blocks).find((b) => b.kind === "input")?.value || "";
     const result = await executeFlow(app, block.rules, block.graph, initial);
     return { component: block.label, result, message: actionNotice.value };
+  } catch (error) {
+    // Failed agent runs show in Connection activity like a person's would.
+    traces.value.unshift({
+      id: uid(),
+      from: "MCP agent",
+      to: label,
+      action: request.kind === "workflow" ? "Run workflow" : "Trigger",
+      at: new Date().toLocaleTimeString(),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    traces.value = traces.value.slice(0, 30);
+    throw error;
   } finally {
     activeExecutions.value--;
   }
+}
+/** MCP: arrange apps (optional), then save the arrangement as a named layout. */
+function saveLayoutForMcp(request: Extract<RunRequest, { kind: "layout-save" }>) {
+  const places = Object.entries(request.apps || {}).map(([appId, place]) => {
+    const app = liveApps.value.find((a) => a.id === appId);
+    if (!app) throw Error(`App ${appId} is not on the canvas (missing, archived or trashed).`);
+    return { app, place };
+  });
+  for (const { app, place } of places) {
+    app.x = place.x;
+    app.y = place.y;
+    app.width = Math.max(place.width, appMinimum(app).width);
+    app.height = Math.max(place.height, appMinimum(app).height);
+    app.layoutHidden = !place.shown;
+  }
+  const layout = captureLayout(request.id || uid(), request.name);
+  const shown = liveApps.value.filter((a) => !a.layoutHidden);
+  if (places.length && shown.length) {
+    // Frame what the agent arranged, the way Center does.
+    const bounds = groupBounds(shown)!;
+    layout.camera = {
+      x: viewport.width / 2 - (bounds.x + bounds.width / 2) * camera.zoom,
+      y: (viewport.height - 80) / 2 - (bounds.y + bounds.height / 2) * camera.zoom,
+      zoom: camera.zoom,
+    };
+    panTo(layout.camera.x, layout.camera.y, undefined, layout.camera.zoom);
+  }
+  const exists = layouts.value.some((l) => l.id === layout.id);
+  workspace.layouts = exists
+    ? layouts.value.map((l) => (l.id === layout.id ? layout : l))
+    : [...layouts.value, layout].slice(-50);
+  workspace.activeLayout = layout.id;
+  return { saved: layout.id, name: layout.name, apps: Object.keys(layout.apps).length };
 }
 async function run(app: CanvasApp, block: Block) {
   if (!canEdit.value || importBusy.value || app.deleted) return;

@@ -706,3 +706,204 @@ test("MCP agents build, wire and run Action-library workflows", async ({
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("MCP chains, code, custom tools, wheel, board, layouts and run history", async ({
+  page,
+}) => {
+  test.setTimeout(150000);
+  const directory = await mkdtemp(join(tmpdir(), "orvane-mcp-test-"));
+  const vite = await createServer({
+    configFile: false,
+    cacheDir: join(directory, "vite-cache"),
+    root: resolve("."),
+    plugins: [vue(), localStorageApi(directory), mcpDiscovery(directory)],
+    server: { host: "127.0.0.1", port: 0 },
+    logLevel: "error",
+  });
+  let client: Client | undefined, transport: StdioClientTransport | undefined;
+  try {
+    await vite.listen();
+    const address = vite.httpServer!.address();
+    if (!address || typeof address === "string")
+      throw Error("Test server has no port");
+    const origin = `http://127.0.0.1:${address.port}`;
+    transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [resolve("server/launch.mjs")],
+      env: {
+        ...Object.fromEntries(
+          Object.entries(process.env).filter(
+            (entry): entry is [string, string] => entry[1] !== undefined,
+          ),
+        ),
+        ORVANE_MCP_STATE_DIR: directory,
+        ORVANE_DATA_DIR: directory,
+        ORVANE_MCP_PORT: "0",
+        ORVANE_MCP_ORIGINS: origin,
+      },
+      stderr: "pipe",
+    });
+    client = new Client({ name: "orvane-compose-test", version: "1.0.0" });
+    await client.connect(transport);
+    const raw = (name: string, args: Record<string, unknown> = {}) =>
+      client!.callTool({ name, arguments: args });
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const result = await raw(name, args);
+      if (result.isError) throw Error(JSON.stringify(result.content));
+      return (result.structuredContent as { result: any }).result;
+    };
+    const errorOf = async (name: string, args: Record<string, unknown>) => {
+      const result = await raw(name, args);
+      expect(result.isError).toBe(true);
+      return JSON.stringify(result.content);
+    };
+
+    await page.addInitScript(() => {
+      if (window === window.top)
+        localStorage.setItem("orvane.examples.v1", "installed");
+    });
+    await page.goto(origin);
+    await expect
+      .poll(async () => (await call("workspace_status")).sessions.length)
+      .toBe(1);
+    await call("workspace_batch", {
+      commands: [
+        ...notebook,
+        command("app_update", { appId: "notes", patch: { exposed: true } }),
+        command("app_create", { id: "side", properties: { name: "Side", x: 900, y: 100, width: 400, height: 300 } }),
+        command("workflow_set", {
+          id: "log",
+          name: "Log",
+          inputs: ["task"],
+          steps: [{ action: "add-item", appId: "notes", target: "items", value: "{task}" }],
+        }),
+      ],
+    });
+
+    // tools_chain: only the final value comes back.
+    const chained = await call("tools_chain", {
+      steps: [
+        { tool: "app_list", as: "apps" },
+        { tool: "app_get", args: { appId: "{{apps.results[0][0].id}}" } },
+      ],
+      return: "{{step2.results[0].name}} has {{step2.results[0].blocks[0].children.length}} parts",
+    });
+    expect(chained.result).toBe("MCP Notebook has 4 parts");
+    expect(chained.steps.map((s: { tool: string }) => s.tool)).toEqual(["app_list", "app_get"]);
+    expect(
+      await errorOf("tools_chain", { steps: [{ tool: "app_get", args: { appId: "{{nope.id}}" } }] }),
+    ).toContain("no input or earlier step named nope");
+
+    // code_run: loops and filters inside Orvane, isolated from the machine.
+    const coded = await call("code_run", {
+      code: [
+        "const w = (await tools.workspace_get({})).results[0];",
+        "console.log('apps', w.apps.length);",
+        "for (const t of input.tasks) await tools.workflow_run({ workflowId: 'log', inputs: { task: t } });",
+        "return { names: w.apps.map((a) => a.name), sandbox: [typeof process, typeof require, typeof fetch].join() };",
+      ].join("\n"),
+      input: { tasks: ["one", "two"] },
+    });
+    expect(coded.result).toEqual({ names: ["MCP Notebook", "Side"], sandbox: "undefined,undefined,undefined" });
+    expect(coded.logs).toEqual(["apps 2"]);
+    expect(coded.toolCalls).toBe(3);
+    await expect(page.locator(".canvas-app .list-item")).toContainText(["one", "two"]);
+    expect(await errorOf("code_run", { code: "return eval('1')" })).toContain(
+      "Code generation from strings disallowed",
+    );
+    expect(await errorOf("code_run", { code: "while (true) {}", timeoutSeconds: 2 })).toContain(
+      "Code stopped after 2 s",
+    );
+
+    // Custom tools: saved once, exposed as their own tool.
+    const saved = await call("custom_tool_save", {
+      tool: {
+        name: "list_items",
+        description: "Item texts of the notebook list, optionally filtered.",
+        params: { contains: { type: "string", optional: true } },
+        code: [
+          "const b = (await tools.component_get({ appId: 'notes', componentId: 'items' })).results[0];",
+          "return b.items.map((i) => i.text).filter((t) => !input.contains || t.includes(input.contains));",
+        ].join("\n"),
+      },
+    });
+    expect(saved).toEqual({ saved: "custom_list_items", kind: "code" });
+    expect((await client.listTools()).tools.map((t) => t.name)).toContain("custom_list_items");
+    expect(await call("custom_list_items", {})).toEqual({ result: ["one", "two"], logs: [], toolCalls: 1 });
+    expect((await call("custom_tool_run", { name: "list_items", input: { contains: "tw" } })).result).toEqual([
+      "two",
+    ]);
+    await call("custom_tool_save", {
+      tool: {
+        name: "app_name",
+        description: "Name of an app.",
+        params: { appId: { type: "string" } },
+        steps: [{ tool: "app_get", args: { appId: "{{input.appId}}" } }],
+        return: "{{step1.results[0].name}}",
+      },
+    });
+    expect((await call("custom_app_name", { appId: "side" })).result).toBe("Side");
+    expect((await call("custom_tool_list")).map((t: { name: string }) => t.name)).toEqual([
+      "list_items",
+      "app_name",
+    ]);
+    expect(
+      await errorOf("custom_tool_save", { tool: { name: "bad", description: "x", steps: [{ tool: "nope" }] } }),
+    ).toContain("unknown tool nope");
+    await call("custom_tool_delete", { name: "app_name" });
+    expect((await client.listTools()).tools.map((t) => t.name)).not.toContain("custom_app_name");
+
+    // Wheel.
+    await call("wheel_set", {
+      entries: [
+        { id: "g", name: "Work", kind: "group" },
+        { id: "open", parent: "g", name: "Notebook", kind: "app", appId: "notes" },
+        { id: "run", name: "Log", kind: "action", actionId: "log", bindings: { task: "from wheel" } },
+      ],
+    });
+    expect((await call("wheel_list")).results[0].map((e: { id: string }) => e.id)).toEqual(["g", "open", "run"]);
+    expect(
+      await errorOf("wheel_set", { entries: [{ name: "X", kind: "action", actionId: "missing" }] }),
+    ).toContain("workflow missing does not exist");
+    expect(
+      await errorOf("wheel_set", {
+        entries: Array.from({ length: 9 }, (_, i) => ({ name: `A${i}`, kind: "app", appId: "notes" })),
+      }),
+    ).toContain("at most 8 entries");
+
+    // Board: a note with an arrow to an app.
+    const note = (await call("board_note_set", { x: 120, y: 700, text: "Plan from the agent" })).results[0];
+    await expect(page.locator(".board-note")).toContainText("Plan from the agent");
+    await call("board_arrow_set", { id: "arrow", from: { noteId: note.id }, to: { appId: "notes" }, label: "feeds" });
+    const board = (await call("board_get")).results[0];
+    expect(board.arrows[0]).toMatchObject({ id: "arrow", from: { noteId: note.id }, to: { appId: "notes" } });
+    await call("board_note_set", { id: note.id, text: "Plan, edited" });
+    await expect(page.locator(".board-note")).toContainText("Plan, edited");
+    await call("board_delete", { ids: [note.id] });
+    expect((await call("board_get")).results[0]).toMatchObject({ notes: [], arrows: [] });
+
+    // Layouts: arrange and save, move something, switch back.
+    const layout = await call("layout_save", {
+      name: "Side by side",
+      apps: { side: { x: 860, y: 100, width: 420, height: 320 } },
+    });
+    expect(layout).toMatchObject({ name: "Side by side", apps: 2 });
+    await call("app_update", { appId: "side", patch: { x: 2000 } });
+    await call("layout_apply", { layoutId: layout.saved });
+    expect((await call("app_get", { appId: "side" })).results[0]).toMatchObject({ x: 860, width: 420 });
+    expect((await call("layout_list")).results[0]).toMatchObject({ active: layout.saved });
+
+    // Run history shows failures.
+    expect(await errorOf("workflow_run", { workflowId: "log", inputs: {} })).toContain("requires input");
+    const runs = await call("automation_runs");
+    expect(runs.runs[0]).toMatchObject({ from: "MCP agent", to: "Log", action: "Run workflow" });
+    expect(runs.runs[0].error).toContain("requires input");
+  } finally {
+    await client?.close();
+    await transport?.close();
+    await vite.close();
+    if (!directory.startsWith(join(tmpdir(), "orvane-mcp-test-")))
+      throw Error("Unexpected test directory.");
+    await rm(directory, { recursive: true, force: true });
+  }
+});

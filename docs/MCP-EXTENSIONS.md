@@ -3,9 +3,11 @@
 Goal: an AI agent connected to Orvane (Claude Desktop, Claude Code, Codex) can
 build automations, not only apps. It should be able to create workflows, add
 nodes to them, wire them to buttons and run them, with the same validation,
-snapshots and revision checks as every other MCP edit.
+snapshots and revision checks as every other MCP edit. It should also be able
+to do multi-step work inside Orvane without copying bulky in-between data
+through its own context.
 
-## What exists today
+## What existed before
 
 - `rules_set`: replace one component's rules and graph (what a button does).
 - `action_list / action_set / action_delete`: the **reusable code/flow nodes**
@@ -13,18 +15,7 @@ snapshots and revision checks as every other MCP edit.
 - Workspace edits go through `applyCommands` (`src/automation.ts`), live in the
   editing window or offline in SQLite.
 
-## Gaps
-
-1. The **Action library** (`workspace.actions`: named workflows with inputs and
-   a node graph, shown under Workspace → Action library and on the wheel) has
-   no MCP tools at all.
-2. Nothing can **run** anything: an agent can build a button but can't press it
-   or run a workflow to check that it works.
-3. An agent has to guess the node format (`Rule` fields per kind, graph edges,
-   `trigger`, success/failure edges).
-4. The radial wheel, layouts, the whiteboard and run history aren't reachable.
-
-## Planned tools
+## Tools
 
 | # | Tool | Kind | What it does | Status |
 |---|------|------|--------------|--------|
@@ -34,11 +25,42 @@ snapshots and revision checks as every other MCP edit.
 | 4 | `workflow_delete` | write | Delete a workflow; refuses while buttons or wheel entries use it unless `disconnectReferences` is set. | Built |
 | 5 | `workflow_run` | live | Run a workflow in the editing window with input values; returns its final value, any message it showed, or the error. | Built |
 | 6 | `component_trigger` | live | Press a button, submit a field (optionally typing a value first) or toggle a checkbox, exactly as a person would; returns the result or error. | Built |
-| 7 | `wheel_set` | write | Pin workflows and apps to the radial wheel, in groups. | Next |
-| 8 | `automation_runs` | read | Recent runs and failures (the window's connection activity). | Next |
-| 9 | `board_*` | write | Sticky notes, arrows and links on the whiteboard (plans the agent draws next to the apps). | Later |
-| 10 | `layout_*` | write | Save, switch and arrange named layouts. | Later |
-| 11 | Scheduled and event triggers | product | "Every N minutes", "at 9:00", "when a file changes", "when a terminal prints X". Needs a decision on where triggers run while Orvane is hidden. | Needs owner decision |
+| 7 | `wheel_list` / `wheel_set` | read / write | Read or replace the radial wheel: groups, apps and workflows (with input values). Checks targets, parents and the 8-per-ring limit. | Built |
+| 8 | `automation_runs` | live | Connection activity (who ran what, when, errors), including failed agent runs, plus apps showing an action error. | Built |
+| 9 | `board_get` / `board_note_set` / `board_arrow_set` / `board_delete` | read / write | Sticky notes (text, color, file/folder/page link) and arrows attached to apps, notes or points on the canvas whiteboard. Deleting a note deletes its arrows, as on the canvas. | Built |
+| 10 | `layout_list` / `layout_delete` / `layout_save` / `layout_apply` | read / write / live | List and delete named layouts; save the current arrangement or arrange given apps then save (framing them); switch to a layout. | Built |
+| 11 | `tools_chain` | compose | Run Orvane tools in order inside Orvane. Later args use `{{step.path}}` / `{{input.x}}`; only the final value (or a `return` template) comes back. | Built |
+| 12 | `code_run` | compose | JavaScript that calls Orvane tools (`await tools.app_list({})`) to loop, filter and join data inside Orvane; only the return value and `console.log` lines come back. | Built |
+| 13 | `custom_tool_save` / `custom_tool_list` / `custom_tool_delete` / `custom_tool_run` | compose | Save a chain or code under a name with typed params. It appears to every connected agent as its own tool `custom_<name>`. | Built |
+| 14 | Scheduled and event triggers | product | "Every N minutes", "at 9:00", "when a file changes", "when a terminal prints X". Needs a decision on where triggers run while Orvane is hidden. | Needs owner decision |
+
+## Keeping data out of the agent's context
+
+Based on Anthropic's "Code execution with MCP" and Cloudflare's "Code Mode":
+agents are better at writing code that calls tools than at relaying large
+tool results through their context, and intermediate results can stay where
+the work happens.
+
+- `server/tool-registry.ts` wraps `McpServer.registerTool`, so every Orvane
+  tool (workspace, Git, Notes, Projects, NetSuite, UI Maker…) can be called
+  in-process with the same argument validation as an MCP call.
+- `tools_chain` (`server/chain.ts`) is for straight pipelines with no logic.
+- `code_run` (`server/code-runner.ts`, `server/code-sandbox.mjs`) is for loops,
+  filters and joins. It runs in a separate Node process started with
+  `--permission` (no file writes, no reads beyond the sandbox file, no child
+  processes or workers), inside a `vm` context that only has `tools`, `input`
+  and `console`. Values cross as JSON strings so no host object is reachable;
+  `eval`/`new Function` are disabled. Limits: 60 s default (max 300), 500
+  tool calls, 60,000-character result, 8,000 characters of logs.
+  Not a hard security boundary against hostile code (Node's permission model
+  does not restrict the network in Node 24); it keeps an agent's own code to
+  Orvane tools.
+- Custom tools live in the workspace SQLite (`app_data` key `mcp:tools`), so
+  every MCP process (Claude Desktop, Claude Code, Codex) shares them; each
+  process picks up changes within 3 seconds and tells its client the tool list
+  changed. `custom_tool_run` works for clients that don't refresh tool lists.
+- Nesting (code → custom tool → chain …) is limited to 4 levels; `code_run`
+  cannot start another `code_run`.
 
 ## Safety
 
@@ -47,3 +69,5 @@ snapshots and revision checks as every other MCP edit.
 - Runs only happen in the live editing window, never offline, and report
   failures instead of retrying. Existing guards (recursion depth, overlapping
   runs, exposed-interface rules for cross-app writes) apply unchanged.
+- Chains and code stop at the first failure; calls that already completed
+  stay applied (each one is snapshotted like any other MCP write).

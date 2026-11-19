@@ -18,6 +18,7 @@ import {
   ruleSchema,
 } from "./validation";
 import { mergeWorkspace } from "./imports";
+import { BOARD_COLORS, ensureBoard, NOTE_COLORS } from "./board";
 import { readRecordPreview } from "./netsuiteCanvas";
 
 const id = z.string().min(1).max(200);
@@ -94,6 +95,34 @@ const stepSchema = z
     nodeId: id.optional(),
     bindings: z.record(z.string(), z.string()).optional(),
     view: z.enum(["settings", "graph"]).optional(),
+  })
+  .strict();
+const hex = z.string().regex(/^#[\da-f]{6}$/i, "Colors are #rrggbb.");
+const boardEndInput = z
+  .object({ appId: id.optional(), noteId: id.optional(), x: z.number().finite().optional(), y: z.number().finite().optional() })
+  .strict()
+  .refine(
+    (e) => [e.appId, e.noteId, e.x !== undefined && e.y !== undefined ? 1 : undefined].filter(Boolean).length === 1,
+    "An arrow end is one of: {appId}, {noteId} or {x, y}.",
+  );
+const wheelEntryInput = z
+  .object({
+    id: id.optional(),
+    parent: z.string().default(""),
+    name: z.string().min(1).max(80),
+    kind: z.enum(["group", "app", "action"]),
+    appId: z.string().default(""),
+    actionId: id.optional(),
+    bindings: z.record(z.string(), z.string()).optional(),
+  })
+  .strict();
+const placeInput = z
+  .object({
+    x: z.number().finite(),
+    y: z.number().finite(),
+    width: z.number().finite().min(180),
+    height: z.number().finite().min(160),
+    shown: z.boolean().default(true),
   })
   .strict();
 const inputName = z
@@ -194,6 +223,41 @@ export const operationSchemas = {
   workflow_delete: z
     .object({ workflowId: id, disconnectReferences: z.boolean().optional() })
     .strict(),
+  wheel_list: z.object({}).strict(),
+  wheel_set: z.object({ entries: z.array(wheelEntryInput).max(500) }).strict(),
+  layout_list: z.object({}).strict(),
+  layout_delete: z.object({ layoutId: id }).strict(),
+  board_get: z.object({}).strict(),
+  board_note_set: z
+    .object({
+      id: id.optional(),
+      x: z.number().finite().optional(),
+      y: z.number().finite().optional(),
+      width: z.number().finite().min(60).max(4000).optional(),
+      height: z.number().finite().min(40).max(4000).optional(),
+      text: z.string().max(20000).optional(),
+      color: hex.optional(),
+      link: z
+        .object({
+          kind: z.enum(["file", "folder", "page"]),
+          target: z.string().min(1).max(4000),
+          label: z.string().max(300).default(""),
+        })
+        .strict()
+        .nullable()
+        .optional(),
+    })
+    .strict(),
+  board_arrow_set: z
+    .object({
+      id: id.optional(),
+      from: boardEndInput,
+      to: boardEndInput,
+      label: z.string().max(200).optional(),
+      color: hex.optional(),
+    })
+    .strict(),
+  board_delete: z.object({ ids: z.array(id).min(1).max(500) }).strict(),
 } as const;
 export type Operation = keyof typeof operationSchemas;
 /** Runs something in the live editing window, the way a person would. */
@@ -213,6 +277,16 @@ export const runSchema = z.discriminatedUnion("kind", [
       value: z.string().optional(),
     })
     .strict(),
+  z.object({ kind: z.literal("runs") }).strict(),
+  z
+    .object({
+      kind: z.literal("layout-save"),
+      id: id.optional(),
+      name: z.string().min(1).max(80),
+      apps: z.record(id, placeInput).optional(),
+    })
+    .strict(),
+  z.object({ kind: z.literal("layout-apply"), layoutId: id }).strict(),
 ]);
 export type RunRequest = z.infer<typeof runSchema>;
 export const readOperations = new Set<Operation>([
@@ -224,6 +298,9 @@ export const readOperations = new Set<Operation>([
   "action_list",
   "group_list",
   "workflow_list",
+  "wheel_list",
+  "layout_list",
+  "board_get",
 ]);
 export const operationDescriptions: Record<Operation, string> = {
   workspace_get:
@@ -279,6 +356,20 @@ export const operationDescriptions: Record<Operation, string> = {
     'Create or replace an Action-library workflow. Easiest: give steps, an ordered list run one after another (the graph trigger -> step 1 -> step 2 ... and node positions are generated). For branching or failure paths give rules plus graph instead (edges from "trigger", on="failure" for recovery). Inputs are names; steps use {input name} in value. Steps that change or read another app need that app exposed (app_update patch exposed=true). Call automation_catalog for every step kind and its fields. Returns the workflow and warnings.',
   workflow_delete:
     "Delete an Action-library workflow. Rejects while buttons, workflows or wheel entries use it unless disconnectReferences is true. Snapshots allow recovery.",
+  wheel_list:
+    "Read the radial wheel (opened with the wheel shortcut): entries with id, parent (\"\" = first ring, or a group entry's id), name and kind (group, app, action).",
+  wheel_set:
+    'Replace the whole radial wheel. kind=group holds other entries (their parent is its id); kind=app opens appId; kind=action runs Action-library workflow actionId with bindings {input: value}. Each ring holds at most 8 entries. Read wheel_list first and keep entries you are not changing.',
+  layout_list:
+    "List named layouts (saved arrangements of where apps sit and which are shown) and which one is active.",
+  layout_delete: "Delete a named layout. Apps stay where they are.",
+  board_get:
+    "Read the canvas whiteboard: sticky notes (position, size, text, color, link) and arrows (ends attached to an app, a note or a point). Freehand strokes are only counted.",
+  board_note_set:
+    "Create or edit a sticky note on the canvas whiteboard. New notes need x and y (canvas coordinates; apps' x/y from app_list are in the same space); default size 200x160. Give an existing id to change only the fields you pass. link (file, folder or http(s) page) makes it open that target; null removes it.",
+  board_arrow_set:
+    "Create or replace an arrow on the canvas whiteboard. Each end is {appId}, {noteId} (it follows that item) or {x, y}. Optional label and #rrggbb color.",
+  board_delete: "Delete whiteboard notes, arrows or strokes by id. Arrows attached to a deleted note are deleted with it, as on the canvas.",
 };
 export interface Command {
   operation: Operation;
@@ -818,6 +909,139 @@ export function applyCommands(
         w.wheel = (w.wheel || []).filter((e) => e.actionId !== p.workflowId);
         w.actions = w.actions.filter((a) => a.id !== p.workflowId);
         results.push({ deletedWorkflowId: p.workflowId });
+        break;
+      }
+      case "wheel_list":
+        results.push(clone(w.wheel || []));
+        break;
+      case "wheel_set": {
+        const p = operationSchemas.wheel_set.parse(args);
+        const entries = p.entries.map((e) => ({ ...e, id: e.id || uid() }));
+        const byId = new Map(entries.map((e) => [e.id, e]));
+        if (byId.size !== entries.length) throw Error("Wheel entry IDs must be unique.");
+        const rings = new Map<string, number>();
+        for (const e of entries) {
+          const where = `wheel entry ${e.name} (${e.id})`;
+          if (e.parent && byId.get(e.parent)?.kind !== "group")
+            throw Error(`${where}: parent ${e.parent} is not a group entry.`);
+          for (let at = e.parent, hops = 0; at; at = byId.get(at)?.parent || "", hops++)
+            if (at === e.id || hops > entries.length) throw Error(`${where}: groups cannot contain themselves.`);
+          rings.set(e.parent, (rings.get(e.parent) || 0) + 1);
+          if (rings.get(e.parent)! > 8)
+            throw Error(`A ring holds at most 8 entries; ${e.parent ? "group " + byId.get(e.parent)!.name : "the first ring"} has more. Add a group.`);
+          if (e.kind === "app" && !w.apps.some((a) => a.id === e.appId && !a.deleted))
+            throw Error(`${where}: app ${e.appId || "(missing appId)"} does not exist.`);
+          if (e.kind === "action" && !w.actions?.some((a) => a.id === e.actionId))
+            throw Error(`${where}: workflow ${e.actionId || "(missing actionId)"} does not exist. Call workflow_list.`);
+          if (e.kind !== "action") delete e.actionId;
+        }
+        w.wheel = entries;
+        results.push(clone(entries));
+        break;
+      }
+      case "layout_list":
+        results.push({
+          active: w.activeLayout || null,
+          layouts: (w.layouts || []).map((l) => ({
+            id: l.id,
+            name: l.name,
+            apps: l.apps,
+            camera: l.camera,
+          })),
+        });
+        break;
+      case "layout_delete": {
+        const p = operationSchemas.layout_delete.parse(args);
+        if (!w.layouts?.some((l) => l.id === p.layoutId))
+          throw Error(`Layout ${p.layoutId} does not exist.`);
+        w.layouts = w.layouts.filter((l) => l.id !== p.layoutId);
+        if (w.activeLayout === p.layoutId) delete w.activeLayout;
+        results.push({ deletedLayoutId: p.layoutId });
+        break;
+      }
+      case "board_get": {
+        const board = w.board || { notes: [], arrows: [], strokes: [] };
+        results.push({
+          notes: clone(board.notes),
+          arrows: clone(board.arrows),
+          strokeCount: board.strokes.length,
+          strokeIds: board.strokes.map((s) => s.id),
+        });
+        break;
+      }
+      case "board_note_set": {
+        const p = operationSchemas.board_note_set.parse(args);
+        const board = ensureBoard(w);
+        const existing = p.id ? board.notes.find((n) => n.id === p.id) : undefined;
+        if (!existing && (p.x === undefined || p.y === undefined))
+          throw Error("A new note needs x and y.");
+        const { link, ...fields } = p;
+        const note = existing || {
+          id: p.id || uid(),
+          x: 0,
+          y: 0,
+          width: 200,
+          height: 160,
+          text: "",
+          color: NOTE_COLORS[0]!,
+        };
+        Object.assign(
+          note,
+          Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined)),
+        );
+        if (link === null) delete note.link;
+        else if (link) {
+          if (link.kind === "page" && !/^https?:\/\//i.test(link.target))
+            throw Error("Page links must be http(s) URLs.");
+          note.link = link;
+        }
+        if (!existing) board.notes.push(note);
+        results.push(clone(note));
+        break;
+      }
+      case "board_arrow_set": {
+        const p = operationSchemas.board_arrow_set.parse(args);
+        const board = ensureBoard(w);
+        const end = (e: z.infer<typeof boardEndInput>) => {
+          if (e.appId) {
+            const app = w.apps.find((a) => a.id === e.appId && !a.deleted);
+            if (!app) throw Error(`App ${e.appId} does not exist.`);
+            return { appId: app.id, x: app.x + app.width / 2, y: app.y + app.height / 2 };
+          }
+          if (e.noteId) {
+            const n = board.notes.find((n) => n.id === e.noteId);
+            if (!n) throw Error(`Note ${e.noteId} does not exist.`);
+            return { noteId: n.id, x: n.x + n.width / 2, y: n.y + n.height / 2 };
+          }
+          return { x: e.x!, y: e.y! };
+        };
+        const arrow = {
+          id: p.id || uid(),
+          from: end(p.from),
+          to: end(p.to),
+          ...(p.label ? { label: p.label } : {}),
+          color: p.color || BOARD_COLORS[0]!,
+        };
+        const i = board.arrows.findIndex((a) => a.id === arrow.id);
+        if (i < 0) board.arrows.push(arrow);
+        else board.arrows.splice(i, 1, arrow);
+        results.push(clone(arrow));
+        break;
+      }
+      case "board_delete": {
+        const p = operationSchemas.board_delete.parse(args);
+        const board = ensureBoard(w);
+        const ids = new Set(p.ids);
+        const known = new Set([...board.notes, ...board.arrows, ...board.strokes].map((x) => x.id));
+        const missing = p.ids.filter((x) => !known.has(x));
+        if (missing.length) throw Error(`Not on the board: ${missing.join(", ")}.`);
+        board.notes = board.notes.filter((n) => !ids.has(n.id));
+        // Like deleting a note on the canvas: arrows attached to it go too.
+        board.arrows = board.arrows.filter(
+          (a) => !ids.has(a.id) && !ids.has(a.from.noteId || "") && !ids.has(a.to.noteId || ""),
+        );
+        board.strokes = board.strokes.filter((s) => !ids.has(s.id));
+        results.push({ deleted: p.ids });
         break;
       }
       case "workspace_import": {
