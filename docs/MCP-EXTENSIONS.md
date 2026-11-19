@@ -32,7 +32,8 @@ through its own context.
 | 11 | `tools_chain` | compose | Run Orvane tools in order inside Orvane. Later args use `{{step.path}}` / `{{input.x}}`; only the final value (or a `return` template) comes back. | Built |
 | 12 | `code_run` | compose | JavaScript that calls Orvane tools (`await tools.app_list({})`) to loop, filter and join data inside Orvane; only the return value and `console.log` lines come back. | Built |
 | 13 | `custom_tool_save` / `custom_tool_list` / `custom_tool_delete` / `custom_tool_run` | compose | Save a chain or code under a name with typed params. It appears to every connected agent as its own tool `custom_<name>`. | Built |
-| 14 | Scheduled and event triggers | product | "Every N minutes", "at 9:00", "when a file changes", "when a terminal prints X". Needs a decision on where triggers run while Orvane is hidden. | Needs owner decision |
+| 14 | `trigger_list` / `trigger_set` / `trigger_delete` / `trigger_run` | write / live | Scheduled triggers: run a workflow with set inputs every N minutes or daily at HH:MM (optionally on chosen weekdays). Owner decision: they keep running while Orvane sits in the tray. | Built |
+| 15 | Event triggers | write | "When a file changes", "when a terminal prints X": need watchers in the local server that tell the editing window. | Next |
 
 ## Keeping data out of the agent's context
 
@@ -61,6 +62,24 @@ the work happens.
   changed. `custom_tool_run` works for clients that don't refresh tool lists.
 - Nesting (code → custom tool → chain …) is limited to 4 levels; `code_run`
   cannot start another `code_run`.
+
+## Scheduled triggers
+
+- Stored in the workspace (`workspace.triggers`), so they are in backups and
+  snapshots. Merging a backup does not bring its triggers along (nothing
+  imported starts running by itself); replacing does.
+- Checked every 15 s by the editing window together with calendar reminders
+  (`src/triggers.ts`, `checkTriggers` in `src/App.vue`), so each runs once per
+  workspace. Closing the window hides it to the tray and checks continue;
+  Chromium throttles hidden pages, so a run can be up to about a minute late.
+- Interval runs keep their cadence from creation (or the last run). A run
+  missed while Orvane was closed runs once if it was due within the last day;
+  older ones are skipped, like reminders.
+- Failures are kept as `lastError` and shown in Connection activity
+  ("Trigger: name"); `automation_runs` and `trigger_list` return them.
+- Deleting a workflow that triggers use needs `disconnectReferences`, which
+  deletes those triggers too.
+- There is no on-canvas UI for triggers yet; agents manage them over MCP.
 
 ## Safety
 

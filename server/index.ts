@@ -405,6 +405,17 @@ server.registerTool(
   async ({ layoutId, sessionId }) =>
     guarded(() => liveRun({ kind: "layout-apply", layoutId }, sessionId)),
 );
+server.registerTool(
+  "trigger_run",
+  {
+    description:
+      "Run a scheduled trigger now in the open Orvane window, exactly as its schedule would (records its last run and error). Use it to test a trigger you set.",
+    inputSchema: { triggerId: z.string().min(1), sessionId: sessionFields.sessionId },
+    annotations: { destructiveHint: true, openWorldHint: false },
+  },
+  async ({ triggerId, sessionId }) =>
+    guarded(() => liveRun({ kind: "trigger-run", triggerId }, sessionId)),
+);
 // ---- Composition: keep bulky intermediate data out of the agent's context ----
 server.registerTool(
   "tools_chain",

@@ -194,6 +194,29 @@ const schema = z.object({
     .max(50)
     .optional(),
   activeLayout: z.string().optional(),
+  triggers: z
+    .array(
+      z.object({
+        id,
+        name: z.string().max(120),
+        workflowId: id,
+        inputs: z.record(z.string(), z.string()),
+        enabled: z.boolean(),
+        schedule: z.discriminatedUnion("kind", [
+          z.object({ kind: z.literal("interval"), minutes: z.number().int().min(1).max(10080) }),
+          z.object({
+            kind: z.literal("daily"),
+            time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+            days: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+          }),
+        ]),
+        createdAt: number,
+        lastRun: number.optional(),
+        lastError: z.string().max(2000).optional(),
+      }),
+    )
+    .max(200)
+    .optional(),
   board: z
     .object({
       notes: z
@@ -372,6 +395,7 @@ export function parseWorkspace(
   unique((w.groups || []).map((g) => g.id));
   unique((w.wheel || []).map((entry) => entry.id));
   unique((w.actions || []).map((action) => action.id));
+  unique((w.triggers || []).map((trigger) => trigger.id));
   (w.actions || []).forEach((action) => {
     unique(action.inputs);
     checkFlow(action.rules, action.graph);

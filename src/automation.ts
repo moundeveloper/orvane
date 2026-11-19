@@ -125,6 +125,16 @@ const placeInput = z
     shown: z.boolean().default(true),
   })
   .strict();
+const scheduleInput = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("interval"), minutes: z.number().int().min(1).max(10080) }).strict(),
+  z
+    .object({
+      kind: z.literal("daily"),
+      time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "time is local HH:MM, 24-hour."),
+      days: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+    })
+    .strict(),
+]);
 const inputName = z
   .string()
   .regex(/^[\w-]{1,80}$/, "Input names use letters, digits, - and _.");
@@ -258,6 +268,18 @@ export const operationSchemas = {
     })
     .strict(),
   board_delete: z.object({ ids: z.array(id).min(1).max(500) }).strict(),
+  trigger_list: z.object({}).strict(),
+  trigger_set: z
+    .object({
+      id: id.optional(),
+      name: z.string().min(1).max(120),
+      workflowId: id,
+      inputs: z.record(z.string(), z.string()).default({}),
+      enabled: z.boolean().default(true),
+      schedule: scheduleInput,
+    })
+    .strict(),
+  trigger_delete: z.object({ triggerId: id }).strict(),
 } as const;
 export type Operation = keyof typeof operationSchemas;
 /** Runs something in the live editing window, the way a person would. */
@@ -287,6 +309,7 @@ export const runSchema = z.discriminatedUnion("kind", [
     })
     .strict(),
   z.object({ kind: z.literal("layout-apply"), layoutId: id }).strict(),
+  z.object({ kind: z.literal("trigger-run"), triggerId: id }).strict(),
 ]);
 export type RunRequest = z.infer<typeof runSchema>;
 export const readOperations = new Set<Operation>([
@@ -301,6 +324,7 @@ export const readOperations = new Set<Operation>([
   "wheel_list",
   "layout_list",
   "board_get",
+  "trigger_list",
 ]);
 export const operationDescriptions: Record<Operation, string> = {
   workspace_get:
@@ -355,7 +379,7 @@ export const operationDescriptions: Record<Operation, string> = {
   workflow_set:
     'Create or replace an Action-library workflow. Easiest: give steps, an ordered list run one after another (the graph trigger -> step 1 -> step 2 ... and node positions are generated). For branching or failure paths give rules plus graph instead (edges from "trigger", on="failure" for recovery). Inputs are names; steps use {input name} in value. Steps that change or read another app need that app exposed (app_update patch exposed=true). Call automation_catalog for every step kind and its fields. Returns the workflow and warnings.',
   workflow_delete:
-    "Delete an Action-library workflow. Rejects while buttons, workflows or wheel entries use it unless disconnectReferences is true. Snapshots allow recovery.",
+    "Delete an Action-library workflow. Rejects while buttons, workflows, wheel entries or scheduled triggers use it unless disconnectReferences is true (which removes those triggers). Snapshots allow recovery.",
   wheel_list:
     "Read the radial wheel (opened with the wheel shortcut): entries with id, parent (\"\" = first ring, or a group entry's id), name and kind (group, app, action).",
   wheel_set:
@@ -369,6 +393,11 @@ export const operationDescriptions: Record<Operation, string> = {
     "Create or edit a sticky note on the canvas whiteboard. New notes need x and y (canvas coordinates; apps' x/y from app_list are in the same space); default size 200x160. Give an existing id to change only the fields you pass. link (file, folder or http(s) page) makes it open that target; null removes it.",
   board_arrow_set:
     "Create or replace an arrow on the canvas whiteboard. Each end is {appId}, {noteId} (it follows that item) or {x, y}. Optional label and #rrggbb color.",
+  trigger_list:
+    "List scheduled triggers: which workflow each runs, with what inputs, on what schedule, whether it is enabled, and its last run and last error.",
+  trigger_set:
+    'Create or replace a scheduled trigger that runs an Action-library workflow by itself: schedule {kind:"interval", minutes} or {kind:"daily", time:"HH:MM" local, days:[0=Sun..6]} (no days = every day). inputs must give every workflow input. Triggers run in the open Orvane window, also while it sits in the tray (up to about a minute late while hidden); a run missed while Orvane was closed runs once if due in the last day. enabled=false pauses it. Test with trigger_run.',
+  trigger_delete: "Delete a scheduled trigger. The workflow stays.",
   board_delete: "Delete whiteboard notes, arrows or strokes by id. Arrows attached to a deleted note are deleted with it, as on the canvas.",
 };
 export interface Command {
@@ -895,6 +924,12 @@ export function applyCommands(
         const p = operationSchemas.workflow_delete.parse(args);
         if (!w.actions?.some((a) => a.id === p.workflowId))
           throw Error(`Workflow ${p.workflowId} does not exist.`);
+        const scheduled = (w.triggers || []).filter((t) => t.workflowId === p.workflowId);
+        if (scheduled.length && !p.disconnectReferences)
+          throw Error(
+            `${scheduled.length} scheduled trigger(s) run this workflow. Pass disconnectReferences=true to delete them too.`,
+          );
+        w.triggers = (w.triggers || []).filter((t) => t.workflowId !== p.workflowId);
         const pinned = (w.wheel || []).filter((e) => e.actionId === p.workflowId);
         pruneRules(
           w,
@@ -1042,6 +1077,47 @@ export function applyCommands(
         );
         board.strokes = board.strokes.filter((s) => !ids.has(s.id));
         results.push({ deleted: p.ids });
+        break;
+      }
+      case "trigger_list":
+        results.push(clone(w.triggers || []));
+        break;
+      case "trigger_set": {
+        const p = operationSchemas.trigger_set.parse(args);
+        const workflow = w.actions?.find((a) => a.id === p.workflowId);
+        if (!workflow) throw Error(`Workflow ${p.workflowId} does not exist. Call workflow_list.`);
+        const missing = workflow.inputs.filter((name) => !(name in p.inputs));
+        if (missing.length) throw Error(`inputs must give ${missing.join(", ")} (the workflow's inputs).`);
+        const extra = Object.keys(p.inputs).filter((name) => !workflow.inputs.includes(name));
+        if (extra.length) throw Error(`${workflow.name} has no input named ${extra.join(", ")}.`);
+        w.triggers ||= [];
+        const existing = p.id ? w.triggers.find((t) => t.id === p.id) : undefined;
+        const trigger = {
+          id: p.id || uid(),
+          name: p.name,
+          workflowId: p.workflowId,
+          inputs: p.inputs,
+          enabled: p.enabled,
+          schedule: p.schedule,
+          // A changed schedule starts counting again from now.
+          createdAt:
+            existing && JSON.stringify(existing.schedule) === JSON.stringify(p.schedule)
+              ? existing.createdAt
+              : Date.now(),
+          ...(existing?.lastRun !== undefined ? { lastRun: existing.lastRun } : {}),
+        };
+        if (existing && JSON.stringify(existing.schedule) !== JSON.stringify(p.schedule)) delete trigger.lastRun;
+        if (existing) w.triggers.splice(w.triggers.indexOf(existing), 1, trigger);
+        else w.triggers.push(trigger);
+        results.push(clone(trigger));
+        break;
+      }
+      case "trigger_delete": {
+        const p = operationSchemas.trigger_delete.parse(args);
+        if (!w.triggers?.some((t) => t.id === p.triggerId))
+          throw Error(`Trigger ${p.triggerId} does not exist.`);
+        w.triggers = w.triggers.filter((t) => t.id !== p.triggerId);
+        results.push({ deletedTriggerId: p.triggerId });
         break;
       }
       case "workspace_import": {

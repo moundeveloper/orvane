@@ -57,6 +57,7 @@ import {
   type WorkspaceAction,
   type NoteLink,
 } from "./model";
+import { latestOccurrence, triggerDue, type Trigger } from "./triggers";
 const STORAGE = LEGACY_STORAGE;
 // Desktop window controls for the frameless top bar.
 const desktopWindow = (
@@ -1231,8 +1232,59 @@ function checkReminders() {
       if (changed) block.value = JSON.stringify(data);
     }
 }
-const reminderTimer = setInterval(checkReminders, 15_000);
-watch(ready, (isReady) => isReady && checkReminders());
+// ---- Scheduled triggers (src/triggers.ts) ----
+// Checked with reminders, by the editing window only, so each runs once.
+const runningTriggers = new Set<string>();
+async function runTrigger(trigger: Trigger, at = Date.now()) {
+  if (runningTriggers.has(trigger.id)) throw Error(`${trigger.name} is already running.`);
+  runningTriggers.add(trigger.id);
+  trigger.lastRun = at;
+  activeExecutions.value++;
+  const workflow = workspace.actions?.find((a) => a.id === trigger.workflowId);
+  try {
+    if (!workflow) throw Error(`Workflow ${trigger.workflowId} no longer exists.`);
+    const result = await executeWorkspaceAction(workflow.id, trigger.inputs);
+    delete trigger.lastError;
+    return { trigger: trigger.name, workflow: workflow.name, result };
+  } catch (error) {
+    trigger.lastError = error instanceof Error ? error.message : String(error);
+    traces.value.unshift({
+      id: uid(),
+      from: `Trigger: ${trigger.name}`,
+      to: workflow?.name || trigger.workflowId,
+      action: "Scheduled run",
+      at: new Date().toLocaleTimeString(),
+      error: trigger.lastError,
+    });
+    traces.value = traces.value.slice(0, 30);
+    throw error;
+  } finally {
+    runningTriggers.delete(trigger.id);
+    activeExecutions.value--;
+  }
+}
+function checkTriggers() {
+  if (!ready.value || !canEdit.value || importBusy.value) return;
+  const now = Date.now();
+  for (const trigger of workspace.triggers || []) {
+    if (runningTriggers.has(trigger.id)) continue;
+    const { due, stale } = triggerDue(trigger, now);
+    if (!due) continue;
+    const at = trigger.schedule.kind === "interval" ? latestOccurrence(trigger, now)! : now;
+    // Missed for more than a day while Orvane was closed: skip quietly.
+    if (stale) trigger.lastRun = at;
+    else void runTrigger(trigger, at).catch(() => undefined);
+  }
+}
+const reminderTimer = setInterval(() => {
+  checkReminders();
+  checkTriggers();
+}, 15_000);
+watch(ready, (isReady) => {
+  if (!isReady) return;
+  checkReminders();
+  checkTriggers();
+});
 const stopNotificationClicks = desktopWindow?.onNotificationClick?.((appId) => focusAppById(appId));
 onBeforeUnmount(() => {
   clearInterval(reminderTimer);
@@ -3331,6 +3383,13 @@ async function runForMcp(request: RunRequest) {
     return { applied: layout.id, name: layout.name };
   }
   if (request.kind === "layout-save") return saveLayoutForMcp(request);
+  if (request.kind === "trigger-run") {
+    const trigger = workspace.triggers?.find((t) => t.id === request.triggerId);
+    if (!trigger) throw Error(`Trigger ${request.triggerId} does not exist. Call trigger_list.`);
+    actionNotice.value = "";
+    const ran = await runTrigger(trigger);
+    return { ...ran, message: actionNotice.value };
+  }
   actionNotice.value = "";
   activeExecutions.value++;
   const label =

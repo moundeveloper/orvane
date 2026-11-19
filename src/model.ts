@@ -150,6 +150,8 @@ export interface Workspace {
   layouts?: Layout[];
   activeLayout?: string;
   board?: Board;
+  /** Scheduled runs of Action-library workflows (see triggers.ts). */
+  triggers?: import("./triggers").Trigger[];
   inbox?: import("./inbox").InboxCapture[];
 }
 // Whiteboard items drawn on the canvas itself, in canvas coordinates.
