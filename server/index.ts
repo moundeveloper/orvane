@@ -17,6 +17,13 @@ import { createProjectsService } from "./projects.ts";
 import { NotesService, notesSchema } from "./notes.ts";
 import { registerNetSuiteTools } from "./netsuite-tools.ts";
 import { registerUiMakerTools, uimakerInstructions } from "./uimaker-tools.ts";
+import {
+  catalogExample,
+  catalogRules,
+  catalogTargets,
+  nodeKinds,
+} from "./automation-catalog.ts";
+import type { Workspace } from "../src/model.ts";
 import { parseWorkspace, referenceIssues } from "../src/validation.ts";
 import {
   GitService,
@@ -268,6 +275,78 @@ server.registerTool(
         { recovery: restore ? "restore" : "preview" },
         sessionId,
         expectedRevision,
+      ),
+    ),
+);
+// ---- Automation: build and run workflows (docs/MCP-EXTENSIONS.md) ----
+async function liveRun(
+  run: Record<string, unknown>,
+  sessionId?: string,
+) {
+  if (!sessionId && !bridge.list().length)
+    throw Error(
+      "Running needs the Orvane window open. Start Orvane and keep the workspace open, then retry.",
+    );
+  return bridge.request({ run }, sessionId);
+}
+server.registerTool(
+  "automation_catalog",
+  {
+    description:
+      "Read first before building automations: every workflow/button step kind with its fields, how values, inputs and graphs work, a worked example, and the current targets (apps with their components and whether they are exposed, workflows, reusable nodes).",
+    inputSchema: { sessionId: sessionFields.sessionId },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  async ({ sessionId }) =>
+    guarded(async () => {
+      let targets: unknown = null;
+      try {
+        const read = (await requestWorkspace(
+          { commands: [{ operation: "workspace_get", args: {} }] },
+          sessionId,
+        )) as { results: Workspace[] };
+        targets = catalogTargets(read.results[0]!);
+      } catch (error) {
+        targets = {
+          unavailable: error instanceof Error ? error.message : String(error),
+        };
+      }
+      return { stepKinds: nodeKinds, rules: catalogRules, example: catalogExample, targets };
+    }),
+);
+server.registerTool(
+  "workflow_run",
+  {
+    description:
+      "Run an Action-library workflow in the open Orvane window with input values, as if started from the wheel. Returns its final result and any message it showed, or the error. Writes made by completed steps stay applied; never retried automatically.",
+    inputSchema: {
+      workflowId: z.string().min(1),
+      inputs: z.record(z.string(), z.string()).default({}),
+      sessionId: sessionFields.sessionId,
+    },
+    annotations: { destructiveHint: true, openWorldHint: false },
+  },
+  async ({ workflowId, inputs, sessionId }) =>
+    guarded(() => liveRun({ kind: "workflow", workflowId, inputs }, sessionId)),
+);
+server.registerTool(
+  "component_trigger",
+  {
+    description:
+      "Press a button, submit a text field (value types into it first) or toggle a checkbox in the open Orvane window, running its actions exactly as a person would. Returns the result and any message, or the error. Use it to test automations you built.",
+    inputSchema: {
+      appId: z.string().min(1),
+      componentId: z.string().min(1),
+      value: z.string().optional(),
+      sessionId: sessionFields.sessionId,
+    },
+    annotations: { destructiveHint: true, openWorldHint: false },
+  },
+  async ({ appId, componentId, value, sessionId }) =>
+    guarded(() =>
+      liveRun(
+        { kind: "component", appId, componentId, ...(value !== undefined ? { value } : {}) },
+        sessionId,
       ),
     ),
 );

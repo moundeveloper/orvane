@@ -14,7 +14,7 @@ import {
 import { WorkspaceStorage, LEGACY_STORAGE } from "./storage";
 import { trackWorkspace } from "./workspaceTracking";
 import { connectMcpBridge, type BridgeRequest } from "./mcpBridge";
-import { applyCommands, duplicateApp } from "./automation";
+import { applyCommands, duplicateApp, type RunRequest } from "./automation";
 import { parseWorkspace, referenceIssues } from "./validation";
 import { mergeWorkspace } from "./imports";
 import { executeGraph } from "./flow";
@@ -3177,6 +3177,7 @@ async function executeMcp(request: BridgeRequest, revision: string) {
     throw Error(
       "The workspace is busy with a gesture, action, import or recovery. Finish it before editing through MCP.",
     );
+  if (request.run) return { revision, ...(await runForMcp(request.run)) };
   if (request.recovery === "preview") {
     const snapshot = await store.latestSnapshot();
     return {
@@ -3311,6 +3312,41 @@ async function executeMcp(request: BridgeRequest, revision: string) {
   }
 }
 const runtimeErrors = reactive<Record<string, string>>({});
+/** MCP: run a workflow, or press/submit/toggle a component, exactly as a
+ * person would in this window. Errors are returned, never retried. */
+async function runForMcp(request: RunRequest) {
+  actionNotice.value = "";
+  activeExecutions.value++;
+  try {
+    if (request.kind === "workflow") {
+      const workflow = workspace.actions?.find((a) => a.id === request.workflowId);
+      if (!workflow) throw Error(`Workflow ${request.workflowId} does not exist. Call workflow_list.`);
+      const result = await executeWorkspaceAction(workflow.id, request.inputs);
+      return { workflow: workflow.name, result, message: actionNotice.value };
+    }
+    const app = apps.value.find((a) => a.id === request.appId);
+    if (!app) throw Error(`App ${request.appId} is not on the canvas (missing, archived or trashed).`);
+    const block = flatten(app.blocks).find((b) => b.id === request.componentId);
+    if (!block) throw Error(`Component ${request.componentId} is not in ${app.name}.`);
+    if (!["button", "input", "checkbox"].includes(block.kind))
+      throw Error("Only buttons, text fields and checkboxes can be triggered.");
+    if (request.value !== undefined) {
+      if (block.kind !== "input") throw Error("value can only be typed into a text field.");
+      block.value = request.value;
+    }
+    if (block.kind === "checkbox") block.checked = !block.checked;
+    if (!block.rules.length)
+      return { component: block.label, result: "", message: "", note: "This component has no actions yet." };
+    const initial =
+      block.kind === "input"
+        ? block.value
+        : flatten(app.blocks).find((b) => b.kind === "input")?.value || "";
+    const result = await executeFlow(app, block.rules, block.graph, initial);
+    return { component: block.label, result, message: actionNotice.value };
+  } finally {
+    activeExecutions.value--;
+  }
+}
 async function run(app: CanvasApp, block: Block) {
   if (!canEdit.value || importBusy.value || app.deleted) return;
   activeExecutions.value++;

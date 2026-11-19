@@ -1,9 +1,10 @@
-import { batchSchema, type Command } from "./automation";
+import { batchSchema, runSchema, type Command, type RunRequest } from "./automation";
 import { uid } from "./model";
 
 export type BridgeRequest = {
   commands?: Command[];
   recovery?: "preview" | "restore";
+  run?: RunRequest;
 };
 export function connectMcpBridge(options: {
   writable: () => boolean;
@@ -130,6 +131,8 @@ export function connectMcpBridge(options: {
                 request.command.commands = batchSchema.parse(
                   request.command.commands,
                 );
+              else if (request.command.run)
+                request.command.run = runSchema.parse(request.command.run);
               else if (
                 request.command.recovery !== "preview" &&
                 request.command.recovery !== "restore"

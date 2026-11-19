@@ -9,6 +9,7 @@ import {
   type CanvasApp,
   type Rule,
   type Workspace,
+  type WorkspaceAction,
 } from "./model";
 import {
   appPatchSchema,
@@ -68,6 +69,36 @@ const componentPatch = z
   .strict();
 const target = { appId: id };
 const componentTarget = { ...target, componentId: id };
+const stepKinds = [
+  "add-item",
+  "clear",
+  "increment",
+  "toggle",
+  "set-text",
+  "emit",
+  "custom",
+  "workspace-action",
+  "navigate",
+  "open-view",
+  "read-field",
+  "message",
+] as const;
+// One workflow step. IDs are generated when left out.
+const stepSchema = z
+  .object({
+    id: id.optional(),
+    action: z.enum(stepKinds),
+    appId: z.string().default(""),
+    target: z.string().default(""),
+    value: z.string().default(""),
+    nodeId: id.optional(),
+    bindings: z.record(z.string(), z.string()).optional(),
+    view: z.enum(["settings", "graph"]).optional(),
+  })
+  .strict();
+const inputName = z
+  .string()
+  .regex(/^[\w-]{1,80}$/, "Input names use letters, digits, - and _.");
 export const operationSchemas = {
   workspace_get: z.object({}).strict(),
   app_list: z
@@ -148,8 +179,42 @@ export const operationSchemas = {
   workspace_import: z
     .object({ workspace: z.unknown(), mode: z.enum(["merge", "replace"]) })
     .strict(),
+  workflow_list: z.object({}).strict(),
+  workflow_set: z
+    .object({
+      id: id.optional(),
+      name: z.string().min(1).max(120),
+      icon: z.string().min(1).max(40).default("action"),
+      inputs: z.array(inputName).max(50).default([]),
+      steps: z.array(stepSchema).min(1).max(200).optional(),
+      rules: z.array(ruleSchema).max(500).optional(),
+      graph: graphSchema.optional(),
+    })
+    .strict(),
+  workflow_delete: z
+    .object({ workflowId: id, disconnectReferences: z.boolean().optional() })
+    .strict(),
 } as const;
 export type Operation = keyof typeof operationSchemas;
+/** Runs something in the live editing window, the way a person would. */
+export const runSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("workflow"),
+      workflowId: id,
+      inputs: z.record(z.string(), z.string()).default({}),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("component"),
+      appId: id,
+      componentId: id,
+      value: z.string().optional(),
+    })
+    .strict(),
+]);
+export type RunRequest = z.infer<typeof runSchema>;
 export const readOperations = new Set<Operation>([
   "workspace_get",
   "app_list",
@@ -158,6 +223,7 @@ export const readOperations = new Set<Operation>([
   "component_get",
   "action_list",
   "group_list",
+  "workflow_list",
 ]);
 export const operationDescriptions: Record<Operation, string> = {
   workspace_get:
@@ -207,6 +273,12 @@ export const operationDescriptions: Record<Operation, string> = {
     "Delete a spatial group and clear its memberships, preserving the apps and their geometry.",
   workspace_import:
     "Validate and explicitly Merge or Replace a workspace. Merge remaps IDs and preserves existing placement/order. Every mutation retains a local recovery snapshot.",
+  workflow_list:
+    "List Action-library workflows (Workspace -> Action library): named automations with inputs and a node graph that buttons, the wheel and other workflows can run.",
+  workflow_set:
+    'Create or replace an Action-library workflow. Easiest: give steps, an ordered list run one after another (the graph trigger -> step 1 -> step 2 ... and node positions are generated). For branching or failure paths give rules plus graph instead (edges from "trigger", on="failure" for recovery). Inputs are names; steps use {input name} in value. Steps that change or read another app need that app exposed (app_update patch exposed=true). Call automation_catalog for every step kind and its fields. Returns the workflow and warnings.',
+  workflow_delete:
+    "Delete an Action-library workflow. Rejects while buttons, workflows or wheel entries use it unless disconnectReferences is true. Snapshots allow recovery.",
 };
 export interface Command {
   operation: Operation;
@@ -684,6 +756,70 @@ export function applyCommands(
         results.push({ deletedGroupId: p.groupId });
         break;
       }
+      case "workflow_list":
+        results.push(clone(w.actions || []));
+        break;
+      case "workflow_set": {
+        const p = operationSchemas.workflow_set.parse(args);
+        if (!p.steps === !p.rules)
+          throw Error("Give either steps (a simple ordered list) or rules with an optional graph.");
+        let rules: Rule[], graph: WorkspaceAction["graph"];
+        if (p.steps) {
+          rules = p.steps.map((step) => ({ ...step, id: step.id || uid() }));
+          const ids = ["trigger", ...rules.map((r) => r.id)];
+          graph = {
+            edges: rules.map((r, i) => ({ id: uid(), source: ids[i]!, target: r.id })),
+            positions: Object.fromEntries(
+              ids.map((nodeId, i) => [nodeId, { x: 80 + i * 260, y: 120 }]),
+            ),
+          };
+        } else {
+          rules = clone(p.rules!);
+          graph = p.graph ? clone(p.graph) : undefined;
+        }
+        const ruleIds = new Set(rules.map((r) => r.id));
+        if (ruleIds.size !== rules.length) throw Error("Step IDs must be unique.");
+        if (graph)
+          for (const edge of graph.edges)
+            for (const end of [edge.source, edge.target])
+              if (end !== "trigger" && !ruleIds.has(end))
+                throw Error(`Graph edge ${edge.id} points to missing step ${end}.`);
+        const workflow: WorkspaceAction = {
+          id: p.id || uid(),
+          name: p.name,
+          icon: p.icon,
+          inputs: [...new Set(p.inputs)],
+          rules,
+          ...(graph ? { graph } : {}),
+        };
+        const warnings = workflowIssues(w, workflow);
+        w.actions ||= [];
+        const i = w.actions.findIndex((a) => a.id === workflow.id);
+        if (i < 0) w.actions.push(workflow);
+        else w.actions.splice(i, 1, workflow);
+        results.push({ workflow: clone(workflow), warnings });
+        break;
+      }
+      case "workflow_delete": {
+        const p = operationSchemas.workflow_delete.parse(args);
+        if (!w.actions?.some((a) => a.id === p.workflowId))
+          throw Error(`Workflow ${p.workflowId} does not exist.`);
+        const pinned = (w.wheel || []).filter((e) => e.actionId === p.workflowId);
+        pruneRules(
+          w,
+          (r) => !r.flow && r.action === "workspace-action" && r.nodeId === p.workflowId,
+          !!p.disconnectReferences,
+          true,
+        );
+        if (pinned.length && !p.disconnectReferences)
+          throw Error(
+            `This workflow is pinned to the wheel ${pinned.length} time(s). Pass disconnectReferences=true to remove those entries.`,
+          );
+        w.wheel = (w.wheel || []).filter((e) => e.actionId !== p.workflowId);
+        w.actions = w.actions.filter((a) => a.id !== p.workflowId);
+        results.push({ deletedWorkflowId: p.workflowId });
+        break;
+      }
       case "workspace_import": {
         const p = operationSchemas.workspace_import.parse(args),
           incoming = parseWorkspace(p.workspace);
@@ -709,6 +845,49 @@ export function applyCommands(
     assertNoActionCycles(w);
   }
   return { workspace: w, results, changed };
+}
+/** Problems that make a workflow step fail when it runs. Missing targets are
+ * errors; an app that does not expose its interface is reported as a warning
+ * because the owner may expose it later. */
+function workflowIssues(w: Workspace, workflow: WorkspaceAction) {
+  const warnings: string[] = [];
+  const visit = (rules: Rule[]) => {
+    for (const rule of rules) {
+      if (rule.flow) {
+        visit(rule.flow.rules);
+        continue;
+      }
+      const where = `step ${rule.id} (${rule.action})`;
+      if (rule.action === "message") continue;
+      if (rule.action === "workspace-action") {
+        if (rule.nodeId === workflow.id) throw Error(`${where}: a workflow cannot run itself.`);
+        if (!w.actions?.some((a) => a.id === rule.nodeId))
+          throw Error(`${where}: workflow ${rule.nodeId || "(missing nodeId)"} does not exist.`);
+        continue;
+      }
+      if (rule.action === "custom") {
+        if (!w.customNodes.some((n) => n.id === rule.nodeId))
+          throw Error(`${where}: reusable node ${rule.nodeId || "(missing nodeId)"} does not exist.`);
+        continue;
+      }
+      const app = w.apps.find((a) => a.id === rule.appId);
+      if (!app) throw Error(`${where}: app ${rule.appId || "(missing appId)"} does not exist.`);
+      if (rule.action === "navigate") continue;
+      if (rule.action === "open-view") {
+        if (rule.view === "graph" && !flatten(app.blocks).some((b) => b.id === rule.target))
+          throw Error(`${where}: component ${rule.target} is not in app ${app.name}.`);
+        continue;
+      }
+      if (!flatten(app.blocks).some((b) => b.id === rule.target))
+        throw Error(`${where}: component ${rule.target || "(missing target)"} is not in app ${app.name}.`);
+      if (!app.exposed)
+        warnings.push(
+          `${where}: app "${app.name}" does not expose its interface, so this step fails when it runs. Expose it with app_update patch {exposed: true}.`,
+        );
+    }
+  };
+  visit(workflow.rules);
+  return warnings;
 }
 function invalidReferences(w: Workspace) {
   const issues: string[] = [];

@@ -575,3 +575,134 @@ test("several MCP clients drive the same workspace at once, even on one preferre
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("MCP agents build, wire and run Action-library workflows", async ({
+  page,
+}) => {
+  test.setTimeout(120000);
+  const directory = await mkdtemp(join(tmpdir(), "orvane-mcp-test-"));
+  const vite = await createServer({
+    configFile: false,
+    cacheDir: join(directory, "vite-cache"),
+    root: resolve("."),
+    plugins: [vue(), localStorageApi(directory), mcpDiscovery(directory)],
+    server: { host: "127.0.0.1", port: 0 },
+    logLevel: "error",
+  });
+  let client: Client | undefined, transport: StdioClientTransport | undefined;
+  try {
+    await vite.listen();
+    const address = vite.httpServer!.address();
+    if (!address || typeof address === "string")
+      throw Error("Test server has no port");
+    const origin = `http://127.0.0.1:${address.port}`;
+    transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [resolve("server/launch.mjs")],
+      env: {
+        ...Object.fromEntries(
+          Object.entries(process.env).filter(
+            (entry): entry is [string, string] => entry[1] !== undefined,
+          ),
+        ),
+        ORVANE_MCP_STATE_DIR: directory,
+        ORVANE_DATA_DIR: directory,
+        ORVANE_MCP_PORT: "0",
+        ORVANE_MCP_ORIGINS: origin,
+      },
+      stderr: "pipe",
+    });
+    client = new Client({ name: "orvane-workflow-test", version: "1.0.0" });
+    await client.connect(transport);
+    const raw = (name: string, args: Record<string, unknown> = {}) =>
+      client!.callTool({ name, arguments: args });
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const result = await raw(name, args);
+      if (result.isError) throw Error(JSON.stringify(result.content));
+      return (result.structuredContent as { result: any }).result;
+    };
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    for (const tool of ["automation_catalog", "workflow_list", "workflow_set", "workflow_delete", "workflow_run", "component_trigger"])
+      expect(names).toContain(tool);
+    // Running needs the window.
+    expect((await raw("workflow_run", { workflowId: "x" })).isError).toBe(true);
+
+    await page.addInitScript(() => {
+      if (window === window.top)
+        localStorage.setItem("orvane.examples.v1", "installed");
+    });
+    await page.goto(origin);
+    await expect
+      .poll(async () => (await call("workspace_status")).sessions.length)
+      .toBe(1);
+    // A tasks app, exposed so workflows may change it.
+    await call("workspace_batch", {
+      commands: [
+        ...notebook.slice(0, 6),
+        command("app_update", { appId: "notes", patch: { exposed: true } }),
+      ],
+    });
+    const catalog = await call("automation_catalog");
+    expect(catalog.stepKinds.map((k: { action: string }) => k.action)).toContain("add-item");
+    expect(catalog.targets.apps[0]).toMatchObject({ appId: "notes", exposed: true });
+
+    // Build a workflow from a plain list of steps.
+    const created = await call("workflow_set", {
+      id: "log-task",
+      name: "Log a task",
+      inputs: ["task"],
+      steps: [
+        { action: "add-item", appId: "notes", target: "items", value: "{task}" },
+        { action: "increment", appId: "notes", target: "count", value: "2" },
+        { action: "message", value: "Logged {task}" },
+      ],
+    });
+    const workflow = created.results[0].workflow;
+    expect(created.results[0].warnings).toEqual([]);
+    expect(workflow.graph.edges.map((e: { source: string }) => e.source)[0]).toBe("trigger");
+    expect(workflow.rules).toHaveLength(3);
+    // Bad targets are refused with a clear reason.
+    const bad = await raw("workflow_set", {
+      name: "Broken",
+      steps: [{ action: "add-item", appId: "notes", target: "nope", value: "x" }],
+    });
+    expect(JSON.stringify(bad.content)).toContain("component nope is not in app");
+
+    // Run it directly.
+    const ran = await call("workflow_run", { workflowId: "log-task", inputs: { task: "Write docs" } });
+    expect(ran.message).toBe("Logged Write docs");
+    await expect(page.locator(".canvas-app .list-item")).toContainText(["Write docs"]);
+    await expect(page.locator("output")).toHaveText("2");
+
+    // Wire the button to it and press the button with a typed value.
+    await call("rules_set", {
+      appId: "notes",
+      componentId: "add",
+      rules: [
+        { id: "run-log", action: "workspace-action", appId: "", target: "", value: "", nodeId: "log-task", bindings: { task: "{field}" } },
+      ],
+    });
+    // Type into the field, then press the button.
+    await call("component_trigger", { appId: "notes", componentId: "field", value: "Ship demo" });
+    const pressed = await call("component_trigger", { appId: "notes", componentId: "add" });
+    expect(pressed.message).toBe("Logged Ship demo");
+    await expect(page.locator(".canvas-app .list-item")).toContainText(["Write docs", "Ship demo"]);
+    await expect(page.locator("output")).toHaveText("4");
+
+    // Failures come back as errors.
+    const failed = await raw("workflow_run", { workflowId: "log-task", inputs: {} });
+    expect(JSON.stringify(failed.content)).toContain("requires input");
+
+    // Deleting a workflow a button uses needs explicit consent.
+    expect((await raw("workflow_delete", { workflowId: "log-task" })).isError).toBe(true);
+    await call("workflow_delete", { workflowId: "log-task", disconnectReferences: true });
+    expect((await call("workflow_list")).results[0]).toEqual([]);
+  } finally {
+    await client?.close();
+    await transport?.close();
+    await vite.close();
+    if (!directory.startsWith(join(tmpdir(), "orvane-mcp-test-")))
+      throw Error("Unexpected test directory.");
+    await rm(directory, { recursive: true, force: true });
+  }
+});
