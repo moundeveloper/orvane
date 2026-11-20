@@ -6,9 +6,13 @@ import { isNetSuitePage, netSuiteLogin } from "./netsuite-login.mjs";
 // still draw one as a dark "NetSuite Login" box while it reported itself
 // hidden. A WebContentsView never attached to a window has nothing to draw.
 // Same shape as the BrowserWindow it replaces, for the code below.
-function headlessPage(webPreferences) {
-  const contents = new WebContentsView({ webPreferences }).webContents;
+// The view itself must stay referenced: once it is garbage-collected Electron
+// destroys its webContents, and a NetSuite call running in it never settles.
+export function headlessPage(webPreferences) {
+  const view = new WebContentsView({ webPreferences });
+  const contents = view.webContents;
   return {
+    view,
     webContents: contents,
     isDestroyed: () => contents.isDestroyed(),
     destroy: () => { if (!contents.isDestroyed()) contents.close(); },
