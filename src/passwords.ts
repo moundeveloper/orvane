@@ -9,6 +9,8 @@ export interface SavedLogin {
   updated: number;
   /** NetSuite logins only: signs in by itself on NetSuite login pages. */
   autoLogin?: boolean;
+  domain?: string;
+  scope?: "legacy" | "origin" | "domain";
 }
 export interface PasswordList {
   /** "unavailable": no OS encryption; "unreadable": the vault can't be opened. */
@@ -38,6 +40,8 @@ export interface PasswordsApi {
   allow(origin: string): Promise<boolean>;
   copy(id: string): Promise<boolean>;
   setAutoLogin(id: string, on: boolean): Promise<boolean>;
+  setScope(id: string, scope: "origin" | "domain"): Promise<boolean>;
+  addEmail(id: string, email: string): Promise<boolean>;
   decide(id: string, choice: "save" | "never" | "dismiss"): Promise<boolean>;
   onPrompt(callback: (prompt: PasswordPrompt) => void): () => void;
   onAutoLogin(callback: (update: AutoLoginUpdate) => void): () => void;

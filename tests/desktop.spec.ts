@@ -556,7 +556,11 @@ test("Desktop Browser saves logins and fills them on the same site only", async 
     await guest(
       "window.seen = []; document.querySelector('[name=pass]').addEventListener('input', () => seen.push(1)); 1",
     );
+    await browser.getByRole("button", { name: "Browser menu" }).click();
+    const browserMenu = browser.getByRole("menu");
+    await expect(browserMenu).toBeVisible();
     await clickIn("[name=user]");
+    await expect(browserMenu).toHaveCount(0);
     await expect
       .poll(() =>
         guest<string>(

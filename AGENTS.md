@@ -34,7 +34,7 @@ Canvas gestures were tuned deliberately. The current behaviour is documented in 
 Everything in the UI is custom-styled. Never ship browser-native controls whose popups or chrome look like standard HTML.
 
 - No `<select>`, `<input type="date|time|datetime-local|month|number|color">` and the like. Use `CustomSelect.vue` for dropdowns and `src/components/pickers/` (`TimePicker`, `DatePicker`, `MonthYearGrid`, `usePopover`) for dates and times. Number fields use the shared text-and-stepper control.
-- New popovers follow `.select-popover` styling, dismiss on outside pointerdown, and scale with canvas zoom.
+- Popovers, menus, and transient panels dismiss on outside pointerdown, including a click in an embedded Browser page or another app. Dismiss without stealing focus or swallowing the outside click. New popovers follow `.select-popover` styling and scale with canvas zoom.
 - Scrollbars are narrow and muted with no arrow buttons, everywhere (including sandbox documents and the terminal). xterm.js draws its own scrollbar, so the native one stays hidden there.
 
 ## 4. Look and motion

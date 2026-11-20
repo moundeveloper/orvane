@@ -59,3 +59,17 @@ test("NetSuite auto sign-in covers sandboxes and listed accounts, most recent lo
   const system = { origin: "https://system.netsuite.com", account: undefined };
   assert.deepEqual(autoLoginCandidates(logins, system).map((l) => l.id), ["c", "b", "a"]);
 });
+
+test("explicit domain logins cover other NetSuite accounts and explicit site logins stay scoped", () => {
+  const origin = "https://1964539-sb1.app.netsuite.com";
+  const logins = [
+    { id: "site", origin, scope: "origin", updated: 4 },
+    { id: "domain", origin, scope: "domain", updated: 2 },
+    { id: "disabled", origin, scope: "domain", autoLogin: false, updated: 9 },
+    { id: "other", origin: "https://example.com", scope: "domain", updated: 9 },
+  ];
+  assert.deepEqual(autoLoginCandidates(logins, { origin, account: "1964539-sb1" }).map(l => l.id), ["site", "domain"]);
+  assert.deepEqual(autoLoginCandidates(logins, { origin: "https://3013.app.netsuite.com", account: "3013" }).map(l => l.id), ["domain"]);
+  assert.deepEqual(autoLoginCandidates(logins, { origin: "https://other.netsuite.com", account: "3013" }), []);
+  assert.equal(netSuiteLogin(`${origin}/app/login/secure/myroles/myroles.nl?whence=`), undefined);
+});

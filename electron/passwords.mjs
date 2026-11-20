@@ -1,20 +1,15 @@
 // Saved passwords for the Browser app, like Chromium/Brave's: the vault is
 // one file encrypted with the OS key store (DPAPI on Windows, Keychain on
 // macOS, libsecret/KWallet on Linux) and lives only in this process.
-// Passwords travel only to pages of the origin they were saved for, or, when
-// the user picks one, of the same site (another host under the same
-// registrable domain over https, like Chromium's public-suffix matches),
-// via a sandboxed preload (password-fill.cjs); Orvane's own window sees sites
-// and usernames, never a password. On genuine NetSuite login pages of the
-// accounts auto sign-in covers (netsuite-login.mjs), a saved login is also
-// filled and submitted by itself, once per tab until a sign-in works.
+// The scope controls which pages can request a login over the sandboxed
+// preload (password-fill.cjs). Orvane's own window sees sites and usernames.
+// Automatic submission is limited to eligible NetSuite login pages.
 import { clipboard, ipcMain, safeStorage, session, webContents } from "electron";
 import { randomUUID } from "node:crypto";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getDomain } from "tldts";
 import {
-  autoLoginAccount,
   autoLoginCandidates,
   isNetSuitePage,
   netSuiteAccount,
@@ -46,6 +41,12 @@ const siteKey = (origin) => {
 };
 /** Another host of the same site: offered only on request, never auto-filled. */
 const related = (a, b) => a !== b && !!siteKey(a) && siteKey(a) === siteKey(b);
+const matchesOrigin = (login, origin) => {
+  if (login.origin === origin) return true;
+  if (login.scope === "origin") return false;
+  if (login.scope === "domain" && isNetSuitePage(login.origin)) return isNetSuitePage(origin);
+  return related(login.origin, origin);
+};
 
 /**
  * @param {{ partition: string, isOrvane: (url: string) => boolean, isProcessing?: (contents: Electron.WebContents) => boolean, folder: string }} options
@@ -134,12 +135,20 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
   }
   async function offer(ownerId, { origin, username, password }) {
     if (!(await ready()) || vault.never.includes(origin)) return;
-    const saved = vault.logins.filter((l) => l.origin === origin);
+    const saved = vault.logins.filter((l) => l.origin === origin ||
+      (l.scope === "domain" && matchesOrigin(l, origin)));
     // A password-only form on a site with one saved login updates that login.
+    const incomplete = username && isNetSuitePage(origin)
+      ? saved.filter((l) => !l.username && l.password === password) : [];
     const existing =
+      saved.find((l) => l.origin === origin && l.username === username) ??
       saved.find((l) => l.username === username) ??
+      (incomplete.length === 1 ? incomplete[0] : undefined) ??
       (!username && saved.length === 1 ? saved[0] : undefined);
-    if (existing?.password === password) return;
+    if (existing?.password === password && (!username || existing.username === username)) {
+      failing.delete(existing.id);
+      return;
+    }
     if (!existing && vault.logins.length >= MAX_LOGINS) return;
     const owner = webContents.fromId(ownerId);
     const host = owner?.hostWebContents;
@@ -150,7 +159,7 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
     prompts.set(id, {
       owner: owner.id,
       origin,
-      username: existing?.username ?? username,
+      username: username || existing?.username || "",
       password,
       existing: existing?.id,
       timer: setTimeout(() => forgetPrompt(id), PROMPT_LIFE),
@@ -159,7 +168,7 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
       from: owner.id,
       id,
       origin,
-      username: existing?.username ?? username,
+      username: username || existing?.username || "",
       update: !!existing,
     });
   }
@@ -180,7 +189,7 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
       secure: secureOrigin(origin),
       logins: [
         ...vault.logins.filter((l) => l.origin === origin).sort(newest),
-        ...vault.logins.filter((l) => related(l.origin, origin)).sort(newest),
+        ...vault.logins.filter((l) => l.origin !== origin && matchesOrigin(l, origin)).sort(newest),
       ].map(({ id, username, origin: from }) => ({
         id,
         username,
@@ -192,7 +201,7 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
     const origin = siteOf(event);
     if (!origin || typeof id !== "string" || !(await ready())) return;
     const login = vault.logins.find(
-      (l) => l.id === id && (l.origin === origin || related(l.origin, origin)),
+      (l) => l.id === id && matchesOrigin(l, origin),
     );
     return login && { username: login.username, password: login.password };
   });
@@ -209,6 +218,7 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
     const first = usernames.get(event.sender.id);
     if (!username && first?.origin === origin && Date.now() - first.at < USERNAME_LIFE)
       username = first.username;
+    if (!username && netSuiteLogin(event.senderFrame.url)) return;
     dropCandidate(event.sender.id);
     candidates.set(event.sender.id, { origin, username, password, at: Date.now() });
   });
@@ -269,7 +279,7 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
     if (!config || !autoLoginTab(event) || siteOf(event) !== config.origin || !(await ready())) return;
     if (tabLogins.get(id) !== config || siteOf(event) !== config.origin) return;
     const login = vault.logins.find((saved) => saved.id === config.loginId && saved.origin === config.origin);
-    if (!login) return;
+    if (!login?.username) return;
     tabLogins.delete(id);
     usedTabLogins.add(id);
     return { username: login.username, password: login.password };
@@ -281,11 +291,6 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
     const page = origin && autoLoginTab(event) && netSuiteLogin(event.senderFrame.url);
     if (!page || page.origin !== origin) return;
     const login = { ...page, account: page.account ?? headedTo.get(event.sender.id) };
-    // system.netsuite.com opened directly names no account: NetSuite signs
-    // in to the user's default one, so it is allowed. A known account must
-    // be one auto sign-in covers.
-    if (login.account ? !autoLoginAccount(login.account) : origin !== "https://system.netsuite.com")
-      return;
     if (!(await ready()) || configuredTabs.has(event.sender.id)) return;
     const contents = event.sender;
     let pending = attempts.get(contents.id);
@@ -301,7 +306,7 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
       notice(contents, "failed", origin);
       return;
     }
-    const candidates = autoLoginCandidates(vault.logins, login);
+    const candidates = autoLoginCandidates(vault.logins, login).filter((saved) => saved.username?.trim());
     const chosen = candidates[0];
     if (!chosen) return;
     if (failing.has(chosen.id)) {
@@ -397,11 +402,12 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
     logins:
       state === "ok"
         ? vault.logins
-            .map(({ id, origin, username, updated, autoLogin }) => ({
+            .map(({ id, origin, username, updated, autoLogin, scope }) => ({
               id,
               origin,
               username,
               updated,
+              ...(siteKey(origin) ? { domain: siteKey(origin), scope: scope ?? "legacy" } : {}),
               // Auto sign-in applies to NetSuite logins, on unless turned off.
               ...(isNetSuitePage(origin) ? { autoLogin: autoLogin !== false } : {}),
             }))
@@ -421,6 +427,30 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
     if (!login || !isNetSuitePage(login.origin)) return false;
     login.autoLogin = on;
     failing.delete(login.id);
+    await save();
+    return true;
+  });
+  handle("orvane:passwords-scope", async (id, scope) => {
+    if (scope !== "origin" && scope !== "domain") return false;
+    const login = state === "ok" && vault.logins.find((item) => item.id === id);
+    if (!login || !siteKey(login.origin)) return false;
+    login.scope = scope;
+    failing.delete(login.id);
+    for (const [contentsId, attempt] of attempts)
+      if (attempt.login === login.id) attempts.delete(contentsId);
+    await save();
+    return true;
+  });
+  handle("orvane:passwords-add-email", async (id, value) => {
+    const username = text(value, 512)?.trim();
+    const login = state === "ok" && vault.logins.find((item) => item.id === id);
+    if (!login || login.username || !isNetSuitePage(login.origin) || !/^[^\s@]+@[^\s@]+$/.test(username ?? ""))
+      return false;
+    login.username = username;
+    login.updated = Date.now();
+    failing.delete(login.id);
+    for (const [contentsId, attempt] of attempts)
+      if (attempt.login === login.id) attempts.delete(contentsId);
     await save();
     return true;
   });
@@ -452,7 +482,7 @@ export function setupPasswords({ partition, isOrvane, isProcessing = () => false
       const now = Date.now();
       const existing = vault.logins.find((l) => l.id === prompt.existing);
       if (existing) {
-        Object.assign(existing, { password: prompt.password, updated: now });
+        Object.assign(existing, { username: prompt.username || existing.username, password: prompt.password, updated: now });
         failing.delete(existing.id);
       }
       else if (vault.logins.length < MAX_LOGINS)

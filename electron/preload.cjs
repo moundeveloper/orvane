@@ -100,6 +100,8 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
     ipcRenderer.on("orvane:open-tab", listener);
     return () => ipcRenderer.removeListener("orvane:open-tab", listener);
   },
+  reloadClip: (id, url) => ipcRenderer.invoke("orvane:clip-reload", id, url),
+  browserNetSuiteEnvironments: id => ipcRenderer.invoke("orvane:browser-netsuite-environments", id),
   processing: {
     list: () => ipcRenderer.invoke("orvane:processing-list"),
     create: id => ipcRenderer.invoke("orvane:processing-create", id),
@@ -123,6 +125,8 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
     copy: (id) => ipcRenderer.invoke("orvane:passwords-copy", id),
     /** Turn NetSuite auto sign-in on or off for one saved login. */
     setAutoLogin: (id, on) => ipcRenderer.invoke("orvane:passwords-auto-login", id, on),
+    setScope: (id, scope) => ipcRenderer.invoke("orvane:passwords-scope", id, scope),
+    addEmail: (id, email) => ipcRenderer.invoke("orvane:passwords-add-email", id, email),
     /** Answer a save prompt: "save", "never" or "dismiss". */
     decide: (id, choice) => ipcRenderer.invoke("orvane:password-decide", id, choice),
     /** A sign-in in a Browser page that could be saved. */

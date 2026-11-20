@@ -182,4 +182,22 @@ test("Notes stores multiline image captions and exposes image drag and copy", as
   ).toBeVisible();
   await page.keyboard.up("q");
   await page.keyboard.up("Alt");
+
+  await todo.evaluate((element, dataUrl) => {
+    const bytes = Uint8Array.from(atob(dataUrl.split(",")[1]!), (c) => c.charCodeAt(0));
+    const clipboardData = new DataTransfer();
+    clipboardData.items.add(new File([bytes], "pasted.png", { type: "image/png" }));
+    element.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }));
+  }, png);
+  const pasted = page.locator(".type-image").nth(1);
+  await pasted.locator("img").click();
+  await expect(pasted).toHaveClass(/\bselected\b/);
+  await expect.poll(() => blocks.find((block) => block.type === "image" && block.id !== "picture")?.imageWidth).toBe(60);
+  const handle = pasted.getByRole("button", { name: "Drag to resize image" });
+  const bounds = (await handle.boundingBox())!;
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x - 40, bounds.y + bounds.height / 2);
+  await page.mouse.up();
+  await expect.poll(() => blocks.find((block) => block.type === "image" && block.id !== "picture")?.imageWidth).toBeLessThan(60);
 });

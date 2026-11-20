@@ -804,10 +804,12 @@ async function appendBlock() {
   requestFocus(nb.id, "start");
 }
 
-async function onPasteImage(index: number, dataUrl: string) {
+async function onPasteImage(blockId: string, dataUrl: string) {
+  const index = ws.blocks.findIndex(({ id }) => id === blockId);
   const current = ws.blocks[index];
   if (!current) return;
   ws.snapshot();
+  const imageWidth = 60;
   if (
     current.type === "paragraph" &&
     stripHtmlForQuery(current.html).trim() === ""
@@ -816,11 +818,13 @@ async function onPasteImage(index: number, dataUrl: string) {
       type: "image",
       html: dataUrl,
       caption: "",
+      imageWidth,
     });
     return;
   }
   const image = ws.newBlock("image", dataUrl, current.indent);
   image.caption = "";
+  image.imageWidth = imageWidth;
   await ws.insertBlock(index, image);
 }
 

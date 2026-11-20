@@ -99,6 +99,7 @@ import { onOpenRequest, PAGE_DRAG_MIME, registerCommands } from "../commands";
 import BrowserDrawer, {
   type Bookmark,
   type BrowserLayout as Layout,
+  type SidebarPosition,
   type BrowserTheme,
   type DrawerMode,
   type LibraryPage,
@@ -165,7 +166,9 @@ interface WebviewElement extends HTMLElement {
   setAudioMuted(muted: boolean): void;
   executeJavaScript(code: string, userGesture?: boolean): Promise<unknown>;
 }
-interface ProcessingTab { id: string; label: string; status: string; autoRefresh: boolean; }
+interface ProcessingTab { id: string; label: string; status: string; autoRefresh: boolean; busy?: boolean; temporary?: boolean; }
+interface BrowserNetSuiteEnvironment { origin: string; label: string }
+const netSuiteAppOrigin = /^https:\/\/[a-z0-9-]+\.app\.netsuite\.com$/i;
 interface ProcessingApi {
   list(): Promise<ProcessingTab[]>;
   create(id: number): Promise<ProcessingTab>;
@@ -175,6 +178,7 @@ interface ProcessingApi {
 }
 interface OrvaneDesktop {
   processing?: ProcessingApi;
+  browserNetSuiteEnvironments?(id: number): Promise<BrowserNetSuiteEnvironment[]>;
   webview: boolean;
   partition: string;
   setPageDensity(webContentsId: number, density: number): Promise<void>;
@@ -198,6 +202,7 @@ interface OrvaneDesktop {
         | { from: number; kind: "zoom"; clientX: number; clientY: number; deltaY: number }
         | { from: number; kind: "pan"; dx: number; dy: number }
         | { from: number; kind: "focus" }
+        | { from: number; kind: "pointer-down" }
         | { from: number; kind: "peek"; url: string }
         | { from: number; kind: "split"; url: string }
         | { from: number; kind: "key"; name: string }
@@ -432,6 +437,7 @@ function readState(imported?: Record<string, unknown>) {
     ratio: splitRatio(Number(saved.ratio) || 50),
     /** Sidebar width in pixels. */
     side: sidebarWidth(Number(saved.side) || DEFAULT_SIDEBAR_WIDTH),
+    sidebarPosition: (saved.sidebarPosition === "right" ? "right" : "left") as SidebarPosition,
     collapsed: saved.collapsed === true,
     pip: saved.pip === true,
   };
@@ -510,6 +516,7 @@ const activeTab = computed(
 // Webview tabs: the first URL each was created with (later navigation goes
 // through loadURL so Vue never resets src), and live back/forward state.
 const started = reactive<Record<string, string>>({});
+const openingEnvironment = new Map<string, string>();
 for (const tab of state.value.tabs) {
   if (tab.url) started[tab.id] = tab.url;
   if (tab.peek) started[tab.peek.id] = tab.peek.url;
@@ -753,6 +760,23 @@ function bindWebview(tab: BrowserTab, element: unknown) {
   };
   const navigated = (url: string) => {
     if (!safeUrl(url) || webviews.get(tab.id) !== view) return;
+    const target = openingEnvironment.get(tab.id);
+    if (target) {
+      const page = new URL(url);
+      const appHost = page.protocol === "https:" && !page.port && /^[a-z0-9-]+\.app\.netsuite\.com$/i.test(page.hostname);
+      const signIn = /^\/(?:app\/login\/|pages\/customerlogin\.jsp$)/i.test(page.pathname);
+      if (appHost && !signIn) {
+        openingEnvironment.delete(tab.id);
+        // A central login can land on the default account. Try the chosen
+        // account again once using the session the login just established.
+        if (page.origin !== originOf(target)) {
+          void view.loadURL(target).catch(() => undefined);
+          return;
+        }
+      } else if (!appHost && page.origin !== "https://system.netsuite.com") {
+        openingEnvironment.delete(tab.id);
+      }
+    }
     if (tab.url !== url) delete tab.title;
     tab.url = url;
     if (state.value.tabs.some((item) => item.id === tab.id)) recordVisit(tab);
@@ -928,6 +952,7 @@ onMounted(() => {
   // Canvas gestures made over a page arrive from the main process; replay
   // them where the canvas listens, in canvas screen coordinates.
   stopGuestInput = desktop?.onGuestInput((input) => {
+    if (input.kind === "pointer-down") return closeBrowserPopovers();
     const view = webviewFor(input.from);
     if (!view) return;
     if (input.kind === "inspect") return startInspect(view, input.x, input.y);
@@ -1270,6 +1295,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer));
 /** Everything a tab owns outside the saved state. */
 function forget(id: string) {
   closePeek(id, false);
+  openingEnvironment.delete(id);
   histories.delete(id);
   webviews.delete(id);
   dropLivePage(id);
@@ -1481,6 +1507,7 @@ interface MenuItem {
 }
 const menu = ref<{ x: number; y: number; title: string; items: MenuItem[] } | null>(null);
 const menuBox = ref<HTMLElement>();
+const netSuiteEnvironmentButton = ref<HTMLButtonElement>();
 let menuTrigger: HTMLElement | undefined;
 function openMenu(event: MouseEvent, items: MenuItem[], title = "") {
   event.preventDefault();
@@ -1522,9 +1549,24 @@ function menuKeys(event: KeyboardEvent) {
     event.key === "ArrowDown" ? (at + 1) % items.length : (Math.max(0, at) + items.length - 1) % items.length;
   items[next]?.focus();
 }
-function closeMenuOutside(event: PointerEvent) {
-  if (!(event.target as Element | null)?.closest?.(".browser-menu"))
-    menu.value = null;
+function closeBrowserPopovers() {
+  menu.value = null;
+  if (drawer.value) closeDrawer(false);
+  processingOpen.value = false;
+  showPasswords.value = false;
+}
+function closeBrowserPopoversOutside(event: PointerEvent) {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  if (!menuBox.value?.contains(target) &&
+      !(menu.value?.title === "NetSuite environments" && netSuiteEnvironmentButton.value?.contains(target))) menu.value = null;
+  if (drawer.value && !(root.value?.contains(target) &&
+      target.closest(".browser-drawer, [data-browser-drawer-toggle]"))) closeDrawer(false);
+  if (showPasswords.value && !(root.value?.contains(target) &&
+      target.closest(".passwords, [data-passwords-toggle]"))) showPasswords.value = false;
+}
+function closeBrowserPopoversOnFrameFocus() {
+  if (!useWebview && document.activeElement instanceof HTMLIFrameElement) closeBrowserPopovers();
 }
 function loginMenu(tab: BrowserTab): MenuItem[] {
   const rootUrl = tab.rootUrl;
@@ -1559,12 +1601,14 @@ function clearTabLogin(tab: BrowserTab) {
     // An unattached tab cannot have an active login request.
   }
 }
-onMounted(() =>
-  document.addEventListener("pointerdown", closeMenuOutside, true),
-);
-onBeforeUnmount(() =>
-  document.removeEventListener("pointerdown", closeMenuOutside, true),
-);
+onMounted(() => {
+  document.addEventListener("pointerdown", closeBrowserPopoversOutside, true);
+  window.addEventListener("blur", closeBrowserPopoversOnFrameFocus);
+});
+onBeforeUnmount(() => {
+  document.removeEventListener("pointerdown", closeBrowserPopoversOutside, true);
+  window.removeEventListener("blur", closeBrowserPopoversOnFrameFocus);
+});
 
 function tabMenu(event: MouseEvent, tab: BrowserTab) {
   const ids =
@@ -2493,8 +2537,9 @@ function gripDown(event: PointerEvent) {
   gripping = true;
 }
 function gripMove(event: PointerEvent) {
-  if (gripping)
-    state.value.side = sidebarWidth(local(event).x);
+  if (!gripping || !root.value) return;
+  const { x } = local(event);
+  state.value.side = sidebarWidth(state.value.sidebarPosition === "right" ? root.value.offsetWidth - x : x);
 }
 function gripUp() {
   if (gripping) save();
@@ -2769,9 +2814,14 @@ const switcherItems = computed(() => {
       ? [{ key: "peek", title: "Peek a link", detail: "", icon: "eye", run: openPeekPrompt }] : []),
     { key: "library", title: "Bookmarks and history", detail: "Ctrl B", icon: "library", run: () => openDrawer("library") },
     { key: "preferences", title: "Preferences", detail: "", icon: "settings", run: () => openDrawer("preferences") },
+    ...(showNetSuiteEnvironment.value
+      ? [{ key: "netsuite-environments", title: "Switch NetSuite environment", detail: "", icon: "swap", run: () => netSuiteEnvironmentButton.value?.click() }]
+      : []),
     ...(state.value.layout !== "comfortable"
       ? [{ key: "sidebar", title: state.value.collapsed ? "Expand sidebar" : "Collapse sidebar",
-        detail: "", icon: "sidebar", run: toggleSidebar }] : []),
+        detail: "", icon: "sidebar", run: toggleSidebar },
+        { key: "sidebar-position", title: state.value.sidebarPosition === "left" ? "Move sidebar right" : "Move sidebar left",
+          detail: "", icon: "sidebar", run: () => setSidebarPosition(state.value.sidebarPosition === "left" ? "right" : "left") }] : []),
   ].filter((command) => matches(command.title));
   return [
     ...commands,
@@ -3049,6 +3099,10 @@ function setLayout(layout: Layout) {
   state.value.layout = layout;
   save();
 }
+function setSidebarPosition(position: SidebarPosition) {
+  state.value.sidebarPosition = position;
+  save();
+}
 function toggleSidebar() {
   if (state.value.layout === "comfortable") return;
   state.value.collapsed = !state.value.collapsed;
@@ -3077,6 +3131,66 @@ function browserTools(): MenuItem[] {
     { label: "Pin a live element", icon: "box", disabled: !canPinClip?.() || !useWebview || !activeTab.value.url || !!peek.value, run: () => void pickElement() },
   ];
 }
+function switchNetSuiteEnvironment(origin: string) {
+  if (!netSuiteAppOrigin.test(origin)) return;
+  const existing = state.value.tabs.find((tab) => {
+    const current = originOf(tab.url);
+    return current === origin || (current === "https://system.netsuite.com" &&
+      originOf(tab.rootUrl || started[tab.id] || "") === origin);
+  });
+  if (existing) return goToTab(existing);
+  const url = `${origin}/app/center/card.nl`;
+  const tab = addTab(url);
+  if (tab) openingEnvironment.set(tab.id, url);
+  else say("This space is full. Open the environment from a space with room for another tab.");
+}
+const netSuiteOrigin = computed(() => originOf(activeTab.value.url));
+const showNetSuiteEnvironment = computed(() => !!desktop?.browserNetSuiteEnvironments &&
+  (netSuiteAppOrigin.test(netSuiteOrigin.value) || netSuiteOrigin.value === "https://system.netsuite.com"));
+const currentNetSuiteAccount = computed(() => netSuiteAppOrigin.test(netSuiteOrigin.value)
+  ? new URL(netSuiteOrigin.value).hostname.split(".")[0] : "");
+function openNetSuiteEnvironments(event: MouseEvent) {
+  if (menu.value?.title === "NetSuite environments") {
+    menu.value = null;
+    return;
+  }
+  const tab = activeTab.value;
+  const origin = netSuiteOrigin.value;
+  const openAccounts = new Map<string, BrowserNetSuiteEnvironment>();
+  for (const item of state.value.tabs) {
+    const tabOrigin = originOf(item.url);
+    if (netSuiteAppOrigin.test(tabOrigin) && !openAccounts.has(tabOrigin))
+      openAccounts.set(tabOrigin, { origin: tabOrigin, label: new URL(tabOrigin).hostname.split(".")[0]! });
+  }
+  const itemsFor = (entries: Iterable<BrowserNetSuiteEnvironment>): MenuItem[] =>
+    Array.from(entries, (entry) => ({
+      label: entry.label,
+      checked: entry.origin === origin,
+      run: () => switchNetSuiteEnvironment(entry.origin),
+    }));
+  openMenu(event, [...itemsFor(openAccounts.values()), { label: "Loading other environments…", disabled: true }], "NetSuite environments");
+  const popup = menu.value;
+  const update = (items: MenuItem[]) => {
+    if (!popup || menu.value !== popup || activeTab.value.id !== tab.id || netSuiteOrigin.value !== origin) return;
+    popup.items = items;
+    void nextTick(() => positionMenu(false));
+  };
+  void Promise.resolve().then(() => {
+    const view = webviews.get(tab.id);
+    if (!view || !desktop?.browserNetSuiteEnvironments) throw Error("Browser tab is unavailable.");
+    return desktop.browserNetSuiteEnvironments(view.getWebContentsId());
+  }).then(entries => {
+    for (const entry of entries) openAccounts.set(entry.origin, entry);
+    update(itemsFor(openAccounts.values()));
+  }).catch((error: Error) => update([
+    ...itemsFor(openAccounts.values()),
+    { label: error.message.replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?(?:Error:\s*)?/, ""), disabled: true },
+    { label: "Retry environment lookup", icon: "refresh", run: () => netSuiteEnvironmentButton.value?.click() },
+  ]));
+}
+watch([() => activeTab.value.id, netSuiteOrigin], () => {
+  if (menu.value?.title === "NetSuite environments") menu.value = null;
+});
 function moreMenu(event: MouseEvent) {
   openMenu(event, [
     { label: "New tab", icon: "plus", hint: "Ctrl T", disabled: spaceTabs.value.length >= MAX_TABS, run: () => { addTab(); } },
@@ -3251,7 +3365,7 @@ function browserWheel(event: WheelEvent) {
     :class="[
       `layout-${state.layout}`,
       `theme-${state.theme}`,
-      { 'side-collapsed': state.collapsed || narrow, 'bar-open': barOpen },
+      { 'side-collapsed': state.collapsed || narrow, 'side-right': state.sidebarPosition === 'right', 'bar-open': barOpen },
     ]"
     :style="{ '--side-wide': state.side + 'px', '--split': state.ratio + '%' }"
     aria-label="Web browser"
@@ -3562,6 +3676,7 @@ function browserWheel(event: WheelEvent) {
           data-tip="Bookmarks and history"
           data-key="Ctrl B"
           @click="openDrawer('library')"
+          data-browser-drawer-toggle
         >
           <Icon name="library" :size="15" /><span>Library</span>
         </button>
@@ -3571,6 +3686,7 @@ function browserWheel(event: WheelEvent) {
           aria-label="Preferences"
           data-tip="Preferences"
           @click="openDrawer('preferences')"
+          data-browser-drawer-toggle
         >
           <Icon name="settings" :size="15" />
         </button>
@@ -3592,7 +3708,14 @@ function browserWheel(event: WheelEvent) {
       <button class="processing-add" :disabled="!activeTab.url" @click="createProcessing">Use current tab</button>
       <div v-if="processingOpen" class="processing-list">
         <p v-if="!processingTabs.length">No processing tabs yet. Use the current tab to create one.</p>
-        <div v-for="tab in processingTabs" :key="tab.id" class="processing-row"><span class="processing-name">{{ tab.label }}</span><span>{{ tab.status }}</span><button @click="processingAction('refresh', tab.id)">Refresh</button><button @click="processingAction('close', tab.id)">Close</button></div>
+        <div v-for="tab in processingTabs" :key="tab.id" class="processing-row">
+          <span class="processing-name">{{ tab.label }}<small v-if="tab.temporary"> · Temporary</small></span>
+          <span>{{ tab.busy ? "Busy" : tab.status }}</span>
+          <template v-if="!tab.temporary">
+            <button :disabled="tab.busy" @click="processingAction('refresh', tab.id)">Refresh</button>
+            <button :disabled="tab.busy" @click="processingAction('close', tab.id)">Close</button>
+          </template>
+        </div>
       </div>
       <p v-if="processingError" role="alert">{{ processingError }}</p>
     </div>
@@ -3732,6 +3855,22 @@ function browserWheel(event: WheelEvent) {
         <Icon name="more" :size="15" />
       </button>
     </form>
+    <div v-if="showNetSuiteEnvironment" class="browser-netsuite-bar">
+      <button
+        ref="netSuiteEnvironmentButton"
+        type="button"
+        class="browser-netsuite-switch"
+        aria-label="Switch NetSuite environment"
+        aria-haspopup="menu"
+        :aria-expanded="menu?.title === 'NetSuite environments'"
+        @click="openNetSuiteEnvironments"
+      >
+        <Icon name="swap" :size="14" />
+        <span class="browser-netsuite-label">NetSuite environment</span>
+        <span v-if="currentNetSuiteAccount" class="browser-netsuite-account">{{ currentNetSuiteAccount }}</span>
+        <Icon name="down" :size="12" />
+      </button>
+    </div>
     <p v-if="error" class="browser-error" role="alert">{{ error }}</p>
     <div
       v-if="prompt"
@@ -4145,6 +4284,7 @@ function browserWheel(event: WheelEvent) {
       :theme="state.theme"
       :collapsed="state.collapsed"
       :layout="state.layout"
+      :sidebar-position="state.sidebarPosition"
       :peek-enabled="state.peekEnabled"
       :peek-cross-site="state.peekCrossSite"
       :search-engine="state.searchEngine"
@@ -4159,6 +4299,7 @@ function browserWheel(event: WheelEvent) {
       @update:theme="state.theme = $event; save()"
       @update:collapsed="state.collapsed = $event; save()"
       @update:layout="setLayout"
+      @update:sidebar-position="setSidebarPosition"
       @update:peek-enabled="setPeekPreference"
       @update:peek-cross-site="state.peekCrossSite = $event; save()"
       @update:search-engine="state.searchEngine = $event; save()"
@@ -4589,11 +4730,61 @@ function browserWheel(event: WheelEvent) {
 .side-collapsed .side-grip {
   display: none;
 }
+.side-right:not(.layout-comfortable) {
+  grid-template-columns: minmax(0, 1fr) var(--side);
+}
+.browser-view:where(.side-right:not(.layout-comfortable)) > * {
+  grid-column: 1;
+}
+.side-right:not(.layout-comfortable) > .browser-side {
+  grid-column: 2;
+  border-right: 0;
+  border-left: 1px solid var(--soft);
+}
+.side-right .side-grip {
+  left: -3px;
+  right: auto;
+}
 .processing-group {
   grid-row: 2;
 }
 .browser-bar {
   grid-row: 3;
+}
+.browser-netsuite-bar {
+  grid-row: 4;
+  display: flex;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.browser-netsuite-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 100%;
+  height: 29px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--low);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+.browser-netsuite-switch:hover,
+.browser-netsuite-switch[aria-expanded="true"] {
+  background: var(--hover);
+}
+.browser-netsuite-label {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.browser-netsuite-account {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .browser-error {
   grid-row: 6;

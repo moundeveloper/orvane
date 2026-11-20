@@ -133,6 +133,47 @@ test("sidebar layouts keep every control and remember the choice", async ({
   }
 });
 
+test("browser searches history and remembers the right sidebar", async ({ page }) => {
+  test.setTimeout(120_000);
+  const { server, browser, go, more, origin } = await open(page);
+  try {
+    await go("/first-page");
+    await go("/second-page");
+    await more("Bookmarks & history");
+    await browser.getByRole("button", { name: "History", exact: true }).click();
+    const history = browser.getByRole("navigation", { name: "Browsing history" });
+    await expect(history).toContainText(`${origin}/first-page`);
+    await expect(history).toContainText(`${origin}/second-page`);
+    const search = browser.getByRole("textbox", { name: "Search history" });
+    await search.fill(" FIRST-PAGE ");
+    await expect(history).toContainText(`${origin}/first-page`);
+    await expect(history).not.toContainText(`${origin}/second-page`);
+    await page.screenshot({ path: test.info().outputPath("history-search.png") });
+    await search.fill("missing");
+    await expect(browser.getByText("No matching history.")).toBeVisible();
+    const address = browser.getByRole("textbox", { name: "Address" });
+    await address.click();
+    await expect(browser.getByRole("button", { name: "Close drawer" })).toHaveCount(0);
+    await expect(address).toBeFocused();
+    await more("Preferences");
+    await browser.getByRole("combobox", { name: "Sidebar position" }).click();
+    await page.getByRole("option", { name: "Right", exact: true }).click();
+    await browser.getByRole("button", { name: "Close drawer" }).click();
+    const rightOfPage = async () => {
+      const side = await browser.locator(".browser-side").boundingBox();
+      const content = await browser.locator(".browser-page").boundingBox();
+      return side!.x >= content!.x + content!.width - 1;
+    };
+    await expect.poll(rightOfPage).toBe(true);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(browser).toHaveClass(/side-right/);
+    await expect.poll(rightOfPage).toBe(true);
+    await page.screenshot({ path: test.info().outputPath("right-sidebar.png") });
+  } finally {
+    server.close();
+  }
+});
+
 test("pinned tabs, groups, multi-select and spaces organise tabs", async ({
   page,
 }) => {

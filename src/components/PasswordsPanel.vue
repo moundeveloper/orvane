@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { siteName, type PasswordList, type PasswordsApi } from "../passwords";
 import Icon from "./Icon.vue";
 
@@ -16,6 +16,10 @@ const data = ref<PasswordList>();
 const query = ref("");
 const notice = ref("");
 const confirming = ref("");
+const editingEmail = ref("");
+const email = ref("");
+const emailField = ref<HTMLInputElement[]>([]);
+const savingEmail = ref(false);
 
 async function refresh() {
   data.value = await props.api.list().catch(() => undefined);
@@ -85,6 +89,32 @@ async function setAutoLogin(id: string, on: boolean) {
     tell(on ? "Auto sign-in turned on." : "Auto sign-in turned off.");
   }
 }
+async function setScope(id: string, scope: "origin" | "domain") {
+  if (await props.api.setScope(id, scope).catch(() => false)) {
+    await refresh();
+    tell(scope === "domain" ? "Domain login enabled." : "Login restricted to this site.");
+  } else tell("Could not update login scope.");
+}
+async function addEmail(id: string) {
+  if (savingEmail.value) return;
+  savingEmail.value = true;
+  try {
+    if (await props.api.addEmail(id, email.value)) {
+      await refresh();
+      editingEmail.value = "";
+      tell("Email saved. Reload the login page to try auto sign-in.");
+    } else tell("Enter a valid email address.");
+  } catch {
+    tell("Could not save the email.");
+  } finally {
+    savingEmail.value = false;
+  }
+}
+function startEmailEdit(id: string) {
+  editingEmail.value = id;
+  email.value = "";
+  void nextTick(() => emailField.value[0]?.focus());
+}
 async function allow(origin: string) {
   if (await props.api.allow(origin).catch(() => false)) await refresh();
 }
@@ -128,7 +158,28 @@ async function allow(origin: string) {
         <li v-for="login in shown" :key="login.id" :class="{ current: login.origin === origin }">
           <div class="passwords-who">
             <strong :title="login.origin">{{ siteName(login.origin) }}</strong>
-            <span>{{ login.username || "(no username)" }}</span>
+            <span>{{ login.username || (login.autoLogin !== undefined ? "Email missing" : "(no username)") }}</span>
+            <template v-if="login.autoLogin !== undefined && !login.username">
+              <form v-if="editingEmail === login.id" class="passwords-email" novalidate @submit.prevent="addEmail(login.id)">
+                <input ref="emailField" v-model="email" type="email" aria-label="NetSuite email" placeholder="NetSuite email" />
+                <button type="submit" class="subtle-button" :disabled="savingEmail">Save</button>
+              </form>
+              <button v-else type="button" class="passwords-scope" @click="startEmailEdit(login.id)">Add email</button>
+            </template>
+            <button
+              v-if="login.domain"
+              type="button"
+              class="passwords-scope"
+              :aria-label="`Use domain login for ${login.username || siteName(login.origin)} on ${login.domain}`"
+              :aria-pressed="login.scope === 'domain'"
+              @click="setScope(login.id, login.scope === 'domain' ? 'origin' : 'domain')"
+            >{{ login.scope === 'domain' ? login.domain : 'Use domain' }}</button>
+            <button
+              v-if="login.scope === 'legacy'"
+              type="button"
+              class="passwords-scope"
+              @click="setScope(login.id, 'origin')"
+            >Use this site only</button>
           </div>
           <button
             v-if="login.autoLogin !== undefined"
@@ -136,10 +187,11 @@ async function allow(origin: string) {
             class="icon-button passwords-auto"
             :class="{ on: login.autoLogin }"
             :aria-pressed="login.autoLogin"
+            :disabled="!login.username"
             :aria-label="`Auto sign-in for ${login.username || siteName(login.origin)}`"
             :title="
-              login.autoLogin
-                ? 'Auto sign-in on: fills and submits NetSuite sandbox login pages (and account 1964539). Click to turn off.'
+              !login.username ? 'Add an email to use auto sign-in.' : login.autoLogin
+                ? 'Auto sign-in on. Click to turn off.'
                 : 'Auto sign-in off. Click to turn on.'
             "
             @click="setAutoLogin(login.id, !login.autoLogin)"
@@ -282,6 +334,29 @@ h4 {
 .passwords-who span {
   font-size: 11px;
   color: #607482;
+}
+.passwords-scope {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 2px 5px;
+  border: 1px solid #dce5e9;
+  border-radius: 5px;
+  background: transparent;
+  color: #455968;
+  font-size: 11px;
+  cursor: pointer;
+}
+.passwords-scope:hover,
+.passwords-scope[aria-pressed="true"] {
+  background: #e1ebef;
+}
+.passwords-email {
+  display: flex;
+  gap: 4px;
+}
+.passwords-email input {
+  flex: 1;
+  min-width: 0;
 }
 .passwords-auto {
   color: #8597a2;

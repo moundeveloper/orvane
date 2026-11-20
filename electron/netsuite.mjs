@@ -8,10 +8,9 @@ const WRITES = ["save-file", "create-folder", "upload-file", "rename-item", "mov
  * redirects its home page to the login page. Unknown counts as signed in. */
 async function signedIn(contents) {
   if (contents.isDestroyed?.()) return false;
+  const probe = "fetch('/app/center/card.nl', { redirect: 'manual', credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(8000) }).then((r) => r.type !== 'opaqueredirect')";
   return Promise.resolve()
-    .then(() => contents.executeJavaScript(
-      "fetch('/app/center/card.nl', { redirect: 'manual', credentials: 'same-origin' }).then((r) => r.type !== 'opaqueredirect')",
-    ))
+    .then(() => contents.mainFrame?.executeJavaScript(probe) ?? contents.executeJavaScript(probe))
     .then((value) => value !== false)
     .catch(() => true);
 }
@@ -20,6 +19,33 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
   const refreshedEpochs = new Map();
   const allowed = (event) =>
     !event.sender.isDestroyed() && isOrvane(event.sender.getURL());
+  function schedule(key, parallel, execute) {
+    const queue = queues.get(key) ?? { waiting: [], running: 0, serial: false };
+    queues.set(key, queue);
+    function drain() {
+      while (queue.waiting.length && !queue.serial && queue.running < 2) {
+        const job = queue.waiting[0];
+        if (!job.parallel && queue.running) return;
+        queue.waiting.shift();
+        queue.running++;
+        queue.serial = !job.parallel;
+        let reservation = Promise.resolve();
+        const hold = (execution) => { reservation = execution.then(() => {}, () => {}); };
+        const pending = Promise.resolve().then(() => job.execute(hold));
+        void pending.then(job.resolve, job.reject).finally(async () => {
+          await reservation;
+          queue.running--;
+          queue.serial = false;
+          drain();
+          if (!queue.running && !queue.waiting.length && queues.get(key) === queue) queues.delete(key);
+        });
+      }
+    }
+    return new Promise((resolve, reject) => {
+      queue.waiting.push({ parallel, execute, resolve, reject });
+      drain();
+    });
+  }
   ipcMain.handle("orvane:netsuite-tabs", async (event) => {
     if (!allowed(event)) throw Error("Unauthorized request.");
     return processing.environments(event.sender);
@@ -186,7 +212,12 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         const action = input.operation === 'tables' ? 'getRecordTypes' : 'getRecordTypeDetail';
         const data = input.operation === 'tables' ? { structureType: 'FLAT' } : { scriptId: input.options.table, detailType: 'SS_ANAL' };
         const url = '/app/recordscatalog/rcendpoint.nl?action=' + action + '&data=' + encodeURIComponent(JSON.stringify(data));
-        const response = await fetch(url, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } });
+        const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json' } });
+        if (response.redirected) {
+          const path = new URL(response.url).pathname.toLowerCase();
+          if (path.startsWith('/app/login/') || path === '/pages/customerlogin.jsp')
+            throw Object.assign(Error('NetSuite sign-in required.'), { code: 'SIGN_IN_REQUIRED' });
+        }
         if (!response.ok) throw Error('Could not load the record catalog: HTTP ' + response.status);
         return await response.json();
       }
@@ -435,15 +466,19 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         return { rows: data.records || [], totalCount: data.totalCount ?? (data.records || []).length, offset, pageSize };
       }
 
-    })() ?? null }); } catch (error) { return JSON.stringify({ error: String(error?.message || error?.name || error) }); } })()`;
+    })() ?? null }); } catch (error) {
+      return JSON.stringify({ error: String(error?.message || error?.name || error), signInRequired: error?.code === 'SIGN_IN_REQUIRED' });
+    } })()`;
     let processingTab;
+    const parallel = processing.supportsParallelReads === true &&
+      expectedSessionEpoch === undefined && !WRITES.includes(operation);
     const assertSession = () => {
       if (expectedSessionEpoch !== undefined && lifecycle.sessionEpoch?.(event.sender, id) !== expectedSessionEpoch)
         throw Object.assign(Error("The observed NetSuite session changed. List and inspect a fresh target."), { code: "SESSION_CHANGED" });
     };
-    const attempt = async () => {
+    const attempt = async (hold) => {
       assertSession();
-      processingTab = await processing.acquire(event.sender, id);
+      processingTab = await processing.acquire(event.sender, id, { parallel });
       let timer;
       // A timeout does not mean execution has stopped; keep the tab busy until
       // Chromium actually settles so refresh cannot interrupt an in-flight call.
@@ -451,14 +486,16 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         .then(() => {
           assertSession();
           if (expectedSessionEpoch !== undefined) refreshedEpochs.set(`${event.sender.id}:${id}`, expectedSessionEpoch);
-          return processingTab.contents.executeJavaScript(code);
+          return processingTab.contents.mainFrame?.executeJavaScript(code) ?? processingTab.contents.executeJavaScript(code);
         })
         .then((text) => {
           const answer = JSON.parse(text);
-          if (answer?.error !== undefined) throw Error(answer.error);
+          if (answer?.error !== undefined)
+            throw Object.assign(Error(answer.error), { signInRequired: answer.signInRequired === true });
           return answer?.result ?? null;
         })
         .finally(processingTab.release);
+      hold(execution);
       try {
         const value = await Promise.race([
           execution,
@@ -480,33 +517,28 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         clearTimeout(timer);
       }
     };
-    const execute = async () => {
+    const execute = async (hold) => {
       try {
         assertSession();
         if (expectedSessionEpoch !== undefined && refreshedEpochs.get(`${event.sender.id}:${id}`) !== expectedSessionEpoch) {
           await processing.reload?.(event.sender, id);
           assertSession();
         }
-        return await attempt();
+        return await attempt(hold);
       } catch (error) {
         // NetSuite can end the session while the page stays put, so calls fail
         // until it is reloaded. Then sign in again (a reload goes through the
         // login page) and run reads once more; writes are only reported.
-        if (error?.code === "SESSION_CHANGED" || error?.timedOut || !processingTab || (await signedIn(processingTab.contents))) throw error;
+        if (error?.code === "SESSION_CHANGED" || error?.timedOut || !processingTab || processingTab.temporary ||
+            (!error?.signInRequired && await signedIn(processingTab.contents))) throw error;
         if (!(await Promise.resolve(processing.reload?.(event.sender, id)).catch(() => false))) throw error;
         if (WRITES.includes(operation)) throw error;
-        return await attempt();
+        return await attempt(hold);
       }
     };
     // UI and MCP share the same executor reservation, including failed calls.
     const key = `${event.sender.id}:${id}`;
-    const pending = (queues.get(key) || Promise.resolve()).then(execute);
-    const settled = pending.catch(() => {});
-    queues.set(key, settled);
-    void settled.then(() => {
-      if (queues.get(key) === settled) queues.delete(key);
-    });
-    return pending;
+    return schedule(key, parallel, execute);
   };
   ipcMain.handle("orvane:netsuite-run", run);
   return {

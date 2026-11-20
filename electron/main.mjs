@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { setupPasswords } from "./passwords.mjs";
 import { netSuiteLogin } from "./netsuite-login.mjs";
+import { browserEnvironments } from "./netsuite-accounts.mjs";
 import { setupNetSuite } from "./netsuite.mjs";
 import { setupProcessing } from "./processing.mjs";
 import { startNetSuiteBroker } from "./netsuite-broker.mjs";
@@ -283,12 +284,30 @@ function secure() {
     folder: app.getPath("userData"),
   });
   processing.onSignInReset(trackPasswords.resetAutoLogin);
+  ipcMain.handle("orvane:browser-netsuite-environments", (event, id) => {
+    const guest = ownGuest(event, id);
+    if (!guest || guest.session !== sites || event.senderFrame?.parent || !isOrvane(event.senderFrame?.url ?? ""))
+      throw Error("Browser tab is unavailable.");
+    return browserEnvironments(sites, guest.getURL());
+  });
+  ipcMain.handle("orvane:clip-reload", (event, id, url) => {
+    const guest = ownGuest(event, id);
+    if (!guest || event.senderFrame?.parent || !isOrvane(event.senderFrame?.url ?? "") ||
+        guest.session !== sites || typeof url !== "string" || !web(url) || isOrvane(url))
+      throw Error("No such live page.");
+    trackPasswords.resetAutoLogin(guest);
+    return guest.loadURL(url);
+  });
   desktopNetSuiteService = netSuiteService;
 
   app.on("web-contents-created", (_event, contents) => {
     if (contents.session === sites) trackPasswords(contents);
     if (contents.getType() === "webview" && isDevtoolsGuest(contents)) return;
     if (contents.getType() === "webview") {
+      contents.on("before-mouse-event", (_event, input) => {
+        if (input.type === "mouseDown")
+          contents.hostWebContents?.send("orvane:guest-input", { from: contents.id, kind: "pointer-down" });
+      });
       sessions.observe(contents);
       // Discovery follows the real Browser tab as login and navigation finish.
       // The host UI can update its environment list without a refresh button.

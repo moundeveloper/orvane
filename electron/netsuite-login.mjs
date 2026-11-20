@@ -40,12 +40,15 @@ export const isNetSuitePage = (url) => !!netSuiteUrl(url);
 /** The account a genuine NetSuite URL names (host or `c` parameter). */
 export const netSuiteAccount = (url) => netSuiteUrl(url)?.account;
 
+const ROLES_PATH = "/app/login/secure/myroles/myroles.nl";
+
 /** A genuine NetSuite login page: `{ origin, account }` (account may be
  * unknown on system.netsuite.com without a `c` parameter). */
 export function netSuiteLogin(url) {
   const page = netSuiteUrl(url);
   if (!page) return;
   const path = page.url.pathname.toLowerCase();
+  if (path === ROLES_PATH) return;
   // The generic login page is served on account hosts too
   // (4027610-sb1.app.netsuite.com/pages/customerlogin.jsp).
   const login = path.startsWith("/app/login/") || path === "/pages/customerlogin.jsp";
@@ -58,7 +61,7 @@ export function netSuiteSignedIn(url) {
   return (
     !!page &&
     page.url.hostname !== SYSTEM_HOST &&
-    !page.url.pathname.toLowerCase().startsWith("/app/login/")
+    !netSuiteLogin(url)
   );
 }
 
@@ -72,24 +75,20 @@ export function autoLoginAccount(account) {
 const savedAccount = (origin) => netSuiteUrl(origin)?.account;
 const baseAccount = (account) => account?.replace(/-[a-z]+\d*$/, "");
 
-/** Saved logins that may sign in to this login page, best first: one saved
- * on this page's own host, on system.netsuite.com, or on another
- * environment of the same account (its production or another sandbox).
- * With no account known (system.netsuite.com), any saved NetSuite login. */
+/** Explicitly scoped logins follow the user's choice. Existing logins with
+ * no scope retain the original account coverage until edited. */
 export function autoLoginCandidates(logins, login) {
+  if (!isNetSuitePage(login.origin)) return [];
   return logins
     .filter((saved) => {
-      if (saved.autoLogin === false) return false;
+      if (saved.autoLogin === false || !isNetSuitePage(saved.origin)) return false;
+      if (saved.scope === "domain") return true;
+      if (saved.scope === "origin") return saved.origin === login.origin;
+      if (login.account ? !autoLoginAccount(login.account) : login.origin !== "https://system.netsuite.com") return false;
       if (saved.origin === login.origin) return true;
-      let host;
-      try {
-        host = new URL(saved.origin).hostname;
-      } catch {
-        return false;
-      }
-      if (!isNetSuitePage(saved.origin)) return false;
-      if (host === SYSTEM_HOST || !login.account) return true;
+      if (new URL(saved.origin).hostname === SYSTEM_HOST || !login.account) return true;
       return baseAccount(savedAccount(saved.origin)) === baseAccount(login.account);
     })
-    .sort((a, b) => Math.max(b.used ?? 0, b.updated) - Math.max(a.used ?? 0, a.updated));
+    .sort((a, b) => Number(b.scope === "origin") - Number(a.scope === "origin") ||
+      Math.max(b.used ?? 0, b.updated) - Math.max(a.used ?? 0, a.updated));
 }

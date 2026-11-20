@@ -13,13 +13,14 @@ interface WebviewElement extends HTMLElement {
   getWebContentsId(): number;
   executeJavaScript(code: string): Promise<unknown>;
   setAudioMuted(muted: boolean): void;
-  reload(): void;
+  loadURL(url: string): Promise<void>;
 }
 type GuestInput =
   | { from: number; kind: "zoom"; x: number; y: number; deltaY: number }
   | { from: number; kind: "zoom"; clientX: number; clientY: number; deltaY: number }
   | { from: number; kind: "pan"; dx: number; dy: number }
   | { from: number; kind: "focus" }
+  | { from: number; kind: "pointer-down" }
   | { from: number; kind: "peek"; url: string }
   | { from: number; kind: "split"; url: string }
   | { from: number; kind: "key"; name: string };
@@ -28,6 +29,7 @@ interface LiveDesktop {
   partition: string;
   setPageDensity(id: number, density: number): Promise<void>;
   setPageActive?(id: number, active: boolean): Promise<void>;
+  reloadClip?(id: number, url: string): Promise<void>;
   onGuestInput(callback: (input: GuestInput) => void): () => void;
   onOpenTab(callback: (request: { from: number; url: string }) => void): () => void;
 }
@@ -172,7 +174,7 @@ function retryWhenVisible() {
     retryTimer = undefined;
     if (!onScreen || !(failed.value || silent.value)) return;
     retries++;
-    reloadPage();
+    void reloadPage();
   }, 2000 * 2 ** retries);
 }
 let askTimer: ReturnType<typeof setTimeout> | undefined,
@@ -203,17 +205,23 @@ function openLink(link: string) {
 function openOriginal() {
   if (url.value) openLink(url.value);
 }
-function reloadPage() {
-  if (!view.value) return;
+let reloadGeneration = 0;
+async function reloadPage() {
+  const page = view.value;
+  if (!page) return;
+  const generation = ++reloadGeneration;
   clearTimeout(askTimer);
   target.value = undefined;
   found.value = true;
   silent.value = false;
   failed.value = false;
-  updateActivity();
+  const id = guestId();
+  setActive(true);
   try {
-    view.value.reload();
-  } catch {
+    if (id !== undefined && desktop?.reloadClip) await desktop.reloadClip(id, startUrl);
+    else await page.loadURL(startUrl);
+  } catch (error) {
+    if (generation !== reloadGeneration || view.value !== page || String(error).includes("ERR_ABORTED")) return;
     failed.value = true;
     retryWhenVisible();
   }
@@ -222,7 +230,7 @@ function reload() {
   clearTimeout(retryTimer);
   retryTimer = undefined;
   retries = 0;
-  reloadPage();
+  void reloadPage();
 }
 function toggleMute() {
   muted.value = !muted.value;
@@ -322,7 +330,7 @@ onMounted(() => {
   document.addEventListener("pointerdown", leave, true);
   // Canvas gestures made over the page come back from the main process.
   stopInput = desktop!.onGuestInput((input) => {
-    if (input.from !== guestId()) return;
+    if (input.from !== guestId() || input.kind === "pointer-down") return;
     if (input.kind === "focus") return activateApp(appOf(root.value));
     if (input.kind === "peek" || input.kind === "split") return openLink(input.url);
     if (input.kind === "key") {

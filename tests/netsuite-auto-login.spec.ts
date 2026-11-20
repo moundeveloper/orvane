@@ -1,6 +1,6 @@
 import { test, expect, _electron as electron } from "@playwright/test";
 import { createServer } from "node:https";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 // NetSuite auto sign-in, end to end against a fake NetSuite login page:
@@ -14,6 +14,11 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
   test.setTimeout(180000);
   const posts: string[] = [];
   let reject = false;
+  let holdCatalog: Promise<void> | undefined;
+  let releaseCatalog: (() => void) | undefined;
+  let heldCatalogRequests = 0;
+  let blockDashboard = false;
+  let blockRoleSelector = false;
   // Hosts with a NetSuite session; the others go to the login page.
   const sessions = new Set<string>();
   const fixture = join(import.meta.dirname, "fixtures", "netsuite-login");
@@ -23,8 +28,8 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
     `<!doctype html><title>NetSuite Login</title><script src="/login.js"></script>` +
     `<form id="login-form" method="post"${action && ` action="${action}"`}>` +
     `${note && `<p class="error">${note}</p>`}` +
-    `<label for="email">Email</label><input id="email" name="email" type="email">` +
     `<label for="password">Password</label><input id="password" name="password" type="password" autocomplete="off">` +
+    `<label for="email">Email</label><input id="email" name="email" type="email" required>` +
     `<button id="login-submit" name="submitButton" type="submit" disabled>Log In</button></form>`;
   const loginScript =
     "addEventListener('input', () => setTimeout(() => {" +
@@ -88,16 +93,29 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
         return response.end();
       }
       if (path === "/app/center/card.nl") {
+        if (blockDashboard && host === "1964539.app.netsuite.com") return;
         if (!sessions.has(host)) {
           response.writeHead(302, { location: "/pages/customerlogin.jsp?country=US" });
           return response.end();
         }
         // Like the dashboard: portlets keep loading after the page itself.
+        response.setHeader("Set-Cookie", "fixture-session=active; Secure; HttpOnly; Path=/");
         return response.end(
           "<!doctype html><title>NetSuite Home</title><script src=/n.js></script><h1>Home</h1><iframe src=/portlet></iframe>",
         );
       }
       if (path === "/portlet") return response.end("<!doctype html><p>Portlet</p>");
+      if (path === "/app/login/secure/myroles/myroles.nl" && sessions.has(host)) {
+        if (blockRoleSelector) return;
+        if (!request.headers.cookie?.includes("fixture-session=active")) return response.writeHead(401).end();
+        return response.end(`<script type="application/json">${JSON.stringify({
+          data: {
+            " account": { " accountId": "1964539_SB1", " accountName": "Development" },
+            " allAccounts": [{ accountId: "3013", accountName: "Example production", accountType: "PRODUCTION" }],
+            " allRoles": [{ entityRoleId: { rol: 3 }, roleName: "Administrator" }],
+          },
+        })}</script>`);
+      }
       // The record catalog (JSON) needs a session, like NetSuite's own.
       if (path === "/app/recordscatalog/rcendpoint.nl") {
         if (!sessions.has(host)) {
@@ -105,7 +123,12 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
           return response.end();
         }
         response.setHeader("content-type", "application/json");
-        return response.end(JSON.stringify({ data: [{ id: "customer", label: "Customer" }] }));
+        const answer = () => response.end(JSON.stringify({ data: [{ id: "customer", label: "Customer" }] }));
+        if (holdCatalog) {
+          heldCatalogRequests++;
+          void holdCatalog.then(answer);
+        } else answer();
+        return;
       }
       // SuiteScript's loader: N.runtime throws an N.error-like object that
       // structured clone can't copy.
@@ -166,7 +189,18 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
   const passwordValue = () => guest<string>("document.querySelector('#password')?.value ?? ''");
   try {
     const page = await app.firstWindow();
+    page.setDefaultTimeout(12000);
     await page.locator('main[data-ready="true"]').waitFor({ timeout: 60000 });
+    const incompleteOrigin = "https://654987.app.netsuite.com";
+    const encrypted = await app.evaluate(async ({ safeStorage }, { incompleteOrigin, password }) => {
+      const data = await safeStorage.encryptStringAsync(JSON.stringify({
+        logins: [{ id: "incomplete", origin: incompleteOrigin, username: "", password,
+          scope: "domain", created: Date.now(), updated: Date.now() }],
+        never: [],
+      }));
+      return [...data];
+    }, { incompleteOrigin, password: "legacy-fixture-password" });
+    writeFileSync(join(profile, "passwords.vault"), Buffer.from(encrypted));
     await page.getByRole("button", { name: "Workspace options" }).click();
     await page.getByRole("button", { name: "Create Browser", exact: true }).click();
     const browser = page.locator(".browser-view");
@@ -200,6 +234,14 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
     // Auto sign-in is on by default for NetSuite logins.
     await browser.getByRole("button", { name: "Saved passwords" }).click();
     const panel = browser.getByRole("region", { name: "Saved passwords" });
+    const incomplete = panel.getByRole("listitem").filter({ hasText: "654987.app.netsuite.com" });
+    await expect(incomplete.getByRole("button", { name: /Auto sign-in/ })).toBeDisabled();
+    await incomplete.getByRole("button", { name: /Use domain login/ }).click();
+    await incomplete.getByRole("button", { name: "Add email" }).click();
+    await incomplete.getByRole("textbox", { name: "NetSuite email" }).fill("other@example.test");
+    await incomplete.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(incomplete).toContainText("other@example.test");
+    await expect(incomplete.getByRole("button", { name: /Auto sign-in/ })).toBeEnabled();
     const toggle = panel.getByRole("button", { name: `Auto sign-in for ${USER}` });
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
     await toggle.click();
@@ -357,13 +399,17 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
     await browser.getByRole("button", { name: "Use current tab" }).click();
     const processing = browser.locator(".processing-list");
     const row = processing.locator(".processing-row", { hasText: "1964539-sb1.app.netsuite.com" });
+    const processingStatus = () => page.evaluate(async () => {
+      const tabs = await (window as any).orvaneDesktop.processing.list();
+      return tabs.find(({ origin }: { origin: string }) => origin === "https://1964539-sb1.app.netsuite.com")?.status;
+    });
     await expect(row).toContainText("ready", { timeout: 20000 });
     sessions.delete("1964539-sb1.app.netsuite.com");
     await row.getByRole("button", { name: "Refresh" }).click();
     await expect.poll(() => posts.slice(), { timeout: 20000 }).toEqual(["1964539-sb1.app.netsuite.com"]);
-    await expect(row).toContainText("ready", { timeout: 20000 });
+    await expect.poll(processingStatus, { timeout: 20000 }).toBe("ready");
     await page.waitForTimeout(1500);
-    await expect(row).toContainText("ready");
+    expect(await processingStatus()).toBe("ready");
     posts.length = 0;
     // Signed out again while a visible tab is on another account: the
     // processing tab signs in again by itself.
@@ -387,7 +433,7 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
     if (!(await processing.isVisible())) await browser.getByRole("button", { name: /Processing tabs/ }).click();
     await row.getByRole("button", { name: "Refresh" }).click();
     await expect.poll(() => posts.slice(), { timeout: 20000 }).toEqual(["1964539-sb1.app.netsuite.com"]);
-    await expect(row).toContainText("ready", { timeout: 20000 });
+    await expect.poll(processingStatus, { timeout: 20000 }).toBe("ready");
     posts.length = 0;
     // NetSuite signs the page out and sends it to system.netsuite.com by
     // itself: the processing page follows and signs back in, untouched.
@@ -401,17 +447,17 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
       );
     });
     await expect.poll(() => posts.slice(), { timeout: 20000 }).toEqual(["system.netsuite.com"]);
-    await expect(row).toContainText("ready", { timeout: 20000 });
+    await expect.poll(processingStatus, { timeout: 20000 }).toBe("ready");
     posts.length = 0;
 
     // NetSuite calls through the processing page.
-    const run = (operation: string) =>
+    const run = (operation: string, args: Record<string, unknown> = {}) =>
       page.evaluate(
-        (operation) =>
+        ({ operation, args }) =>
           (window as any).orvaneDesktop.netsuite
-            .run("https://1964539-sb1.app.netsuite.com", operation, {})
+            .run("https://1964539-sb1.app.netsuite.com", operation, args)
             .then((value: unknown) => ({ value }), (error: Error) => ({ error: error.message })),
-        operation,
+        { operation, args },
       );
     expect(await run("tables")).toEqual({ value: { data: [{ id: "customer", label: "Customer" }] } });
     // A NetSuite error object comes back as its message, not "could not be cloned".
@@ -421,8 +467,79 @@ test("Desktop Browser signs in to covered NetSuite login pages by itself", async
     sessions.delete("1964539-sb1.app.netsuite.com");
     expect(await run("tables")).toEqual({ value: { data: [{ id: "customer", label: "Customer" }] } });
     expect(posts).toEqual(["1964539-sb1.app.netsuite.com"]);
-    await expect(row).toContainText("ready");
+    await expect.poll(processingStatus).toBe("ready");
+
+    if (!(await processing.isVisible())) await browser.getByRole("button", { name: /Processing tabs/ }).click();
+    holdCatalog = new Promise<void>((resolve) => { releaseCatalog = resolve; });
+    const workingUrl = await addressBar.inputValue();
+    const overlapping = Promise.all([run("tables"), run("table-detail", { table: "customer" })]);
+    await expect(processing.getByText("Temporary", { exact: false })).toBeVisible({ timeout: 12000 });
+    await expect.poll(() => heldCatalogRequests, { timeout: 12000 }).toBe(2);
+    expect(await addressBar.inputValue()).toBe(workingUrl);
+    await expect(tabs).toHaveCount(2);
+    holdCatalog = undefined;
+    releaseCatalog?.();
+    expect(await overlapping).toEqual([
+      { value: { data: [{ id: "customer", label: "Customer" }] } },
+      { value: { data: [{ id: "customer", label: "Customer" }] } },
+    ]);
+    await expect(processing.getByText("Temporary", { exact: false })).toHaveCount(0);
+
+    await browser.getByRole("button", { name: "Saved passwords" }).click();
+    const domain = panel.getByRole("button", { name: `Use domain login for ${USER} on netsuite.com` });
+    await domain.click();
+    await expect(domain).toHaveAttribute("aria-pressed", "true");
+    await addressBar.click();
+    blockDashboard = true;
+    blockRoleSelector = true;
+    const menu = browser.getByRole("menu");
+    const environmentSwitch = browser.getByRole("button", { name: "Switch NetSuite environment", exact: true });
+    await expect(environmentSwitch).toBeVisible();
+    await expect(environmentSwitch).toContainText("1964539");
+    await environmentSwitch.click();
+    await expect(menu.getByText("1964539", { exact: true })).toBeVisible();
+    await expect(menu.getByText("NetSuite took too long to respond.", { exact: true })).toBeVisible({ timeout: 12000 });
+    blockRoleSelector = false;
+    await menu.getByText("Retry environment lookup", { exact: true }).click();
+    await expect(menu.getByText("Example production (3013)", { exact: true })).toBeVisible();
+    blockDashboard = false;
+    await page.screenshot({ path: info.outputPath("browser-netsuite-environments.png") });
+    const appEnvironments = await page.evaluate(() => (window as any).orvaneDesktop.netsuite.tabs());
+    expect(appEnvironments.map(({ id }: { id: string }) => id)).not.toContain("https://3013.app.netsuite.com");
+    await menu.getByText("Example production (3013)", { exact: true }).click();
+    await expect.poll(() => sessions.has("3013.app.netsuite.com"), { timeout: 20000 }).toBe(true);
+    await expect(addressBar).toHaveValue("https://3013.app.netsuite.com/app/center/card.nl");
+    await expect(tabs).toHaveCount(3);
+    await browser.getByRole("button", { name: "Saved passwords" }).click();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await addressBar.click();
+    await addressBar.fill(loginUrl("3013.app.netsuite.com"));
+    await addressBar.press("Enter");
+    const loginGuest = (code: string, click = false) =>
+      app.evaluate(async ({ webContents }, { code, click }) => {
+        const contents = webContents.getAllWebContents().find(c => c.getType() === "webview" && c.getURL().startsWith("https://3013.app.netsuite.com/app/login/"));
+        if (!contents) return null;
+        const result = await contents.mainFrame.executeJavaScript(code);
+        if (click) {
+          const point = { x: Math.round(result.x), y: Math.round(result.y) };
+          contents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, ...point });
+          contents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, ...point });
+        }
+        return result;
+      }, { code, click });
+    const rectOf = (selector: string) =>
+      `(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: r.left + 15, y: r.top + 12 }; })()`;
+    await expect.poll(() => loginGuest("!!document.querySelector('#email')")).toBe(true);
+    await browser.getByRole("button", { name: "Browser menu" }).click();
+    await loginGuest(rectOf("#email"), true);
+    await expect(menu).toHaveCount(0);
+    await expect.poll(() => loginGuest("!!document.querySelector('orvane-passwords')")).toBe(true);
+    await loginGuest(`(() => { const r = document.querySelector('orvane-passwords').getBoundingClientRect(); return { x: r.left + 30, y: r.top + 42 }; })()`, true);
+    await expect.poll(() => loginGuest("[document.querySelector('#email').value, document.querySelector('#password').value]")).toEqual([USER, PASS]);
   } finally {
+    releaseCatalog?.();
+    site.closeAllConnections();
     await app.close();
     await new Promise((done) => site.close(done));
   }

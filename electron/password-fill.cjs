@@ -18,10 +18,15 @@ if (window.top === window) {
     [...scope.querySelectorAll('input[type="password"]')].filter(visible);
   const textLike = (el) => ["text", "email", "tel"].includes(el.type) && visible(el);
   function usernameFor(password) {
-    const inputs = [...(password.form || document).querySelectorAll("input")];
+    const inputs = password.form ? [...password.form.elements] : [...document.querySelectorAll("input")];
     const before = inputs.slice(0, inputs.indexOf(password)).filter(textLike);
+    const candidates = password.form
+      ? inputs.filter((el) => el instanceof HTMLInputElement && textLike(el))
+      : before;
     return (
-      before.find((el) => /username|email/.test(tokens(el))) ?? before[before.length - 1]
+      candidates.find((el) => /\b(?:username|email)\b/.test(tokens(el))) ??
+      candidates.find((el) => el.type === "email" || /^(?:email|username|user_email)$/i.test(el.name || el.id)) ??
+      before.at(-1)
     );
   }
   /** The login form on the page: a password field (and its username), or a
@@ -74,7 +79,9 @@ if (window.top === window) {
   // ---- Suggestions under the field (closed shadow root: the page can't
   // read or click into it; only real clicks count) ----
   let menu;
+  let offerRevision = 0;
   function hide() {
+    offerRevision++;
     menu?.host.remove();
     menu = undefined;
   }
@@ -123,7 +130,7 @@ if (window.top === window) {
       const button = document.createElement("button");
       const user = document.createElement("span");
       user.className = "user";
-      user.textContent = login.username || "(no username)";
+      user.textContent = login.username || (netSuite ? "Email missing · password only" : "(no username)");
       const dots = document.createElement("span");
       dots.className = "dots";
       // Saved on another host of this site (e.g. app.example.com).
@@ -137,7 +144,7 @@ if (window.top === window) {
         pressed = event.isTrusted;
       });
       button.addEventListener("click", (event) => {
-        if (event.isTrusted && pressed) void fill(login.id);
+        if (event.isTrusted && (pressed || (event.detail === 0 && root.activeElement === button))) void fill(login.id);
         pressed = false;
       });
       list.append(button);
@@ -148,13 +155,15 @@ if (window.top === window) {
   }
   /** The user clicked or tabbed into a login field. */
   async function offer(field) {
-    if (!logins) await query(!!loginFields()?.password);
-    if (!logins?.length || !field.isConnected) return;
+    const revision = ++offerRevision;
+    await query(!!loginFields()?.password);
+    if (revision !== offerRevision || !logins?.length || document.activeElement !== field) return;
     const fields = loginFields();
     const empty = !fields?.password?.value && !fields?.username?.value;
     // One login saved for this exact page on a secure page fills straight
     // away, like Brave; logins from other hosts of the site need a pick.
-    if (logins.length === 1 && !logins[0].site && secure && empty && filled !== field)
+    if (logins.length === 1 && !logins[0].site && secure && empty && filled !== field &&
+        (!netSuite || logins[0].username))
       void fill(logins[0].id);
     else show(field);
   }
@@ -198,6 +207,7 @@ if (window.top === window) {
   );
   addEventListener("scroll", () => hide(), { capture: true, passive: true });
   addEventListener("resize", () => hide());
+  addEventListener("blur", (event) => { if (event.target === window) hide(); });
   addEventListener("pagehide", () => hide());
 
   // ---- Submitted logins ----
@@ -259,7 +269,7 @@ if (window.top === window) {
     await submitLogin(fields, login);
   }
   async function submitLogin(fields, login, sameOrigin = false) {
-    if (!login || !fields.username.isConnected || !fields.password.isConnected) return;
+    if (!login?.username || !fields.username.isConnected || !fields.password.isConnected) return;
     const form = fields.password.form;
     if (!form || (sameOrigin && fields.username.form !== form)) return;
     const maySubmit = (submit) => !sameOrigin || [form.action, submit?.getAttribute("formaction")]
@@ -273,7 +283,7 @@ if (window.top === window) {
       [...form.elements].find((el) => el.type === "submit" && visible(el) && !el.disabled);
     for (let i = 0; i < 30 && !button() && form.isConnected; i++)
       await new Promise((done) => setTimeout(done, 100));
-    if (!form.isConnected) return;
+    if (!form.isConnected || !fields.username.validity.valid || !fields.username.value.trim()) return;
     const submit = button();
     if (!maySubmit(submit)) return;
     autoSubmitting = true;

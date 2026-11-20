@@ -11,6 +11,7 @@ export interface Bookmark extends LibraryPage {
 export type BrowserTheme = "light" | "dark";
 export type SearchEngine = "google" | "duckduckgo";
 export type BrowserLayout = "balanced" | "performance" | "comfortable";
+export type SidebarPosition = "left" | "right";
 export type DrawerMode = "library" | "preferences";
 </script>
 
@@ -37,6 +38,7 @@ const emit = defineEmits<{
 const theme = defineModel<BrowserTheme>("theme", { required: true });
 const collapsed = defineModel<boolean>("collapsed", { required: true });
 const layout = defineModel<BrowserLayout>("layout", { required: true });
+const sidebarPosition = defineModel<SidebarPosition>("sidebarPosition", { required: true });
 const peekEnabled = defineModel<boolean>("peekEnabled", { required: true });
 const peekCrossSite = defineModel<boolean>("peekCrossSite", { required: true });
 const searchEngine = defineModel<SearchEngine>("searchEngine", { required: true });
@@ -48,10 +50,17 @@ const autoPeekId = useId();
 const pipId = useId();
 const close = ref<HTMLButtonElement>();
 const libraryTab = ref<"bookmarks" | "history">("bookmarks");
+const historyQuery = ref("");
+const historyMatches = computed(() => {
+  const query = historyQuery.value.trim().toLowerCase();
+  return props.history.filter(({ title, url }) =>
+    title.toLowerCase().includes(query) || url.toLowerCase().includes(query),
+  );
+});
 const title = computed(() => (props.mode === "preferences" ? "Preferences" : "Library"));
 const libraryGroups = computed(() => {
   if (libraryTab.value === "history")
-    return [{ name: "", entries: props.history }];
+    return [{ name: "", entries: historyMatches.value }];
   const folders = new Map<string, LibraryPage[]>([["", []]]);
   for (const bookmark of props.bookmarks) {
     const name = bookmark.folder || "";
@@ -73,6 +82,10 @@ const layoutOptions = [
   { value: "balanced", label: "Sidebar and address bar" },
   { value: "performance", label: "Sidebar only" },
   { value: "comfortable", label: "Tabs on top" },
+];
+const sidebarOptions = [
+  { value: "left", label: "Left" },
+  { value: "right", label: "Right" },
 ];
 const shortcuts = [
   ["⌘ / Ctrl T", "New tab"],
@@ -149,7 +162,14 @@ watch(
           </button>
         </div>
 
-        <nav v-if="libraryTab === 'bookmarks' ? bookmarks.length : history.length"
+        <input
+          v-if="libraryTab === 'history'"
+          v-model="historyQuery"
+          class="history-search"
+          aria-label="Search history"
+          placeholder="Search history"
+        />
+        <nav v-if="libraryTab === 'bookmarks' ? bookmarks.length : historyMatches.length"
           :aria-label="libraryTab === 'bookmarks' ? 'Bookmarks' : 'Browsing history'">
           <template v-for="{ name, entries } in libraryGroups" :key="name">
             <button
@@ -206,7 +226,7 @@ watch(
         <p v-else class="library-empty">
           {{ libraryTab === "bookmarks"
             ? "No bookmarks yet. Save a page with the star in the address bar."
-            : "No browsing history yet." }}
+            : history.length ? "No matching history." : "No browsing history yet." }}
         </p>
       </div>
 
@@ -222,6 +242,12 @@ watch(
           <div class="drawer-row">
             <label :for="collapseId">Keep sidebar collapsed</label>
             <input :id="collapseId" v-model="collapsed" type="checkbox" role="switch" />
+          </div>
+          <div class="drawer-row">
+            <span>Sidebar position</span>
+            <div class="drawer-select">
+              <CustomSelect v-model="sidebarPosition" inline aria-label="Sidebar position" :options="sidebarOptions" />
+            </div>
           </div>
         </section>
         <section class="drawer-section">
@@ -522,6 +548,20 @@ watch(
   background: var(--surface);
   box-shadow: 0 1px 3px rgb(64 92 111 / 7%);
   color: var(--ink);
+}
+.history-search {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  margin-bottom: 12px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--low);
+  color: var(--ink);
+}
+.history-search::placeholder {
+  color: var(--sub);
 }
 .library-item {
   display: flex;

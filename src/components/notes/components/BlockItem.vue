@@ -41,7 +41,7 @@ const emit = defineEmits<{
   (e: "drag-start", index: number, ev: DragEvent): void;
   (e: "drag-over", index: number, ev: DragEvent): void;
   (e: "drag-end"): void;
-  (e: "paste-image", index: number, dataUrl: string): void;
+  (e: "paste-image", blockId: string, dataUrl: string): void;
   (e: "focus-applied", request: { id: string; at: "start" | "end" }): void;
 }>();
 
@@ -467,9 +467,10 @@ async function onPaste(e: ClipboardEvent) {
     );
   if (image) {
     e.preventDefault();
+    const blockId = props.block.id;
     try {
       const dataUrl = await readImage(image);
-      if (dataUrl) emit("paste-image", props.index, dataUrl);
+      if (dataUrl) emit("paste-image", blockId, dataUrl);
     } catch (error) {
       console.error("Failed to paste image.", error);
     }
@@ -822,6 +823,7 @@ function copyCode() {
             :alt="block.caption ?? 'image'"
             tabindex="0"
             draggable="true"
+            @mousedown.left.stop="emit('select-block', index, $event.shiftKey || $event.ctrlKey || $event.metaKey)"
             @dragstart.stop="dragImage"
             @contextmenu.stop.prevent="openImageMenu"
           />
@@ -1249,6 +1251,7 @@ function copyCode() {
   transition: opacity 0.1s;
 }
 .img-frame:hover .img-resize-handle,
+.type-image.selected .img-resize-handle,
 .img-resize-handle:focus-visible {
   opacity: 1;
 }
