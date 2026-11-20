@@ -284,6 +284,14 @@ const store = new WorkspaceStorage(async () => {
   }
   if (!canEdit.value) await refresh();
 });
+// Editing came back after the lease lapsed and nobody else saved: keep the
+// workspace on screen and save it.
+store.onResume(async () => {
+  if (loadError.value) return;
+  canEdit.value = true;
+  if (status.value.startsWith("Editing ownership changed")) status.value = "";
+  await persist();
+});
 function replaceWorkspace(value: Workspace) {
   applying = true;
   suiteQLSelections.clear();

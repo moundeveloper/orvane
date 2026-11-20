@@ -110,8 +110,41 @@ export class WorkspaceStorage {
       );
     return result as T;
   }
+  private resumed?: () => Promise<void>;
+  /** Called when a window that lost editing takes it back (see recover). */
+  onResume(resumed: () => Promise<void>) {
+    this.resumed = resumed;
+  }
+  // A window loses editing when its lease lapses: Orvane in the background
+  // throttles the renewals past the 15 s lease, and the next save is refused.
+  // When nobody saved since this window's last save, take editing back and
+  // keep what is on screen; otherwise stay read-only so the other writer's
+  // work is never overwritten.
+  private async recover() {
+    if ((await this.request<{ revision: number }>("revision")).revision !== this.revision) return;
+    const lease = await this.request<{ owned: boolean }>("lease", "POST", {});
+    if (!lease.owned) return;
+    if ((await this.request<{ revision: number }>("revision")).revision !== this.revision) {
+      void this.request("release", "POST", {}).catch(() => {});
+      return;
+    }
+    this.renewedAt = Date.now();
+    this.conflicted = false;
+    this.writer = true;
+    await this.resumed?.();
+  }
   private async tick() {
-    if (this.closed || this.ticking || this.conflicted) return;
+    if (this.closed || this.ticking) return;
+    if (this.conflicted) {
+      if (!this.resumed) return;
+      this.ticking = true;
+      try {
+        await this.recover();
+      } finally {
+        this.ticking = false;
+      }
+      return;
+    }
     // The editing window renews its 15 s lease every few seconds; a read-only
     // window still checks every second, to follow edits and take over
     // editing promptly when the other window closes.
