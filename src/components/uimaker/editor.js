@@ -266,7 +266,9 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
       const pinX = ui.px + x * ui.zoom;
       let left = n.lx < x;
       let anchor = ui.px + n.lx * ui.zoom;
-      if (width < 520 && pinX >= 0 && pinX <= width) {
+      // A label that would run past the view's edge flips to the pin's other
+      // side or slides back inside, at any view width.
+      if (pinX >= 0 && pinX <= width) {
         const labelWidth = el.offsetWidth;
         const margin = 8;
         if (!left && anchor + labelWidth > width - margin) {

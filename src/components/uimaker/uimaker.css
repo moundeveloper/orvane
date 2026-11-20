@@ -25,10 +25,11 @@
 .uimaker ::-webkit-scrollbar-track { background: transparent; }
 
 /* ---------- shared pieces ---------- */
-.uimaker .pills { display: flex; gap: 2px; }
-.uimaker .pills button { padding: 3px 11px; border-radius: 999px; color: var(--um-mut); font-size: 12px; line-height: 18px; }
+/* Tabs: the same segmented control as .seg, so every tab row shares one shape. */
+.uimaker .pills { display: flex; flex: none; gap: 2px; padding: 2px; border-radius: 7px; background: var(--um-well); box-shadow: inset 0 0 0 1px var(--um-line); }
+.uimaker .pills button { padding: 2px 10px; border-radius: 5px; color: var(--um-mut); font-size: 12px; line-height: 18px; }
 .uimaker .pills button:hover { color: var(--um-strong); }
-.uimaker .pills button.on { color: var(--um-strong); font-weight: 500; box-shadow: inset 0 0 0 1px var(--um-line2); background: var(--um-card); }
+.uimaker .pills button.on { color: var(--um-strong); font-weight: 500; background: var(--um-card); box-shadow: 0 1px 2px #43576420, inset 0 0 0 1px var(--um-line); }
 .uimaker .seg { display: flex; padding: 2px; border-radius: 7px; background: var(--um-well); box-shadow: inset 0 0 0 1px var(--um-line); }
 .uimaker .seg button { padding: 2px 10px; border-radius: 5px; color: var(--um-mut); font-size: 11.5px; }
 .uimaker .seg button.on { color: var(--um-strong); background: var(--um-card); box-shadow: 0 1px 2px #43576420, inset 0 0 0 1px var(--um-line); }
@@ -81,13 +82,15 @@
 
 /* ---------- main ---------- */
 .uimaker .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
-.uimaker .top { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 3px 8px; flex-wrap: wrap; border-bottom: 1px solid var(--um-line); }
-.uimaker .crumb { display: flex; align-items: center; gap: 5px; white-space: nowrap; min-width: 0; margin-right: 4px; }
+.uimaker .top { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 8px; border-bottom: 1px solid var(--um-line); }
+.uimaker .crumb { display: flex; align-items: center; gap: 5px; white-space: nowrap; min-width: 0; flex: 0 1 auto; margin-right: 4px; }
 .uimaker .crumb button, .uimaker .crumb span { color: var(--um-mut); }
 .uimaker .crumb button:hover { color: var(--um-strong); }
 .uimaker .crumb em { color: var(--um-dim); font-style: normal; }
 .uimaker .crumb b { font-weight: 500; color: var(--um-strong); overflow: hidden; text-overflow: ellipsis; }
-.uimaker .editor-controls { display: flex; align-items: center; flex: 1; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.uimaker .editor-controls { display: flex; align-items: center; flex: 1 0 auto; gap: 6px; min-width: 0; }
+.uimaker .editor-controls > * { flex: none; }
+.uimaker .editor-controls > .spacer { flex: 1; }
 
 .uimaker .viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; touch-action: none;
   background: radial-gradient(#9fb0bb55 .85px, transparent 1.1px) center/24px 24px, var(--um-canvas); }
@@ -133,8 +136,8 @@
 .uimaker .rail.mini .sw { height: 18px; }
 
 .uimaker .cmpbar { position: absolute; z-index: 5; left: 50%; top: 10px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border-radius: 10px; color: var(--um-mut);
-  width: max-content; max-width: calc(100% - 76px); flex-wrap: wrap; justify-content: center; background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-line), var(--um-shadow); }
-.uimaker .cmp-select { min-width: 120px; }
+  width: max-content; max-width: calc(100% - 76px); white-space: nowrap; background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-line), var(--um-shadow); }
+.uimaker .cmp-select { flex: none; width: 140px; }
 .uimaker .cmpbar .match { color: var(--um-green); font-variant-numeric: tabular-nums; }
 .uimaker .hint { position: absolute; z-index: 4; right: 12px; bottom: 50px; color: var(--um-dim); font-size: 11px; pointer-events: none; }
 
@@ -173,7 +176,7 @@
 .uimaker .tile span { color: var(--um-dim); font-size: 10.5px; white-space: nowrap; }
 .uimaker .tile.accent b { color: var(--um-orange); }
 .uimaker .actions { display: grid; grid-template-columns: 1.35fr 1fr; gap: 6px; }
-.uimaker .tabs { flex: none; }
+.uimaker .tabs { flex: none; align-self: flex-start; }
 
 .uimaker .panel { flex: 0 1 auto; min-height: 54px; overflow: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 2px; }
 .uimaker .nrow { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; cursor: pointer; background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-line); flex: none; }
@@ -184,12 +187,13 @@
 .uimaker .nrow .tt b { display: block; font-weight: 500; color: var(--um-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .uimaker .nrow .tt b.ph { color: var(--um-dim); font-weight: 400; }
 .uimaker .nrow .tt small { display: block; color: var(--um-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.uimaker .editor { background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-accent); border-radius: 0 0 8px 8px; padding: 9px; margin-top: -5px; display: grid; gap: 8px; flex: none; }
+/* width/min-width/border reset Orvane's global .editor (Notes) rule, which fixed this box at 225px. */
+.uimaker .editor { width: auto; min-width: 0; border-left: 0; background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-accent); border-radius: 0 0 8px 8px; padding: 9px; margin-top: -5px; display: grid; gap: 8px; flex: none; }
 .uimaker .editor label { display: grid; gap: 3px; color: var(--um-dim); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; }
 .uimaker .editor input.title, .uimaker .editor textarea { width: 100%; padding: 6px 8px; font-size: 12px; text-transform: none; letter-spacing: 0; color: var(--um-strong); }
 .uimaker .editor textarea { resize: vertical; min-height: 44px; line-height: 1.5; }
 .uimaker .editor .foot { display: flex; align-items: center; gap: 5px; }
-.uimaker .kind { padding: 2px 8px; border-radius: 999px; font-size: 11px; color: var(--um-mut); box-shadow: inset 0 0 0 1px var(--um-line); display: flex; align-items: center; gap: 5px; }
+.uimaker .kind { padding: 2px 8px; border-radius: 6px; font-size: 11px; color: var(--um-mut); box-shadow: inset 0 0 0 1px var(--um-line); display: flex; align-items: center; gap: 5px; }
 .uimaker .kind::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
 .uimaker .kind.on { color: var(--um-strong); box-shadow: inset 0 0 0 1.5px var(--c); }
 .uimaker .where { display: flex; align-items: center; gap: 6px; color: var(--um-mut); font-size: 11.5px; min-width: 0; }
