@@ -1,4 +1,14 @@
 export const BROKER_PROTOCOL = 1;
+// Runs in Electron main, which does not load .ts: keep in sync with
+// NETSUITE_PAGE_READS in server/netsuite-metadata-operations.ts (tested).
+export const EXECUTOR_PAGE_READS = Object.freeze([
+  "bundles",
+  "bundle-contents",
+  "file-content",
+  "catalog-tables",
+  "catalog-table",
+  "log-search",
+]);
 export const MAX_BROKER_REQUEST_BYTES = 64 * 1024;
 export const MAX_BROKER_RESULT_BYTES = 1024 * 1024;
 export const MAX_BROKER_PENDING = 32;
@@ -23,10 +33,13 @@ export function validateExecutorCommand(command) {
       "A Desktop-owned window ID is required.",
     );
   if (command.kind === "environments") return;
-  if (command.kind !== "read" || !["user", "query"].includes(command.operation))
+  if (
+    command.kind !== "read" ||
+    !["user", "query", ...EXECUTOR_PAGE_READS].includes(command.operation)
+  )
     throw brokerError(
       "READ_ONLY_EXECUTOR",
-      "The broker executor supports only identity and SELECT reads.",
+      "The broker executor supports only identity, SELECT and allowlisted metadata reads.",
     );
   if (
     command.expectedSessionEpoch !== undefined &&
@@ -59,6 +72,62 @@ export function validateExecutorCommand(command) {
         "Use one bounded SELECT with a valid offset and no semicolon.",
       );
   }
+}
+
+const positiveIds = (value) =>
+  Array.isArray(value) &&
+  value.length <= 50 &&
+  value.every((id) => Number.isSafeInteger(id) && id > 0);
+const isoText = (value) =>
+  typeof value === "string" &&
+  value.length <= 40 &&
+  !Number.isNaN(Date.parse(value));
+/** Rebuild metadata page-read args from known fields only. */
+export function pageReadArgs(operation, args = {}) {
+  const fail = () => {
+    throw brokerError("INVALID_EXECUTOR_REQUEST", "Invalid metadata read.");
+  };
+  if (!args || typeof args !== "object" || Array.isArray(args)) fail();
+  switch (operation) {
+    case "catalog-tables":
+      return {};
+    case "bundles":
+      if (!["I", "S"].includes(args.bundleType)) fail();
+      return { bundleType: args.bundleType };
+    case "bundle-contents":
+      if (!Number.isSafeInteger(args.bundleId) || args.bundleId <= 0) fail();
+      return { bundleId: args.bundleId };
+    case "file-content":
+      if (!Number.isSafeInteger(args.id) || args.id <= 0) fail();
+      return { id: args.id };
+    case "catalog-table":
+      if (
+        typeof args.table !== "string" ||
+        !/^[a-z][a-z0-9_]{0,199}$/i.test(args.table)
+      )
+        fail();
+      return { table: args.table };
+    case "log-search": {
+      const levels = ["DEBUG", "AUDIT", "ERROR", "EMERGENCY", "SYSTEM"];
+      if (
+        !isoText(args.from) ||
+        !isoText(args.to) ||
+        !Array.isArray(args.levels) ||
+        !args.levels.every((level) => levels.includes(level)) ||
+        !positiveIds(args.scriptIds) ||
+        !positiveIds(args.deploymentIds)
+      )
+        fail();
+      return {
+        from: args.from,
+        to: args.to,
+        levels: [...args.levels],
+        scriptIds: [...args.scriptIds],
+        deploymentIds: [...args.deploymentIds],
+      };
+    }
+  }
+  return fail();
 }
 
 export function createExecutorGateway({ hosts, service }) {
@@ -97,7 +166,9 @@ export function createExecutorGateway({ hosts, service }) {
     const args =
       command.operation === "user"
         ? {}
-        : { sql: command.args.sql, offset: command.args.offset ?? 0 };
+        : command.operation === "query"
+          ? { sql: command.args.sql, offset: command.args.offset ?? 0 }
+          : pageReadArgs(command.operation, command.args);
     const result = await service.run(
       host,
       command.origin,

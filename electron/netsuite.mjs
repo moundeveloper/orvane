@@ -78,9 +78,50 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         "table-detail",
         "query",
         "record-preview",
+        // Read-only metadata reads for the MCP tools (server/netsuite-metadata-operations.ts).
+        "bundles",
+        "bundle-contents",
+        "file-content",
+        "catalog-tables",
+        "catalog-table",
+        "log-search",
       ].includes(operation)
     )
       throw Error("Unknown NetSuite operation.");
+    if (operation === "bundles" && !["I", "S"].includes(options.bundleType))
+      throw Error("Choose installed or created bundles.");
+    if (
+      operation === "bundle-contents" &&
+      (!Number.isSafeInteger(options.bundleId) || options.bundleId <= 0)
+    )
+      throw Error("Choose a bundle ID.");
+    if (
+      operation === "catalog-table" &&
+      (typeof options.table !== "string" ||
+        !/^[a-z][a-z0-9_]{0,199}$/i.test(options.table))
+    )
+      throw Error("Invalid table name.");
+    if (operation === "log-search") {
+      const ids = (value) =>
+        Array.isArray(value) &&
+        value.length <= 50 &&
+        value.every((n) => Number.isSafeInteger(n) && n > 0);
+      const date = (value) =>
+        typeof value === "string" &&
+        value.length <= 40 &&
+        !Number.isNaN(Date.parse(value));
+      if (
+        !date(options.from) ||
+        !date(options.to) ||
+        !Array.isArray(options.levels) ||
+        !options.levels.every((level) =>
+          ["DEBUG", "AUDIT", "ERROR", "EMERGENCY", "SYSTEM"].includes(level),
+        ) ||
+        !ids(options.scriptIds) ||
+        !ids(options.deploymentIds)
+      )
+        throw Error("Invalid log filters.");
+    }
     if (
       operation === "record-preview" &&
       (!Number.isSafeInteger(options.id) || options.id <= 0 ||
@@ -97,7 +138,7 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         "Enter one SELECT query without a semicolon (up to 20,000 characters).",
       );
     if (
-      ["deployments", "script-logs", "folder", "file", "save-file"].includes(
+      ["deployments", "script-logs", "folder", "file", "save-file", "file-content"].includes(
         operation,
       ) &&
       (!Number.isSafeInteger(options.id) ||
@@ -199,6 +240,13 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         fileIds: options.fileIds,
         folderIds: options.folderIds,
         offset,
+        bundleType: options.bundleType,
+        bundleId: options.bundleId,
+        from: options.from,
+        to: options.to,
+        levels: options.levels,
+        scriptIds: options.scriptIds,
+        deploymentIds: options.deploymentIds,
       },
       origin: id,
     }).replace(/</g, "\\u003c");
@@ -220,6 +268,44 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         }
         if (!response.ok) throw Error('Could not load the record catalog: HTTP ' + response.status);
         return await response.json();
+      }
+      const fetchChecked = async (url, what) => {
+        const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
+        if (response.redirected) {
+          const path = new URL(response.url).pathname.toLowerCase();
+          if (path.startsWith('/app/login/') || path === '/pages/customerlogin.jsp')
+            throw Object.assign(Error('NetSuite sign-in required.'), { code: 'SIGN_IN_REQUIRED' });
+        }
+        if (!response.ok) throw Error('Could not load ' + what + ': HTTP ' + response.status);
+        return response;
+      };
+      if (input.operation === 'catalog-tables' || input.operation === 'catalog-table') {
+        const detail = input.operation === 'catalog-table';
+        const data = detail ? { scriptId: input.options.table, detailType: 'SS_ANAL' } : { structureType: 'FLAT' };
+        const url = '/app/recordscatalog/rcendpoint.nl?action=' + (detail ? 'getRecordTypeDetail' : 'getRecordTypes') + '&data=' + encodeURIComponent(JSON.stringify(data));
+        const json = await (await fetchChecked(url, 'the record catalog').catch(error => {
+          // The catalog answers HTTP 500 for an unknown table ID.
+          if (detail && / 500$/.test(error.message)) throw Error('The record catalog has no table "' + input.options.table + '". Find its ID with action tables.');
+          throw error;
+        })).json();
+        const body = json?.data ?? json;
+        if (!detail) return { tables: (Array.isArray(body) ? body : []).map(t => ({ id: t?.id, label: t?.label })) };
+        if (!body || (!Array.isArray(body.fields) && !Array.isArray(body.joins)))
+          throw Error('The record catalog has no table "' + input.options.table + '". Find its ID with action tables.');
+        return {
+          fields: (body.fields || []).map(f => ({ id: f?.id, label: f?.label, dataType: f?.dataType ?? null, isColumn: f?.isColumn })),
+          joins: (body.joins || []).map(j => ({ id: j?.id, label: j?.label, joinType: j?.joinType ?? null, cardinality: j?.cardinality ?? null, targetTable: j?.sourceTargetType?.id ?? null, joinCondition: j?.sourceTargetType?.joinPairs?.[0]?.label ?? null }))
+        };
+      }
+      if (input.operation === 'bundles' || input.operation === 'bundle-contents') {
+        // NetSuite has no SuiteScript API for bundles; read the same CSV exports as Setup > Bundles.
+        const url = input.operation === 'bundles'
+          ? '/app/bundler/bundlelist.csv?type=' + input.options.bundleType + '&sortcol=bundlename&sortdir=ASC&csv=Export'
+          : '/app/bundler/bundlecontents.csv?csv=Export&OfficeXML=F&id=' + input.options.bundleId + '&fetchcompid=' + location.hostname.split('.')[0].toLowerCase().replace(/-/g, '_');
+        const csv = await (await fetchChecked(url, 'the bundle export')).text();
+        if (csv.length > 900000) throw Error('The bundle export is larger than 900 KB.');
+        if (csv.trimStart().startsWith('<')) throw Error('NetSuite returned a page instead of the bundle CSV export. Check that this role can view bundles.');
+        return { csv };
       }
       const requireN = () => new Promise(resolve => {
         if (typeof window.require !== 'function') return resolve(null);
@@ -261,6 +347,72 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         return { fields };
       }
       const run = async (query, params = []) => (await N.query.runSuiteQL.promise({ query, params })).asMappedResults();
+      if (input.operation === 'file-content') {
+        const rows = await run('SELECT id, name, url, filetype, folder FROM file WHERE id = ?', [input.options.id]);
+        if (!rows.length || !rows[0].url) throw Error('File not found or not accessible.');
+        const url = new URL(rows[0].url, location.origin);
+        if (url.origin !== location.origin) throw Error('File URL is outside the selected NetSuite account.');
+        const max = 600000, tooLarge = size => Error('The file is ' + size + ' bytes; MCP reads files up to ' + max + ' bytes. Open it in the File Explorer instead.');
+        const response = await fetchChecked(url.href, 'the file');
+        const length = Number(response.headers.get('content-length') || 0);
+        if (length > max) throw tooLarge(length);
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (bytes.length > max) throw tooLarge(bytes.length);
+        const contentType = response.headers.get('content-type') || '';
+        // Locked bundle files (Hide in SuiteBundle) are served as NetSuite's "Page Not Found" page.
+        if (contentType.toLowerCase().startsWith('text/html') && rows[0].filetype !== 'HTMLDOC' &&
+            new TextDecoder().decode(bytes.subarray(0, 2000)).includes('<title>NetSuite | Page Not Found'))
+          throw Error('NetSuite does not serve this file\\'s content (it answered "Page Not Found"). Files hidden in a locked bundle cannot be read.');
+        const base = { id: rows[0].id, name: rows[0].name, filetype: rows[0].filetype, folder: rows[0].folder, filesize: bytes.length, contentType };
+        if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) {
+          let raw = ''; for (let i = 0; i < bytes.length; i += 8192) raw += String.fromCharCode(...bytes.subarray(i, i + 8192));
+          return { ...base, kind: 'pdf', base64: btoa(raw) };
+        }
+        if (!bytes.includes(0)) {
+          try { return { ...base, kind: 'text', content: new TextDecoder('utf-8', { fatal: true }).decode(bytes) }; } catch {}
+          const type = contentType.toLowerCase();
+          if (type.startsWith('text') || ['json', 'xml', 'javascript', 'csv'].some(t => type.includes(t)))
+            return { ...base, kind: 'text', content: new TextDecoder('windows-1252').decode(bytes) };
+        }
+        return { ...base, kind: 'binary' };
+      }
+      if (input.operation === 'log-search') {
+        if (!N.search?.create || !N.format?.parse) throw Error('Script execution logs are unavailable for this role.');
+        const o = input.options, day = value => N.format.format({ value: new Date(value), type: N.format.Type.DATE });
+        const filters = [['date', 'within', day(o.from), day(o.to)]];
+        if (o.levels.length) filters.push('AND', ['type', 'anyof', o.levels]);
+        if (o.scriptIds.length) filters.push('AND', ['script.internalid', 'anyof', o.scriptIds]);
+        if (o.deploymentIds.length) filters.push('AND', ['scriptdeployment.internalid', 'anyof', o.deploymentIds]);
+        const spec = [['internalid'], ['title'], ['type'], ['date'], ['time'], ['user'], ['scripttype'], ['detail'], ['internalid', 'script'], ['name', 'script'], ['internalid', 'scriptDeployment'], ['scriptid', 'scriptDeployment']];
+        const page = async sorted => {
+          const columns = spec.map(([name, join], i) => N.search.createColumn({ name, join, ...(sorted && i === 0 ? { sort: N.search.Sort.DESC } : {}) }));
+          const paged = await N.search.create({ type: 'scriptexecutionlog', filters, columns }).runPaged.promise({ pageSize: 400 });
+          return { paged, data: paged.pageRanges.length ? (await paged.fetch.promise({ index: 0 })).data : [] };
+        };
+        // Newest first when the account allows sorting by internal ID; the caller sorts again either way.
+        const { paged, data } = await page(true).catch(() => page(false));
+        const iso = (date, time) => {
+          try {
+            const d = N.format.parse({ value: date, type: N.format.Type.DATE });
+            const m = String(time || '').trim().toLowerCase().match(/^(\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\s*(am|pm)?/);
+            if (m) { let h = Number(m[1]) % (m[4] ? 12 : 24); if (m[4] === 'pm') h += 12; d.setHours(h, Number(m[2]), Number(m[3] || 0), 0); }
+            return d.toISOString();
+          } catch { return null; }
+        };
+        const rows = data.map(r => {
+          const value = (name, join) => r.getValue({ name, join });
+          const text = name => { try { return r.getText({ name }); } catch { return null; } };
+          const detail = String(value('detail') ?? '');
+          return {
+            id: Number(value('internalid')), datetime: iso(value('date'), value('time')), date: value('date'), time: value('time'),
+            level: value('type'), title: value('title'), detail: detail.slice(0, 1000), detailTruncated: detail.length > 1000,
+            user: text('user') || value('user'), scriptType: text('scripttype') || value('scripttype'),
+            scriptId: Number(value('internalid', 'script')) || null, scriptName: value('name', 'script'),
+            deploymentId: Number(value('internalid', 'scriptDeployment')) || null, deploymentScriptId: value('scriptid', 'scriptDeployment')
+          };
+        });
+        return { rows, totalCount: paged.count };
+      }
       if (input.operation === 'script-logs') {
         if (!N.search?.create) throw Error('Script execution logs are unavailable for this role.');
         const names = ['internalid', 'title', 'type', 'date', 'time', 'user', 'detail'];

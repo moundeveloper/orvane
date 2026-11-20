@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { chmodSync } from "node:fs";
 import { brokerError } from "./netsuite-broker-protocol.mjs";
 import { netSuiteReadOperations } from "../server/netsuite-read-operations.ts";
+import { NETSUITE_METADATA_TOOLS } from "../server/netsuite-metadata-operations.ts";
 
 const digest = (value) =>
   createHash("sha256").update(String(value)).digest("hex");
@@ -112,7 +113,10 @@ export function openRequestJournal(
               : request?.operation === "status" &&
                   ["list", "inspect", undefined].includes(request.action)
                 ? `status.${request.action || "list"}`
-                : "invalid";
+                : request?.operation === "metadata" &&
+                    Object.hasOwn(NETSUITE_METADATA_TOOLS, request.tool)
+                  ? NETSUITE_METADATA_TOOLS[request.tool]
+                  : "invalid";
       const inputHash = digest(
         JSON.stringify({
           operation,

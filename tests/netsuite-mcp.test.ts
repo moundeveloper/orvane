@@ -255,8 +255,14 @@ test("two complete NetSuite MCP clients share the gateway without workspace list
     );
     assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), [
       "orvane_netsuite_artifact",
+      "orvane_netsuite_bundles",
+      "orvane_netsuite_field_info",
+      "orvane_netsuite_file_text",
+      "orvane_netsuite_find_records",
+      "orvane_netsuite_logs",
       "orvane_netsuite_query",
       "orvane_netsuite_read",
+      "orvane_netsuite_schema",
       "orvane_netsuite_status",
     ]);
     const listed = await client.callTool({
@@ -279,6 +285,13 @@ test("two complete NetSuite MCP clients share the gateway without workspace list
     } });
     assert.equal(unsupportedArtifact.isError, true);
     assert.equal(JSON.parse((unsupportedArtifact.content[0] as any).text).code, "UPGRADE_PENDING");
+    assert.equal(fixture.calls.filter((op) => op === "query").length, before);
+    const limited = await client.callTool({ name: "orvane_netsuite_query", arguments: {
+      targetId: status.environments[0].targetId, identityToken: identity.identityToken,
+      sql: "SELECT id FROM employee LIMIT 5",
+    } });
+    assert.equal(limited.isError, true);
+    assert.match(JSON.parse((limited.content[0] as any).text).message, /ROWNUM/);
     assert.equal(fixture.calls.filter((op) => op === "query").length, before);
     const unsupportedRead = await client.callTool({ name: "orvane_netsuite_read", arguments: {
       targetId: status.environments[0].targetId, identityToken: identity.identityToken, action: "scripts",

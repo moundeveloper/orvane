@@ -5,6 +5,12 @@ import {
   netSuiteReadOperations,
   NETSUITE_FILTER_CAPABILITY,
 } from "../server/netsuite-read-operations.ts";
+import {
+  NETSUITE_METADATA_TOOLS,
+  NETSUITE_PAGE_READS,
+  parseNetSuiteMetadata,
+  runNetSuiteMetadata,
+} from "../server/netsuite-metadata-operations.ts";
 
 export class NetSuiteReadError extends Error {
   constructor(code, message) {
@@ -78,6 +84,70 @@ export function createNetSuiteReadService({ hosts, service, instanceId }) {
       sessionEpochSupported: target.sessionEpoch != null,
     };
   }
+  /** Ported metadata tools: fixed SELECTs or allowlisted page reads, identity checked around the whole tool. */
+  async function metadata(request) {
+    const parsed = parseNetSuiteMetadata(request);
+    const target = resolve(request.targetId);
+    const before = await identity(target);
+    if (request.identityToken !== before.identityToken)
+      reject(
+        "IDENTITY_CHANGED",
+        "Inspect this target again; its account, user or role changed, or the identity token is missing.",
+      );
+    let calls = 0;
+    const budget = () => {
+      if (++calls > 10)
+        reject("METADATA_BUDGET", "Metadata read exceeded its step budget.");
+    };
+    const runner = {
+      query: async (sql, offset = 0) => {
+        budget();
+        if (!/^\s*select\b/i.test(sql) || sql.includes(";") || sql.length > 20000)
+          reject("INVALID_QUERY", "Metadata reads use one bounded SELECT.");
+        const result = await service.run(
+          target.host,
+          target.origin,
+          "query",
+          { sql, offset },
+          target.sessionEpoch ?? undefined,
+        );
+        if (!Array.isArray(result?.rows) || result.rows.length > 100)
+          reject(
+            "INVALID_QUERY_RESULT",
+            "The query adapter did not return a bounded page of up to 100 rows.",
+          );
+        return result;
+      },
+      page: async (operation, args) => {
+        budget();
+        if (!NETSUITE_PAGE_READS.includes(operation))
+          reject("READ_ONLY_EXECUTOR", "Unknown metadata page read.");
+        return service.run(
+          target.host,
+          target.origin,
+          operation,
+          args,
+          target.sessionEpoch ?? undefined,
+        );
+      },
+    };
+    const data = await runNetSuiteMetadata(parsed, runner);
+    const after = await identity(target);
+    if (before.identityToken !== after.identityToken)
+      reject(
+        "IDENTITY_CHANGED",
+        "Identity changed while reading. Results were discarded; inspect the target again.",
+      );
+    return {
+      desktopId: instanceId,
+      targetId: request.targetId,
+      origin: target.origin,
+      identity: after,
+      metadata: { tool: parsed.tool, capability: parsed.capability },
+      data,
+      observedAt: new Date().toISOString(),
+    };
+  }
   return async function dispatch(request) {
     if (!request || typeof request !== "object")
       reject("INVALID_REQUEST", "A request is required.");
@@ -134,10 +204,12 @@ export function createNetSuiteReadService({ hosts, service, instanceId }) {
           ...Object.values(netSuiteReadOperations).map(
             (policy) => policy.capability,
           ),
+          ...Object.values(NETSUITE_METADATA_TOOLS),
         ],
         environments,
       };
     }
+    if (request.operation === "metadata") return metadata(request);
     const typed =
       request.operation === "read" ? compileNetSuiteRead(request) : null;
     if (request.operation !== "query" && !typed)
