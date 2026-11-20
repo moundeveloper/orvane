@@ -33,9 +33,19 @@ test("Ctrl+Left/Right swaps the focused app in dock order", async ({ page }) => 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   const focusedName = () =>
     page.locator(".canvas-app.focused-app").getAttribute("data-app-id");
-  // Not in focus mode: nothing happens.
+  // On the canvas it goes to the next/previous app like a dock click,
+  // without entering focus mode.
+  const activeDock = page.locator(".dock-tab.active");
   await page.getByRole("button", { name: "Beta", exact: true }).click();
+  await expect(activeDock).toHaveText("Beta");
   await page.keyboard.press("Control+ArrowRight");
+  await expect(activeDock).toHaveText("Gamma");
+  await page.keyboard.press("Control+ArrowRight");
+  await expect(activeDock).toHaveText("Alpha");
+  await page.keyboard.press("Control+ArrowLeft");
+  await expect(activeDock).toHaveText("Gamma");
+  await page.keyboard.press("Control+ArrowLeft");
+  await expect(activeDock).toHaveText("Beta");
   await expect(page.locator(".canvas-app.focused-app")).toHaveCount(0);
 
   await page.locator('[data-app-id="app-beta"]').click({ position: { x: 200, y: 20 } });

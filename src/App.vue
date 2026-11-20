@@ -2555,23 +2555,29 @@ function wheelRemove(id: string) {
 function keydown(e: KeyboardEvent) {
   if (!ready.value || e.defaultPrevented) return;
   if (browserTabKeys(e)) return;
-  // Focus mode: Ctrl+Left/Right swaps to the previous/next app in dock order
-  // (wrapping). Text fields keep Ctrl+arrows for moving by word.
+  // Ctrl+Left/Right goes to the previous/next app in dock order (wrapping).
+  // In focus mode it swaps the focused app; on the canvas it moves the view
+  // to that app, as a dock click does. Text fields keep Ctrl+arrows for
+  // moving by word.
   if (
-    focused.value &&
     (e.key === "ArrowLeft" || e.key === "ArrowRight") &&
     (e.ctrlKey || e.metaKey) &&
     !e.altKey &&
     !e.shiftKey &&
     !typing(e.target) &&
-    apps.value.length > 1
+    apps.value.length > (focused.value ? 1 : 0)
   ) {
     const list = apps.value;
-    const at = list.findIndex((a) => a.id === focused.value!.id);
-    const next = list[(at + (e.key === "ArrowRight" ? 1 : -1) + list.length) % list.length];
+    const forward = e.key === "ArrowRight";
+    const at = list.findIndex((a) => a.id === (focused.value?.id ?? active.value));
+    const next =
+      at < 0
+        ? list[forward ? 0 : list.length - 1]
+        : list[(at + (forward ? 1 : -1) + list.length) % list.length];
     if (next) {
       e.preventDefault();
-      enterFocus(next);
+      if (focused.value) enterFocus(next);
+      else void focusApp(next);
     }
     return;
   }
