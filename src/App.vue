@@ -1293,6 +1293,13 @@ async function runTrigger(trigger: Trigger, at = Date.now()) {
     activeExecutions.value--;
   }
 }
+/** Action library → Triggers → Run now. */
+function runTriggerById(id: string) {
+  const trigger = workspace.triggers?.find((t) => t.id === id);
+  if (!trigger) return Promise.reject(Error("That trigger no longer exists."));
+  if (!canEdit.value || importBusy.value) return Promise.reject(Error("The workspace is not editable right now."));
+  return runTrigger(trigger);
+}
 function checkTriggers() {
   if (!ready.value || !canEdit.value || importBusy.value) return;
   const now = Date.now();
@@ -3764,6 +3771,7 @@ onBeforeUnmount(() => {
       :notice="actionNotice"
       :running="actionRunning"
       :opening-from="studioOrigin"
+      :run-trigger="runTriggerById"
       @close="actionStudio = false"
       @created="assignCreatedAction"
       @run="runWheelAction"

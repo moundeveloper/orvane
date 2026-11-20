@@ -10,6 +10,7 @@ import {
 } from "../model";
 import Icon from "./Icon.vue";
 import CustomSelect from "./CustomSelect.vue";
+import TriggerList from "./TriggerList.vue";
 import { removeWorkspaceAction } from "../automation";
 const NodeGraph = defineAsyncComponent(() => import("./NodeGraph.vue"));
 const props = defineProps<{
@@ -20,7 +21,10 @@ const props = defineProps<{
   notice: string;
   running: boolean;
   openingFrom?: { x: number; y: number; width: number; height: number };
+  runTrigger?: (id: string) => Promise<unknown>;
 }>();
+const triggerCount = (id: string) =>
+  props.workspace.triggers?.filter((t) => t.workflowId === id).length ?? 0;
 const emit = defineEmits<{
   close: [];
   created: [id: string];
@@ -299,6 +303,12 @@ function groupNodes(ids: string[]) {
           "
         >
           <Icon :name="item.icon" :size="15" /><span>{{ item.name }}</span>
+          <span
+            v-if="triggerCount(item.id)"
+            class="action-trigger-count"
+            :title="`${triggerCount(item.id)} scheduled trigger${triggerCount(item.id) === 1 ? '' : 's'}`"
+            ><Icon name="clock" :size="12" />{{ triggerCount(item.id) }}</span
+          >
         </button>
       </nav>
       <template v-if="action">
@@ -358,6 +368,12 @@ function groupNodes(ids: string[]) {
             }}
           </button>
         </div>
+        <TriggerList
+          :workspace="workspace"
+          :workflow-id="action.id"
+          :writable="writable"
+          :run-trigger="runTrigger"
+        />
       </template>
       <p v-else class="field-help">
         Create an action, add nodes, then connect them from the trigger.

@@ -2137,6 +2137,16 @@ kbd {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Scheduled triggers on this action (Action library → Triggers). */
+.action-library-item .action-trigger-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+}
 .action-properties,
 .action-test-inputs {
   display: grid;

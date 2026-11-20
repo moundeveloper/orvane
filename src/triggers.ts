@@ -53,6 +53,25 @@ export function triggerDue(trigger: Trigger, now: number) {
   return { due: true, stale: now - at >= MISSED_TRIGGER_MS };
 }
 
+/** The next scheduled moment after now (for display), or null if paused. */
+export function nextOccurrence(trigger: Trigger, now: number): number | null {
+  if (!trigger.enabled) return null;
+  const s = trigger.schedule;
+  if (s.kind === "interval") {
+    const every = s.minutes * MINUTE;
+    const base = trigger.lastRun ?? trigger.createdAt;
+    return base + Math.max(1, Math.floor((now - base) / every) + 1) * every;
+  }
+  const [hours, minutes] = s.time.split(":").map(Number) as [number, number];
+  const day = new Date(now);
+  for (let ahead = 0; ahead < 8; ahead++) {
+    const at = new Date(day.getFullYear(), day.getMonth(), day.getDate() + ahead, hours, minutes);
+    if (at.getTime() <= now) continue;
+    if (!s.days?.length || s.days.includes(at.getDay())) return at.getTime();
+  }
+  return null;
+}
+
 /** Plain description, e.g. "Every 15 minutes" or "Mon, Wed at 09:00". */
 export function describeSchedule(s: TriggerSchedule) {
   if (s.kind === "interval")
