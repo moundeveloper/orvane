@@ -16,7 +16,8 @@ and the AI doesn't really need it in the context").
 
 ## 2. Owner preferences that matter here
 
-- **One MCP server, any number of clients at once.** "anything that is
+- **One connector named `orvane` per client, any number of clients at once.** It
+  exposes Workspace, automation, NetSuite and Exposition together. "anything that is
   connected to orvane should have access to it ... along with claude at the
   same time, I don't want bullshit limits". Never reintroduce a single-client
   port lock.
@@ -173,14 +174,15 @@ pnpm exec tsx scripts/demo-mcp-compose.ts
 
 ### MCP client registration (on this Windows machine; redo on a new one)
 
-All three use stdio: `node <repo>\server\launch.mjs` with env
-`ORVANE_DATA_DIR=<repo>\.orvane`.
+Register one entry named `orvane` in each client. All three use stdio with
+`node <repo>\server\launch.mjs` and `ORVANE_DATA_DIR=<repo>\.orvane`.
+Leave `ORVANE_MCP_PROFILE` unset for this setup.
 
 - Claude Code: `mcpServers.orvane` in `C:\Users\<user>\.claude.json`.
 - Claude Desktop (MSIX build): `claude_desktop_config.json` in
-  `%LOCALAPPDATA%\Claude-Data\claude_<id>\`. **Not** `%APPDATA%\Claude`, and
-  not `Packages\...\LocalCache`. Find the real folder from the running
-  Claude.exe process before editing.
+  `%LOCALAPPDATA%\Claude-Data\claude_<id>\`. The Squirrel build uses
+  `%APPDATA%\Claude\claude_desktop_config.json`. Confirm the installed build
+  and active configuration path before editing.
 - Codex: `[mcp_servers.orvane]` in `~/.codex/config.toml`.
 
 Paths differ on another machine. Check where each client actually reads its

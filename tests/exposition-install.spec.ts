@@ -71,7 +71,10 @@ test("desktop tool installer preserves existing tools and hooks and runs idempot
   expect(mcp.mcpServers["orvane-exposition"]).toBeUndefined();
   expect(mcp.mcpServers.orvane).toEqual({
     ...netSuiteEntry,
-    env: { ...legacyEntry.env, ORVANE_MCP_PROFILE: "desktop" },
+    env: {
+      ORVANE_DATA_DIR: netSuiteEntry.env.ORVANE_DATA_DIR,
+      ORVANE_CLAUDE_PROJECTS_DIR: legacyEntry.env.ORVANE_CLAUDE_PROJECTS_DIR,
+    },
   });
   expect(desktopMcp.mcpServers).toEqual(mcp.mcpServers);
   expect(saved.permissions.defaultMode).toBe("plan");

@@ -5,7 +5,7 @@ Orvane mirrors local Claude Code conversations and renders structured explanatio
 ## Use in the desktop apps
 
 1. Start Orvane. In **Workspace options**, choose **Create Claude sessions**. Select a session in the list.
-2. Install the integration once with `scripts/install-orvane-exposition.ps1`. It adds the Exposition tools to the `orvane` connector alongside NetSuite in the Claude Code user profile and Claude Desktop's local MCP configuration. It migrates the old standalone `orvane-exposition` entry, preserves other servers and hooks, installs the personal skill, and backs up changed configuration under `~/.claude/backups/`. Fully quit and reopen Claude Desktop to load the updated tool list.
+2. Run `scripts/install-orvane-exposition.ps1` to set up the single `orvane` connector for workspace, automation, NetSuite and Exposition tools in the Claude Code user profile and Claude Desktop's local MCP configuration. The installer consolidates legacy registrations, preserves other servers and hooks, installs the personal skill, and backs up changed configuration under `~/.claude/backups/`. Fully quit and reopen Claude Desktop to load the updated tool list.
 3. Reopen a local session in Claude Desktop’s **Code** tab so the new tool, skill and SessionStart hook load. Ask Claude to explain something visually in Orvane.
 
 The session-context hook supplies the session ID and working directory. Claude must use this exact binding. Tools reject unknown or ambiguous targets instead of choosing the newest chat.

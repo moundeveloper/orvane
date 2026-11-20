@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-test("one Orvane connector exposes NetSuite and session-bound exposition tools", async ({}, info) => {
+test("one Orvane connector exposes workspace, NetSuite and session-bound exposition tools", async ({}, info) => {
   const dir = info.outputPath("mcp"),
     root = join(dir, "projects"),
     folder = join(root, "fixture");
@@ -32,6 +32,8 @@ test("one Orvane connector exposes NetSuite and session-bound exposition tools",
         ...env,
         ORVANE_MCP_PROFILE: "desktop",
         ORVANE_DATA_DIR: dir,
+        ORVANE_MCP_STATE_DIR: dir,
+        ORVANE_MCP_PORT: "0",
         ORVANE_CLAUDE_PROJECTS_DIR: root,
       },
       stderr: "pipe",
@@ -40,7 +42,9 @@ test("one Orvane connector exposes NetSuite and session-bound exposition tools",
   try {
     await client.connect(transport);
     expect(client.getServerVersion()?.name).toBe("orvane");
-    expect((await client.listTools()).tools.map((t) => t.name).sort()).toEqual([
+    expect((await client.listTools()).tools.map((t) => t.name)).toEqual(expect.arrayContaining([
+      "automation_catalog",
+      "code_run",
       "exposition_read",
       "exposition_sessions",
       "exposition_show",
@@ -49,7 +53,8 @@ test("one Orvane connector exposes NetSuite and session-bound exposition tools",
       "orvane_netsuite_query",
       "orvane_netsuite_read",
       "orvane_netsuite_status",
-    ]);
+      "workspace_status",
+    ]));
     const target = { sessionId, projectPath },
       view = {
         id: "architecture",

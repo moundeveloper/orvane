@@ -14,7 +14,7 @@ $dataPath = Join-Path $projectRoot '.orvane'
 function Test-OrvaneEntry($entry, [string[]]$profiles) {
     return $entry.command -eq $nodePath -and $entry.args.Count -eq 1 -and
         $entry.args[0] -eq $launchPath -and $entry.env.ORVANE_DATA_DIR -eq $dataPath -and
-        $entry.env.ORVANE_MCP_PROFILE -in $profiles
+        [string]$entry.env.ORVANE_MCP_PROFILE -in $profiles
 }
 $configs = [ordered]@{}
 foreach ($path in @($McpConfig, $DesktopConfig)) {
@@ -23,13 +23,13 @@ foreach ($path in @($McpConfig, $DesktopConfig)) {
     if (-not $config.ContainsKey('mcpServers')) { $config.mcpServers = @{} }
     $existing = $config.mcpServers.orvane
     $legacy = $config.mcpServers.'orvane-exposition'
-    if ($null -ne $existing -and -not (Test-OrvaneEntry $existing @('netsuite', 'desktop'))) {
+    if ($null -ne $existing -and -not (Test-OrvaneEntry $existing @('', 'netsuite', 'desktop'))) {
         throw "A different orvane entry exists in $path. Inspect it before replacing it."
     }
     if ($null -ne $legacy -and -not (Test-OrvaneEntry $legacy @('exposition'))) {
         throw "A different orvane-exposition entry exists in $path. Inspect it before removing it."
     }
-    if ($existing.env.ORVANE_MCP_PROFILE -eq 'desktop' -and $null -eq $legacy) { continue }
+    if ($null -ne $existing -and -not $existing.env.Contains('ORVANE_MCP_PROFILE') -and $null -eq $legacy) { continue }
     if ($null -eq $existing) {
         $existing = @{type='stdio';command=$nodePath;args=@($launchPath);env=@{ORVANE_DATA_DIR=$dataPath}}
         $config.mcpServers.orvane = $existing
@@ -44,7 +44,7 @@ foreach ($path in @($McpConfig, $DesktopConfig)) {
         }
         $config.mcpServers.Remove('orvane-exposition')
     }
-    $existing.env.ORVANE_MCP_PROFILE = 'desktop'
+    if ($existing.env.Contains('ORVANE_MCP_PROFILE')) { $existing.env.Remove('ORVANE_MCP_PROFILE') }
     $configs[$path] = $config
 }
 $settingsPath = [IO.Path]::GetFullPath((Join-Path $ConfigDirectory 'settings.json'))
@@ -80,4 +80,4 @@ $skillDir = Join-Path $ConfigDirectory 'skills/orvane-exposition'
 if (Test-Path -LiteralPath $skillDir) { $previous = Join-Path $skillDir 'SKILL.md'; if ((Test-Path -LiteralPath $previous) -and (Get-Content -LiteralPath $previous -Raw) -ne (Get-Content -LiteralPath (Join-Path $projectRoot 'skills/orvane-exposition/SKILL.md') -Raw)) { Copy-Item -LiteralPath $previous -Destination (Join-Path $backupDir ('orvane-exposition-skill-' + $stamp + '.md')) } }
 New-Item -ItemType Directory -Force -Path $skillDir | Out-Null
 Copy-Item -LiteralPath (Join-Path $projectRoot 'skills/orvane-exposition/SKILL.md') -Destination (Join-Path $skillDir 'SKILL.md') -Force
-Write-Output 'Installed NetSuite and Exposition tools under the Orvane connector. Fully quit and reopen Claude Desktop, then open a local Code session.'
+Write-Output 'Installed the Orvane connector for workspace, automation, NetSuite and Exposition tools. Fully quit and reopen Claude Desktop, then open a local Code session.'
