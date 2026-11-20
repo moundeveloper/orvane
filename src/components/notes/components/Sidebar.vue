@@ -100,7 +100,7 @@ function onRootDrop(e: DragEvent) {
 
     <button class="sb-row" @click="emit('open-search')">
       <Icon name="search" :size="14" /> Search
-      <span class="sb-kbd">Ctrl+K</span>
+      <span class="sb-kbd">Alt+K</span>
     </button>
     <button class="sb-row" @click="newPage()">
       <Icon name="plus" :size="14" /> New page

@@ -28,7 +28,18 @@ function readDataUrl(file: File) {
   });
 }
 async function place(args: Record<string, unknown>): Promise<PlacedImage> {
-  const result = await api<{ id?: string; url?: string; name: string }>("import-image", args);
+  const result = await api<{ id?: string; url?: string; name: string; warning?: string }>("import-image", args);
+  // The server could not download a web image (often one behind a sign-in):
+  // in the desktop app, try again with the Browser's cookies.
+  if (!result.id && result.url && result.warning) {
+    const desktop = (window as unknown as { orvaneDesktop?: { browserImage?: (url: string) => Promise<string> } })
+      .orvaneDesktop;
+    const dataUrl = await desktop?.browserImage?.(result.url).catch(() => "");
+    if (dataUrl) {
+      const stored = await api<{ id?: string; name: string }>("import-image", { dataUrl, name: result.name });
+      if (stored.id) return { value: stored.id, name: stored.name };
+    }
+  }
   return { value: result.id ?? result.url ?? "", name: result.name };
 }
 export function importPath(path: string) {

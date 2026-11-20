@@ -271,13 +271,17 @@ function onKeydown(e: KeyboardEvent) {
   if (e.code === "KeyQ" && e.altKey && !mod && !e.shiftKey) return;
   if (e.key === "Escape" && !searchOpen.value) return;
   e.stopPropagation();
-  if (!tabFocused.value || !appRoot.value?.contains(document.activeElement)) return;
+  // No tabFocused check here: nothing in Orvane passes that prop and Vue
+  // casts the missing boolean to false, which silently dropped every Notes
+  // shortcut. The handler sits on the Notes root, so focus decides.
+  if (!appRoot.value?.contains(document.activeElement)) return;
   if (e.key === "Escape") {
     e.preventDefault();
     searchOpen.value = false;
     return;
   }
-  if (mod && e.key.toLowerCase() === "k") {
+  // Alt+K opens Notes search; Ctrl+K belongs to the workspace palette.
+  if (e.altKey && !mod && !e.shiftKey && e.code === "KeyK") {
     e.preventDefault();
     searchOpen.value = !searchOpen.value;
   } else if (mod && e.key === "\\") {

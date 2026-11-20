@@ -6,6 +6,9 @@ import NetSuiteHome from "./NetSuiteHome.vue";
 import NetSuiteFileCabinet from "./NetSuiteFileCabinet.vue";
 import NetSuiteScripts from "./NetSuiteScripts.vue";
 import NetSuiteQuery, { type QueryFile } from "./NetSuiteQuery.vue";
+import NetSuiteSuiteCloud from "./NetSuiteSuiteCloud.vue";
+import NetSuiteMemory from "./NetSuiteMemory.vue";
+import { accountOf, suiteCloudStatus } from "../netsuiteWorkspace";
 import Icon from "./Icon.vue";
 import SplitTabs from "./SplitTabs.vue";
 import {
@@ -27,7 +30,7 @@ const props = defineProps<{ block: Block }>();
 const canvas = inject(netSuiteCanvas);
 type Tab = { id: string; label: string; status: string; count: number };
 type Row = Record<string, unknown>;
-type AppId = "scripts" | "files" | "query";
+type AppId = "scripts" | "files" | "query" | "suitecloud" | "memory";
 type TrailItem = { app: AppId; environment: string; visitedAt: number };
 type ViewKind = "home" | "dashboard" | AppId;
 type ViewTab = {
@@ -38,7 +41,11 @@ type ViewTab = {
   file?: { id: number; name: string };
 };
 const validApp = (value: unknown): value is AppId =>
-  value === "scripts" || value === "files" || value === "query";
+  value === "scripts" ||
+  value === "files" ||
+  value === "query" ||
+  value === "suitecloud" ||
+  value === "memory";
 function navigationState() {
   try {
     const state = JSON.parse(props.block.value);
@@ -90,6 +97,8 @@ const VIEW_LABELS: Record<ViewKind, [string, string]> = {
   scripts: ["Scripts", "code"],
   files: ["File Cabinet", "folder"],
   query: ["SuiteQL", "search"],
+  suitecloud: ["SuiteCloud", "box"],
+  memory: ["Memory", "library"],
 };
 const viewKind = (value: unknown): value is ViewKind =>
   value === "home" || value === "dashboard" || validApp(value);
@@ -412,6 +421,24 @@ async function fileRequest(operation: string, args: Row = {}): Promise<Row> {
     throw Error(message(e));
   }
 }
+// The CLI is enough to open SuiteCloud and connect the account.
+const suiteCloudReady = ref(false);
+watch(
+  selected,
+  (environment) => {
+    suiteCloudReady.value = false;
+    if (!environment) return;
+    void suiteCloudStatus(accountOf(environment))
+      .then((status) => {
+        if (selected.value === environment) suiteCloudReady.value = Boolean(status.cli);
+      })
+      .catch(() => {});
+  },
+  { immediate: true },
+);
+const hiddenApps = computed<AppId[]>(() =>
+  suiteCloudReady.value ? [] : ["suitecloud"],
+);
 async function runDashboardQuery(sql: string): Promise<Row> {
   if (!api || !selected.value) throw Error("Choose an environment.");
   return api.run(selected.value, "query", { sql, offset: 0 });
@@ -491,6 +518,7 @@ onBeforeUnmount(() => {
             :preferred="preferred"
             :trail="trail"
             :environment="selected"
+            :hidden="hiddenApps"
             @open="openApp"
             @toggle="togglePreferred"
           />
@@ -530,6 +558,7 @@ onBeforeUnmount(() => {
             :trail="trail"
             :pinned="pinnedDashboards"
             :environment="selected"
+            :hidden="hiddenApps"
             @open="openApp"
             @toggle="togglePreferred"
             @remove-recent="removeRecent"
@@ -582,6 +611,15 @@ onBeforeUnmount(() => {
               :open-record="openRecord"
               :files="files"
               :state-key="tab.id"
+            />
+            <NetSuiteSuiteCloud
+              v-else-if="tab.view === 'suitecloud'"
+              :key="`suitecloud-${selected}`"
+              :environment="selected"
+            />
+            <NetSuiteMemory
+              v-else-if="tab.view === 'memory'"
+              :environment="selected"
             />
           </KeepAlive> </template
       ></template>

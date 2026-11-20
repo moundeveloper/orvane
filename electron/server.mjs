@@ -5,7 +5,7 @@
 // closes), so a crashed or killed window never leaves an orphaned server behind.
 import { build, createServer, preview } from "vite";
 import { fileURLToPath } from "node:url";
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -34,12 +34,30 @@ function stale() {
     return true;
   }
 }
+// Another Orvane started from this folder (a second window, tests) may
+// rebuild while this one is open. Its page still loads parts on demand by
+// their old hashed names (the Action library graph, Custom tools…), so a
+// rebuild keeps the previous files instead of emptying dist; files of builds
+// older than two days are removed.
+async function rebuild() {
+  const assets = join(root, "dist/assets");
+  const cutoff = Date.now() - 2 * 24 * 60 * 60 * 1000;
+  try {
+    for (const name of readdirSync(assets)) {
+      const path = join(assets, name);
+      if (statSync(path).mtimeMs < cutoff) rmSync(path, { force: true });
+    }
+  } catch {
+    // No previous build.
+  }
+  await build({ root, logLevel: "warn", build: { emptyOutDir: false } });
+}
 let server;
 if (process.env.ORVANE_DEV === "1") {
   server = await createServer({ root, server: { port, strictPort: true } });
   await server.listen();
 } else {
-  if (stale()) await build({ root, logLevel: "warn" });
+  if (stale()) await rebuild();
   server = await preview({ root, preview: { port, strictPort: true } });
 }
 server.printUrls();

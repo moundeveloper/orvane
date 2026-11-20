@@ -1,0 +1,29 @@
+<customlist scriptid="customlist_acme_job_status">
+  <description></description>
+  <isinactive>F</isinactive>
+  <ismatrixoption>F</ismatrixoption>
+  <isordered>T</isordered>
+  <name>Job Status</name>
+  <customvalues>
+    <customvalue scriptid="val_acme_in_progress">
+      <abbreviation>I</abbreviation>
+      <isinactive>F</isinactive>
+      <value>IN_PROGRESS</value>
+    </customvalue>
+    <customvalue scriptid="val_acme_completed">
+      <abbreviation>C</abbreviation>
+      <isinactive>F</isinactive>
+      <value>COMPLETED</value>
+    </customvalue>
+    <customvalue scriptid="val_acme_failed">
+      <abbreviation>F</abbreviation>
+      <isinactive>F</isinactive>
+      <value>FAILED</value>
+    </customvalue>
+    <customvalue scriptid="val_acme_not_started">
+      <abbreviation>N</abbreviation>
+      <isinactive>F</isinactive>
+      <value>NOT_STARTED</value>
+    </customvalue>
+  </customvalues>
+</customlist>

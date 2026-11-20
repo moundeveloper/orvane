@@ -8,8 +8,20 @@ export const EXECUTOR_PAGE_READS = Object.freeze([
   "catalog-tables",
   "catalog-table",
   "log-search",
+  "task-status",
 ]);
-export const MAX_BROKER_REQUEST_BYTES = 64 * 1024;
+// Writes the MCP tools may run (kind "write" only; a "read" command never reaches them).
+export const EXECUTOR_WRITES = Object.freeze([
+  "run-script",
+  "upload-file",
+  "save-file",
+  "create-folder",
+  "delete-items",
+  "run-task",
+  "set-deployment-status",
+]);
+// Room for a 5 MB upload as base64 plus the envelope.
+export const MAX_BROKER_REQUEST_BYTES = 8 * 1024 * 1024;
 export const MAX_BROKER_RESULT_BYTES = 1024 * 1024;
 export const MAX_BROKER_PENDING = 32;
 
@@ -25,7 +37,7 @@ export function validateExecutorCommand(command) {
       "An executor command is required.",
     );
   if (Buffer.byteLength(JSON.stringify(command)) > MAX_BROKER_REQUEST_BYTES)
-    throw brokerError("REQUEST_TOO_LARGE", "Executor command exceeds 64 KiB.");
+    throw brokerError("REQUEST_TOO_LARGE", "Executor command exceeds 8 MiB.");
   if (command.kind === "hosts") return;
   if (!Number.isSafeInteger(command.hostId) || command.hostId <= 0)
     throw brokerError(
@@ -34,8 +46,11 @@ export function validateExecutorCommand(command) {
     );
   if (command.kind === "environments") return;
   if (
-    command.kind !== "read" ||
-    !["user", "query", ...EXECUTOR_PAGE_READS].includes(command.operation)
+    !(
+      (command.kind === "read" &&
+        ["user", "query", ...EXECUTOR_PAGE_READS].includes(command.operation)) ||
+      (command.kind === "write" && EXECUTOR_WRITES.includes(command.operation))
+    )
   )
     throw brokerError(
       "READ_ONLY_EXECUTOR",
@@ -100,6 +115,9 @@ export function pageReadArgs(operation, args = {}) {
     case "file-content":
       if (!Number.isSafeInteger(args.id) || args.id <= 0) fail();
       return { id: args.id };
+    case "task-status":
+      if (!Number.isSafeInteger(args.deploymentId) || args.deploymentId <= 0) fail();
+      return { deploymentId: args.deploymentId };
     case "catalog-table":
       if (
         typeof args.table !== "string" ||
@@ -126,6 +144,96 @@ export function pageReadArgs(operation, args = {}) {
         deploymentIds: [...args.deploymentIds],
       };
     }
+  }
+  return fail();
+}
+
+const fileName = (value) =>
+  typeof value === "string" &&
+  value.trim().length > 0 &&
+  value.length <= 200 &&
+  !/[\\/\u0000-\u001f]/.test(value);
+const folderId = (value) => Number.isSafeInteger(value) && value !== 0;
+const ids = (value) =>
+  Array.isArray(value) &&
+  value.length <= 200 &&
+  value.every((id) => Number.isSafeInteger(id) && id > 0);
+/** Rebuild write args from known fields only. */
+export function writeArgs(operation, args = {}) {
+  const fail = () => {
+    throw brokerError("INVALID_EXECUTOR_REQUEST", "Invalid write request.");
+  };
+  if (!args || typeof args !== "object" || Array.isArray(args)) fail();
+  switch (operation) {
+    case "run-script":
+      if (
+        typeof args.code !== "string" ||
+        !args.code.trim() ||
+        args.code.length > 100000 ||
+        !Number.isSafeInteger(args.timeoutMs) ||
+        args.timeoutMs < 1000 ||
+        args.timeoutMs > 60000
+      )
+        fail();
+      return { code: args.code, timeoutMs: args.timeoutMs };
+    case "upload-file":
+      if (
+        !folderId(args.folderId) ||
+        !fileName(args.name) ||
+        typeof args.base64 !== "string" ||
+        args.base64.length > 7000000 ||
+        !/^[a-z0-9+/]*={0,2}$/i.test(args.base64) ||
+        typeof args.overwrite !== "boolean"
+      )
+        fail();
+      return {
+        folderId: args.folderId,
+        name: args.name,
+        base64: args.base64,
+        overwrite: args.overwrite,
+      };
+    case "save-file":
+      if (
+        !Number.isSafeInteger(args.id) ||
+        args.id <= 0 ||
+        typeof args.content !== "string" ||
+        args.content.length > 2000000 ||
+        (args.original !== undefined &&
+          (typeof args.original !== "string" || args.original.length > 2000000))
+      )
+        fail();
+      return {
+        id: args.id,
+        content: args.content,
+        ...(args.original !== undefined ? { original: args.original } : {}),
+      };
+    case "run-task":
+      if (!Number.isSafeInteger(args.deploymentId) || args.deploymentId <= 0) fail();
+      return { deploymentId: args.deploymentId };
+    case "set-deployment-status":
+      if (
+        !Number.isSafeInteger(args.deploymentId) ||
+        args.deploymentId <= 0 ||
+        !["NOTSCHEDULED", "SCHEDULED", "TESTING", "RELEASED"].includes(args.status)
+      )
+        fail();
+      return { deploymentId: args.deploymentId, status: args.status };
+    case "create-folder":
+      if (!folderId(args.folderId) || !fileName(args.name)) fail();
+      return { folderId: args.folderId, name: args.name };
+    case "delete-items":
+      if (
+        !folderId(args.folderId) ||
+        !ids(args.fileIds) ||
+        !ids(args.folderIds) ||
+        !(args.fileIds.length + args.folderIds.length)
+      )
+        fail();
+      return {
+        folderId: args.folderId,
+        fileIds: [...args.fileIds],
+        folderIds: [...args.folderIds],
+      };
   }
   return fail();
 }
@@ -168,7 +276,9 @@ export function createExecutorGateway({ hosts, service }) {
         ? {}
         : command.operation === "query"
           ? { sql: command.args.sql, offset: command.args.offset ?? 0 }
-          : pageReadArgs(command.operation, command.args);
+          : command.kind === "write"
+            ? writeArgs(command.operation, command.args)
+            : pageReadArgs(command.operation, command.args);
     const result = await service.run(
       host,
       command.origin,
@@ -183,7 +293,9 @@ export function createExecutorGateway({ hosts, service }) {
     )
       throw brokerError(
         "SESSION_CHANGED",
-        "The observed session changed during the read. Results were discarded.",
+        command.kind === "write"
+          ? "The observed session changed while writing. The write may have completed; check NetSuite before retrying."
+          : "The observed session changed during the read. Results were discarded.",
       );
     return result;
   };

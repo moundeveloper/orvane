@@ -10,11 +10,13 @@ import {
   shallowReactive,
   watch,
   defineAsyncComponent,
+  h,
 } from "vue";
 import { WorkspaceStorage, LEGACY_STORAGE } from "./storage";
 import { trackWorkspace } from "./workspaceTracking";
 import { connectMcpBridge, type BridgeRequest } from "./mcpBridge";
 import { applyCommands, duplicateApp, type RunRequest } from "./automation";
+import { runBrowserAgent } from "./browserAgent";
 import { parseWorkspace, referenceIssues } from "./validation";
 import { mergeWorkspace } from "./imports";
 import { executeGraph } from "./flow";
@@ -76,6 +78,8 @@ const desktopWindow = (
         { id: number; label: string; chosen: boolean }[]
       >;
       setDisplay?: (id: number) => Promise<boolean>;
+      isFullScreen?: () => Promise<boolean>;
+      setFullScreen?: (on: boolean) => Promise<boolean>;
       notify?: (n: { title: string; body: string; appId: string }) => Promise<void>;
       onNotificationClick?: (callback: (appId: string) => void) => () => void;
     };
@@ -116,9 +120,36 @@ async function chooseDisplay() {
   if (displayChoice.value)
     await desktopWindow?.setDisplay?.(Number(displayChoice.value));
 }
-const ActionStudio = defineAsyncComponent(
-  () => import("./components/ActionStudio.vue"),
-);
+// Maximized (the taskbar stays) or full screen; F11 toggles it too.
+const windowModes = [
+  { value: "maximized", label: "Maximized" },
+  { value: "fullscreen", label: "Full screen · F11" },
+];
+const windowMode = ref("maximized");
+async function loadWindowMode() {
+  windowMode.value = (await desktopWindow?.isFullScreen?.().catch(() => false)) ? "fullscreen" : "maximized";
+}
+async function chooseWindowMode() {
+  await desktopWindow?.setFullScreen?.(windowMode.value === "fullscreen");
+}
+// The library pulls in the graph editor, which can take seconds to load the
+// first time (much longer under the dev server): say so at once, and load it
+// ahead when the window is idle after startup.
+const loadActionStudio = () => import("./components/ActionStudio.vue");
+const CustomToolsPanel = defineAsyncComponent(() => import("./components/CustomToolsPanel.vue"));
+const customToolsOpen = ref(false);
+function openCustomTools() {
+  panel.value = null;
+  customToolsOpen.value = true;
+}
+const ActionStudio = defineAsyncComponent({
+  loader: loadActionStudio,
+  delay: 0,
+  loadingComponent: {
+    render: () =>
+      h("section", { class: "action-studio-loading floating-panel", role: "status" }, "Opening Action library…"),
+  },
+});
 const actionStudio = ref(false),
   studioActionId = ref(""),
   studioWheelEntry = ref(""),
@@ -469,7 +500,7 @@ const panel = ref<
   geometryApp = ref<CanvasApp>();
 // Monitors can be plugged in or removed, so read them each time.
 watch(panel, (open) => {
-  if (open === "workspace") void loadDisplays();
+  if (open === "workspace") void (loadDisplays(), loadWindowMode());
 });
 const searchButton = ref<HTMLButtonElement>();
 const searchOrigin = ref("50% calc(100% + 35px)");
@@ -875,13 +906,12 @@ function createGitViewer(kind: keyof typeof toolApps = "git", value?: string) {
 const palette = ref<string | null>(null);
 // Ctrl+K (search and commands) and Ctrl+Shift+P (commands only) are caught
 // in the capture phase, before apps that keep keys to themselves. Notes
-// keeps Ctrl+K for its own search while you type in it.
+// search lives on Alt+K, so Ctrl+K opens the palette inside Notes too.
 function paletteKeys(e: KeyboardEvent) {
   if (!ready.value || inboxOpen.value || !(e.ctrlKey || e.metaKey) || e.altKey) return;
   const key = e.key.toLowerCase();
   const commands = key === "p" && e.shiftKey;
   if (!commands && !(key === "k" && !e.shiftKey)) return;
-  if (!commands && e.target instanceof Element && e.target.closest(".block-notes")) return;
   e.preventDefault();
   e.stopPropagation();
   openPalette(commands ? ">" : "");
@@ -1304,6 +1334,7 @@ const stopCanvasCommands = registerCommands("canvas", () => {
     ["terminal", "terminal"],
   ];
   return [
+    { id: "custom-tools", title: "Custom tools", icon: "code", detail: "Workspace", keywords: "mcp agent tools chain code", run: openCustomTools },
     { id: "workspace-inbox", title: "Open workspace inbox", icon: "archive", detail: "Workspace", keywords: "capture clipboard screenshot", run: openInbox },
     ...(writable ? [
       { id: "folder-compare", title: "Compare two folders", icon: "columns", detail: "Canvas", run: () => placeWorkbench("folder-compare", {}) },
@@ -1704,6 +1735,13 @@ function warmApps() {
   });
 }
 watch([ready, () => apps.value.length], warmApps, { flush: "post" });
+// Load the Action library ahead once the workspace is idle after startup.
+let studioWarmed = false;
+watch(ready, (isReady) => {
+  if (!isReady || studioWarmed) return;
+  studioWarmed = true;
+  idle(() => void loadActionStudio().catch(() => undefined), 3000);
+}, { immediate: true });
 onBeforeUnmount(() => {
   cancelIdle(mountHandle);
   cancelIdle(warmHandle);
@@ -2502,6 +2540,26 @@ function wheelRemove(id: string) {
 function keydown(e: KeyboardEvent) {
   if (!ready.value || e.defaultPrevented) return;
   if (browserTabKeys(e)) return;
+  // Focus mode: Ctrl+Left/Right swaps to the previous/next app in dock order
+  // (wrapping). Text fields keep Ctrl+arrows for moving by word.
+  if (
+    focused.value &&
+    (e.key === "ArrowLeft" || e.key === "ArrowRight") &&
+    (e.ctrlKey || e.metaKey) &&
+    !e.altKey &&
+    !e.shiftKey &&
+    !typing(e.target) &&
+    apps.value.length > 1
+  ) {
+    const list = apps.value;
+    const at = list.findIndex((a) => a.id === focused.value!.id);
+    const next = list[(at + (e.key === "ArrowRight" ? 1 : -1) + list.length) % list.length];
+    if (next) {
+      e.preventDefault();
+      enterFocus(next);
+    }
+    return;
+  }
   if (e.code === "KeyN" && (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && !e.repeat && !typing(e.target)) {
     e.preventDefault();
     stickyAtPointer();
@@ -2562,8 +2620,9 @@ function keydown(e: KeyboardEvent) {
       e.preventDefault();
       return;
     }
-    if (panel.value || managedApp.value || pendingImport.value || inboxOpen.value || actionStudio.value) {
+    if (panel.value || managedApp.value || pendingImport.value || inboxOpen.value || actionStudio.value || customToolsOpen.value) {
       actionStudio.value = false;
+      customToolsOpen.value = false;
       inboxOpen.value = false;
       pendingImport.value = undefined;
       managedApp.value = undefined;
@@ -3225,6 +3284,8 @@ const activeExecutions = ref(0);
 async function executeMcp(request: BridgeRequest, revision: string) {
   if (!canEdit.value || !store.writer || loadError.value)
     throw Error("This tab cannot edit the workspace.");
+  // Browser control acts in pages, not on the workspace: never "busy".
+  if (request.run?.kind === "browser") return { revision, ...(await browserForMcp(request.run)) };
   if (importBusy.value || activeExecutions.value || gesture)
     throw Error(
       "The workspace is busy with a gesture, action, import or recovery. Finish it before editing through MCP.",
@@ -3364,9 +3425,27 @@ async function executeMcp(request: BridgeRequest, revision: string) {
   }
 }
 const runtimeErrors = reactive<Record<string, string>>({});
+/** MCP browser_* tools: AI control of Browser tabs (src/browserAgent.ts). */
+function browserForMcp(request: Extract<RunRequest, { kind: "browser" }>) {
+  return runBrowserAgent(request, {
+    browserBlocks(appId) {
+      const first = focused.value?.id;
+      return liveApps.value
+        .filter((app) => !appId || app.id === appId)
+        .sort((a, b) => Number(b.id === first) - Number(a.id === first))
+        .flatMap((app) =>
+          flatten(app.blocks)
+            .filter((block) => block.kind === "browser")
+            .map((block) => ({ blockId: block.id, appId: app.id, app: app.name })),
+        );
+    },
+    mount: (appId) => mountedApps.add(appId),
+  });
+}
 /** MCP: run a workflow, or press/submit/toggle a component, exactly as a
  * person would in this window. Errors are returned, never retried. */
 async function runForMcp(request: RunRequest) {
+  if (request.kind === "browser") return browserForMcp(request);
   if (request.kind === "runs")
     return {
       runs: traces.value.map(({ id: _id, ...t }) => t),
@@ -3675,6 +3754,7 @@ onBeforeUnmount(() => {
       @focus-app="focusAppById"
       @focus-block="focusBlock"
     />
+    <CustomToolsPanel v-if="customToolsOpen" @close="customToolsOpen = false" />
     <ActionStudio
       v-if="actionStudio"
       :workspace="workspace"
@@ -4444,6 +4524,9 @@ onBeforeUnmount(() => {
       >
         <Icon name="workflow" :size="14" />Action library
       </button>
+      <button class="subtle-button" @click="openCustomTools">
+        <Icon name="code" :size="14" />Custom tools
+      </button>
       <button
         class="subtle-button"
         @click="restoreSnapshot"
@@ -4482,11 +4565,19 @@ onBeforeUnmount(() => {
             v-model="displayChoice"
             aria-label="Monitor for the Orvane window"
             :options="displays"
-            placeholder="Primary monitor"
+            placeholder="Monitor in use"
             @change="chooseDisplay"
         /></label>
+        <label class="property"
+          >Window<CustomSelect
+            v-model="windowMode"
+            aria-label="Orvane window size"
+            :options="windowModes"
+            @change="chooseWindowMode"
+        /></label>
         <p class="field-help">
-          Orvane moves there now and opens there next time.
+          Orvane moves there now and opens there next time. If that monitor is
+          not connected, it opens on the one in use.
         </p>
       </div>
       <div class="settings-section">

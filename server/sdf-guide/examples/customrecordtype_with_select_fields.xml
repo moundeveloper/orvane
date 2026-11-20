@@ -1,0 +1,96 @@
+<customrecordtype scriptid="customrecord_acme_job">
+  <accesstype>CUSTRECORDENTRYPERM</accesstype>
+  <allowattachments>T</allowattachments>
+  <allowinlineediting>F</allowinlineediting>
+  <allowuiaccess>T</allowuiaccess>
+  <description>Tracks a background job run: external id, status, timing, and progress. Generic template record.</description>
+  <enablesystemnotes>T</enablesystemnotes>
+  <includename>F</includename>
+  <isinactive>F</isinactive>
+  <recordname>Job Run</recordname>
+  <showcreationdate>T</showcreationdate>
+  <showcreationdateonlist>T</showcreationdateonlist>
+  <showlastmodified>T</showlastmodified>
+  <showlastmodifiedonlist>T</showlastmodifiedonlist>
+  <shownotes>T</shownotes>
+  <customrecordcustomfields>
+    <customrecordcustomfield scriptid="custrecord_acme_job_config">
+      <accesslevel>2</accesslevel>
+      <fieldtype>SELECT</fieldtype>
+      <label>Job Config</label>
+      <displaytype>NORMAL</displaytype>
+      <onparentdelete>NO_ACTION</onparentdelete>
+      <searchlevel>2</searchlevel>
+      <selectrecordtype>[scriptid=customrecord_acme_job_config]</selectrecordtype>
+      <showinlist>T</showinlist>
+      <storevalue>T</storevalue>
+    </customrecordcustomfield>
+    <customrecordcustomfield scriptid="custrecord_acme_job_extid">
+      <accesslevel>2</accesslevel>
+      <fieldtype>TEXT</fieldtype>
+      <label>External ID</label>
+      <displaytype>NORMAL</displaytype>
+      <searchlevel>2</searchlevel>
+      <showinlist>T</showinlist>
+      <storevalue>T</storevalue>
+    </customrecordcustomfield>
+    <customrecordcustomfield scriptid="custrecord_acme_job_status">
+      <accesslevel>2</accesslevel>
+      <fieldtype>SELECT</fieldtype>
+      <label>Status</label>
+      <displaytype>NORMAL</displaytype>
+      <onparentdelete>NO_ACTION</onparentdelete>
+      <searchlevel>2</searchlevel>
+      <selectrecordtype>[scriptid=customlist_acme_job_status]</selectrecordtype>
+      <showinlist>T</showinlist>
+      <storevalue>T</storevalue>
+    </customrecordcustomfield>
+    <customrecordcustomfield scriptid="custrecord_acme_job_start">
+      <accesslevel>2</accesslevel>
+      <fieldtype>DATETIMETZ</fieldtype>
+      <label>Start Date</label>
+      <displaytype>NORMAL</displaytype>
+      <searchlevel>2</searchlevel>
+      <showinlist>T</showinlist>
+      <storevalue>T</storevalue>
+    </customrecordcustomfield>
+    <customrecordcustomfield scriptid="custrecord_acme_job_progress">
+      <accesslevel>2</accesslevel>
+      <fieldtype>CLOBTEXT</fieldtype>
+      <label>Progress / Last Event</label>
+      <displaytype>NORMAL</displaytype>
+      <searchlevel>2</searchlevel>
+      <showinlist>F</showinlist>
+      <storevalue>T</storevalue>
+    </customrecordcustomfield>
+    <customrecordcustomfield scriptid="custrecord_acme_job_title">
+      <accesslevel>2</accesslevel>
+      <fieldtype>TEXT</fieldtype>
+      <label>Title</label>
+      <displaytype>NORMAL</displaytype>
+      <searchlevel>2</searchlevel>
+      <showinlist>T</showinlist>
+      <storevalue>T</storevalue>
+    </customrecordcustomfield>
+    <customrecordcustomfield scriptid="custrecord_acme_job_input">
+      <accesslevel>2</accesslevel>
+      <description>JSON launch payload read by the background script.</description>
+      <fieldtype>CLOBTEXT</fieldtype>
+      <label>Launch Input</label>
+      <displaytype>NORMAL</displaytype>
+      <searchlevel>2</searchlevel>
+      <showinlist>F</showinlist>
+      <storevalue>T</storevalue>
+    </customrecordcustomfield>
+    <customrecordcustomfield scriptid="custrecord_acme_job_result">
+      <accesslevel>2</accesslevel>
+      <description>Output text or structured JSON produced by the job.</description>
+      <fieldtype>CLOBTEXT</fieldtype>
+      <label>Result</label>
+      <displaytype>NORMAL</displaytype>
+      <searchlevel>2</searchlevel>
+      <showinlist>F</showinlist>
+      <storevalue>T</storevalue>
+    </customrecordcustomfield>
+  </customrecordcustomfields>
+</customrecordtype>

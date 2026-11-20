@@ -258,12 +258,18 @@ test("two complete NetSuite MCP clients share the gateway without workspace list
       "orvane_netsuite_bundles",
       "orvane_netsuite_field_info",
       "orvane_netsuite_file_text",
+      "orvane_netsuite_file_write",
       "orvane_netsuite_find_records",
       "orvane_netsuite_logs",
+      "orvane_netsuite_memory",
       "orvane_netsuite_query",
       "orvane_netsuite_read",
+      "orvane_netsuite_run_suitescript",
       "orvane_netsuite_schema",
+      "orvane_netsuite_sdf",
+      "orvane_netsuite_sdf_guide",
       "orvane_netsuite_status",
+      "orvane_netsuite_task",
     ]);
     const listed = await client.callTool({
       name: "orvane_netsuite_status",

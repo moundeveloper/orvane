@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import Icon from './Icon.vue';
-type AppId = 'scripts' | 'files' | 'query';
+type AppId = 'scripts' | 'files' | 'query' | 'suitecloud' | 'memory';
 type TrailItem = { app: AppId; environment: string; visitedAt: number };
-const props = withDefaults(defineProps<{ preferred: AppId[]; trail: TrailItem[]; environment: string; pinned?: { id: string; title: string }[]; compact?: boolean }>(), { compact: false });
+const props = withDefaults(defineProps<{ preferred: AppId[]; trail: TrailItem[]; environment: string; pinned?: { id: string; title: string }[]; compact?: boolean; hidden?: AppId[] }>(), { compact: false, hidden: () => [] });
 const emit = defineEmits<{ open: [AppId]; toggle: [AppId]; removeRecent: [AppId]; clearRecent: []; openDashboard: [string]; unpinDashboard: [string] }>();
 const search = ref('');
 const apps: { id: AppId; name: string; icon: string; description: string }[] = [
   { id: 'scripts', name: 'Scripts', icon: 'code', description: 'Scripts and deployments' },
   { id: 'files', name: 'File Cabinet', icon: 'folder', description: 'Browse files and folders' },
   { id: 'query', name: 'SuiteQL', icon: 'list', description: 'Write and run queries' },
+  { id: 'suitecloud', name: 'SuiteCloud', icon: 'box', description: 'Agent SDF workspace and task runs' },
+  { id: 'memory', name: 'Memory', icon: 'library', description: 'Notes and saved scripts agents keep' },
 ];
-const matching = computed(() => apps.filter(a => `${a.name} ${a.description}`.toLowerCase().includes(search.value.trim().toLowerCase())));
+const matching = computed(() => apps.filter(a => !props.hidden.includes(a.id) && `${a.name} ${a.description}`.toLowerCase().includes(search.value.trim().toLowerCase())));
 const preferredApps = computed(() => matching.value.filter(a => props.preferred.includes(a.id)));
 const otherApps = computed(() => matching.value.filter(a => !props.preferred.includes(a.id)));
 const pinnedMatches = computed(() => (props.pinned || []).filter(d => d.title.toLowerCase().includes(search.value.trim().toLowerCase())));

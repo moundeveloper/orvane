@@ -14,6 +14,7 @@ export class DesktopNetSuiteError extends Error {
 export async function desktopNetSuiteRequest(
   directory: string,
   request: object,
+  { timeoutMs = 90000 }: { timeoutMs?: number } = {},
 ): Promise<unknown> {
   const descriptorPath = join(directory, "netsuite-broker", "desktop.json");
   const descriptor = await readFile(descriptorPath, "utf8")
@@ -43,10 +44,11 @@ export async function desktopNetSuiteRequest(
       "Invalid Desktop discovery descriptor. Restart Orvane Desktop.",
     );
   const payload = JSON.stringify({ version: 1, token, request }) + "\n";
-  if (Buffer.byteLength(payload) > 64 * 1024)
+  // Room for a 5 MB upload as base64.
+  if (Buffer.byteLength(payload) > 8 * 1024 * 1024)
     throw new DesktopNetSuiteError(
       "REQUEST_TOO_LARGE",
-      "Desktop request exceeds 64 KiB.",
+      "Desktop request exceeds 8 MiB.",
     );
   return new Promise((resolve, reject) => {
     const socket = net.createConnection(endpoint);
@@ -67,10 +69,12 @@ export async function desktopNetSuiteRequest(
         finish(
           new DesktopNetSuiteError(
             "READ_TIMEOUT",
-            "Desktop read timed out. No account write was submitted.",
+            "operation" in request && request.operation === "write"
+              ? "Desktop write timed out. It may have completed; check NetSuite before retrying."
+              : "Desktop read timed out. No account write was submitted.",
           ),
         ),
-      90000,
+      timeoutMs,
     );
     socket.on("connect", () => socket.write(payload));
     socket.on("error", () =>

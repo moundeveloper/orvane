@@ -109,6 +109,7 @@ import PasswordsPanel from "./PasswordsPanel.vue";
 import { importImageData } from "../imageDrop";
 import { addWorkbenchWidget, REFRESH_BROWSER_CLIP, workbenchEditable, type BrowserClipRequest, type ClipRect } from "../workbenchWidgets";
 import { CANCEL_PICK, PICK_ELEMENT, readPicked, readRect, readSize, runInPage } from "../liveClip";
+import { registerBrowserAgentHost, userOwns, type AgentAccess } from "../browserAgent";
 
 const props = defineProps<{ block: Block; editing: boolean }>();
 const canPinClip = inject(workbenchEditable);
@@ -253,8 +254,6 @@ onMounted(() => { stopProcessing = processing?.onChanged(refreshProcessing); voi
 onBeforeUnmount(() => { stopProcessing?.(); document.removeEventListener('pointerdown', closeProcessingOutside, true); });
 
 const START = "";
-/** Tabs per space. */
-const MAX_TABS = 12;
 const MAX_SPACES = 6;
 const MAX_BOOKMARKS = 60;
 const MAX_HISTORY = 60;
@@ -351,7 +350,6 @@ function readState(imported?: Record<string, unknown>) {
       (tab) =>
         typeof tab.url === "string" && (tab.url === START || !!safeUrl(tab.url)),
     )
-    .slice(0, MAX_TABS * MAX_SPACES)
     .map((tab) => {
       const rootUrl = typeof tab.rootUrl === "string" ? safeUrl(tab.rootUrl) : undefined;
       return {
@@ -418,7 +416,7 @@ function readState(imported?: Record<string, unknown>) {
         space: inSpace(tab.space),
         group: text(tab.group, 100),
         pinned: typeof tab.pinned === "string" ? safeUrl(tab.pinned) : undefined,
-        position: Math.max(0, Math.min(MAX_SPACES * MAX_TABS, Number(tab.position) || 0)),
+        position: Math.max(0, Number(tab.position) || 0),
       })),
     active: split && active !== split.secondary ? split.primary : active,
     bookmarks: readBookmarks(saved),
@@ -562,7 +560,8 @@ function show(url: string) {
   revision.value++;
   save();
 }
-function go(text = address.value) {
+function go(text = address.value, fromAi = false) {
+  if (!fromAi && aiLocked(activeTab.value.id)) return say("AI is using this tab. Take control first.");
   const result = resolveInput(text);
   if ("error" in result) {
     error.value = result.error!;
@@ -648,7 +647,6 @@ function openExternal() {
     window.open(activeTab.value.url, "_blank", "noopener,noreferrer");
 }
 function addTab(url = START, background = false, after?: string) {
-  if (spaceTabs.value.length >= MAX_TABS) return undefined;
   const tab: BrowserTab = { id: uid(), url, space: state.value.space };
   if (url) started[tab.id] = url;
   const at = after ? state.value.tabs.findIndex((item) => item.id === after) : -1;
@@ -919,6 +917,17 @@ onBeforeUnmount(() => {
 const stopCommands = registerCommands(`browser:${props.block.id}`, () => [
   { id: `browser-tab:${props.block.id}`, title: "New browser tab", icon: "plus", blockId: props.block.id, keywords: "web", run: () => addTab() },
   { id: `browser-library:${props.block.id}`, title: "Bookmarks and history", icon: "library", blockId: props.block.id, run: () => openDrawer("library") },
+  { id: `browser-memory:${props.block.id}`, title: "Browser memory (AI routes, notes, flows)", icon: "keyboard", blockId: props.block.id, keywords: "site memory ai", run: () => openDrawer("memory") },
+  ...(useWebview && activeTab.value.url
+    ? [{
+        id: `browser-ai:${props.block.id}`,
+        title: aiAccess[activeTab.value.id] ? "Stop AI access to this tab" : "Let AI use this tab",
+        icon: "keyboard",
+        blockId: props.block.id,
+        keywords: "share agent claude control",
+        run: () => toggleAiAccess([activeTab.value.id]),
+      }]
+    : []),
 ]);
 const stopOpen = onOpenRequest((request) => {
   if (request.kind !== "browser-url" || (request.blockId && request.blockId !== props.block.id)) return;
@@ -1024,6 +1033,90 @@ function leaveFrame(event: Event) {
   // focus event here means the user is outside the page.
   if (event.target !== pageElement()) interacting.value = false;
 }
+// ---- AI control (MCP browser_* tools, src/browserAgent.ts) ----
+// "granted": the AI may take the tab; "controlled": it is working in it, so
+// the page wears the AI border and takes no input from the user until the
+// AI releases it or the user takes control (which withdraws access).
+const aiAccess = reactive<Record<string, AgentAccess>>({});
+const aiLocked = (id: string) => aiAccess[id] === "controlled";
+function setAiAccess(tabId: string, access: AgentAccess | undefined) {
+  if (!access) delete aiAccess[tabId];
+  else aiAccess[tabId] = access;
+  if (access === "controlled") {
+    const view = webviews.get(tabId);
+    if (view && document.activeElement === view) view.blur();
+    if (tabId === state.value.active) interacting.value = false;
+  }
+  updateActivity();
+}
+/** Share tabs with the AI, or (if every one is shared) withdraw access. */
+function toggleAiAccess(ids: string[]) {
+  const withdraw = ids.every((id) => aiAccess[id]);
+  for (const id of ids) {
+    if (withdraw) {
+      setAiAccess(id, undefined);
+      userOwns(id);
+    }
+    else if (!aiAccess[id]) setAiAccess(id, "granted");
+  }
+}
+function takeControl(tabId: string) {
+  setAiAccess(tabId, undefined);
+  userOwns(tabId);
+  focusPane(tabId);
+  focusFrame();
+}
+let stopAgentHost: (() => void) | undefined;
+onMounted(() => {
+  stopAgentHost = registerBrowserAgentHost({
+    blockId: props.block.id,
+    tabs: () =>
+      state.value.tabs.map((tab) => ({
+        tabId: tab.id,
+        title: label(tab),
+        url: tab.url,
+        active: tab.id === state.value.active,
+        ...(aiAccess[tab.id] ? { access: aiAccess[tab.id] } : {}),
+      })),
+    open(url) {
+      const safe = url ? safeUrl(url) : START;
+      if (url && !safe) throw Error("Only http, https and file addresses open in the Browser.");
+      if (state.value.split) state.value.split = null;
+      const tab = addTab(safe || START);
+      // The address bar keeps no focus: the AI drives this tab.
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      return tab.id;
+    },
+    access: (tabId) => aiAccess[tabId],
+    setAccess: setAiAccess,
+    page(tabId) {
+      if (discarded[tabId]) restoreTab(tabId);
+      try {
+        return webviews.get(tabId)?.getWebContentsId();
+      } catch {
+        return undefined; // Not attached yet.
+      }
+    },
+    navigate(tabId, url) {
+      const tab = state.value.tabs.find((t) => t.id === tabId);
+      if (!tab) throw Error("No such tab.");
+      if (tab.id !== state.value.active) goToTab(tab);
+      const result = resolveInput(url);
+      if ("error" in result) throw Error(result.error);
+      go(url, true);
+    },
+    select(tabId) {
+      const tab = state.value.tabs.find((t) => t.id === tabId);
+      if (tab && !isShown(tab.id)) goToTab(tab);
+    },
+    close(tabId) {
+      if (!state.value.tabs.some((t) => t.id === tabId)) throw Error("No such tab.");
+      delete aiAccess[tabId];
+      closeTab(tabId);
+    },
+  });
+});
+onBeforeUnmount(() => stopAgentHost?.());
 function shieldDown(event: PointerEvent, id: string) {
   if (event.button !== 0 || props.editing) return;
   focusPane(id);
@@ -1117,6 +1210,8 @@ const livePageOf = new Map<string, LivePage>();
 const seenNow = (tabId: string) =>
   isShown(tabId) &&
   ((onScreen.value && estimatedScale >= READABLE_SCALE) || interacting.value);
+/** Seen, or worked in by the AI: either way the page must run. */
+const runningNow = (tabId: string) => seenNow(tabId) || aiAccess[tabId] === "controlled";
 function setPageActive(tabId: string, active: boolean) {
   const view = webviews.get(tabId);
   if (!view || !desktop?.setPageActive) return;
@@ -1140,14 +1235,14 @@ function updateActivity() {
     // Last seen: now while seen, and the moment it stopped being seen.
     if (seen || wasSeen[tab.id] !== false || seenAt[tab.id] === undefined) seenAt[tab.id] = now;
     wasSeen[tab.id] = seen;
-    if (seen) {
+    if (seen || runningNow(tab.id)) {
       clearTimeout(pauseTimers[tab.id]);
       delete pauseTimers[tab.id];
       if (pageActive[tab.id] !== true) setPageActive(tab.id, true);
     } else if (pageActive[tab.id] !== false && !pauseTimers[tab.id]) {
       pauseTimers[tab.id] = setTimeout(() => {
         delete pauseTimers[tab.id];
-        if (webviews.has(tab.id) && !seenNow(tab.id)) setPageActive(tab.id, false);
+        if (webviews.has(tab.id) && !runningNow(tab.id)) setPageActive(tab.id, false);
       }, browserSetting("pauseAfterMs"));
     }
   }
@@ -1179,6 +1274,7 @@ function addLivePageFor(tab: BrowserTab, view: WebviewElement) {
       seenNow(tab.id) ||
       Date.now() < skipUntil ||
       !!tab.keepLive ||
+      aiAccess[tab.id] === "controlled" ||
       // The MCP and NetSuite apps create a processing tab from a live tab
       // of that account: keep the tab behind one.
       processingTabs.value.some((p) => p.id === originOf(tab.url)) ||
@@ -1295,6 +1391,8 @@ onBeforeUnmount(() => clearTimeout(noticeTimer));
 /** Everything a tab owns outside the saved state. */
 function forget(id: string) {
   closePeek(id, false);
+  delete aiAccess[id];
+  userOwns(id);
   openingEnvironment.delete(id);
   histories.delete(id);
   webviews.delete(id);
@@ -1329,8 +1427,6 @@ function reopenClosed() {
   const space = state.value.spaces.some((item) => item.id === saved.space)
     ? saved.space
     : state.value.space;
-  if (state.value.tabs.filter((tab) => tab.space === space).length >= MAX_TABS)
-    return say("This space is full.");
   switchSpace(space);
   const tab: BrowserTab = { id: uid(), url: saved.url, space };
   if (saved.title) tab.title = saved.title;
@@ -1625,7 +1721,6 @@ function tabMenu(event: MouseEvent, tab: BrowserTab) {
             label: "Duplicate tab", icon: "copy",
             run: () => {
               const copy = addTab(tab.url);
-              if (!copy) return;
               copy.title = tab.title;
               copy.group = tab.group;
               save();
@@ -1654,6 +1749,12 @@ function tabMenu(event: MouseEvent, tab: BrowserTab) {
             ? [{ label: "Auto-login", icon: "key", children: () => loginMenu(tab) }]
             : []),
           {
+            label: aiAccess[tab.id] ? "Stop AI access" : "Let AI use this tab",
+            icon: "keyboard",
+            disabled: !useWebview || !tab.url,
+            run: () => toggleAiAccess([tab.id]),
+          },
+          {
             label: tab.keepLive ? "Allow unloading" : "Keep tab live",
             icon: "clock",
             run: () => {
@@ -1672,6 +1773,13 @@ function tabMenu(event: MouseEvent, tab: BrowserTab) {
             run: () => openPeek(tab.url) },
           {},
         ]),
+    ...(many && useWebview
+      ? [{
+          label: ids.every((id) => aiAccess[id]) ? `Stop AI access to ${ids.length} tabs` : `Let AI use ${ids.length} tabs`,
+          icon: "keyboard",
+          run: () => toggleAiAccess(ids),
+        }]
+      : []),
     {
       label: many ? `Group ${ids.length} tabs` : "Create group with tab",
       icon: "folder",
@@ -2055,8 +2163,8 @@ function groupMenu(event: MouseEvent, group: TabGroup) {
     groupTabs(members().map((tab) => tab.id), null);
   };
   openMenu(event, [
-    { label: "New tab in group", icon: "plus", disabled: spaceTabs.value.length >= MAX_TABS,
-      run: () => { const tab = addTab(); if (tab) groupTabs([tab.id], group); } },
+    { label: "New tab in group", icon: "plus",
+      run: () => { const tab = addTab(); groupTabs([tab.id], group); } },
     { label: "Rename group", icon: "edit", run: () => rename(group) },
     { label: group.collapsed ? "Expand group" : "Collapse group", icon: "down",
       run: () => { group.collapsed = !group.collapsed; save(); } },
@@ -2274,9 +2382,6 @@ function removeSpace(id: string) {
 }
 function moveToSpace(ids: string[], spaceId: string) {
   const moving = state.value.tabs.filter((tab) => ids.includes(tab.id));
-  const room =
-    MAX_TABS - state.value.tabs.filter((tab) => tab.space === spaceId).length;
-  if (moving.length > room) return say("That space is full.");
   for (const tab of moving) {
     tab.space = spaceId;
     delete tab.group;
@@ -2344,7 +2449,6 @@ function closePeek(id = state.value.active, persist = true) {
 function keepPeek(split: boolean) {
   const tab = peek.value;
   if (!tab) return;
-  if (spaceTabs.value.length >= MAX_TABS) return say("This space is full.");
   delete activeTab.value.peek;
   tab.space = state.value.space;
   const ownerIndex = state.value.tabs.indexOf(activeTab.value);
@@ -2428,8 +2532,7 @@ function openSplit(url: string, source = state.value.active) {
   const safe = safeUrl(url);
   if (!safe) return;
   const tab = addTab(safe, true, source);
-  if (tab) placeBeside(tab.id, source);
-  else say("This space is full.");
+  placeBeside(tab.id, source);
 }
 /** A pane was clicked or focused: it becomes the selected one. */
 function focusPane(id: string) {
@@ -2463,7 +2566,6 @@ function toggleSplit() {
   if (state.value.split) return closeSplit();
   const source = state.value.active;
   const tab = addTab(START, true, source);
-  if (!tab) return say("This space is full.");
   placeBeside(tab.id, source);
 }
 /** [first pane, second pane] while a Split View is open. */
@@ -3141,8 +3243,7 @@ function switchNetSuiteEnvironment(origin: string) {
   if (existing) return goToTab(existing);
   const url = `${origin}/app/center/card.nl`;
   const tab = addTab(url);
-  if (tab) openingEnvironment.set(tab.id, url);
-  else say("This space is full. Open the environment from a space with room for another tab.");
+  openingEnvironment.set(tab.id, url);
 }
 const netSuiteOrigin = computed(() => originOf(activeTab.value.url));
 const showNetSuiteEnvironment = computed(() => !!desktop?.browserNetSuiteEnvironments &&
@@ -3193,7 +3294,7 @@ watch([() => activeTab.value.id, netSuiteOrigin], () => {
 });
 function moreMenu(event: MouseEvent) {
   openMenu(event, [
-    { label: "New tab", icon: "plus", hint: "Ctrl T", disabled: spaceTabs.value.length >= MAX_TABS, run: () => { addTab(); } },
+    { label: "New tab", icon: "plus", hint: "Ctrl T", run: () => { addTab(); } },
     { label: "Reopen closed tab", icon: "undo", hint: "Ctrl Shift T", disabled: !state.value.closed.length, run: reopenClosed },
     { label: "Command palette", icon: "search", hint: "Ctrl K", run: () => shortcut("search") },
     {},
@@ -3203,6 +3304,7 @@ function moreMenu(event: MouseEvent) {
       hint: "Ctrl " + String.fromCharCode(92), disabled: state.value.layout === "comfortable", run: toggleSidebar },
     {},
     { label: "Bookmarks & history", icon: "library", hint: "Ctrl B", run: () => openDrawer("library") },
+    { label: "Memory", icon: "keyboard", run: () => openDrawer("memory") },
     { label: "New space", icon: "layers", disabled: state.value.spaces.length >= MAX_SPACES, run: addSpace },
     { label: "New tab group", icon: "folder", run: () => newGroup() },
     {},
@@ -3464,7 +3566,6 @@ function browserWheel(event: WheelEvent) {
             <template v-if="row.action === 'tab'">
               <span class="side-key">Ctrl T</span>
               <button
-                v-if="spaceTabs.length < MAX_TABS"
                 type="button"
                 class="side-add browser-new-tab"
                 aria-label="New tab"
@@ -3602,6 +3703,7 @@ function browserWheel(event: WheelEvent) {
               pinned: !!row.tab.pinned,
               grouped: row.grouped,
               selected: selected.has(row.tab.id),
+              'ai-controlled': aiAccess[row.tab.id] === 'controlled',
               'drag-source': browserDrag?.moving && browserDrag.id === row.tab.id,
               'group-drop-active': browserDrag?.destination?.id === row.tab.id && !browserDrag.reattach,
               'attach-before': browserDrag?.reattach && browserDrag.destination?.id === row.tab.id && !browserDrag.destination.after,
@@ -3626,6 +3728,9 @@ function browserWheel(event: WheelEvent) {
               <template v-else>{{ glyph(row.tab) }}</template>
             </span>
             <span class="tab-text">{{ label(row.tab) }}</span>
+            <span v-if="aiAccess[row.tab.id]" class="tab-ai-mark" :class="aiAccess[row.tab.id]"
+              :aria-label="aiAccess[row.tab.id] === 'controlled' ? 'AI is using this tab' : 'AI may use this tab'"
+              :data-tip="aiAccess[row.tab.id] === 'controlled' ? 'AI is using this tab' : 'AI may use this tab'"></span>
             <button v-if="row.tab.peek" type="button" class="tab-peek-indicator"
               aria-label="Close preview" :data-tip="`Close preview · ${label(row.tab.peek)}`"
               @click.stop="closePeek(row.tab.id)">
@@ -4040,6 +4145,24 @@ function browserWheel(event: WheelEvent) {
           @mousedown.prevent
         ></div>
       </template>
+      <template v-for="tab in visiblePanes" :key="`ai-${tab.id}`">
+        <Transition name="ai-lock">
+          <div
+            v-if="useWebview && aiLocked(tab.id)"
+            class="browser-ai-lock"
+            :class="paneClass(tab.id)"
+            role="status"
+            @pointerdown.self.prevent
+            @contextmenu.self.prevent
+          >
+            <div class="ai-lock-bar">
+              <span class="ai-lock-dot"></span>
+              <span>AI is using this tab</span>
+              <button type="button" class="ai-lock-take" @click="takeControl(tab.id)">Take control</button>
+            </div>
+          </div>
+        </Transition>
+      </template>
       <div
         v-if="splitPair"
         class="split-chrome"
@@ -4281,6 +4404,7 @@ function browserWheel(event: WheelEvent) {
       :bookmarks="spaceBookmarks"
       :history="state.recentPages"
       :open-folders="openFolders"
+      :current-url="activeTab.url"
       :theme="state.theme"
       :collapsed="state.collapsed"
       :layout="state.layout"
@@ -4573,6 +4697,81 @@ function browserWheel(event: WheelEvent) {
   position: absolute;
   inset: 0;
   cursor: pointer;
+}
+/* AI control: a border around the page and a bar to take it back. The
+   overlay takes every pointer event, so the user can't act in the page. */
+.browser-ai-lock {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  box-shadow: inset 0 0 0 2px var(--accent), inset 0 0 18px rgb(111 137 152 / 28%);
+  cursor: not-allowed;
+}
+.ai-lock-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 4px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgb(42 71 88 / 16%), 0 2px 6px rgb(42 71 88 / 8%);
+  transform: translateX(-50%);
+  cursor: default;
+}
+.ai-lock-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.ai-lock-take {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ai-lock-take:hover,
+.ai-lock-take:focus-visible {
+  background: #5f7988;
+}
+.ai-lock-enter-active,
+.ai-lock-leave-active {
+  transition: opacity 0.16s var(--ease);
+}
+.ai-lock-enter-from,
+.ai-lock-leave-to {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-lock-enter-active,
+  .ai-lock-leave-active {
+    transition: none;
+  }
+}
+.browser-tab > .tab-ai-mark {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: 0 2px;
+  border: 1.5px solid var(--accent);
+  border-radius: 50%;
+}
+.tab-ai-mark.controlled {
+  background: var(--accent);
+}
+.browser-tab.ai-controlled {
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 .browser-start {
   height: 100%;

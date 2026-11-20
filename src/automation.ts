@@ -310,6 +310,14 @@ export const runSchema = z.discriminatedUnion("kind", [
     .strict(),
   z.object({ kind: z.literal("layout-apply"), layoutId: id }).strict(),
   z.object({ kind: z.literal("trigger-run"), triggerId: id }).strict(),
+  // AI control of Browser tabs (src/browserAgent.ts checks the arguments).
+  z
+    .object({
+      kind: z.literal("browser"),
+      op: z.enum(["tabs", "open", "take", "release", "close", "act", "snapshot", "screenshot"]),
+      args: z.record(z.string(), z.unknown()).default({}),
+    })
+    .strict(),
 ]);
 export type RunRequest = z.infer<typeof runSchema>;
 export const readOperations = new Set<Operation>([

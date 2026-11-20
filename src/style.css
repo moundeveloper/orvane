@@ -2080,6 +2080,17 @@ kbd {
   background: var(--surface);
   padding: 0;
 }
+/* Shown while the library loads (it can take seconds the first time). */
+.action-studio-loading {
+  position: fixed;
+  z-index: 220;
+  top: 64px;
+  left: 50%;
+  padding: 10px 16px;
+  color: var(--muted);
+  font-size: 12px;
+  transform: translateX(-50%);
+}
 .action-studio-close {
   position: absolute;
   top: 10px;

@@ -23,7 +23,7 @@ async function newPage(type: "page" | "database" = "page") {
       </button>
     </div>
     <div class="empty-tips">
-      <span><kbd>Ctrl+K</kbd> search</span>
+      <span><kbd>Alt+K</kbd> search</span>
       <span><kbd>/</kbd> block menu</span>
       <span><kbd>Ctrl+\</kbd> sidebar</span>
     </div>

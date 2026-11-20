@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile, unlink, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
-const MAX_REQUEST = 64 * 1024,
+const MAX_REQUEST = 8 * 1024 * 1024, // room for a 5 MB upload as base64
   MAX_RESPONSE = 1024 * 1024;
 /** Authenticated read gateway; production runs this in the Desktop-owned worker. */
 export async function startNetSuiteRpc({

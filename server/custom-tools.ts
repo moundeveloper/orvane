@@ -11,7 +11,8 @@ import type { ToolRegistry } from "./tool-registry.ts";
 // SQLite (app_data "mcp:tools") so every connected agent sees the same set;
 // each MCP process picks up changes within a few seconds.
 
-const KEY = "mcp:tools";
+export const CUSTOM_TOOLS_KEY = "mcp:tools";
+const KEY = CUSTOM_TOOLS_KEY;
 const PREFIX = "custom_";
 const paramType = z.enum(["string", "number", "boolean", "object", "array", "any"]);
 const definition = z
@@ -37,6 +38,9 @@ const definition = z
     return: chainSchema.return,
     code: codeSchema.code.optional(),
     timeoutSeconds: codeSchema.timeoutSeconds.optional(),
+    /** Turned off by the user (Workspace options → Custom tools): kept, but
+     * not offered to agents and not runnable. Only the user changes it. */
+    disabled: z.boolean().optional(),
   })
   .strict()
   .refine((d) => !d.steps !== !d.code, "Give either steps (a chain) or code.");
@@ -86,6 +90,7 @@ export function registerCustomTools(
     }
     const seen = new Set<string>();
     for (const d of tools) {
+      if (d.disabled) continue;
       seen.add(d.name);
       const json = JSON.stringify(d);
       if (live.get(d.name)?.json === json) continue;
@@ -121,7 +126,7 @@ export function registerCustomTools(
     "custom_tool_list",
     {
       description:
-        "List saved custom tools (chains and code saved under a name). Each is also exposed as its own tool custom_<name>.",
+        "List saved custom tools (chains and code saved under a name). Each is also exposed as its own tool custom_<name>, except ones the user turned off (disabled: true).",
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -138,6 +143,10 @@ export function registerCustomTools(
     async ({ tool }: { tool: Definition }) =>
       guarded(async () => {
         check(tool);
+        // Only the user turns a tool on or off: an agent's save keeps it.
+        const old = read().find((t) => t.name === tool.name);
+        const { disabled: _ignored, ...given } = tool;
+        tool = old?.disabled ? { ...given, disabled: true } : given;
         const tools = read().filter((t) => t.name !== tool.name);
         if (tools.length >= 200) throw Error("At most 200 custom tools.");
         database().saveAppData(KEY, { tools: [...tools, tool] });
@@ -176,6 +185,7 @@ export function registerCustomTools(
       guarded(async () => {
         const d = read().find((t) => t.name === name);
         if (!d) throw Error(`No custom tool named ${name}. Call custom_tool_list.`);
+        if (d.disabled) throw Error(`The user turned off custom tool ${name}.`);
         const parsed = z.object(inputShape(d)).strict().parse(input);
         return run(d, parsed);
       }) as never,

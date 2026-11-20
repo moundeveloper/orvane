@@ -547,3 +547,21 @@ test("dragging reorders tabs and spaces and previews a split over the current pa
     server.close();
   }
 });
+
+// Regression: a space used to stop at 12 tabs ("This space is full"); there is no tab limit.
+test("a space holds more than 12 tabs and keeps offering New tab", async ({ page }) => {
+  test.setTimeout(120_000);
+  const { server, browser } = await open(page);
+  try {
+    const tabs = browser.locator(".browser-tab");
+    const start = await tabs.count();
+    for (let i = 0; i < 14; i++) await browser.getByRole("button", { name: "New tab", exact: true }).click();
+    await expect(tabs).toHaveCount(start + 14);
+    await expect(browser.getByRole("button", { name: "New tab", exact: true })).toBeVisible();
+    // Saved and loaded back without being cut down.
+    await page.reload();
+    await expect(page.locator(".browser-view .browser-tab")).toHaveCount(start + 14, { timeout: 30_000 });
+  } finally {
+    server.close();
+  }
+});

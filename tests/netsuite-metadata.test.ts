@@ -274,7 +274,7 @@ test("bundles read both CSV exports; logs default to 7 days and never send scrip
   const f = fixture({
     bundles: ({ bundleType }) => ({ csv: `Bundles\nName,Bundle ID\nB${bundleType},${bundleType === "I" ? 1 : 2}\n` }),
     "log-search": () => ({
-      rows: [{ id: 1, datetime: new Date().toISOString(), level: "ERROR", title: "boom", scriptType: "Suitelet" }],
+      rows: [{ id: 1, datetime: new Date(Date.now() - 60000).toISOString(), level: "ERROR", title: "boom", scriptType: "Suitelet" }],
       totalCount: 1,
     }),
   }, () => ({ rows: [] }));

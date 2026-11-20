@@ -34,12 +34,24 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
   /** Monitors as [{ id, label, chosen }], and moving the window to one. */
   displays: () => ipcRenderer.invoke("orvane:displays"),
   setDisplay: (id) => ipcRenderer.invoke("orvane:display-set", id),
+  /** Full screen (no taskbar), remembered for next launch; F11 toggles it. */
+  isFullScreen: () => ipcRenderer.invoke("orvane:window-fullscreen"),
+  setFullScreen: (on) => ipcRenderer.invoke("orvane:window-fullscreen-set", on),
+  onFullScreen(callback) {
+    const listener = (_event, on) => callback(on);
+    ipcRenderer.on("orvane:window-fullscreen", listener);
+    return () => ipcRenderer.removeListener("orvane:window-fullscreen", listener);
+  },
   partition: "persist:orvane-browser",
   /** Two-finger touchpad movement (fractions of the pad), or { end: true }. */
   onTouchpad(callback) {
     const listener = (_event, input) => callback(input);
     ipcRenderer.on("orvane:touchpad", listener);
     return () => ipcRenderer.removeListener("orvane:touchpad", listener);
+  },
+  /** A web image fetched with the Browser's sign-ins, as a data URL ("" if refused). */
+  browserImage(url) {
+    return ipcRenderer.invoke("orvane:browser-image", url);
   },
   /** The local path of a file dropped from the system, or "" if it has none. */
   pathForFile(file) {
@@ -54,6 +66,10 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
   // still loading (the <webview> method waits for loading to finish).
   runInPage(webContentsId, code) {
     return ipcRenderer.invoke("orvane:page-run", webContentsId, code);
+  },
+  // AI control: trusted input, typing and pictures for one Browser page.
+  pageAgent(webContentsId, op) {
+    return ipcRenderer.invoke("orvane:page-agent", webContentsId, op);
   },
   setPageDensity(webContentsId, density) {
     return ipcRenderer.invoke("orvane:page-density", webContentsId, density);

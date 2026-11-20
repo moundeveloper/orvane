@@ -5,6 +5,7 @@ import { chmodSync } from "node:fs";
 import { brokerError } from "./netsuite-broker-protocol.mjs";
 import { netSuiteReadOperations } from "../server/netsuite-read-operations.ts";
 import { NETSUITE_METADATA_TOOLS } from "../server/netsuite-metadata-operations.ts";
+import { NETSUITE_WRITE_TOOLS } from "../server/netsuite-write-operations.ts";
 
 const digest = (value) =>
   createHash("sha256").update(String(value)).digest("hex");
@@ -116,7 +117,10 @@ export function openRequestJournal(
                 : request?.operation === "metadata" &&
                     Object.hasOwn(NETSUITE_METADATA_TOOLS, request.tool)
                   ? NETSUITE_METADATA_TOOLS[request.tool]
-                  : "invalid";
+                  : request?.operation === "write" &&
+                      Object.hasOwn(NETSUITE_WRITE_TOOLS, request.tool)
+                    ? `${NETSUITE_WRITE_TOOLS[request.tool]}${typeof request.action === "string" && /^[a-z-]{1,20}$/.test(request.action) ? "." + request.action : ""}`
+                    : "invalid";
       const inputHash = digest(
         JSON.stringify({
           operation,
@@ -131,6 +135,13 @@ export function openRequestJournal(
           artifactId: request?.artifactId,
           format: request?.format,
           length: request?.length,
+          tool: request?.tool,
+          code: request?.code,
+          fileId: request?.fileId,
+          fileIds: request?.fileIds,
+          folderId: request?.folderId,
+          folderIds: request?.folderIds,
+          name: request?.name,
         }),
       );
       try {

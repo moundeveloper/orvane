@@ -1,5 +1,61 @@
 import { test, expect } from "./fixtures";
 
+test("SuiteCloud can connect with a certificate before an auth ID exists", async ({ page }, info) => {
+  test.setTimeout(90000);
+  await page.addInitScript(() => {
+    localStorage.setItem("orvane.examples.v1", "installed");
+    (window as any).orvaneDesktop = {
+      netsuite: {
+        tabs: async () => [{ id: "https://1964539.app.netsuite.com", label: "Dev", status: "ready", count: 1 }],
+        run: async () => ({ rows: [] }),
+      },
+    };
+  });
+  const status = { accountId: "1964539", available: false, cli: "3.1.3", authIds: [] as string[], authId: null as string | null, created: false };
+  const connections: unknown[] = [];
+  const valid = { notBefore: "2020-01-01T00:00:00Z", notAfter: "2090-01-01T00:00:00Z", archived: false };
+  await page.route("**/__orvane/certificates/list", (route) => route.fulfill({ json: {
+    environments: [{ id: "dev", accountId: "1964539" }, { id: "prod", accountId: "100" }],
+    certificates: [
+      { id: "dev-pair", name: "SuiteCloud dev", environmentId: "dev", ...valid },
+      { id: "prod-pair", name: "SuiteCloud production", environmentId: "prod", ...valid },
+    ],
+  } }));
+  await page.route("**/__orvane/netsuite-workspace", (route) => {
+    const request = route.request().postDataJSON();
+    if (request.action === "suitecloud-connect") {
+      connections.push(request);
+      if (connections.length === 1) return route.fulfill({ status: 400, json: { error: "Certificate ID does not match." } });
+      Object.assign(status, { available: true, authId: "orvane-1964539", authIds: ["orvane-1964539"], created: true });
+    }
+    const response = request.action === "task-runs" ? { runs: [] }
+      : request.action === "suitecloud-tree" ? { files: [{ path: "deploy.xml", size: 12 }] }
+      : status;
+    return route.fulfill({ json: response });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Workspace options" }).click();
+  await page.getByRole("button", { name: "Create NetSuite app" }).click();
+  const app = page.locator(".ns-workspace");
+  await app.getByRole("button", { name: /^SuiteCloud Agent SDF workspace/ }).click();
+  const suiteCloud = app.locator(".sc-view");
+  await expect(suiteCloud.getByRole("button", { name: "Preview deploy" })).toBeDisabled();
+  await expect(suiteCloud.getByRole("combobox", { name: "Certificate pair" })).toHaveText("SuiteCloud dev");
+  const certificateId = suiteCloud.getByRole("textbox", { name: "NetSuite certificate ID" });
+  await certificateId.fill("sample-cert-id");
+  await suiteCloud.screenshot({ path: info.outputPath("certificate-connection.png") });
+  await certificateId.press("Enter");
+  await expect(suiteCloud.getByRole("alert")).toHaveText("Certificate ID does not match.");
+  await expect(certificateId).toHaveValue("sample-cert-id");
+  await suiteCloud.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(suiteCloud.getByText("orvane-1964539", { exact: true })).toBeVisible();
+  await expect(suiteCloud.getByRole("button", { name: "deploy.xml" })).toBeVisible();
+  await expect(suiteCloud.getByRole("button", { name: "Preview deploy" })).toBeEnabled();
+  expect(connections).toEqual(Array.from({ length: 2 }, () => ({
+    action: "suitecloud-connect", account: "1964539", certificatePairId: "dev-pair", certificateId: "sample-cert-id",
+  })));
+});
+
 test("NetSuite views browse data and save queries", async ({ page }) => {
   test.setTimeout(60000);
   const editorErrors: string[] = [];

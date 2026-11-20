@@ -3,7 +3,7 @@ import { ipcMain, webContents } from "electron";
 // Only the Orvane window can address its own browser guests. No arbitrary page
 // JavaScript or credentials are exposed through this bridge.
 
-const WRITES = ["save-file", "create-folder", "upload-file", "rename-item", "move-items", "delete-items"];
+const WRITES = ["save-file", "create-folder", "upload-file", "rename-item", "move-items", "delete-items", "run-script", "run-task", "set-deployment-status"];
 /** Whether the page still has a NetSuite session: signed out, NetSuite
  * redirects its home page to the login page. Unknown counts as signed in. */
 async function signedIn(contents) {
@@ -85,9 +85,17 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         "catalog-tables",
         "catalog-table",
         "log-search",
+        "run-script",
+        "run-task",
+        "set-deployment-status",
+        "task-status",
       ].includes(operation)
     )
       throw Error("Unknown NetSuite operation.");
+    if (["run-task", "set-deployment-status", "task-status"].includes(operation) && (!Number.isSafeInteger(options.deploymentId) || options.deploymentId <= 0))
+      throw Error("Choose a deployment (scriptdeployment.primarykey).");
+    if (operation === "set-deployment-status" && !["NOTSCHEDULED", "SCHEDULED", "TESTING", "RELEASED"].includes(options.status))
+      throw Error("Invalid deployment status.");
     if (operation === "bundles" && !["I", "S"].includes(options.bundleType))
       throw Error("Choose installed or created bundles.");
     if (
@@ -166,11 +174,24 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
     if (
       operation === "save-file" &&
       (typeof options.content !== "string" ||
-        typeof options.original !== "string" ||
+        // MCP callers may omit original: the save then skips the conflict check.
+        (options.original !== undefined && typeof options.original !== "string") ||
         options.content.length > 2000000 ||
-        options.original.length > 2000000)
+        (options.original?.length ?? 0) > 2000000)
     )
       throw Error("Invalid file content.");
+    if (operation === "upload-file" && options.overwrite !== undefined && typeof options.overwrite !== "boolean")
+      throw Error("overwrite must be true or false.");
+    if (
+      operation === "run-script" &&
+      (typeof options.code !== "string" ||
+        !options.code.trim() ||
+        options.code.length > 100000 ||
+        !Number.isSafeInteger(options.timeoutMs) ||
+        options.timeoutMs < 1000 ||
+        options.timeoutMs > 60000)
+    )
+      throw Error("Enter SuiteScript code (up to 100,000 characters) and a timeout of 1–60 seconds.");
     if (
       operation === "search-files" &&
       (typeof options.search !== "string" ||
@@ -247,6 +268,10 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         levels: options.levels,
         scriptIds: options.scriptIds,
         deploymentIds: options.deploymentIds,
+        code: options.code,
+        overwrite: options.overwrite,
+        deploymentId: options.deploymentId,
+        status: options.status,
       },
       origin: id,
     }).replace(/</g, "\\u003c");
@@ -347,6 +372,91 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         return { fields };
       }
       const run = async (query, params = []) => (await N.query.runSuiteQL.promise({ query, params })).asMappedResults();
+      if (input.operation === 'task-status') {
+        // A deployment's latest runs (SuiteQL's scheduledscriptinstance has no deployment link; the search does).
+        if (!N.search?.create || !N.format?.parse) throw Error('Script run status is unavailable for this role.');
+        const names = ['status', 'percentcomplete', 'mapreducestage', 'datecreated', 'startdate', 'enddate', 'taskid', 'queue'];
+        const columns = names.map(name => N.search.createColumn({ name, ...(name === 'datecreated' ? { sort: N.search.Sort.DESC } : {}) }));
+        const search = N.search.create({ type: 'scheduledscriptinstance', filters: [['scriptdeployment.internalid', 'anyof', input.options.deploymentId]], columns });
+        const page = await search.runPaged.promise({ pageSize: 10 });
+        const data = page.pageRanges.length ? (await page.fetch.promise({ index: 0 })).data : [];
+        const iso = value => { try { return value ? N.format.parse({ value, type: N.format.Type.DATETIME }).toISOString() : null; } catch { return null; } };
+        const [deployment] = await run('SELECT sd.primarykey, sd.status, sd.isdeployed, sd.scriptid, s.scripttype, s.name FROM scriptdeployment sd JOIN script s ON s.id = sd.script WHERE sd.primarykey = ?', [input.options.deploymentId]);
+        return {
+          deployment: deployment ?? null,
+          instances: data.map(r => ({ status: r.getValue({ name: 'status' }), percent: r.getValue({ name: 'percentcomplete' }), stage: r.getValue({ name: 'mapreducestage' }) || null,
+            created: iso(r.getValue({ name: 'datecreated' })), started: iso(r.getValue({ name: 'startdate' })), ended: iso(r.getValue({ name: 'enddate' })), taskId: r.getValue({ name: 'taskid' }) || null }))
+        };
+      }
+      if (input.operation === 'set-deployment-status') {
+        if (!N.record?.submitFields) throw Error('Changing a deployment is unavailable for this role.');
+        await N.record.submitFields.promise({ type: 'scriptdeployment', id: input.options.deploymentId, values: { status: input.options.status } });
+        const [row] = await run('SELECT status FROM scriptdeployment WHERE primarykey = ?', [input.options.deploymentId]);
+        if (row?.status !== input.options.status) throw Error('NetSuite did not confirm the new status (it is ' + (row?.status ?? 'unknown') + ').');
+        return { deploymentId: input.options.deploymentId, status: row.status };
+      }
+      if (input.operation === 'run-task') {
+        // The user's flow: put the deployment in Not Scheduled, then press NetSuite's own "Save and Execute".
+        const id = input.options.deploymentId;
+        const [deployment] = await run('SELECT sd.primarykey, sd.status, sd.isdeployed, sd.scriptid, s.scripttype, s.name FROM scriptdeployment sd JOIN script s ON s.id = sd.script WHERE sd.primarykey = ?', [id]);
+        if (!deployment) throw Error('Deployment ' + id + ' not found. Use scriptdeployment.primarykey as the ID.');
+        if (!['MAPREDUCE', 'SCRIPTED'].includes(deployment.scripttype)) throw Error('Only map/reduce and scheduled script deployments can be run (this is ' + deployment.scripttype + ').');
+        if (deployment.isdeployed !== 'T') throw Error('This deployment is not deployed (Deployed box unchecked).');
+        const originalStatus = deployment.status;
+        if (originalStatus !== 'NOTSCHEDULED') {
+          if (!N.record?.submitFields) throw Error('Changing a deployment is unavailable for this role.');
+          await N.record.submitFields.promise({ type: 'scriptdeployment', id, values: { status: 'NOTSCHEDULED' } });
+        }
+        // If starting fails, put the status back now: no run means nothing to wait for.
+        const putBack = async error => {
+          if (originalStatus !== 'NOTSCHEDULED') await N.record.submitFields.promise({ type: 'scriptdeployment', id, values: { status: originalStatus } }).catch(() => {});
+          throw error;
+        };
+        try {
+        const formUrl = '/app/common/scripting/scriptrecord.nl?id=' + id + '&e=T';
+        const html = await (await fetchChecked(formUrl, 'the deployment')).text();
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const form = doc.querySelector('form#main_form') || [...doc.forms].find(f => /scriptrecord\\.nl/.test(f.getAttribute('action') || ''));
+        if (!form || !form.querySelector('[name="submitexecute"]')) throw Error('NetSuite did not offer "Save and Execute" for this deployment.');
+        const body = new FormData(form);
+        body.set('submitexecute', 'Save and Execute');
+        const submittedAt = new Date().toISOString();
+        const response = await fetch(new URL(form.getAttribute('action'), location.origin).href, { method: 'POST', body, credentials: 'same-origin' });
+        if (!response.ok) throw Error('NetSuite rejected the run: HTTP ' + response.status);
+        const text = await response.text();
+        const problem = /<title>[^<]*(error|notice)[^<]*<\\/title>/i.test(text) ? (new DOMParser().parseFromString(text, 'text/html').querySelector('.uir-error-page-message, #div__body, body')?.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 300) : '';
+        if (problem) throw Error('NetSuite refused to run the deployment: ' + problem);
+        return { deploymentId: id, scriptId: deployment.scriptid, name: deployment.name, scriptType: deployment.scripttype, originalStatus, submittedAt };
+        } catch (error) { return await putBack(error); }
+      }
+      if (input.operation === 'run-script') {
+        // Like Magic NetSuite's quick script: N modules unpacked, async body. Adds captured logs with levels,
+        // a sql() helper, JSON-safe results and the error's line inside the caller's code.
+        const logs = [], show = value => { if (typeof value === 'string') return value; try { return JSON.stringify(value); } catch { return String(value); } };
+        const push = (level, args) => { if (logs.length < 200) logs.push({ level, text: args.filter(a => a !== undefined).map(show).join(' ').slice(0, 2000) }); };
+        const scriptConsole = Object.fromEntries(['log', 'info', 'warn', 'error', 'debug'].map(level => [level, (...args) => push(level, args)]));
+        const nLog = level => (a, b) => push(level, a && typeof a === 'object' && ('title' in a || 'details' in a) ? [a.title, a.details] : [a, b]);
+        const modules = { ...N, log: { debug: nLog('debug'), audit: nLog('audit'), error: nLog('error'), emergency: nLog('emergency') } };
+        const sql = async (query, params = []) => run(query, params);
+        const names = Object.keys(modules).filter(name => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) && !['N', 'console', 'sql'].includes(name));
+        let compiled;
+        try {
+          compiled = new Function('N', 'console', 'sql', '"use strict"; const { ' + names.join(', ') + ' } = N;\\nreturn (async () => {\\n' + input.options.code + '\\n})();');
+        } catch (error) {
+          return { ok: false, error: { name: error?.name, message: String(error?.message || error), phase: 'compile' }, logs };
+        }
+        try {
+          const value = await compiled(modules, scriptConsole, sql);
+          let result = null;
+          try { result = value === undefined ? null : JSON.parse(JSON.stringify(value, (key, v) => typeof v === 'bigint' ? String(v) : v) ?? 'null'); }
+          catch { result = String(value); }
+          return { ok: true, result, logs };
+        } catch (error) {
+          // new Function puts 2 header lines before the body, plus our 2: caller line = stack line - 4.
+          const at = String(error?.stack || '').match(/<anonymous>:(\\d+):(\\d+)/);
+          return { ok: false, error: { name: error?.name || null, message: String(error?.message || error), line: at ? Number(at[1]) - 4 : null, column: at ? Number(at[2]) : null, phase: 'run' }, logs };
+        }
+      }
       if (input.operation === 'file-content') {
         const rows = await run('SELECT id, name, url, filetype, folder FROM file WHERE id = ?', [input.options.id]);
         if (!rows.length || !rows[0].url) throw Error('File not found or not accessible.');
@@ -431,10 +541,24 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         const id = folder.save({ enableSourcing: true, ignoreMandatoryFields: true });
         return { id };
       }
+      // Reads a file back and compares it byte for byte, so a write is only reported once NetSuite holds the new content.
+      const sameContent = async (fileId, bytes) => {
+        const [row] = await run('SELECT url FROM file WHERE id = ?', [fileId]);
+        if (!row?.url) return false;
+        const response = await fetch(new URL(row.url, location.origin).href, { credentials: 'same-origin', cache: 'no-store' });
+        if (!response.ok) return false;
+        const stored = new Uint8Array(await response.arrayBuffer());
+        return stored.length === bytes.length && stored.every((value, index) => value === bytes[index]);
+      };
+      let replaceId;
       if (input.operation === 'upload-file') {
         const folderId = input.options.folderId, name = input.options.name.trim();
         const duplicates = await run('SELECT id FROM file WHERE folder = ? AND LOWER(name) = LOWER(?)', [folderId, name]);
-        if (duplicates.length) throw Error('A file with that name already exists in this folder.');
+        if (duplicates.length && !input.options.overwrite) throw Error('A file with that name already exists in this folder. Pass overwrite: true to replace its content (the file keeps its ID).');
+        if (duplicates.length) replaceId = duplicates[0].id;
+      }
+      if (input.operation === 'upload-file' && !replaceId) {
+        const folderId = input.options.folderId, name = input.options.name.trim();
         const page = await fetch('/app/common/media/mediaitemfolders.nl?folder=' + encodeURIComponent(folderId), { credentials: 'same-origin' });
         if (!page.ok) throw Error('Could not open the destination folder: HTTP ' + page.status);
         const doc = new DOMParser().parseFromString(await page.text(), 'text/html');
@@ -449,7 +573,9 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         if (!uploaded.ok) throw Error('NetSuite rejected the upload: HTTP ' + uploaded.status);
         const matches = await run('SELECT id, name FROM file WHERE folder = ? AND LOWER(name) = LOWER(?)', [folderId, name]);
         if (!matches.length) throw Error('NetSuite did not confirm the upload. Refresh the folder and check before retrying.');
-        return { id: matches[0].id, name };
+        if (input.options.overwrite !== undefined && !(await sameContent(matches[0].id, bytes)))
+          throw Error('NetSuite created file ' + matches[0].id + ' but its content does not match what was sent. Check the file before retrying.');
+        return { id: matches[0].id, name, created: true, verified: input.options.overwrite !== undefined };
       }
       if (input.operation === 'save-file') {
         const rows = await run('SELECT id, name, url, filesize, filetype, folder FROM file WHERE id = ?', [input.options.id]);
@@ -457,7 +583,7 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         const file = rows[0], fileUrl = new URL(file.url, location.origin);
         if (fileUrl.origin !== location.origin) throw Error('File URL is outside the selected NetSuite account.');
         const read = async () => { const response = await fetch(fileUrl.href, { credentials: 'same-origin', cache: 'no-store' }); if (!response.ok) throw Error('Could not read the current file: HTTP ' + response.status); const text = await response.text(); if (text.length > 2000000) throw Error('File is too large to edit.'); return text; };
-        if (await read() !== input.options.original) throw Error('This file changed in NetSuite. Reopen it before saving to avoid overwriting newer changes.');
+        if (input.options.original != null && await read() !== input.options.original) throw Error('This file changed in NetSuite. Reopen it before saving to avoid overwriting newer changes.');
         const editUrl = '/app/common/record/edittextmediaitem.nl?id=' + encodeURIComponent(file.id) + '&e=T&l=T&target=filesize&syntaxHighlighting=T';
         const formResponse = await fetch(editUrl, { credentials: 'same-origin', cache: 'no-store' });
         if (!formResponse.ok) throw Error('Could not open the NetSuite file editor: HTTP ' + formResponse.status);
@@ -496,6 +622,23 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
       };
       const nsapi = () => ({ _multibtnstate_: '', selectedtab: '', nsapiPI: '', nsapiSR: '', nsapiVF: '', nsapiFC: '', nsapiPS: '', nsapiVI: '', nsapiVD: '', nsapiPD: '', nsapiVL: '', nsapiRC: '', nsapiLI: '', nsapiLC: '', nsapiCT: String(Date.now()), nsbrowserenv: 'istop=T' });
       const sitecategory = { sitecategoryfields: 'website\\x01category_display\\x01category\\x01isdefault\\x01categorydescription', sitecategoryflags: '1\\x018\\x011\\x010\\x010', sitecategoryfieldsets: '\\x01\\x01\\x01\\x01', sitecategorytypes: 'select\\x01text\\x01slaveselect\\x01checkbox\\x01text', sitecategoryorigtypes: '\\x01\\x01\\x01\\x01', sitecategoryparents: '\\x01sitecategory.website\\x01sitecategory.website\\x01\\x01sitecategory.category', sitecategorylabels: 'Site\\x01Site Category\\x01\\x01Preferred Category\\x01Description', sitecategorydata: '', nextsitecategoryidx: '1', sitecategoryvalid: 'T', usernotesloaded: 'F', usernotesdotted: 'F', systemnotesloaded: 'F', systemnotesdotted: 'F' };
+      if (input.operation === 'upload-file' && replaceId) {
+        // Replace an existing file's content through its edit form (same post as a rename, with the new file), so its ID stays.
+        const [row] = await run('SELECT id, name, folder, filetype FROM file WHERE id = ?', [replaceId]);
+        if (!row) throw Error('File not found or not accessible.');
+        const decoded = atob(input.options.base64), bytes = Uint8Array.from(decoded, c => c.charCodeAt(0));
+        if (bytes.length > 5000000) throw Error('File exceeds the 5 MB upload limit.');
+        const user = N.runtime.getCurrentUser(), account = location.hostname.split('.')[0].replace(/-/g, '_').toUpperCase();
+        const body = new FormData();
+        for (const [key, value] of Object.entries({ submitter: 'Save', name: String(row.name), filesize: String(bytes.length), folder_display: '', folder: String(row.folder), description: '' })) body.append(key, value);
+        body.append('mediafile', new Blob([bytes], { type: 'application/octet-stream' }), String(row.name));
+        body.append('*eml_nkey*', account + '~' + user.id + '~' + user.role + '~N');
+        for (const [key, value] of Object.entries({ ...nsapi(), type: 'filecabinet', id: String(row.id), externalid: '', whence: '', customwhence: '', entryformquerystring: 'id=' + row.id + '&e=T', _csrf: await csrfFor(row.folder), filetype: String(row.filetype ?? ''), createddate: '', lastmodifieddate: '', uploadrectype: 'filecabinet', package: '', mediatypeiconurl: '', oldfolder: String(row.folder), oldrootfolder: '-15', rootfolder: '-15', textfileencoding: 'UTF-8', caption: '', storedisplaythumbnail: '', sitedescription: '', featureddescription: '', submitted: 'T', formdisplayview: 'NONE', _button: '', ...sitecategory })) body.append(key, value);
+        const saved = await fetch('/app/common/media/mediaitem.nl', { method: 'POST', body, credentials: 'same-origin' });
+        if (!saved.ok) throw Error('NetSuite rejected the replacement: HTTP ' + saved.status);
+        if (!(await sameContent(row.id, bytes))) throw Error('NetSuite did not store the new content of file ' + row.id + '. Check the file before retrying.');
+        return { id: row.id, name: row.name, created: false, replaced: true, verified: true };
+      }
       // Same form posts Magic NetSuite uses (extension-src/netsuiteApi/mediaItems.ts).
       if (input.operation === 'rename-item') {
         const { kind, id, folderId } = input.options, name = input.options.name.trim();
@@ -654,13 +797,13 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
           new Promise((_, reject) => {
             timer = setTimeout(() => {
               const error = Error(
-                ["save-file", "create-folder", "upload-file"].includes(operation)
+                ["save-file", "create-folder", "upload-file", "run-script"].includes(operation)
                   ? "The request timed out and may have completed. Refresh and check before retrying."
                   : "NetSuite request timed out.",
               );
               error.timedOut = true;
               reject(error);
-            }, 30000);
+            }, operation === "run-script" ? options.timeoutMs : 30000);
           }),
         ]);
         assertSession();

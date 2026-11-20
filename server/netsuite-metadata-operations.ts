@@ -23,6 +23,7 @@ export const NETSUITE_PAGE_READS = [
   "catalog-tables",
   "catalog-table",
   "log-search",
+  "task-status",
 ] as const;
 
 export const FILE_TEXT_MAX_BYTES = 600_000;

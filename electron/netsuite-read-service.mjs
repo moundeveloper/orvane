@@ -11,6 +11,12 @@ import {
   parseNetSuiteMetadata,
   runNetSuiteMetadata,
 } from "../server/netsuite-metadata-operations.ts";
+import {
+  FILE_WRITE_MAX_BYTES,
+  NETSUITE_WRITE_TOOLS,
+  parseNetSuiteWrite,
+  shapeScriptResult,
+} from "../server/netsuite-write-operations.ts";
 
 export class NetSuiteReadError extends Error {
   constructor(code, message) {
@@ -24,7 +30,7 @@ const reject = (code, message) => {
 const originPattern = /^https:\/\/[a-z0-9-]+\.app\.netsuite\.com$/i;
 
 /** No renderer callbacks: the host supplies Electron-owned windows and service. */
-export function createNetSuiteReadService({ hosts, service, instanceId }) {
+export function createNetSuiteReadService({ hosts, service, instanceId, taskRuns }) {
   const secret = randomBytes(32);
   const targets = new Map();
   const share = createSharedNetSuiteReads();
@@ -148,6 +154,108 @@ export function createNetSuiteReadService({ hosts, service, instanceId }) {
       observedAt: new Date().toISOString(),
     };
   }
+  /** Script runs and File Cabinet writes: identity checked first, never retried, reported even if identity changes after. */
+  async function write(request) {
+    const parsed = parseNetSuiteWrite(request);
+    if (typeof service.write !== "function")
+      reject("UPGRADE_PENDING", "This Desktop broker cannot run writes. Restart Orvane Desktop.");
+    const target = resolve(request.targetId);
+    const before = await identity(target);
+    if (request.identityToken !== before.identityToken)
+      reject(
+        "IDENTITY_CHANGED",
+        "Inspect this target again; its account, user or role changed, or the identity token is missing. Nothing was written.",
+      );
+    const epoch = target.sessionEpoch ?? undefined;
+    const exec = (operation, args) => service.write(target.host, target.origin, operation, args, epoch);
+    const query = async (sql) => {
+      const result = await service.run(target.host, target.origin, "query", { sql, offset: 0 }, epoch);
+      return Array.isArray(result?.rows) ? result.rows : [];
+    };
+    const args = parsed.args;
+    let data;
+    if (parsed.tool === "task") {
+      if (!taskRuns) reject("UPGRADE_PENDING", "This Desktop broker cannot run tasks. Restart Orvane Desktop.");
+      const live = { host: target.host, origin: target.origin, sessionEpoch: epoch };
+      if (args.action === "list") data = { runs: taskRuns.list(target.origin) };
+      else {
+        let run;
+        if (args.action === "run") run = taskRuns.add(target.origin, await exec("run-task", { deploymentId: args.deploymentId }));
+        else {
+          run = taskRuns.get(args.runId);
+          if (!run || run.origin !== target.origin) reject("UNKNOWN_RUN", "No run with this ID for this account.");
+        }
+        const until = Date.now() + args.waitSeconds * 1000;
+        for (;;) {
+          await taskRuns.refresh(run, live).catch((error) => {
+            run.lastError = String(error?.message || error);
+          });
+          if (run.done || Date.now() + 3000 > until) break;
+          await new Promise((done) => setTimeout(done, 3000));
+        }
+        data = run;
+      }
+    } else if (parsed.tool === "run-suitescript") {
+      const raw = await exec("run-script", { code: args.code, timeoutMs: args.timeoutSeconds * 1000 });
+      data = shapeScriptResult(raw, args.maxResultChars);
+    } else if (args.action === "upload") {
+      const base64 = args.base64 ?? Buffer.from(args.content, "utf8").toString("base64");
+      if (Buffer.byteLength(base64, "base64") > FILE_WRITE_MAX_BYTES)
+        reject("INVALID_WRITE", "Files are limited to 5 MB.");
+      data = await exec("upload-file", { folderId: args.folderId, name: args.name, base64, overwrite: args.overwrite });
+    } else if (args.action === "update") {
+      data = await exec("save-file", { id: args.fileId, content: args.content, ...(args.original !== undefined ? { original: args.original } : {}) });
+      data = { id: args.fileId, saved: true, verified: true, conflictChecked: args.original !== undefined };
+    } else if (args.action === "create-folder") {
+      data = await exec("create-folder", { folderId: args.folderId, name: args.name });
+    } else {
+      // NetSuite deletes per parent folder; group the items by where they live.
+      const groups = new Map();
+      const add = (parent, kind, id) => {
+        const group = groups.get(parent) ?? { fileIds: [], folderIds: [] };
+        group[kind].push(id);
+        groups.set(parent, group);
+      };
+      const missing = [];
+      if (args.fileIds?.length) {
+        const rows = await query(`SELECT id, folder FROM file WHERE id IN (${args.fileIds.join(",")})`);
+        for (const id of args.fileIds) {
+          const row = rows.find((r) => Number(r.id) === id);
+          row ? add(Number(row.folder), "fileIds", id) : missing.push(`File ${id}`);
+        }
+      }
+      if (args.folderIds?.length) {
+        const rows = await query(`SELECT id, parent FROM MediaItemFolder WHERE id IN (${args.folderIds.join(",")})`);
+        for (const id of args.folderIds) {
+          const row = rows.find((r) => Number(r.id) === id);
+          row ? add(Number(row.parent ?? -15), "folderIds", id) : missing.push(`Folder ${id}`);
+        }
+      }
+      let deleted = 0;
+      const remaining = [],
+        errors = [];
+      for (const [folderId, group] of groups) {
+        const result = await exec("delete-items", { folderId: Number.isSafeInteger(folderId) && folderId !== 0 ? folderId : -15, ...group });
+        deleted += result?.deleted ?? 0;
+        remaining.push(...(result?.remaining ?? []));
+        errors.push(...(result?.errors ?? []));
+      }
+      data = { deleted, remaining, errors, notFound: missing };
+    }
+    const after = await identity(target).catch(() => null);
+    return {
+      desktopId: instanceId,
+      targetId: request.targetId,
+      origin: target.origin,
+      identity: after ?? before,
+      write: { tool: parsed.tool, action: args.action ?? null },
+      ...(after && after.identityToken !== before.identityToken
+        ? { warning: "The account, user or role changed while writing. The write was submitted with the identity checked before it." }
+        : {}),
+      data,
+      observedAt: new Date().toISOString(),
+    };
+  }
   return async function dispatch(request) {
     if (!request || typeof request !== "object")
       reject("INVALID_REQUEST", "A request is required.");
@@ -193,7 +301,7 @@ export function createNetSuiteReadService({ hosts, service, instanceId }) {
         available: true,
         desktopId: instanceId,
         batch: 1,
-        readOnly: true,
+        readOnly: typeof service.write !== "function",
         readSharingBudget: share.budget(),
         capabilities: [
           "environments.list",
@@ -205,11 +313,17 @@ export function createNetSuiteReadService({ hosts, service, instanceId }) {
             (policy) => policy.capability,
           ),
           ...Object.values(NETSUITE_METADATA_TOOLS),
+          ...(typeof service.write === "function"
+            ? Object.values(NETSUITE_WRITE_TOOLS).filter(
+                (capability) => capability !== NETSUITE_WRITE_TOOLS.task || taskRuns,
+              )
+            : []),
         ],
         environments,
       };
     }
     if (request.operation === "metadata") return metadata(request);
+    if (request.operation === "write") return write(request);
     const typed =
       request.operation === "read" ? compileNetSuiteRead(request) : null;
     if (request.operation !== "query" && !typed)

@@ -12,19 +12,22 @@ export type BrowserTheme = "light" | "dark";
 export type SearchEngine = "google" | "duckduckgo";
 export type BrowserLayout = "balanced" | "performance" | "comfortable";
 export type SidebarPosition = "left" | "right";
-export type DrawerMode = "library" | "preferences";
+export type DrawerMode = "library" | "preferences" | "memory";
 </script>
 
 <script setup lang="ts">
 import { computed, ref, useId, watch } from "vue";
 import CustomSelect from "./CustomSelect.vue";
 import Icon from "./Icon.vue";
+import SiteMemoryView from "./SiteMemoryView.vue";
 
 const props = defineProps<{
   mode: DrawerMode | null;
   bookmarks: Bookmark[];
   history: LibraryPage[];
   openFolders: Set<string>;
+  /** The open tab's address: Memory starts on its site. */
+  currentUrl?: string;
 }>();
 const emit = defineEmits<{
   close: [];
@@ -57,7 +60,9 @@ const historyMatches = computed(() => {
     title.toLowerCase().includes(query) || url.toLowerCase().includes(query),
   );
 });
-const title = computed(() => (props.mode === "preferences" ? "Preferences" : "Library"));
+const title = computed(() =>
+  props.mode === "preferences" ? "Preferences" : props.mode === "memory" ? "Memory" : "Library",
+);
 const libraryGroups = computed(() => {
   if (libraryTab.value === "history")
     return [{ name: "", entries: historyMatches.value }];
@@ -230,6 +235,9 @@ watch(
         </p>
       </div>
 
+      <div v-else-if="mode === 'memory'" class="drawer-content">
+        <SiteMemoryView :current-url="currentUrl" />
+      </div>
       <div v-else class="drawer-content">
         <section class="drawer-section">
           <h3>Appearance</h3>
@@ -404,19 +412,22 @@ watch(
 .drawer-row input[role="switch"]::after {
   content: "";
   position: absolute;
-  top: 3px;
+  top: 50%;
   left: 3px;
   width: 12px;
   height: 12px;
   border-radius: 50%;
   background: white;
-  transition: transform 0.15s;
+  transform: translateY(-50%);
+  transition: left 0.15s;
 }
 .drawer-row input[role="switch"]:checked {
   background: var(--accent);
 }
+/* Anchor the knob to the track's right edge so it keeps the same 3px inset
+   whatever width the track ends up rendered at. */
 .drawer-row input[role="switch"]:checked::after {
-  transform: translateX(12px);
+  left: calc(100% - 15px);
 }
 .drawer-row input[role="switch"]:disabled {
   opacity: 0.55;

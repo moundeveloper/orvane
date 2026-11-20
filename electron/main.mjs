@@ -304,8 +304,13 @@ function secure() {
     if (contents.session === sites) trackPasswords(contents);
     if (contents.getType() === "webview" && isDevtoolsGuest(contents)) return;
     if (contents.getType() === "webview") {
+      contents.on("before-input-event", (event, input) => {
+        if (contents.hostWebContents === mainWindow?.webContents) fullScreenKey(event, input);
+      });
       contents.on("before-mouse-event", (_event, input) => {
-        if (input.type === "mouseDown")
+        // The AI's clicks (orvane:page-agent) are not the user clicking in
+        // the page: they must not close the user's menus and panels.
+        if (input.type === "mouseDown" && !agentInput.has(contents.id))
           contents.hostWebContents?.send("orvane:guest-input", { from: contents.id, kind: "pointer-down" });
       });
       sessions.observe(contents);
@@ -595,6 +600,123 @@ ipcMain.handle("orvane:page-run", async (event, id, code) => {
   if (!guest || typeof code !== "string" || code.length > 100_000) throw Error("No such page.");
   return guest.mainFrame.executeJavaScript(code, false);
 });
+// A web image pasted or dropped on the canvas by address only: the local
+// server downloads it without any sign-in, so a picture behind a login
+// fails there. Fetch it again with the Browser's cookies (the user's
+// sign-ins in Orvane's Browser). Returns a data URL, or "" when refused.
+ipcMain.handle("orvane:browser-image", async (_event, url) => {
+  let parsed;
+  try {
+    parsed = new URL(String(url));
+  } catch {
+    return "";
+  }
+  if (!/^https?:$/.test(parsed.protocol)) return "";
+  try {
+    const response = await session.fromPartition(BROWSER_PARTITION).fetch(parsed.href, {
+      signal: AbortSignal.timeout(15_000),
+    });
+    const type = (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+    if (!response.ok || !type.startsWith("image/")) return "";
+    if (Number(response.headers.get("content-length")) > 30 * 1024 * 1024) return "";
+    const data = Buffer.from(await response.arrayBuffer());
+    if (!data.length || data.length > 30 * 1024 * 1024) return "";
+    return `data:${type};base64,${data.toString("base64")}`;
+  } catch {
+    return "";
+  }
+});
+// AI control of a Browser page: real (trusted) input like Playwright's, not
+// synthetic DOM events, plus a picture of what is on screen. Coordinates are
+// CSS pixels of the page's viewport.
+const AGENT_KEYS = new Set([
+  "Enter", "Tab", "Escape", "Backspace", "Delete", "Space", "Up", "Down", "Left", "Right",
+  "Home", "End", "PageUp", "PageDown", "Insert",
+  ...Array.from({ length: 12 }, (_, i) => `F${i + 1}`),
+]);
+function pageAgentMouse(guest, op) {
+  const zoom = guest.getZoomFactor() || 1;
+  const point = (n) => {
+    if (typeof n !== "number" || !Number.isFinite(n) || Math.abs(n) > 1e5) throw Error("Bad coordinate.");
+    return Math.round(n * zoom);
+  };
+  const x = point(op.x), y = point(op.y);
+  const button = op.button === "right" ? "right" : op.button === "middle" ? "middle" : "left";
+  guest.sendInputEvent({ type: "mouseMove", x, y });
+  if (op.action === "move") return true;
+  const clicks = op.action === "double" ? 2 : 1;
+  for (let clickCount = 1; clickCount <= clicks; clickCount++) {
+    guest.sendInputEvent({ type: "mouseDown", x, y, button, clickCount });
+    guest.sendInputEvent({ type: "mouseUp", x, y, button, clickCount });
+  }
+  return true;
+}
+/** Guests receiving AI input right now (see before-mouse-event). */
+const agentInput = new Set();
+ipcMain.handle("orvane:page-agent", async (event, id, op) => {
+  const guest = ownGuest(event, id);
+  if (!guest || !op || typeof op !== "object") throw Error("No such page.");
+  if (op.type === "mouse") {
+    agentInput.add(guest.id);
+    try {
+      return pageAgentMouse(guest, op);
+    } finally {
+      agentInput.delete(guest.id);
+    }
+  }
+  const zoom = guest.getZoomFactor() || 1;
+  const point = (n) => {
+    if (typeof n !== "number" || !Number.isFinite(n) || Math.abs(n) > 1e5) throw Error("Bad coordinate.");
+    return Math.round(n * zoom);
+  };
+  switch (op.type) {
+    case "wheel": {
+      guest.sendInputEvent({
+        type: "mouseWheel", x: point(op.x), y: point(op.y),
+        deltaX: -Number(op.dx || 0), deltaY: -Number(op.dy || 0), canScroll: true,
+      });
+      return true;
+    }
+    case "text": {
+      if (typeof op.text !== "string" || op.text.length > 20_000) throw Error("Bad text.");
+      await guest.insertText(op.text);
+      return true;
+    }
+    case "key": {
+      // "Enter", "a", "Control+a", "Shift+Tab"…
+      if (typeof op.key !== "string" || op.key.length > 40) throw Error("Bad key.");
+      const parts = op.key.split("+");
+      const name = parts.pop();
+      const modifiers = parts.map((m) => m.toLowerCase())
+        .map((m) => (m === "ctrl" || m === "control" ? "control" : m === "cmd" || m === "meta" ? "meta" : m));
+      if (!name || modifiers.some((m) => !["control", "shift", "alt", "meta"].includes(m)))
+        throw Error(`Unknown key ${op.key}.`);
+      const keyCode = name === "Space" ? "Space" : AGENT_KEYS.has(name) ? name : name.length === 1 ? name : "";
+      if (!keyCode) throw Error(`Unknown key ${op.key}.`);
+      guest.sendInputEvent({ type: "keyDown", keyCode, modifiers });
+      if (name.length === 1 || name === "Space" || name === "Enter")
+        if (!modifiers.some((m) => m !== "shift"))
+          guest.sendInputEvent({ type: "char", keyCode: name === "Space" ? " " : name === "Enter" ? "\r" : name, modifiers });
+      guest.sendInputEvent({ type: "keyUp", keyCode, modifiers });
+      return true;
+    }
+    case "screenshot": {
+      const image = await guest.capturePage();
+      if (!image || image.isEmpty()) return "";
+      const { width } = image.getSize();
+      const scaled = width > 1280 ? image.resize({ width: 1280 }) : image;
+      return scaled.toJPEG(70).toString("base64");
+    }
+    case "navigate": {
+      if (op.action === "back") guest.navigationHistory.goBack();
+      else if (op.action === "forward") guest.navigationHistory.goForward();
+      else if (op.action === "reload") guest.reload();
+      return true;
+    }
+    default:
+      throw Error("Unknown page action.");
+  }
+});
 ipcMain.handle("orvane:page-density", (event, id, density) => {
   const guest = ownGuest(event, id);
   if (!guest || typeof density !== "number" || !Number.isFinite(density))
@@ -609,24 +731,42 @@ ipcMain.handle("orvane:page-density", (event, id, density) => {
   });
 });
 
-// Which monitor Orvane opens on. The choice is kept by the display's id in
-// the profile folder; if that monitor is gone, the primary one is used and
-// the choice is kept for when it returns.
+// Which monitor Orvane opens on, and whether it opens full screen. Kept in
+// the profile folder (the monitor by its display id). If that monitor is
+// not connected, Orvane opens on the monitor in use (the one under the
+// mouse) and keeps the choice for when it returns.
 const windowSettings = () => join(app.getPath("userData"), "window.json");
-function chosenDisplayId() {
+function readWindowSettings() {
   try {
-    const id = JSON.parse(readFileSync(windowSettings(), "utf8")).displayId;
-    return typeof id === "number" ? id : undefined;
+    const value = JSON.parse(readFileSync(windowSettings(), "utf8"));
+    return value && typeof value === "object" ? value : {};
   } catch {
-    return undefined;
+    return {};
   }
+}
+function saveWindowSettings(patch) {
+  try {
+    writeFileSync(windowSettings(), JSON.stringify({ ...readWindowSettings(), ...patch }));
+  } catch {
+    // The window still changes; the choice just is not remembered.
+  }
+}
+function chosenDisplayId() {
+  const id = readWindowSettings().displayId;
+  return typeof id === "number" ? id : undefined;
 }
 function chosenDisplay() {
   const id = chosenDisplayId();
   return (
     screen.getAllDisplays().find((display) => display.id === id) ||
-    screen.getPrimaryDisplay()
+    screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
   );
+}
+const openFullScreen = () => readWindowSettings().fullScreen === true;
+function setFullScreen(window, on) {
+  window.setFullScreen(on);
+  saveWindowSettings({ fullScreen: on });
+  window.webContents.send("orvane:window-fullscreen", on);
 }
 function normalWindowBounds(display, size = { width: 1440, height: 900 }) {
   const area = display.workArea;
@@ -640,12 +780,14 @@ function normalWindowBounds(display, size = { width: 1440, height: 900 }) {
   };
 }
 function placeOn(window, display) {
-  const maximized = window.isMaximized() || window.isFullScreen();
+  const fullScreen = window.isFullScreen();
+  const maximized = window.isMaximized() || fullScreen;
   const bounds = normalWindowBounds(display, window.getNormalBounds());
-  if (window.isFullScreen()) window.setFullScreen(false);
+  if (fullScreen) window.setFullScreen(false);
   if (window.isMaximized()) window.unmaximize();
   window.setBounds(bounds);
-  if (maximized) window.maximize();
+  if (fullScreen) window.setFullScreen(true);
+  else if (maximized) window.maximize();
 }
 function workspaceWindow(event) {
   if (mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents &&
@@ -668,12 +810,15 @@ ipcMain.handle("orvane:display-set", (event, id) => {
   if (!window) return false;
   const display = screen.getAllDisplays().find((item) => item.id === id);
   if (!display) return false;
-  try {
-    writeFileSync(windowSettings(), JSON.stringify({ displayId: display.id }));
-  } catch {
-    // The window still moves; the choice just is not remembered.
-  }
+  saveWindowSettings({ displayId: display.id });
   placeOn(window, display);
+  return true;
+});
+ipcMain.handle("orvane:window-fullscreen", (event) => workspaceWindow(event)?.isFullScreen() ?? false);
+ipcMain.handle("orvane:window-fullscreen-set", (event, on) => {
+  const window = workspaceWindow(event);
+  if (!window || typeof on !== "boolean") return false;
+  setFullScreen(window, on);
   return true;
 });
 
@@ -854,6 +999,15 @@ ipcMain.handle("orvane:page-devtools-close", (event, id) => {
   if (guest?.isDevToolsOpened()) guest.closeDevTools();
 });
 
+/** F11 toggles full screen (kept for next launch), also inside Browser pages. */
+function fullScreenKey(event, input) {
+  if (input.type !== "keyDown" || input.key !== "F11" || input.isAutoRepeat) return;
+  if (input.control || input.alt || input.meta || input.shift) return;
+  const window = mainWindow;
+  if (!window || window.isDestroyed()) return;
+  event.preventDefault();
+  setFullScreen(window, !window.isFullScreen());
+}
 /** A <webview> guest of the window that sent this IPC message, or nothing. */
 function ownGuest(event, id) {
   const guest = typeof id === "number" ? webContents.fromId(id) : undefined;
@@ -992,7 +1146,8 @@ function showWindow() {
   if (window.isMinimized()) window.restore();
   if (firstShow) {
     firstShow = false;
-    window.maximize();
+    if (openFullScreen()) window.setFullScreen(true);
+    else window.maximize();
   }
   window.show();
   window.focus();
@@ -1056,6 +1211,7 @@ function createWindow() {
     },
   });
   mainWindow = window;
+  window.webContents.on("before-input-event", (event, input) => fullScreenKey(event, input));
   const sendMaximized = () => window.webContents.send("orvane:window-maximized", window.isMaximized());
   window.on("maximize", sendMaximized);
   window.on("unmaximize", sendMaximized);

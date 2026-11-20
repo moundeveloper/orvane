@@ -67,6 +67,34 @@ const generation = z
     "Validity cannot exceed ten years.",
   );
 
+export async function protectPrivateFolder(folder: string) {
+  if (!(await lstat(folder)).isDirectory())
+    throw Error("Private storage must be a directory and cannot be a symbolic link.");
+  if (process.platform === "win32") {
+    const { stdout } = await execute(
+      "whoami.exe",
+      ["/user", "/fo", "csv", "/nh"],
+      { windowsHide: true, timeout: 10000 },
+    );
+    const sid = stdout.match(/S-1-\d+(?:-\d+)+/)?.[0];
+    if (!sid)
+      throw Error(
+        "Could not determine your Windows identity to protect the private key folder.",
+      );
+    await execute(
+      "icacls.exe",
+      [
+        folder,
+        "/inheritance:r",
+        "/grant:r",
+        `*${sid}:(OI)(CI)F`,
+        "*S-1-5-18:(OI)(CI)F",
+      ],
+      { windowsHide: true, timeout: 10000 },
+    );
+  } else await chmod(folder, 0o700);
+}
+
 export class CertificateService {
   private db: LocalDatabase;
   private root: string;
@@ -115,32 +143,20 @@ export class CertificateService {
       })),
     };
   }
-  private async protect(folder: string) {
-    if ((await lstat(folder)).isSymbolicLink())
-      throw Error("The certificate storage folder cannot be a symbolic link.");
-    if (process.platform === "win32") {
-      const { stdout } = await execute(
-        "whoami.exe",
-        ["/user", "/fo", "csv", "/nh"],
-        { windowsHide: true, timeout: 10000 },
-      );
-      const sid = stdout.match(/S-1-\d+(?:-\d+)+/)?.[0];
-      if (!sid)
-        throw Error(
-          "Could not determine your Windows identity to protect the private key folder.",
-        );
-      await execute(
-        "icacls.exe",
-        [
-          folder,
-          "/inheritance:r",
-          "/grant:r",
-          `*${sid}:(OI)(CI)F`,
-          "*S-1-5-18:(OI)(CI)F",
-        ],
-        { windowsHide: true, timeout: 10000 },
-      );
-    } else await chmod(folder, 0o700);
+  async suiteCloudKeyPath(pairId: string, accountId: string) {
+    const { certificates, environments } = this.list();
+    const pair = certificates.find((record) => record.id === pairId && !record.archived);
+    const normalize = (value: string) => value.toUpperCase().replaceAll("-", "_");
+    if (!pair || !environments.some((env) => env.id === pair.environmentId && normalize(env.accountId) === normalize(accountId)))
+      throw Error("Choose an active certificate pair for this NetSuite account.");
+    const now = Date.now();
+    if (Date.parse(pair.notBefore) > now || Date.parse(pair.notAfter) <= now)
+      throw Error("Choose a certificate pair that is currently valid.");
+    const folder = await lstat(path.dirname(pair.keyPath)).catch(() => null);
+    const key = await lstat(pair.keyPath).catch(() => null);
+    if (!folder?.isDirectory() || !key?.isFile())
+      throw Error("The private key file for this certificate pair is missing or inaccessible.");
+    return pair.keyPath;
   }
   async invoke(operation: string, args: unknown): Promise<unknown> {
     if (operation === "list") return this.list();
@@ -260,7 +276,7 @@ export class CertificateService {
     try {
       const result = await generateCertificate(settings);
       await mkdir(this.root, { recursive: true, mode: 0o700 });
-      await this.protect(this.root);
+      await protectPrivateFolder(this.root);
       await mkdir(folder, { mode: 0o700 });
       created = true;
       await writeFile(path.join(folder, settings.keyFilename), result.keyPem, {

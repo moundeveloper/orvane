@@ -4,6 +4,8 @@ import { startNetSuiteRpc } from "./netsuite-rpc.mjs";
 import { createNetSuiteReadService } from "./netsuite-read-service.mjs";
 import { openRequestJournal } from "./netsuite-request-journal.mjs";
 import { createNetSuiteArtifactService } from "./netsuite-artifact-service.mjs";
+import { createTaskRuns } from "./netsuite-task-runs.mjs";
+import { join } from "node:path";
 import { ARTIFACT_CAPABILITY } from "../server/netsuite-artifact-protocol.ts";
 import {
   BROKER_PROTOCOL,
@@ -23,11 +25,19 @@ let rpc,
   desktopPid;
 const pending = new Map();
 const hostMap = new Map();
+/** Mirrors Desktop's current windows into hostMap. */
+async function syncHosts() {
+  const hosts = await execute({ kind: "hosts" });
+  const active = new Set(hosts.map((host) => host.id));
+  for (const id of hostMap.keys()) if (!active.has(id)) hostMap.delete(id);
+  for (const id of active)
+    if (!hostMap.has(id)) hostMap.set(id, { id, isDestroyed: () => !hostMap.has(id) });
+}
 const activeRequests = new Set();
 const send = (message) => {
   if (process.connected) process.send(message, () => {});
 };
-function execute(command) {
+function execute(command, timeoutMs = 65000) {
   if (stopping || !process.connected)
     return Promise.reject(
       brokerError("BROKER_STOPPED", "Desktop executor disconnected."),
@@ -46,10 +56,12 @@ function execute(command) {
       reject(
         brokerError(
           "EXECUTOR_TIMEOUT",
-          "Desktop executor did not finish the read. No mutation was submitted; reads are not automatically replayed.",
+          command.kind === "write"
+            ? "Desktop executor did not finish the write. It may have completed; check NetSuite before retrying."
+            : "Desktop executor did not finish the read. No mutation was submitted; reads are not automatically replayed.",
         ),
       );
-    }, 65000);
+    }, timeoutMs);
     pending.set(id, { resolve, reject, timer });
     send({ type: "execute", version: BROKER_PROTOCOL, id, command });
   });
@@ -137,11 +149,32 @@ process.on("message", async (message) => {
           args,
           expectedSessionEpoch,
         }),
+      write: (host, origin, operation, args, expectedSessionEpoch) =>
+        execute(
+          {
+            kind: "write",
+            hostId: host.id,
+            origin,
+            operation,
+            args,
+            expectedSessionEpoch,
+          },
+          (args?.timeoutMs ?? 30000) + 35000,
+        ),
     };
+    const hosts = () => [...hostMap.values()];
+    // Started runs survive restarts; their deployments get their status back when they end.
+    const taskRuns = createTaskRuns({
+      file: join(message.directory, "task-runs.json"),
+      hosts,
+      syncHosts,
+      service,
+    });
     const dispatch = createNetSuiteReadService({
-      hosts: () => [...hostMap.values()],
+      hosts,
       service,
       instanceId: message.instanceId,
+      taskRuns,
     });
     artifacts = createNetSuiteArtifactService({
       directory: message.directory,
@@ -173,13 +206,7 @@ process.on("message", async (message) => {
             execution,
           };
         const tracked = journal.run(request, async () => {
-          const hosts = await execute({ kind: "hosts" });
-          const active = new Set(hosts.map((host) => host.id));
-          for (const id of hostMap.keys())
-            if (!active.has(id)) hostMap.delete(id);
-          for (const id of active)
-            if (!hostMap.has(id))
-              hostMap.set(id, { id, isDestroyed: () => !hostMap.has(id) });
+          await syncHosts();
           const result = await (request?.operation === "artifact"
             ? artifacts.dispatch(request)
             : dispatch(request));
