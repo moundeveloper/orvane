@@ -177,3 +177,57 @@ test("wheel consumes the held shortcut after cancellation and releases normal fo
   await expect(options).not.toBeFocused();
   await expect(page.getByLabel("Action wheel")).toHaveCount(0);
 });
+
+test("arrow keys drive the open wheel: Left/Right select, Up enters a group, Down goes back, release runs", async ({
+  page,
+}) => {
+  const { emptyWorkspace, makeBlock } = await import("../src/model");
+  const workspace = emptyWorkspace();
+  for (const [index, name] of ["Alpha", "Beta", "Gamma"].entries())
+    workspace.apps.push({
+      id: `app-${name.toLowerCase()}`, name, icon: "text",
+      x: 120 + index * 460, y: 180, width: 420, height: 300,
+      blocks: [makeBlock("input")], archived: false, group: "", exposed: false,
+      accent: "#6f8998", padding: 12, gap: 12, radius: 8,
+    });
+  workspace.wheel = [
+    { id: "w-alpha", parent: "", name: "Go Alpha", kind: "app", appId: "app-alpha", bindings: {} },
+    { id: "w-more", parent: "", name: "More", kind: "group", appId: "", bindings: {} },
+    { id: "w-beta", parent: "w-more", name: "Go Beta", kind: "app", appId: "app-beta", bindings: {} },
+    { id: "w-gamma", parent: "w-more", name: "Go Gamma", kind: "app", appId: "app-gamma", bindings: {} },
+  ];
+  await page.addInitScript((data) => {
+    localStorage.setItem("orvane.examples.v1", "installed");
+    localStorage.setItem("orvane.workspace.v1", JSON.stringify(data));
+  }, workspace);
+  await page.goto("/");
+  await expect(page.locator("main")).toHaveAttribute("data-ready", "true");
+  await page.mouse.move(720, 450);
+  await page.locator(".canvas-background").click({ position: { x: 20, y: 300 } });
+  const selected = page.locator(".radial-entry.selected");
+  await page.keyboard.down("Alt");
+  await page.keyboard.down("q");
+  await expect(page.getByLabel("Action wheel")).toBeVisible();
+  // Left/Right step through the slots, wrapping.
+  await page.keyboard.press("ArrowRight");
+  await expect(selected).toHaveAttribute("aria-label", "Go Alpha");
+  await page.keyboard.press("ArrowRight");
+  await expect(selected).toHaveAttribute("aria-label", "More");
+  await page.keyboard.press("ArrowRight");
+  await expect(selected).toHaveAttribute("aria-label", "Go Alpha");
+  await page.keyboard.press("ArrowLeft");
+  await expect(selected).toHaveAttribute("aria-label", "More");
+  // Up enters the selected group; Down goes back with the group selected.
+  await page.keyboard.press("ArrowUp");
+  await expect(selected).toHaveAttribute("aria-label", "Go Beta");
+  await page.keyboard.press("ArrowDown");
+  await expect(selected).toHaveAttribute("aria-label", "More");
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowRight");
+  await expect(selected).toHaveAttribute("aria-label", "Go Gamma");
+  // Releasing the shortcut runs the slot chosen with the keys.
+  await page.keyboard.up("q");
+  await page.keyboard.up("Alt");
+  await expect(page.locator(".radial-overlay")).toHaveCount(0);
+  await expect(page.locator(".dock-tab.active")).toHaveText("Gamma");
+});

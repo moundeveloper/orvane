@@ -2397,10 +2397,13 @@ function wheel(e: WheelEvent) {
 const wheelOpen = ref(false),
   wheelEditing = ref(false),
   wheelParent = ref("");
+// Slot chosen with the arrow keys; null while the pointer chooses.
+const wheelKeyIndex = ref<number | null>(null);
 const wheelCenter = ref<HTMLButtonElement>(),
   wheelEditor = ref<HTMLElement>();
 const wheelCenterSelected = computed(
   () =>
+    wheelKeyIndex.value === null &&
     Math.hypot(
       pointerPosition.x - viewport.width / 2,
       pointerPosition.y - viewport.height / 2,
@@ -2477,6 +2480,37 @@ function captureWheelKey(e: KeyboardEvent) {
     e.preventDefault();
     e.stopImmediatePropagation();
   }
+  // Arrow keys belong to the open wheel (before Browser's Alt+Left/Right
+  // history keys or an editor's Alt+arrows see them).
+  if (wheelOpen.value && /^Arrow(Left|Right|Up|Down)$/.test(e.key)) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    wheelArrow(e.key);
+  }
+}
+// Left/Right step through the slots, Up enters the selected group, Down
+// returns one level with the group just left selected. Releasing the
+// shortcut runs the selected slot, as with the pointer.
+function wheelArrow(key: string) {
+  const entries = wheelEntries.value;
+  const selected = wheelSelected.value;
+  const current = selected ? entries.findIndex((e) => e.id === selected.id) : -1;
+  if (key === "ArrowLeft" || key === "ArrowRight") {
+    if (!entries.length) return;
+    const step = key === "ArrowRight" ? 1 : -1;
+    wheelKeyIndex.value =
+      current < 0
+        ? step > 0 ? 0 : entries.length - 1
+        : (current + step + entries.length) % entries.length;
+  } else if (key === "ArrowUp") {
+    if (selected?.kind !== "group") return;
+    wheelParent.value = selected.id;
+    wheelKeyIndex.value = wheelEntries.value.length ? 0 : null;
+  } else if (wheelParent.value) {
+    const from = wheelParent.value;
+    wheelBack();
+    wheelKeyIndex.value = Math.max(0, wheelEntries.value.findIndex((e) => e.id === from));
+  }
 }
 const pointerPosition = reactive({
   x: window.innerWidth / 2,
@@ -2507,6 +2541,8 @@ function wheelArc(index: number) {
   return `M ${a[0]} ${a[1]} A 49.5 49.5 0 0 1 ${b[0]} ${b[1]}`;
 }
 const wheelSelected = computed(() => {
+  if (wheelKeyIndex.value !== null)
+    return wheelEntries.value[wheelKeyIndex.value];
   const dx = pointerPosition.x - viewport.width / 2,
     dy = pointerPosition.y - viewport.height / 2;
   const diameter = Math.min(360, viewport.width * 0.86, viewport.height * 0.78);
@@ -2520,6 +2556,12 @@ const wheelSelected = computed(() => {
   ];
 });
 function trackWheelPointer(e: PointerEvent) {
+  // Moving the pointer hands the selection back from the arrow keys.
+  if (
+    wheelKeyIndex.value !== null &&
+    Math.hypot(e.clientX - pointerPosition.x, e.clientY - pointerPosition.y) > 3
+  )
+    wheelKeyIndex.value = null;
   pointerPosition.x = e.clientX;
   pointerPosition.y = e.clientY;
 }
@@ -2617,6 +2659,7 @@ function keydown(e: KeyboardEvent) {
     e.preventDefault();
     wheelKeyHeld = true;
     wheelParent.value = "";
+    wheelKeyIndex.value = null;
     wheelOpen.value = true;
     return;
   }
