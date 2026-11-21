@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Step details</title>
+<style>
+:root{--canvas:#e9edf0;--app:#f7f9fa;--strong:#273f50;--text:#455968;--muted:#5d7381;--accent:#6f8998;--run:#365f78;--fail:#8c4637;--ok:#4f7d5f;--line:#e3eaee;--mono:"Cascadia Code",Consolas,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font:13px/1.45 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;color:var(--text);background:var(--canvas);display:grid;place-items:center;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+*{scrollbar-width:thin;scrollbar-color:#c5d3db transparent}
+.card{width:720px;max-height:92vh;overflow:auto;padding:18px;background:var(--app);border-radius:10px;box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c}
+.act{border:1px solid #dbe5ea;border-radius:9px;background:#f2f6f8;font-size:12px;overflow:hidden}
+.head{display:flex;align-items:center;gap:8px;padding:7px 10px}
+.head strong{font-weight:600;color:var(--strong)}.count{color:var(--muted)}
+.prog{position:relative;height:2px;background:#dfe8ed}.prog i{position:absolute;inset:0 auto 0 0;width:83%;background:var(--accent)}
+ol{margin:0;padding:2px 6px 6px;list-style:none}
+.row{display:grid;grid-template-columns:12px 46px minmax(0,1fr) auto auto;gap:8px;align-items:center;width:100%;padding:6px 4px;border:0;border-radius:6px;background:transparent;text-align:left}
+.row:hover{background:#e9f0f3}
+li+li{border-top:1px solid var(--line)}
+.chev{width:12px;height:12px;color:#8aa0ad;transition:transform .14s ease-out}
+li.open .chev{transform:rotate(90deg)}
+.kind{font-size:10.5px;font-weight:600;color:#7a8f9b;text-transform:uppercase;letter-spacing:.04em}
+.lbl{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:11.5px;color:var(--strong)}
+.dur{font-size:11px;color:#8296a2;font-variant-numeric:tabular-nums}
+.st{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);white-space:nowrap;min-width:16px;justify-content:flex-end}
+.st.failed{color:var(--fail)}.st.running{color:var(--run)}
+.tick{color:var(--ok)}
+svg{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tick path{stroke-dasharray:20;stroke-dashoffset:20;animation:draw .26s ease-out .1s forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+.spin{width:12px;height:12px;border-radius:50%;border:1.5px solid #bfd0da;border-top-color:var(--run);animation:rot .9s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* detail */
+.detail{display:none;margin:2px 4px 8px 24px;padding:10px 12px;border:1px solid #dde6eb;border-radius:8px;background:#fbfcfd;animation:fade .16s ease-out}
+li.open .detail{display:grid;gap:10px}
+@keyframes fade{from{opacity:0}}
+.did{color:var(--strong);font-size:12.5px}
+.sec{display:grid;gap:4px}
+.sec h4{margin:0;font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#7a8f9b;display:flex;align-items:center;gap:8px}
+.sec h4 span{flex:1}
+.sec h4 button{border:0;background:transparent;font-size:11px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--accent);padding:0}
+dl{margin:0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:3px 12px;font-size:12px}
+dt{color:var(--muted)}dd{margin:0;font-family:var(--mono);font-size:11.5px;color:var(--strong);overflow-wrap:anywhere}
+pre{margin:0;max-height:140px;overflow:auto;padding:8px 10px;border-radius:6px;background:#eef3f6;font:11.5px/1.55 var(--mono);color:#30495a;white-space:pre-wrap;overflow-wrap:anywhere}
+pre.err{background:#f7ece8;color:#6f3528}
+.add{color:#3f6b4f;background:#e3efe6;display:block}.del{color:#7b3b2d;background:#f6e6e1;display:block}
+.none{color:#8296a2;font-style:italic}
+
+/* B: side inspector */
+.v-side .card{width:900px}
+.v-side .split{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:12px;align-items:start}
+.v-side .row{grid-template-columns:46px minmax(0,1fr) auto auto}
+.v-side .chev{display:none}
+.v-side li.open > .row{background:#dde8ee}
+.v-side li .detail{display:none!important}
+.v-side .inspector{display:grid;gap:10px;padding:12px;border:1px solid #dbe5ea;border-radius:9px;background:#fbfcfd;font-size:12px;position:sticky;top:0}
+.v-side .inspector header{display:grid;gap:2px}
+.v-side .inspector header strong{font-family:var(--mono);font-size:12px;color:var(--strong);overflow-wrap:anywhere}
+.v-side .inspector header span{font-size:11px;color:var(--muted)}
+.inspector{display:none}
+
+/* C: tabs */
+.tabs{display:none}
+.v-tabs .tabs{display:flex;gap:2px;padding:2px;border-radius:7px;background:#e8eff3;justify-self:start}
+.v-tabs .tabs button{height:24px;padding:0 10px;border:0;border-radius:5px;background:transparent;font-size:11.5px;color:var(--muted)}
+.v-tabs .tabs button[aria-selected=true]{background:#fbfcfd;color:var(--strong);box-shadow:0 1px 2px #263f5512}
+.v-tabs .detail .sec{display:none}
+.v-tabs .detail .sec.on{display:grid}
+.v-tabs .detail .sec h4{display:none}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.tick path{stroke-dashoffset:0}}
+</style></head>
+<body class="v-inline">
+<div class="card">
+  <div class="split">
+    <div class="act">
+      <div class="head"><strong>Run activity</strong><span class="count">5 of 6</span></div>
+      <div class="prog"><i></i></div>
+      <ol id="list"></ol>
+    </div>
+    <aside class="inspector" id="insp" aria-label="Step details"></aside>
+  </div>
+</div>
+<script>
+const steps = [
+  { kind:'MCP', label:'orvane / workspace_status', st:'completed', dur:'0.4s', did:'Read the workspace: 1 editing session, 12 apps.',
+    input:{}, output:'{\n  "sessions": 1,\n  "revision": "sqlite:3564",\n  "apps": 12,\n  "focused": "Agent sessions"\n}' },
+  { kind:'Search', label:'Grep "agent-composer" src', st:'completed', dur:'0.2s', did:'Found 4 matches in 3 files.',
+    input:{ pattern:'agent-composer', path:'src', output_mode:'files_with_matches' }, output:'src/style.css\nsrc/components/AgentSessions.vue\nsrc/components/AgentLauncher.vue' },
+  { kind:'Tool', label:'Edit src/components/AgentSessions.vue', st:'completed', dur:'0.1s', did:'Changed one line in the composer styles.',
+    input:{ file_path:'src/components/AgentSessions.vue', old_string:'.cs-send {', new_string:'.cs-send {\\n  flex: none;' }, diff:true },
+  { kind:'MCP', label:'orvane / git_diff', st:'failed', dur:'0.3s', did:'Could not read the diff.',
+    input:{ folder:'C:\\\\Users\\\\Moon\\\\Documents\\\\CodingProjects\\\\DesktopApps\\\\orvane' }, error:'Repository is not registered. Register it with git_workspace_add first.' },
+  { kind:'Shell', label:'pnpm type-check', st:'running', dur:'4s', did:'Running…', input:{ command:'pnpm type-check', timeout:'120000' }, output:null },
+];
+const v = document.body.className;
+const check = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const cross = '<svg viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M7 7l10 10M17 7L7 17"/></svg>';
+const chev = '<svg class="chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>';
+const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[c]);
+const status = s => s.st === 'completed' ? `<span class="st"><span class="tick">${check}</span><span class="sr">Done</span></span>`
+  : s.st === 'running' ? `<span class="st running"><i class="spin"></i>In progress</span>` : `<span class="st failed">${cross}Failed</span>`;
+function inputHtml(s) {
+  const e = Object.entries(s.input);
+  return e.length ? `<dl>${e.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>` : '<span class="none">No input</span>';
+}
+function outputHtml(s) {
+  if (s.error) return `<pre class="err">${esc(s.error)}</pre>`;
+  if (s.diff) return `<pre><span class="del">-.cs-send {</span><span class="add">+.cs-send {</span><span class="add">+  flex: none;</span>   width: 30px;</pre>`;
+  if (s.output === null) return '<span class="none">Waiting for output…</span>';
+  return `<pre>${esc(s.output)}</pre>`;
+}
+function detail(s, i) {
+  return `<div class="tabs" role="tablist"><button role="tab" aria-selected="true" data-t="in" data-i="${i}">Input</button><button role="tab" aria-selected="false" data-t="out" data-i="${i}">Output</button></div>
+  <div class="did">${esc(s.did)}</div>
+  <div class="sec in on"><h4><span>Input</span><button>Copy</button></h4>${inputHtml(s)}</div>
+  <div class="sec out"><h4><span>Output</span><button>Copy</button></h4>${outputHtml(s)}</div>`;
+}
+const list = document.getElementById('list');
+list.innerHTML = steps.map((s, i) => `<li class="${i === 2 || (v === 'v-tabs' && i === 1) ? 'open' : ''}" data-i="${i}"><button class="row" aria-expanded="${i === 2}">${chev}<span class="kind">${s.kind}</span><span class="lbl">${esc(s.label)}</span><span class="dur">${s.dur}</span>${status(s)}</button><div class="detail">${detail(s, i)}</div></li>`).join('');
+const insp = document.getElementById('insp');
+function inspect(i) {
+  const s = steps[i];
+  insp.innerHTML = `<header><strong>${esc(s.label)}</strong><span>${s.kind} · ${s.dur} · ${s.st === 'completed' ? 'Done' : s.st === 'running' ? 'In progress' : 'Failed'}</span></header>` + detail(s, i);
+  insp.querySelectorAll('.sec').forEach(x => x.classList.add('on'));
+}
+if (v === 'v-side') { list.querySelectorAll('li').forEach(li => li.classList.toggle('open', li.dataset.i === '3')); inspect(3); }
+list.addEventListener('click', e => {
+  const row = e.target.closest('.row'); if (!row) return;
+  const li = row.parentElement;
+  if (v === 'v-side') { list.querySelectorAll('li').forEach(x => x.classList.toggle('open', x === li)); inspect(+li.dataset.i); return; }
+  li.classList.toggle('open'); row.setAttribute('aria-expanded', li.classList.contains('open'));
+});
+document.addEventListener('click', e => {
+  const t = e.target.closest('[role=tab]'); if (!t) return;
+  const box = t.closest('.detail, .inspector');
+  box.querySelectorAll('[role=tab]').forEach(b => b.setAttribute('aria-selected', b === t));
+  box.querySelectorAll('.sec').forEach(x => x.classList.toggle('on', x.classList.contains(t.dataset.t)));
+});
+if (v === 'v-tabs') { const li = list.children[1]; li.querySelector('[data-t=out]').click(); }
+</script>
+</body></html>

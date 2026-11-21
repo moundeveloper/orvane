@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Step done mark</title>
+<style>
+:root{--canvas:#e9edf0;--app:#f7f9fa;--strong:#273f50;--muted:#5d7381;--accent:#6f8998;--run:#365f78;--fail:#8c4637;--mono:"Cascadia Code",Consolas,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font:13px/1.45 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;color:#455968;background:var(--canvas);display:grid;place-items:center;-webkit-font-smoothing:antialiased}
+.card{width:560px;padding:20px;background:var(--app);border-radius:10px;box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c}
+.act{border:1px solid #dbe5ea;border-radius:9px;background:#f2f6f8;font-size:12px;overflow:hidden}
+.act summary{display:flex;align-items:center;gap:8px;padding:7px 10px;list-style:none}
+.act summary strong{font-weight:600;color:var(--strong)}
+.count{color:var(--muted)}
+.prog{position:relative;height:2px;background:#dfe8ed}.prog i{position:absolute;inset:0 auto 0 0;width:60%;background:var(--accent)}
+ol{margin:0;padding:4px 10px 8px;list-style:none;display:grid}
+li{display:grid;grid-template-columns:46px minmax(0,1fr) auto;gap:2px 8px;align-items:center;padding:5px 0;border-top:1px solid #e3eaee}
+li:first-child{border-top:0}
+.kind{font-size:10.5px;font-weight:600;color:#7a8f9b;text-transform:uppercase;letter-spacing:.04em}
+.lbl{color:var(--strong);font-weight:520;min-width:0;overflow-wrap:anywhere}
+.lbl.mono{font-family:var(--mono);font-size:11.5px;font-weight:450}
+li p{grid-column:2/-1;margin:0;color:var(--muted)}
+.st{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);white-space:nowrap}
+.st.running{color:var(--run)}.st.failed{color:var(--fail)}
+.spin{width:12px;height:12px;border-radius:50%;border:1.5px solid #bfd0da;border-top-color:var(--run);animation:rot .9s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+svg{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* A: check in a soft circle */
+.v-circle .mark{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;background:#dfeae1;color:#3f6b4f}
+.v-circle .mark svg{width:10px;height:10px;stroke-width:2.4}
+.v-circle .st.failed .mark{background:#f4e7e3;color:var(--fail)}
+
+/* B: checkbox at the start of the row */
+.v-box li{grid-template-columns:16px 46px minmax(0,1fr) auto}
+.v-box li p{grid-column:3/-1}
+.v-box .box{display:inline-grid;place-items:center;width:14px;height:14px;border-radius:4px;border:1.5px solid #b9cad4;background:#fbfcfd}
+.v-box .box.done{background:var(--run);border-color:var(--run);color:#fff}
+.v-box .box.done svg{width:10px;height:10px;stroke-width:2.6}
+.v-box .box.failed{border-color:#d9b8ae;color:var(--fail)}
+.v-box .box.failed svg{width:9px;height:9px;stroke-width:2.4}
+.v-box .box .spin{width:8px;height:8px;border-width:1.3px}
+.v-box li.is-done .lbl{color:#4e6575}
+
+/* C: a plain tick that draws itself */
+.v-tick .tick{color:#4f7d5f}
+.v-tick .tick path{stroke-dasharray:20;stroke-dashoffset:20;animation:draw .26s ease-out .1s forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+.v-tick li.is-done .lbl{color:#4e6575}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}.v-tick .tick path{stroke-dashoffset:0}}
+</style></head>
+<body class="v-tick">
+<div class="card">
+  <details class="act" open>
+    <summary><strong>Run activity</strong><span class="count">5 of 6</span></summary>
+    <div class="prog"><i></i></div>
+    <ol id="list"></ol>
+  </details>
+</div>
+<script>
+const steps = [
+  ['MCP', 'orvane / workspace_status', 'completed', '1 editing session'],
+  ['Search', 'Grep "agent-composer" src', 'completed', '4 matches in 3 files'],
+  ['Tool', 'Read src/components/AgentSessions.vue', 'completed'],
+  ['MCP', 'orvane / git_diff', 'failed', 'Repository is not registered'],
+  ['Tool', 'Edit src/components/AgentSessions.vue', 'running'],
+];
+const v = document.body.className;
+const check = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const cross = '<svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg>';
+const text = { completed: 'Done', running: 'In progress', failed: 'Failed' };
+document.getElementById('list').innerHTML = steps.map(([kind, label, st, sum]) => {
+  let status = '', lead = '';
+  if (v === 'v-circle') {
+    status = st === 'completed' ? `<span class="st" title="Done"><span class="mark">${check}</span><span class="sr">Done</span></span>`
+      : st === 'running' ? `<span class="st running"><i class="spin"></i>In progress</span>`
+      : `<span class="st failed"><span class="mark">${cross}</span>Failed</span>`;
+  } else if (v === 'v-box') {
+    lead = st === 'completed' ? `<span class="box done" title="Done">${check}</span>`
+      : st === 'running' ? `<span class="box"><i class="spin"></i></span>`
+      : `<span class="box failed">${cross}</span>`;
+    status = st === 'completed' ? '<span class="sr">Done</span>' : `<span class="st ${st}">${text[st]}</span>`;
+  } else {
+    status = st === 'completed' ? `<span class="st" title="Done"><span class="tick">${check}</span><span class="sr">Done</span></span>`
+      : st === 'running' ? `<span class="st running"><i class="spin"></i>In progress</span>`
+      : `<span class="st failed">${cross}Failed</span>`;
+  }
+  const mono = kind !== 'Model' ? ' mono' : '';
+  return `<li class="${st === 'completed' ? 'is-done' : ''}">${lead}<span class="kind">${kind}</span><span class="lbl${mono}">${label}</span>${status}${sum ? `<p>${sum}</p>` : ''}</li>`;
+}).join('');
+</script>
+</body></html>

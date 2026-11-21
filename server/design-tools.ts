@@ -1,0 +1,144 @@
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { z } from "zod";
+
+// The owner's design method (server/design-guide/, written as a SKILL.md so it
+// can also be copied into a Claude or Codex skills folder). Every AI connected
+// to Orvane reads it through design_guide; UI Maker tools attach it once per
+// connection when it was not read yet, so design work always starts from it.
+
+const GUIDE = fileURLToPath(new URL("./design-guide/", import.meta.url));
+const TOPICS = {
+  method: "SKILL.md",
+  look: "reference/look.md",
+  motion: "reference/motion.md",
+  research: "reference/research.md",
+  taste: "reference/taste-log.md",
+} as const;
+type Topic = keyof typeof TOPICS;
+
+/** Approved designs in design-guide/examples: <name>.html and <name>.png. */
+export const DESIGN_EXAMPLES: Record<string, string> = {
+  "composer-glass": "AI prompt on frost glass over a working canvas: chips and send inside the field, model and folder pills",
+  "thinking-trail": "Run as a story: step trail with one muted detail line, file chips, shimmering current step (its orb was later replaced by the DNA loader)",
+  "step-details": "Picked: run activity steps that expand inline to input, output and duration, with the drawn tick",
+  "drawn-tick": "Picked: done mark that draws itself, instead of strikethrough",
+  "dna-loader": "Working indicator round; the DNA helix variant is the picked one (live version: .cs-dna in AgentSessions.vue)",
+  "slash-skills": "Slash menu in the composer: sections, mono names, faint descriptions, kbd footer, recent-skill chips",
+  "effort-modes": "Composer pills for effort and edit mode, effort slider popover with notches and a Recommended note",
+  "run-changes": "Files changed card: A/M/D badges, deltas, change bars, inline diff with an Ask about this change field",
+  "message-actions": "Hover toolbar on a message and a searchable action menu with shortcuts",
+  "session-timeline": "Session overview on a time rail with typed colored events and a segmented filter",
+  "node-library": "Workflow canvas with a searchable step library (Favourites, Triggers, Actions, Custom tools)",
+  "action-menu": "Dock right-click menu with search, sections and shortcut hints",
+  "create-menu": "Dock + menu: searchable app kinds with number keys, library and recently closed",
+  "day-rail": "Today's triggers on a vertical time rail with a now line and Run now on failures",
+  "run-plan": "Automation run history: one lane per workflow, runs as bars, failure details",
+  "folder-cards": "File Explorer card view: folders show their newest files as peeking sheets, Git/SDF badges",
+  "inbox-triage": "Inbox rows grouped by day, the selected one expanded with one key per action",
+  "radial-glow-blend": "Picked radial wheel: Halo glow on frosted glass, outer ring fades gradually into the centre",
+};
+
+let read = false;
+
+export async function readDesignGuide(args: { topic?: string; example?: string; show?: string[] }) {
+  type Content = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
+  const text = (value: string): Content => ({ type: "text", text: value });
+  const png = async (name: string): Promise<Content> => ({
+    type: "image",
+    data: (await readFile(join(GUIDE, "examples", `${name}.png`))).toString("base64"),
+    mimeType: "image/png",
+  });
+  const known = (name: string) => {
+    if (!DESIGN_EXAMPLES[name]) throw Error(`Unknown example. Available: ${Object.keys(DESIGN_EXAMPLES).join(", ")}`);
+  };
+  const content: Content[] = [];
+  if (args.topic) {
+    const file = TOPICS[args.topic as Topic];
+    if (!file) throw Error(`Unknown topic. Available: ${Object.keys(TOPICS).join(", ")}`);
+    content.push(text(await readFile(join(GUIDE, file), "utf8")));
+  }
+  if (args.example) {
+    known(args.example);
+    content.push(
+      text(`Example ${args.example}: ${DESIGN_EXAMPLES[args.example]}\n\n${await readFile(join(GUIDE, "examples", `${args.example}.html`), "utf8")}`),
+      await png(args.example),
+    );
+  }
+  for (const name of args.show ?? []) {
+    known(name);
+    content.push(text(`${name}: ${DESIGN_EXAMPLES[name]}`), await png(name));
+  }
+  if (!content.length) content.push(text(await overview()));
+  read = true;
+  return content;
+}
+
+async function overview() {
+  return [
+    await readFile(join(GUIDE, TOPICS.method), "utf8"),
+    "## design_guide calls",
+    `- topic: ${Object.keys(TOPICS).join(" | ")}`,
+    "- example: one name below → its HTML and render",
+    "- show: up to 8 names → renders only, for a quick look",
+    "",
+    "## Examples",
+    ...Object.entries(DESIGN_EXAMPLES).map(([name, about]) => `- ${name}: ${about}`),
+  ].join("\n");
+}
+
+/** The method, once per connection, for tools that start design work. */
+export async function designGuideOnce() {
+  if (read) return [];
+  read = true;
+  return [
+    {
+      type: "text" as const,
+      text: `Before designing, follow the owner's design method below (attached because design_guide was not read in this session). Read design_guide topic look and motion, and look at a few examples (show), before writing HTML.\n\n${await overview()}`,
+    },
+  ];
+}
+
+export function registerDesignTools(server: McpServer) {
+  server.registerTool(
+    "design_guide",
+    {
+      description:
+        "The Orvane owner's design method: how approved designs were made (board research, translation into Orvane's soft light look, reuse of established parts, Lab variants with real content), tokens and CSS recipes, motion rules, the owner's past picks and rejections, and approved example designs with renders. Read it before any UI, design, mockup, redesign, component or animation work, in Orvane or the owner's other apps. No arguments: the method and the lists. topic: method | look | motion | research | taste. example: one name (HTML + render). show: up to 8 example names (renders).",
+      inputSchema: {
+        topic: z.enum(Object.keys(TOPICS) as [Topic, ...Topic[]]).optional(),
+        example: z.string().max(60).optional(),
+        show: z.array(z.string().max(60)).max(8).optional(),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    },
+    async (args) => {
+      try {
+        return { content: await readDesignGuide(args) };
+      } catch (error) {
+        return { isError: true, content: [{ type: "text" as const, text: error instanceof Error ? error.message : String(error) }] };
+      }
+    },
+  );
+  server.registerPrompt(
+    "design",
+    {
+      title: "Design with Orvane's method",
+      description: "Design or redesign UI following the owner's design method (research, look, motion, Lab variants).",
+      argsSchema: { task: z.string().optional() },
+    },
+    async ({ task }) => ({
+      messages: [
+        {
+          role: "user" as const,
+          content: {
+            type: "text" as const,
+            text: `${task ? `Design task: ${task}\n\n` : ""}Follow the Orvane design method. Start by calling design_guide (no arguments), then topics look and motion, and look at the examples that are closest to this task. Work in UI Maker Lab unless I say otherwise.`,
+          },
+        },
+      ],
+    }),
+  );
+}

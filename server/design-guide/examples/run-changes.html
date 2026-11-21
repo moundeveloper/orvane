@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Files changed</title>
+<style>
+:root{--canvas:#e9edf0;--app:#f7f9fa;--strong:#273f50;--text:#455968;--muted:#5d7381;--faint:#8296a2;--accent:#6f8998;--run:#365f78;--ok:#4f7d5f;--add:#3f6b4f;--del:#7b3b2d;--line:#e3eaee;--mono:"Cascadia Code",Consolas,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font:13px/1.5 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;color:var(--text);background:var(--canvas);display:grid;place-items:center;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+.app{width:760px;padding:24px 30px;background:var(--app);border-radius:10px;box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c}
+.msg{margin:0 0 14px;color:var(--text);max-width:64ch}
+.msg a{color:#385d76;text-decoration:underline;text-decoration-color:#9fb6c3;text-underline-offset:3px}
+.card{border:1px solid #dbe5ea;border-radius:10px;background:#f2f6f8;overflow:hidden}
+.top{display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;font-size:12px}
+.top strong{color:var(--strong);font-weight:600}
+.top .n{color:var(--faint)}
+.top .sum{font:11.5px var(--mono)}
+.top .grow{flex:1}
+.btn{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 9px;border:1px solid #d3dee5;border-radius:7px;background:#fbfcfd;font-size:12px;color:var(--text)}
+.btn:hover{background:#eef3f6}
+.btn svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+.btn.ghost:hover{background:#e6eef3}
+ul{list-style:none;margin:0;padding:0 6px 6px}
+li{border-top:1px solid var(--line)}
+li:first-child{border-top:0}
+.row{display:grid;grid-template-columns:18px minmax(0,1fr) auto auto;align-items:center;gap:9px;width:100%;height:32px;padding:0 6px;border:0;border-radius:6px;background:transparent;text-align:left}
+.row:hover{background:#e9f0f3}
+.badge{display:grid;place-items:center;width:18px;height:18px;border-radius:5px;font:600 10px/1 var(--mono)}
+.badge.a{background:#e3efe6;color:var(--add)}.badge.m{background:#e6eef3;color:#385d76}.badge.d{background:#f6e6e1;color:var(--del)}
+.path{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:12px var(--mono);color:var(--strong)}
+.path span{color:var(--faint)}
+.delta{font:11px var(--mono);white-space:nowrap}
+.delta .p{color:var(--add)}.delta .m{color:var(--del)}
+.spark{display:flex;gap:1.5px}
+.spark i{width:5px;height:8px;border-radius:1.5px;background:#d3dee5}
+.spark i.p{background:#8fb59b}.spark i.m{background:#c99a8c}
+.open .row{background:#e4edf2}
+.diff{margin:4px 6px 8px 33px;border:1px solid #dde6eb;border-radius:8px;background:#fbfcfd;overflow:hidden}
+.diff pre{margin:0;padding:8px 0;font:11.5px/1.6 var(--mono);color:#30495a}
+.diff pre span{display:block;padding:0 12px}
+.diff .ad{background:#e3efe6;color:var(--add)}.diff .dl{background:#f6e6e1;color:var(--del)}
+.diff .ln{color:#a3b4be;display:inline-block;width:26px}
+.diff footer{display:flex;align-items:center;gap:6px;padding:6px 8px;border-top:1px solid var(--line);background:#f7f9fa}
+.diff footer input{flex:1;height:26px;padding:0 9px;border:1px solid #dbe5eb;border-radius:7px;background:#fbfcfd;font:inherit;font-size:12px;color:var(--strong);outline:0}
+.diff footer input::placeholder{color:var(--faint)}
+</style></head>
+<body>
+<div class="app">
+  <p class="msg">Done. Open folder now uses Orvane’s File Explorer, and file names in replies such as <a>ContextPicker.vue</a> open there too.</p>
+  <section class="card" aria-label="Files changed">
+    <div class="top"><strong>Files changed</strong><span class="n">4</span><span class="sum"><span style="color:var(--add)">+212</span> <span style="color:var(--del)">−18</span></span><span class="grow"></span>
+      <button class="btn ghost"><svg viewBox="0 0 24 24"><path d="M4 7h6l2 2h8v9H4z"/></svg>Open folder</button>
+      <button class="btn"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="9" r="2"/><path d="M6 8v8M18 11c0 4-6 3-11 6"/></svg>Open in Git</button></div>
+    <ul>
+      <li class="open"><button class="row"><span class="badge m">M</span><span class="path"><span>src/components/</span>AgentSessions.vue</span><span class="delta"><span class="p">+64</span> <span class="m">−12</span></span><span class="spark"><i class="p"></i><i class="p"></i><i class="p"></i><i class="m"></i><i></i></span></button>
+        <div class="diff"><pre><span><i class="ln">368</i>// The session folder opens in Orvane's File Explorer</span><span class="dl"><i class="ln">369</i>-  await fileRequest("open", { path });</span><span class="ad"><i class="ln">369</i>+  window.dispatchEvent(new CustomEvent("orvane:open-link", {</span><span class="ad"><i class="ln">370</i>+    detail: { link: { kind: "folder", target: path } },</span><span class="ad"><i class="ln">371</i>+  }));</span></pre>
+          <footer><input placeholder="Ask about this change…" aria-label="Ask about this change"><button class="btn">Show file</button></footer></div></li>
+      <li><button class="row"><span class="badge a">A</span><span class="path"><span>src/components/</span>ContextPicker.vue</span><span class="delta"><span class="p">+214</span></span><span class="spark"><i class="p"></i><i class="p"></i><i class="p"></i><i class="p"></i><i class="p"></i></span></button></li>
+      <li><button class="row"><span class="badge m">M</span><span class="path"><span>src/components/</span>ChatMarkdown.vue</span><span class="delta"><span class="p">+118</span> <span class="m">−3</span></span><span class="spark"><i class="p"></i><i class="p"></i><i class="p"></i><i class="p"></i><i></i></span></button></li>
+      <li><button class="row"><span class="badge d">D</span><span class="path"><span>notes/</span>old-attach-row.md</span><span class="delta"><span class="m">−3</span></span><span class="spark"><i class="m"></i><i></i><i></i><i></i><i></i></span></button></li>
+    </ul>
+  </section>
+</div>
+</body></html>

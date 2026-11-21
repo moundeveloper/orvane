@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Thinking trail</title>
+<style>
+:root{--canvas:#e9edf0;--app:#f7f9fa;--strong:#273f50;--text:#455968;--muted:#5d7381;--faint:#8296a2;--accent:#6f8998;--run:#365f78;--ok:#4f7d5f;--line:#e3eaee;--chip:#e6eef3;--mono:"Cascadia Code",Consolas,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font:13px/1.5 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;color:var(--text);background:var(--canvas);display:grid;place-items:center;-webkit-font-smoothing:antialiased}
+.app{width:760px;padding:26px 30px 18px;background:var(--app);border-radius:10px;box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c}
+.you{display:flex;justify-content:flex-end;margin-bottom:22px}
+.you p{margin:0;max-width:70%;padding:9px 13px;border-radius:12px;background:#e4ecf1;color:var(--strong)}
+.trail{position:relative;display:grid;gap:2px;margin:0 0 18px;padding-left:2px}
+.head{display:flex;align-items:center;gap:11px;margin-bottom:8px}
+.orb{position:relative;width:22px;height:22px;border-radius:50%;background:radial-gradient(circle at 34% 30%,#fff 0 18%,#cfdde6 40%,#8fa9b8 78%,#6f8998);box-shadow:0 0 0 4px #6f899814,0 3px 10px #365f7833;overflow:hidden}
+.orb::after{content:"";position:absolute;inset:-30%;background:conic-gradient(from 0deg,transparent 0 70%,#ffffffb0 80%,transparent 90%);animation:spin 2.4s linear infinite;mix-blend-mode:screen}
+@keyframes spin{to{transform:rotate(360deg)}}
+.head strong{font-weight:550;color:var(--strong);font-size:13.5px}
+.head time{margin-left:auto;font-size:11.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+.step{position:relative;display:grid;grid-template-columns:22px minmax(0,1fr);gap:11px;padding:6px 0}
+.step::before{content:"";position:absolute;left:10.5px;top:24px;bottom:-8px;width:1px;background:linear-gradient(#d3dee5,#d3dee5 60%,transparent)}
+.step:last-child::before{display:none}
+.dot{justify-self:center;margin-top:5px;width:9px;height:9px;border-radius:50%;background:#fbfcfd;border:1.5px solid #b6c7d1}
+.step.done .dot{background:var(--accent);border-color:var(--accent)}
+.step.now .dot{border-color:var(--run);box-shadow:0 0 0 4px #365f781a}
+.step h4{margin:0;font-size:13px;font-weight:500;color:var(--muted)}
+.step.now h4{color:var(--strong)}
+.step.done h4{color:var(--text)}
+.step p{margin:3px 0 0;max-width:62ch;color:var(--faint);font-size:12.5px}
+.step.now p{color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:6px;background:var(--chip);color:#385d76;font:11.5px/1 var(--mono);text-decoration:none;cursor:pointer}
+.chip:hover{background:#dae6ed}
+.chip svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.shimmer{background:linear-gradient(90deg,#273f50 0 40%,#b4cad6 50%,#273f50 60% 100%) 0 0/250% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:sh 1.8s linear infinite}
+@keyframes sh{from{background-position:100% 0}to{background-position:-150% 0}}
+.wait{display:flex;align-items:center;gap:11px;padding:6px 0 0;color:var(--faint);font-size:12.5px}
+.wait i{width:22px;display:flex;justify-content:center;gap:3px}
+.wait i b{width:3px;height:3px;border-radius:50%;background:#9fb3bf;animation:blink 1.2s ease-in-out infinite}
+.wait i b:nth-child(2){animation-delay:.15s}.wait i b:nth-child(3){animation-delay:.3s}
+@keyframes blink{50%{opacity:.25}}
+.composer{display:grid;gap:8px;padding:10px 10px 9px 14px;border:1px solid #dbe5eb;border-radius:14px;background:#fbfcfd;box-shadow:inset 0 1px 3px #53738c12,0 10px 28px #263f551a}
+.composer .row{display:flex;align-items:center;gap:8px}
+.composer input{flex:1;border:0;background:transparent;font:inherit;font-size:13.5px;color:var(--strong);outline:0}
+.composer input::placeholder{color:var(--faint)}
+.send{display:grid;place-items:center;width:30px;height:30px;border:0;border-radius:9px;background:#dfe8ee;color:var(--run)}
+.send svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}.shimmer{-webkit-text-fill-color:currentColor;background:none;color:var(--strong)}}
+</style></head>
+<body>
+<div class="app">
+  <div class="you"><p>Why does the explorer open the system folder?</p></div>
+  <section class="trail" aria-label="Thinking">
+    <div class="head"><span class="orb" aria-hidden="true"></span><strong>Thinking</strong><time>0:18</time></div>
+    <div class="step done"><span class="dot"></span><div><h4>Read the session header</h4><p>“Open folder” calls the files API with <code>open</code>, which hands the path to Windows.</p>
+      <div class="chips"><a class="chip"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>AgentSessions.vue:370</a><a class="chip"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>files.ts:482</a></div></div></div>
+    <div class="step done"><span class="dot"></span><div><h4>Found how Ctrl+K opens folders</h4><p>Search results send <code>orvane:open-link</code>, which focuses the File Explorer app.</p></div></div>
+    <div class="step now"><span class="dot"></span><div><h4 class="shimmer">Checking the sticky-note link path</h4><p>Making sure a missing File Explorer shows a hint instead of failing.</p>
+      <div class="chips"><a class="chip"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>App.vue:1011</a></div></div></div>
+    <div class="wait"><i><b></b><b></b><b></b></i>Then it writes the answer</div>
+  </section>
+  <div class="composer"><div class="row"><input placeholder="Ask the agent…" aria-label="Message"><button class="send" aria-label="Send"><svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button></div></div>
+</div>
+</body></html>

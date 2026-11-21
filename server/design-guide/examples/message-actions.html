@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Message actions</title>
+<style>
+:root{--canvas:#e9edf0;--app:#f7f9fa;--strong:#273f50;--text:#455968;--muted:#5d7381;--faint:#8296a2;--accent:#6f8998;--run:#365f78;--line:#e3eaee;--mono:"Cascadia Code",Consolas,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font:13px/1.5 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;color:var(--text);background:var(--canvas);display:grid;place-items:center;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+.app{width:760px;height:470px;padding:26px 30px;background:var(--app);border-radius:10px;box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c}
+.msg{position:relative;padding:10px 12px;margin:0 -12px;border-radius:10px;background:#eef3f6}
+.meta{display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:12px}
+.meta strong{color:var(--strong);font-weight:600}
+.meta time{color:var(--faint)}
+.msg p{margin:0;max-width:64ch}
+.msg a{color:#385d76;text-decoration:underline;text-decoration-color:#9fb6c3;text-underline-offset:3px}
+.tools{position:absolute;right:10px;top:-14px;display:flex;gap:1px;padding:2px;border:1px solid #d3dee5;border-radius:8px;background:#fbfcfd;box-shadow:0 4px 12px #263f5518}
+.tools button{display:grid;place-items:center;width:26px;height:24px;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+.tools button:hover,.tools button[aria-expanded=true]{background:#e4edf2;color:var(--strong)}
+.tools svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.menu{position:absolute;right:10px;top:16px;width:300px;border:1px solid #d3dee5;border-radius:10px;background:#fbfcfd;box-shadow:0 1px 2px #263f5514,0 12px 30px #263f5526;overflow:hidden;z-index:2}
+.search{display:flex;align-items:center;margin:6px;height:30px;padding:0 9px;border:1.5px solid #7b97a7;border-radius:7px;font-size:12.5px;color:var(--faint)}
+.search .caret{display:inline-block;width:1px;height:14px;background:var(--strong);margin-right:2px}
+.items{padding:0 5px 5px}
+.it{display:grid;grid-template-columns:16px minmax(0,1fr) auto;align-items:center;gap:10px;width:100%;height:32px;padding:0 8px;border:0;border-radius:6px;background:transparent;text-align:left;font-size:12.5px;color:var(--text)}
+.it[aria-selected=true]{background:#e4edf2;color:var(--strong)}
+.it svg{width:15px;height:15px;fill:none;stroke:var(--accent);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.it kbd{font:10.5px var(--mono);color:var(--faint);letter-spacing:.02em}
+hr{margin:3px 8px;border:0;border-top:1px solid var(--line)}
+.foot{padding:7px 13px;border-top:1px solid var(--line);font-size:11px;color:var(--faint);background:#f7f9fa}
+.next{margin-top:22px;opacity:.55}
+.next .meta strong{color:var(--text)}
+</style></head>
+<body>
+<div class="app">
+  <article class="msg">
+    <div class="tools" role="toolbar" aria-label="Message">
+      <button aria-label="Copy"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg></button>
+      <button aria-label="Fork from here"><svg viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="12" cy="19" r="2"/><path d="M6 7c0 5 6 4 6 10M18 7c0 5-6 4-6 10"/></svg></button>
+      <button aria-label="More actions" aria-expanded="true"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+    </div>
+    <div class="menu" role="menu" aria-label="Message actions">
+      <div class="search"><span class="caret"></span>Search actions…</div>
+      <div class="items">
+        <button class="it" aria-selected="true"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5H5v11h3"/></svg>Copy as Markdown<kbd>Ctrl+Shift+C</kbd></button>
+        <button class="it"><svg viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="12" cy="19" r="2"/><path d="M6 7c0 5 6 4 6 10M18 7c0 5-6 4-6 10"/></svg>Fork session from here<kbd>Ctrl+Shift+F</kbd></button>
+        <button class="it"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6.2"/><path d="M4 4v4h4"/></svg>Retry from this message<kbd>Ctrl+R</kbd></button>
+        <hr>
+        <button class="it"><svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6z"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>Send to Notes<kbd>Ctrl+Shift+N</kbd></button>
+        <button class="it"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Save as prompt<kbd>Ctrl+S</kbd></button>
+        <button class="it"><svg viewBox="0 0 24 24"><path d="M12 17v4M8 3h8l-1 6 3 3H6l3-3z"/></svg>Pin to session<kbd>P</kbd></button>
+      </div>
+      <div class="foot">Claude Code · Sonnet 5.5 · 21 Nov, 20:50 · 1,240 tokens</div>
+    </div>
+    <div class="meta"><strong>Claude Code</strong><time>20:50</time></div>
+    <p>Created <a>voxel-engine-guide.md</a>. It covers chunk storage, terrain generation, meshing, rendering, player mechanics, saving and a build order, with linked references.</p>
+  </article>
+  <article class="msg next" style="background:transparent">
+    <div class="meta"><strong>You</strong><time>20:51</time></div>
+    <p>Now turn the build order into a checklist in Notes.</p>
+  </article>
+</div>
+</body></html>

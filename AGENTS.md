@@ -43,6 +43,7 @@ Everything in the UI is custom-styled. Never ship browser-native controls whose 
 - Toolbar items line up on one centre line (icons, buttons and text such as URLs).
 - Motion is small and local: short fades and reveals. No bouncing, no animated layout sizes, no stagger. Honour reduced motion. Table headers are opaque rows above the scrolling area, never sticky overlays.
 - No dashboards, hero sections, wizards or modal creation flows.
+- For any UI or design work, follow the owner's design method in [server/design-guide/](server/design-guide/SKILL.md) (also served to every connected AI by the `design_guide` MCP tool). Add the owner's new picks and rejections to its `reference/taste-log.md`.
 
 ## 5. Product direction
 

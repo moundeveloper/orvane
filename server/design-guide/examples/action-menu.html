@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Action menu</title>
+<style>
+:root{--canvas:#e9edf0;--app:#f7f9fa;--strong:#273f50;--text:#455968;--muted:#5d7381;--faint:#8296a2;--accent:#6f8998;--line:#e3eaee;--mono:"Cascadia Code",Consolas,monospace}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{font:13px/1.5 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;color:var(--text);background:var(--canvas);-webkit-font-smoothing:antialiased;position:relative;overflow:hidden}
+.win{position:absolute;border-radius:10px;background:var(--app);box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c}
+.win header{height:34px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--line);font-size:12px;color:var(--strong);font-weight:550}
+.win .body{padding:14px;color:var(--faint);font-size:12px}
+.bar{height:9px;border-radius:4px;background:#e3eaee;margin:0 0 9px}
+.dock{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);display:flex;align-items:center;gap:4px;padding:6px;border-radius:12px;background:#f7f9fa;box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c}
+.dock button{display:flex;align-items:center;gap:7px;height:30px;padding:0 10px;border:0;border-radius:7px;background:transparent;font:inherit;font-size:12px;color:var(--text)}
+.dock button.on{background:#e4edf2;color:var(--strong)}
+.dock i{width:1px;height:18px;background:var(--line);margin:0 3px}
+svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.menu{position:absolute;left:452px;bottom:68px;width:272px;padding:5px;border:1px solid #dbe4ea;border-radius:9px;background:#fbfcfd;box-shadow:0 12px 32px -8px #263f5533;font-size:12.5px}
+.search{display:flex;align-items:center;gap:7px;height:32px;padding:0 8px;margin-bottom:4px;border-bottom:1px solid var(--line);color:var(--faint)}
+.search span{color:var(--strong)}.search .caret{width:1px;height:14px;background:var(--strong);margin-left:-5px;animation:b 1s steps(1) infinite}
+@keyframes b{50%{opacity:0}}
+.sec{padding:6px 8px 3px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#8ea1ac}
+.it{display:grid;grid-template-columns:18px 1fr auto;align-items:center;gap:8px;height:30px;padding:0 8px;border-radius:6px;color:var(--text);cursor:pointer}
+.it:hover,.it.on{background:#e7eef2;color:var(--strong)}
+kbd{font:10.5px var(--mono);color:var(--faint);padding:1px 5px;border:1px solid #dce5ea;border-radius:4px;background:#f4f7f9}
+.it.danger{color:#9a5a49}
+.foot{display:flex;justify-content:space-between;padding:7px 8px 3px;margin-top:4px;border-top:1px solid var(--line);font-size:11px;color:var(--faint)}
+mark{background:#dfe9ef;color:inherit;border-radius:2px}
+@media (prefers-reduced-motion:reduce){.search .caret{animation:none}}
+</style></head><body>
+<div class="win" style="left:70px;top:60px;width:420px;height:300px"><header>Daily list</header><div class="body"><div class="bar" style="width:70%"></div><div class="bar" style="width:55%"></div><div class="bar" style="width:62%"></div></div></div>
+<div class="win" style="left:520px;top:90px;width:560px;height:360px"><header>Browser</header><div class="body"><div class="bar" style="width:40%"></div><div class="bar" style="width:80%"></div></div></div>
+<div class="menu" role="menu" aria-label="Browser actions">
+  <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg><b class="caret" style="margin-left:0"></b><span style="color:var(--faint)">Search actions…</span></div>
+  <div class="sec">Browser</div>
+  <div class="it on" role="menuitem"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg><span>Duplicate</span><kbd>Ctrl D</kbd></div>
+  <div class="it" role="menuitem"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h7"/></svg><span>Move to group</span><kbd>G</kbd></div>
+  <div class="it" role="menuitem"><svg viewBox="0 0 24 24"><path d="M5 19l1-4L16 5l3 3L9 18z"/></svg><span>Rename</span><kbd>F2</kbd></div>
+  <div class="it" role="menuitem"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="3"/><path d="M8 10l3 2-3 2M13 15h3"/></svg><span>Ask an agent about this page</span><kbd>A</kbd></div>
+  <div class="sec">App</div>
+  <div class="it" role="menuitem"><svg viewBox="0 0 24 24"><path d="M3 7h18v13H3zM3 7l2-3h14l2 3M10 12h4"/></svg><span>Archive</span><kbd>Ctrl ⌫</kbd></div>
+  <div class="it danger" role="menuitem"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg><span>Delete…</span><kbd>Shift Del</kbd></div>
+  <div class="foot"><span>↑↓ choose · Enter run</span><span>Esc close</span></div>
+</div>
+<div class="dock"><button>Daily list</button><button>Notes</button><button class="on"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>Browser</button><button>Terminal</button><i></i><button aria-label="Search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg></button><button aria-label="New app"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>
+</body></html>

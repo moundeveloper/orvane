@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Folder cards</title>
+<style>
+:root{--canvas:#e9edf0;--app:#f7f9fa;--strong:#273f50;--text:#455968;--faint:#8296a2;--accent:#6f8998;--line:#e3eaee;--mono:"Cascadia Code",Consolas,monospace}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{font:13px/1.5 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;color:var(--text);background:var(--canvas);display:grid;place-items:center;-webkit-font-smoothing:antialiased}
+svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.app{width:860px;border-radius:10px;background:var(--app);box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c}
+.bar{display:flex;align-items:center;gap:8px;height:42px;padding:0 12px;border-bottom:1px solid var(--line);font-size:12.5px}
+.crumb{display:flex;align-items:center;gap:4px;color:var(--faint)}.crumb b{color:var(--strong);font-weight:550}
+.grow{flex:1}
+.seg{display:flex;gap:2px;padding:2px;border-radius:7px;background:#e8eff3}
+.seg button{display:grid;place-items:center;width:28px;height:24px;border:0;border-radius:5px;background:transparent;color:#5d7381}
+.seg button[aria-pressed=true]{background:#fbfcfd;color:var(--strong);box-shadow:0 1px 2px #263f5512}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;padding:22px 20px 24px}
+.card{cursor:pointer}
+.stack{position:relative;height:150px;margin-bottom:8px}
+.back{position:absolute;inset:0 0 0 0;border-radius:9px;background:#dfe7ec}
+.back::before{content:"";position:absolute;left:0;top:-7px;width:44%;height:14px;border-radius:7px 7px 0 0;background:#dfe7ec}
+.sheet{position:absolute;left:12px;right:12px;height:84px;border-radius:6px;background:#fff;border:1px solid #e1e8ec;box-shadow:0 1px 2px #263f5510;padding:8px;overflow:hidden;font:9.5px/1.45 var(--mono);color:#93a4ae;transition:transform 160ms ease-out}
+.s1{top:6px;left:8px;right:30px;transform:rotate(-4deg)}.s2{top:10px;left:30px;right:8px;transform:rotate(3.5deg)}.s3{top:20px}
+.card:hover .s1{transform:rotate(-6deg) translateY(-6px)}.card:hover .s2{transform:rotate(5deg) translateY(-4px)}
+.front{position:absolute;left:0;right:0;bottom:0;height:56px;border-radius:9px;background:linear-gradient(#eef3f6f2,#e6edf1f7);backdrop-filter:blur(3px);border:1px solid #dbe4ea;display:flex;align-items:flex-end;justify-content:space-between;padding:9px 11px}
+.front span{font-size:11px;color:var(--faint)}
+.front b{font:500 10.5px var(--mono);color:#5d7381;background:#f7f9fa;border:1px solid #dce5ea;border-radius:4px;padding:0 5px}
+.card strong{display:block;font-size:12.5px;font-weight:550;color:var(--strong)}
+.card small{display:block;font-size:11.5px;color:var(--faint)}
+.img{background:linear-gradient(135deg,#c7d6df,#93acbb 60%,#6f8998);border:0}
+.card.sel .front{border-color:#9fb6c3;box-shadow:0 0 0 3px #6f89981a}
+.files{padding:0 20px 18px}
+.files h4{margin:0 0 6px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#8ea1ac}
+.row{display:grid;grid-template-columns:20px 1fr 110px 70px;align-items:center;gap:8px;height:30px;padding:0 6px;border-radius:6px;font-size:12.5px}
+.row:hover{background:#e7eef2}
+.row span{color:var(--faint);font-size:11.5px}
+.row svg{color:var(--accent)}
+@media (prefers-reduced-motion:reduce){.sheet{transition:none}}
+</style></head><body>
+<div class="app" aria-label="File Explorer">
+  <div class="bar"><span class="crumb">CodingProjects <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg> <b>DesktopApps</b></span><span class="grow"></span>
+    <div class="seg" role="group" aria-label="View"><button aria-pressed="false" aria-label="List"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><button aria-pressed="true" aria-label="Folder cards"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg></button></div></div>
+  <div class="grid">
+    <div class="card sel"><div class="stack"><div class="back"></div><div class="sheet s1">{"name":"orvane",<br>"version":"0.9.0"</div><div class="sheet s2"># Orvane<br>Local-first desktop<br>workspace…</div><div class="sheet s3">export function<br>snapshot(folder)…</div><div class="front"><span>edited 4 min ago</span><b>git</b></div></div><strong>orvane</strong><small>412 files · README.md, main.mjs</small></div>
+    <div class="card"><div class="stack"><div class="back"></div><div class="sheet s1 img"></div><div class="sheet s2 img" style="filter:hue-rotate(-20deg)"></div><div class="sheet s3">voxel-engine-<br>guide.md</div><div class="front"><span>yesterday</span><b>git</b></div></div><strong>voxel-lab</strong><small>38 files · 6 images</small></div>
+    <div class="card"><div class="stack"><div class="back"></div><div class="sheet s1">SELECT id, tranid<br>FROM transaction</div><div class="sheet s2">/**<br> * @NApiVersion 2.1</div><div class="sheet s3">deploy.xml</div><div class="front"><span>3 days ago</span><b>SDF</b></div></div><strong>netsuite-scripts</strong><small>57 files · 2 projects</small></div>
+    <div class="card"><div class="stack"><div class="back"></div><div class="sheet s3" style="display:grid;place-items:center;color:#b3c2ca;font-family:inherit">Empty</div><div class="front"><span>created today</span></div></div><strong>scratch</strong><small>No files yet</small></div>
+  </div>
+  <div class="files"><h4>Files</h4>
+    <div class="row"><svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6z"/></svg>notes.md<span>Today, 11:42</span><span>2 KB</span></div>
+    <div class="row"><svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6z"/></svg>workspace-backup.zip<span>Yesterday</span><span>14 MB</span></div>
+  </div>
+</div>
+</body></html>

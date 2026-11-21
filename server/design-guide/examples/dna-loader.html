@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Working indicator</title>
+<style>
+:root{--canvas:#e9edf0;--app:#f7f9fa;--text:#455968;--strong:#273f50;--muted:#5d7381;--accent:#6f8998;--run:#365f78;--mono:"Cascadia Code",Consolas,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font:13px/1.45 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;color:var(--text);background:var(--canvas);display:grid;place-items:center;-webkit-font-smoothing:antialiased}
+.stage{display:grid;gap:28px;justify-items:center}
+.card{width:520px;padding:22px 24px;background:var(--app);border-radius:10px;box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c;display:grid;gap:14px}
+.who{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted)}
+.who strong{color:var(--strong);font-weight:600}
+.mark{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:6px;background:#e3ecf1;color:var(--strong)}
+.mark svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round}
+.line{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--run)}
+.lbl{font-family:var(--mono);font-size:11.5px;background:linear-gradient(90deg,currentColor 0,currentColor 40%,#b4cad6 50%,currentColor 60%,currentColor 100%) 0 0/250% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:sh 1.8s linear infinite}
+@keyframes sh{from{background-position:100% 0}to{background-position:-150% 0}}
+time{color:var(--muted);font-variant-numeric:tabular-nums}
+.zoom{padding:26px 40px;background:var(--app);border-radius:10px;box-shadow:0 1px 2px #263f5512}
+.zoom .ind{zoom:5;margin:2px 4px}
+
+/* indicator box */
+.ind{position:relative;display:inline-block;flex:none;width:22px;height:12px}
+
+/* 1 dot grid: lit dots travel a spiral over a 3x3 matrix */
+.v-grid .ind{width:13px;height:13px}
+.v-grid .ind i{position:absolute;width:3px;height:3px;border-radius:50%;background:var(--run);opacity:.18;animation:g 1.35s linear infinite}
+@keyframes g{0%{opacity:1}22%{opacity:.85}55%,100%{opacity:.18}}
+
+/* 2 comet: a bright wave runs through a row of dots, with a soft trail */
+.v-comet .ind i{position:absolute;top:4.5px;width:3px;height:3px;border-radius:50%;background:var(--run);opacity:.2;animation:c 1.2s cubic-bezier(.4,0,.2,1) infinite}
+.v-comet .ind i:nth-child(1){left:0}.v-comet .ind i:nth-child(2){left:5px;animation-delay:.09s}.v-comet .ind i:nth-child(3){left:10px;animation-delay:.18s}.v-comet .ind i:nth-child(4){left:15px;animation-delay:.27s}.v-comet .ind i:nth-child(5){left:20px;animation-delay:.36s}
+@keyframes c{0%{opacity:.2;transform:none}18%{opacity:1;transform:scale(1.35)}50%,100%{opacity:.2;transform:none}}
+.v-comet .ind b{position:absolute;top:3px;left:-6px;width:12px;height:6px;border-radius:6px;background:linear-gradient(90deg,transparent,#9fb6c3aa);filter:blur(1.5px);animation:ct 1.2s cubic-bezier(.4,0,.2,1) infinite}
+@keyframes ct{0%{transform:translateX(0);opacity:0}15%{opacity:1}60%{transform:translateX(26px);opacity:0}100%{transform:translateX(26px);opacity:0}}
+
+/* 3 infinity: a bright segment traces a figure eight */
+.v-inf .ind svg{width:22px;height:12px;overflow:visible}
+.v-inf .ind path{fill:none;stroke-width:1.6;stroke-linecap:round}
+.v-inf .ind .base{stroke:#c9d7df}
+.v-inf .ind .run{stroke:var(--run);stroke-dasharray:14 58;animation:inf 1.6s linear infinite}
+@keyframes inf{to{stroke-dashoffset:-72}}
+
+/* 4 blob: two soft rounded squares turn against each other and breathe */
+.v-blob .ind{width:13px;height:13px}
+.v-blob .ind i{position:absolute;inset:0;border-radius:38%;border:1.5px solid var(--run);opacity:.75;animation:b1 2.8s ease-in-out infinite}
+.v-blob .ind i+i{border-color:#9fb6c3;opacity:.9;animation:b2 2.8s ease-in-out infinite}
+@keyframes b1{0%{transform:rotate(0) scale(1)}50%{transform:rotate(90deg) scale(.82)}100%{transform:rotate(180deg) scale(1)}}
+@keyframes b2{0%{transform:rotate(45deg) scale(.82)}50%{transform:rotate(-45deg) scale(1)}100%{transform:rotate(-135deg) scale(.82)}}
+
+/* 5 pill: dots wave inside a capsule, then briefly become two eyes */
+.v-pill .ind{width:24px;height:13px;border:1.5px solid var(--run);border-radius:7px}
+.v-pill .ind i{position:absolute;top:3.5px;width:3px;height:3px;border-radius:50%;background:var(--run);animation:p 4.8s infinite}
+.v-pill .ind i:nth-child(1){left:3.5px}.v-pill .ind i:nth-child(2){left:9px;animation-name:pm}.v-pill .ind i:nth-child(3){left:14.5px}
+.v-pill .ind i:nth-child(1){animation-delay:0s}.v-pill .ind i:nth-child(3){animation-delay:.3s}
+@keyframes p{0%,60%,100%{opacity:1}10%,30%,50%{opacity:.3}20%,40%{opacity:1}70%,92%{opacity:1;transform:scaleY(1)}80%{transform:scaleY(.25)}}
+@keyframes pm{0%,60%{opacity:1}5%,25%,45%{opacity:.3}15%,35%,55%{opacity:1}66%,94%{opacity:0;transform:scale(.4)}100%{opacity:1;transform:none}}
+
+/* 6 dna: dot pairs on rungs swing through each other in a travelling sine */
+.v-dna .ind{width:38px;height:16px}
+.v-dna .ind span{position:absolute;top:0;bottom:0;width:2px}
+.v-dna .ind span i{position:absolute;left:.2px;top:7.2px;width:1.6px;height:1.6px;border-radius:50%;background:var(--run);animation:dna-top 1.74s linear infinite;animation-delay:inherit}
+.v-dna .ind span i+i{animation-name:dna-bottom}
+.v-dna .ind span b{position:absolute;left:.7px;top:1px;width:.6px;height:14px;background:var(--run);opacity:.35;animation:dna-rung 1.74s linear infinite;animation-delay:inherit}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style></head>
+<body class="v-dna">
+<div class="stage">
+  <div class="card">
+    <div class="who"><span class="mark"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M10.4 21.9a10 10 0 0 0 9.941-15.416"/><path d="M13.5 2.1a10 10 0 0 0-9.841 15.416"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/></svg></span><strong>Claude Code</strong></div>
+    <div class="line"><span class="ind"></span><span class="lbl">orvane / workspace_status</span><time>12s</time></div>
+  </div>
+  <div class="zoom"><span class="ind"></span></div>
+</div>
+<script>
+const v = document.body.className;
+document.querySelectorAll('.ind').forEach(el => {
+  if (v === 'v-grid') {
+    // 3x3 dots; lit order spirals: top row, right column, bottom row back, left, centre.
+    const order = [0, 1, 2, 5, 8, 7, 6, 3, 4];
+    for (let k = 0; k < 9; k++) {
+      const i = document.createElement('i');
+      i.style.left = (k % 3) * 5 + 'px';
+      i.style.top = Math.floor(k / 3) * 5 + 'px';
+      i.style.animationDelay = -(1.35 - order.indexOf(k) * 0.15) + 's';
+      el.append(i);
+    }
+  } else if (v === 'v-comet') el.innerHTML = '<b></b><i></i><i></i><i></i><i></i><i></i>';
+  else if (v === 'v-inf') el.innerHTML = '<svg viewBox="0 0 22 12"><path class="base" d="M11 6C8.5 2 3 1.5 3 6s5.5 4 8 0 8-4 8 0-5.5 4-8 0Z"/><path class="run" d="M11 6C8.5 2 3 1.5 3 6s5.5 4 8 0 8-4 8 0-5.5 4-8 0Z"/></svg>';
+  else if (v === 'v-blob') el.innerHTML = '<i></i><i></i>';
+  else if (v === 'v-pill') el.innerHTML = '<i></i><i></i><i></i>';
+  else if (v === 'v-dna') {
+    // Measured from the pin, one column per cycle: [time %, openness 0..1].
+    // Open, snap shut, hold as a pill, spring back, creep fully open.
+    const curve = [[0,1],[8,.79],[10.3,.51],[12.6,.23],[15,.14],[19.5,.08],[24,.03],[26.4,0],[37,0],[40,.05],[45,.14],[49,.27],[52,.43],[54,.58],[58.6,.73],[63,.79],[70,.87],[79,.91],[93,.96],[97.7,1],[100,1]];
+    const A = 7, d = 1.6;
+    // Shut, the pair overlaps into one capsule (centres half a dot apart) and grows 1.25x.
+    const frame = s => { const grow = 1 + .25 * (1 - s) ** 2; const shut = .22 * d * grow; const off = shut + s * (A - shut); return { off, grow }; };
+    const kf = (name, fn) => `@keyframes ${name}{${curve.map(([p, s]) => `${p}%{transform:${fn(frame(s))}}`).join('')}}`;
+    if (!document.getElementById('dna-kf')) {
+      const st = document.createElement('style'); st.id = 'dna-kf';
+      st.textContent = kf('dna-top', f => `translateY(${-f.off.toFixed(2)}px) scale(${f.grow.toFixed(2)})`) + kf('dna-bottom', f => `translateY(${f.off.toFixed(2)}px) scale(${f.grow.toFixed(2)})`) + kf('dna-rung', f => `scaleY(${(2 * f.off / 14).toFixed(3)})`);
+      document.head.append(st);
+    }
+    // 9 columns, 4.5px apart; each runs 1/7 of a cycle behind its left neighbour, so the pinch travels right.
+    for (let k = 0; k < 9; k++) {
+      const s = document.createElement('span');
+      s.style.left = k * 4.5 + 'px';
+      s.style.animationDelay = -((9 - k) * 1.74 / 7) + 's';
+      s.innerHTML = '<b></b><i></i><i></i>';
+      el.append(s);
+    }
+  }
+});
+</script>
+</body></html>

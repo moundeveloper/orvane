@@ -52,7 +52,7 @@ export function registerExpositionTools(server: McpServer, directory: string) {
     "exposition_show",
     {
       description:
-        "Create a graphical explanation attached to the current Claude session in Orvane. expectedRevision=0 creates; replacing an existing view needs its current revision. anchorId is an optional existing message UUID/tool-call ID. Otherwise the UI anchors to this exposition_show tool call using the stable view ID; until that appears in the transcript it remains a session visual.",
+        expositionInstructions + " This tool: create a graphical explanation attached to the current Claude session in Orvane. expectedRevision=0 creates; replacing an existing view needs its current revision. anchorId is an optional existing message UUID/tool-call ID. Otherwise the UI anchors to this exposition_show tool call using the stable view ID; until that appears in the transcript it remains a session visual.",
       inputSchema: visualShowSchema,
       annotations: {
         readOnlyHint: false,

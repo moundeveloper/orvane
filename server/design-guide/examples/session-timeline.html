@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Session timeline</title>
+<style>
+:root{--canvas:#e9edf0;--app:#f7f9fa;--strong:#273f50;--text:#455968;--muted:#5d7381;--faint:#8296a2;--accent:#6f8998;--run:#365f78;--line:#e3eaee;--mono:"Cascadia Code",Consolas,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font:13px/1.5 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;color:var(--text);background:var(--canvas);display:grid;place-items:center;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+.app{width:560px;padding:16px 18px 18px;background:var(--app);border-radius:10px;box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c}
+header{display:flex;align-items:center;gap:8px;margin:0 0 12px}
+header strong{color:var(--strong);font-weight:600}
+header span{color:var(--faint);font-size:12px}
+header .grow{flex:1}
+.seg{display:flex;gap:2px;padding:2px;border-radius:7px;background:#e8eff3}
+.seg button{height:24px;padding:0 9px;border:0;border-radius:5px;background:transparent;font-size:11.5px;color:var(--muted)}
+.seg button[aria-pressed=true]{background:#fbfcfd;color:var(--strong);box-shadow:0 1px 2px #263f5512}
+ol{position:relative;list-style:none;margin:0;padding:0}
+ol::before{content:"";position:absolute;left:58px;top:12px;bottom:12px;width:1px;background:#dbe5ea}
+li{display:grid;grid-template-columns:40px 22px minmax(0,1fr);gap:0 14px;align-items:start;padding:4px 0}
+time{padding-top:7px;text-align:right;font:11.5px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+.ic{position:relative;z-index:1;display:grid;place-items:center;width:22px;height:22px;margin-top:4px;border-radius:50%;color:#fff}
+.ic svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.you .ic{background:#8ea3b0}.read .ic{background:#6f8998}.edit .ic{background:#4f7d5f}.ask .ic{background:#b08a4a}.fail .ic{background:#a0624f}.done .ic{background:#365f78}
+.card{padding:7px 11px;border:1px solid #dde6eb;border-radius:8px;background:#fbfcfd}
+.card h4{margin:0;font-size:12.5px;font-weight:550;color:var(--strong)}
+.card p{margin:2px 0 0;font-size:12px;color:var(--faint)}
+.files{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.files a{height:20px;padding:0 6px;border-radius:5px;background:#e6eef3;color:#385d76;font:11px/20px var(--mono);cursor:pointer}
+.files a:hover{background:#dae6ed}
+.card .row{display:flex;justify-content:space-between;gap:10px;font-size:11.5px;color:var(--faint)}
+.card .row b{font-weight:500;color:var(--text)}
+.ask .card{border-color:#e7d9bd;background:#fcfaf5}
+.now .card{border-color:#9fb6c3;box-shadow:0 0 0 3px #6f89981a}
+</style></head>
+<body>
+<div class="app">
+  <header><strong>Session timeline</strong><span>Today · 6 steps · 4m 12s</span><span class="grow"></span>
+    <div class="seg" role="group" aria-label="Show"><button aria-pressed="true">All</button><button aria-pressed="false">Files</button><button aria-pressed="false">Approvals</button></div></header>
+  <ol>
+    <li class="you"><time>20:48</time><span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c1-4 4-6 7-6s6 2 7 6"/></svg></span><div class="card"><h4>Search how to make a voxel engine</h4><p>and write an md file</p></div></li>
+    <li class="read"><time>20:48</time><span class="ic"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg></span><div class="card"><h4>Researched 7 sources</h4><div class="row"><span>Web search · 3 pages read</span><b>41s</b></div></div></li>
+    <li class="ask"><time>20:49</time><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 8v5M12 16.5v.5"/><circle cx="12" cy="12" r="9"/></svg></span><div class="card"><h4>Asked to write in the workspace</h4><div class="row"><span>Write · allowed once</span><b>you, 6s</b></div></div></li>
+    <li class="edit"><time>20:50</time><span class="ic"><svg viewBox="0 0 24 24"><path d="M5 19l1-4L16 5l3 3L9 18z"/></svg></span><div class="card"><h4>Created 1 file</h4><div class="files"><a>voxel-engine-guide.md</a></div></div></li>
+    <li class="fail"><time>20:50</time><span class="ic"><svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg></span><div class="card"><h4>Link check failed</h4><p>1 reference returned 404 and was removed</p></div></li>
+    <li class="done now"><time>20:50</time><span class="ic"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><div class="card"><h4>Answered</h4><div class="row"><span>Codex · GPT-5.2</span><b>14.2k tokens</b></div></div></li>
+  </ol>
+</div>
+</body></html>

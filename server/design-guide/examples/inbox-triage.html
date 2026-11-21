@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Inbox triage</title>
+<style>
+:root{--canvas:#e9edf0;--app:#f7f9fa;--strong:#273f50;--text:#455968;--faint:#8296a2;--accent:#6f8998;--run:#365f78;--line:#e3eaee;--mono:"Cascadia Code",Consolas,monospace}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{font:13px/1.5 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;color:var(--text);background:var(--canvas);display:grid;place-items:center;-webkit-font-smoothing:antialiased}
+svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.app{width:520px;border-radius:10px;background:var(--app);box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c}
+header{display:flex;align-items:center;gap:8px;padding:12px 14px 10px}
+header strong{color:var(--strong);font-weight:600}
+header span{color:var(--faint);font-size:12px}
+.grow{flex:1}
+.progress{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--faint)}
+.progress i{position:relative;width:70px;height:4px;border-radius:2px;background:#e1e9ee;overflow:hidden}
+.progress i::after{content:"";position:absolute;inset:0 60% 0 0;background:#6f8998;border-radius:2px}
+.day{padding:8px 14px 3px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#8ea1ac}
+.row{display:grid;grid-template-columns:26px 1fr auto;align-items:center;gap:9px;height:38px;margin:0 6px;padding:0 8px;border-radius:7px;cursor:pointer}
+.row:hover{background:#eef3f6}
+.kind{display:grid;place-items:center;width:26px;height:26px;border-radius:7px;background:#fbfcfd;border:1px solid #dde6eb;color:var(--run)}
+.row p{margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--strong);font-size:12.5px}
+.row p span{color:var(--faint)}
+.row time{font:11px var(--mono);color:var(--faint)}
+.open{margin:2px 6px 6px;border:1px solid #9fb6c3;border-radius:9px;background:#fbfcfd;box-shadow:0 0 0 3px #6f89981a}
+.open .row{margin:0;height:40px}
+.open .row:hover{background:transparent}
+.preview{margin:0 12px 0 47px;padding:9px 11px;border-radius:7px;background:#f1f5f8;font-size:12px;line-height:1.55;color:var(--text)}
+.preview a{color:#385d76;text-decoration:none;font-family:var(--mono);font-size:11.5px}
+.acts{display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px 12px 47px}
+.acts button{display:flex;align-items:center;gap:6px;height:28px;padding:0 9px;border:1px solid #d6e0e6;border-radius:6px;background:#fbfcfd;font:inherit;font-size:12px;color:var(--strong)}
+.acts button:hover{background:#eef3f6}
+.acts button.primary{background:#365f78;border-color:#365f78;color:#fff}
+.acts kbd{font:10px var(--mono);color:inherit;opacity:.7;padding:0 4px;border:1px solid currentColor;border-radius:3px}
+.acts .del{margin-left:auto;color:#9a5a49}
+.img{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#c7d6df,#7d98a8)}
+footer{display:flex;justify-content:space-between;padding:9px 14px;border-top:1px solid var(--line);margin-top:6px;font-size:11px;color:var(--faint)}
+</style></head><body>
+<div class="app" aria-label="Workspace inbox">
+  <header><strong>Inbox</strong><span>4 to sort</span><span class="grow"></span><span class="progress">2 sorted today<i></i></span></header>
+  <div class="day">Today</div>
+  <div class="open">
+    <div class="row"><span class="kind"><svg viewBox="0 0 24 24"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span><p>Vue Flow drag and drop example <span>· vueflow.dev</span></p><time>12:48</time></div>
+    <div class="preview">Read later for the step library: how DnD from a sidebar sets the node position.<br><a>https://vueflow.dev/examples/dnd.html</a></div>
+    <div class="acts">
+      <button class="primary"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/></svg>Open in Browser<kbd>O</kbd></button>
+      <button><svg viewBox="0 0 24 24"><path d="M5 4h14v12l-4 4H5z"/></svg>Sticky note<kbd>N</kbd></button>
+      <button><svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6z"/></svg>Send to Notes<kbd>S</kbd></button>
+      <button><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>Calendar today<kbd>C</kbd></button>
+      <button class="del" aria-label="Discard"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg><kbd>D</kbd></button>
+    </div>
+  </div>
+  <div class="row"><span class="kind"><svg viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h9"/></svg></span><p>Ask about the trigger day view <span>· remember to check missed runs</span></p><time>11:20</time></div>
+  <div class="row"><span class="img"></span><p>Screenshot <span>· 1440 × 900</span></p><time>10:02</time></div>
+  <div class="day">Yesterday</div>
+  <div class="row"><span class="kind"><svg viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h9"/></svg></span><p>SELECT id, tranid FROM transaction WHERE … </p><time>18:31</time></div>
+  <footer><span>J K move · Enter expand · O N S C D act</span><span>Esc close</span></footer>
+</div>
+</body></html>

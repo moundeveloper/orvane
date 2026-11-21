@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wheel Redesigns</title>
+<style>
+:root{
+  --canvas:#e9edf0; --app:#f7f9fa; --ink:#455968; --ink-strong:#344f5e; --muted:#687d8a; --line:#dde4e8; --accent:#6f8998;
+  --shadow:0 12px 38px -16px #43576435, 0 3px 9px -5px #43576424;
+  --smooth:cubic-bezier(.3,.1,.2,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--canvas)}
+body{color:var(--ink);font:13px/1.45 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;padding:28px 16px 48px;-webkit-font-smoothing:antialiased}
+main{max-width:1060px;margin:0 auto;display:grid;gap:14px}
+h1{font-size:16px;font-weight:560;letter-spacing:-.035em;color:var(--ink-strong)}
+.sub{color:var(--muted);max-width:82ch}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+kbd{font:11px/1 ui-monospace,Consolas,monospace;padding:2px 5px;border-radius:4px;background:#e1e8ec;color:#556c7a}
+svg.i{width:var(--is,18px);height:var(--is,18px);stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
+
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.seg{position:relative;display:inline-flex;height:30px;padding:3px;border-radius:7px;background:#e1e8ec}
+.seg button{position:relative;z-index:1;padding:0 11px;border-radius:5px;color:#607583;transition:color .15s ease}
+.seg button[aria-checked="true"]{color:var(--ink-strong)}
+.seg .thumb{position:absolute;top:3px;bottom:3px;left:0;border-radius:5px;background:#fff;box-shadow:0 1px 3px #43576422;transition:transform 240ms var(--smooth),width 240ms var(--smooth)}
+.chip{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 10px;border-radius:7px;background:#e1e8ec;color:#556c7a;transition:background .15s ease}
+.chip:hover{background:#d9e3e9}
+.chip[aria-pressed="true"]{background:var(--accent);color:#fff}
+.chip[aria-pressed="true"] kbd{background:#ffffff33;color:#fff}
+.seg button:focus-visible,.chip:focus-visible{outline:1px solid #7a96a6;outline-offset:1px}
+.keys{color:var(--muted);font-size:12px;display:flex;flex-wrap:wrap;gap:4px 12px}
+
+/* ---------- canvas stage ---------- */
+.stage{position:relative;height:540px;border-radius:12px;overflow:hidden;background:var(--canvas);
+  background-image:radial-gradient(circle,#9baebb47 .7px,transparent .9px);background-size:18px 18px;
+  box-shadow:0 0 0 1px #d6dfe4;user-select:none;touch-action:none}
+.fake-app{position:absolute;border-radius:10px;background:var(--app);box-shadow:var(--shadow);padding:10px 12px;color:#8195a2;font-size:11px}
+.fake-app b{display:block;color:var(--ink-strong);font-size:12px;font-weight:560;margin-bottom:8px}
+.fake-app i{display:block;height:7px;border-radius:4px;background:#e4ebef;margin:6px 0}
+.overlay{position:absolute;inset:0;z-index:5}
+.host{position:absolute;left:50%;top:50%;width:0;height:0;transform:scale(var(--s,1))}
+.toast{position:absolute;left:50%;bottom:18px;z-index:9;transform:translateX(-50%);padding:6px 12px;border-radius:8px;background:#fff;box-shadow:var(--shadow);color:var(--ink-strong);font-size:12px;opacity:0;pointer-events:none;white-space:nowrap}
+.note{background:var(--app);border-radius:10px;padding:12px 14px;box-shadow:0 1px 2px #4357641a}
+.note h2{font-size:13px;font-weight:600;color:var(--ink-strong);margin-bottom:3px}
+.note p{color:var(--muted);font-size:12.5px;max-width:90ch}
+
+/* ================= Current (replica of src/style.css .radial-*) ================= */
+.cur-overlay{background:#45596812}
+.cur{position:absolute;left:-180px;top:-180px;width:360px;height:360px;border-radius:50%;background:#d8e1e6;box-shadow:var(--shadow)}
+.cur-entry{position:absolute;inset:0;background:#f1f5f7;color:#526c7c}
+.cur-entry.empty{background:#e9eff2}
+.cur-entry.sel{background:#dce7ed;color:#304e60}
+.cur-content{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;gap:7px;width:76px;align-items:center;--is:22px}
+.cur-content span{font-size:10px;max-width:76px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cur-center{position:absolute;z-index:2;inset:26%;display:flex;flex-direction:column;gap:7px;align-items:center;justify-content:center;padding:12px;border-radius:50%;text-align:center;color:#455968;background:#f7f9fa}
+.cur-center.sel{background:#e7eff3;box-shadow:inset 0 0 0 1px #b8cbd6}
+.cur-center strong{font-size:12px;font-weight:600}
+.cur-center small{display:block;font-size:10px}
+.cur-outline{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+.cur-outline path{fill:none;stroke:#6f8998;stroke-width:.6}
+
+/* ================= A · Halo: one frosted ring, a soft lens that glides ================= */
+.a-overlay{background:#45596810}
+.a{position:absolute;left:-172px;top:-172px;width:344px;height:344px;border-radius:50%;
+  background:rgba(250,252,253,.84);backdrop-filter:blur(16px) saturate(1.08);
+  box-shadow:0 26px 64px -30px #43576470,0 2px 6px -3px #4357642a,inset 0 0 0 1px rgba(255,255,255,.75),0 0 0 1px #dbe4e9}
+.a-lens{position:absolute;inset:0;transition:transform 220ms var(--smooth),opacity 160ms var(--smooth);opacity:0}
+.a-lens.on{opacity:1}
+.a-lens svg{width:100%;height:100%;overflow:visible}
+.a-slot{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:6px;width:80px;color:#647c8c;--is:20px;transition:color 160ms var(--smooth)}
+.a-slot span{font-size:10.5px;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.a-slot.sel{color:#2f4d5f}
+.a-dot{position:absolute;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%;background:#cad6dc}
+.a-center{position:absolute;left:50%;top:50%;width:46%;height:46%;transform:translate(-50%,-50%);border-radius:50%;background:#fff;
+  box-shadow:0 1px 3px #4357641c,0 0 0 1px #e3eaee;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:14px;text-align:center;transition:box-shadow 160ms var(--smooth)}
+.a-center.sel{box-shadow:0 1px 3px #4357641c,0 0 0 1.5px #9fb4c1}
+.a-tile{width:32px;height:32px;border-radius:9px;background:#eef3f6;display:grid;place-items:center;color:#4b6677;--is:17px}
+.a-name{font-size:13px;font-weight:600;color:var(--ink-strong);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.a-sub{font-size:10.5px;color:var(--muted)}
+.a-crumb{font-size:10px;color:#8aa0ad;letter-spacing:.02em;display:flex;align-items:center;gap:2px;--is:11px}
+
+/* ================= B · Orbit: separate floating tiles around a small hub ================= */
+.b-overlay{background:#45596814}
+.b{position:absolute;left:0;top:0}
+.b-guide{position:absolute;left:-134px;top:-134px;width:268px;height:268px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(111,137,152,.2)}
+.b-pin{position:absolute;left:-3.5px;top:-3.5px;width:7px;height:7px;border-radius:50%;background:var(--accent);opacity:0;transition:opacity 140ms var(--smooth)}
+.b-pin.on{opacity:.85}
+.b-chip{position:absolute;left:-38px;top:-30px;width:76px;height:60px;border-radius:12px;background:rgba(248,250,251,.97);
+  box-shadow:0 8px 20px -12px #4357644d,0 0 0 1px #43576412;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:#5f7888;--is:18px;
+  transition:transform 220ms var(--smooth),box-shadow 220ms var(--smooth),background 220ms var(--smooth),color 160ms var(--smooth)}
+.b-chip span{font-size:10.5px;max-width:68px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-chip.sel{background:#fff;color:#2f4d5f;box-shadow:0 14px 28px -14px #43576470,0 0 0 1px #a9bdc9}
+.b-ghost{position:absolute;left:-3px;top:-3px;width:6px;height:6px;border-radius:50%;background:#cfd9df}
+.b-hub{position:absolute;left:-54px;top:-54px;width:108px;height:108px;border-radius:50%;background:var(--app);box-shadow:var(--shadow);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;text-align:center;padding:10px;color:#5d7585;--is:16px;transition:box-shadow 160ms var(--smooth)}
+.b-hub.sel{box-shadow:var(--shadow),0 0 0 1.5px #9fb4c1}
+.b-hub strong{font-size:11.5px;font-weight:600;color:var(--ink-strong);max-width:88px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-hub small{font-size:10px;color:var(--muted)}
+
+/* ================= C · Dial: a compact instrument, icons on the ring, words in the middle ================= */
+.c-overlay{background:#45596812}
+.c{position:absolute;left:-150px;top:-150px;width:300px;height:300px;border-radius:50%;background:var(--app);
+  box-shadow:0 22px 54px -26px #43576466,0 3px 9px -5px #43576424,0 0 0 1px #e0e7eb}
+.c-tick{position:absolute;left:50%;top:50%;width:1px;height:6px;margin:-3px 0 0 -.5px;background:#d6e0e5}
+.c-notch-wrap{position:absolute;inset:0;transition:transform 220ms var(--smooth),opacity 160ms var(--smooth);opacity:0}
+.c-notch-wrap.on{opacity:1}
+.c-notch{position:absolute;left:50%;top:5px;width:24px;height:3px;margin-left:-12px;border-radius:2px;background:var(--accent)}
+.c-well{position:absolute;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;display:grid;place-items:center;color:#6c8494;--is:19px;transition:background 180ms var(--smooth),color 180ms var(--smooth)}
+.c-well.sel{background:#e3ecf1;color:#2c5268}
+.c-empty{position:absolute;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%;background:#d0dae0}
+.c-center{position:absolute;left:50%;top:50%;width:156px;height:156px;margin:-78px 0 0 -78px;border-radius:50%;background:#fff;box-shadow:0 0 0 1px #e6ecef,0 1px 2px #4357641a;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;text-align:center;padding:14px}
+.c-crumb{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:#93a6b2;margin-bottom:4px}
+.c-name{font-size:15px;font-weight:600;color:var(--ink-strong);letter-spacing:-.01em;max-width:128px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.c-sub{font-size:11px;color:var(--muted)}
+.c-key{margin-top:7px;font:10px/1 ui-monospace,Consolas,monospace;color:#7c909c;padding:3px 6px;border-radius:4px;background:#eef3f5}
+.c-center.sel .c-name{color:#2c5268}
+
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:#c9d4da;border-radius:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-button{display:none}
+
+/* ================= Halo variants: same frosted ring, one part changed each ================= */
+/* H1 · Glow: no arc line; a soft radial glow fills the slot, the selected icon sits on a small white disc, faint dividers */
+/* frosted glass like Orvane's top bar (.topbar-frost in src/style.css) */
+.a.h1{background:rgb(247 250 252 / 8%);backdrop-filter:blur(8px) saturate(120%);-webkit-backdrop-filter:blur(8px) saturate(120%)}
+.h1-layer{position:absolute;inset:0;transform-origin:50% 50%}
+.h1-out{pointer-events:none}
+.h1-ctext{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:14px;text-align:center}
+.h1-lens{position:absolute;inset:0;transition:transform 220ms var(--smooth),opacity 160ms var(--smooth);opacity:0}
+.h1-lens.on{opacity:1}
+.h1-lens svg,.h1-div{width:100%;height:100%;overflow:visible;position:absolute;inset:0}
+.h1-slot{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:4px;width:84px;color:#647c8c;--is:19px;transition:color 180ms var(--smooth)}
+.h1-ico{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;transition:background 180ms var(--smooth),box-shadow 180ms var(--smooth)}
+.h1-slot span{font-size:10.5px;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.h1-slot.sel{color:#2c4b5d}
+.h1-slot.sel .h1-ico{background:#fff;box-shadow:0 3px 10px -4px #43576455,0 0 0 1px #e2e9ed}
+.h1-center{position:absolute;left:50%;top:50%;width:44%;height:44%;transform:translate(-50%,-50%);border-radius:50%;background:#fff;
+  box-shadow:0 1px 3px #4357641c,0 0 0 1px #e3eaee;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:14px;text-align:center;transition:box-shadow 160ms var(--smooth)}
+.h1-center.sel{box-shadow:0 1px 3px #4357641c,0 0 0 1.5px #9fb4c1}
+.h1-name{font-size:14px;font-weight:600;color:var(--ink-strong);letter-spacing:-.01em;max-width:124px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.h1-sub{font-size:10.5px;color:var(--muted)}
+.h1-crumb{font-size:10px;color:#8aa0ad;margin-bottom:3px}
+.h1-idle{color:#9aacb7;--is:16px;display:flex;flex-direction:column;align-items:center;gap:5px;font-size:10.5px}
+/* Glow · Blend: Glow's center ring fades in by --ring (0..1) instead of switching */
+.h4 .h1-center,.h4 .h1-center.sel{box-shadow:0 1px 3px #4357641c,0 0 0 1px #e3eaee}
+.h4-cico{color:#5f7a8b;--is:20px;line-height:0;margin-bottom:3px}
+.h4 .h1-center::after{content:'';position:absolute;inset:0;border-radius:50%;pointer-events:none;
+  box-shadow:0 0 0 1.5px #9fb4c1;opacity:var(--ring,0);transition:opacity var(--ring-ease,220ms var(--smooth))}
+
+/* H2 · Track: an inner hairline track with an accent segment that glides; groups show an item count */
+.h2-track{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.h2-seg{position:absolute;inset:0;transition:transform 220ms var(--smooth),opacity 160ms var(--smooth);opacity:0}
+.h2-seg.on{opacity:1}
+.h2-seg svg{width:100%;height:100%;overflow:visible}
+.h2-slot{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:6px;width:80px;color:#647c8c;--is:20px;transition:color 160ms var(--smooth)}
+.h2-slot span{font-size:10.5px;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.h2-slot.sel{color:#2c4b5d}
+.h2-icon{position:relative}
+.h2-badge{position:absolute;left:14px;top:-6px;min-width:15px;height:15px;padding:0 4px;border-radius:8px;background:#e5edf1;color:#5b7484;font-size:9px;font-weight:600;line-height:15px;text-align:center;box-shadow:0 0 0 1.5px rgba(250,252,253,.95)}
+.h2-center{position:absolute;left:50%;top:50%;width:42%;height:42%;transform:translate(-50%,-50%);border-radius:50%;background:#fff;
+  box-shadow:0 1px 3px #4357641c;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:12px;text-align:center;color:#5f7a8b;--is:22px;transition:box-shadow 160ms var(--smooth)}
+.h2-center.sel{box-shadow:0 1px 3px #4357641c,0 0 0 1.5px #9fb4c1}
+.h2-center strong{font-size:12.5px;font-weight:600;color:var(--ink-strong);max-width:116px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.h2-center small{font-size:10px;color:var(--muted)}
+
+/* H3 · Pill: a white capsule travels round the ring (staying upright); the center is split, with its own Edit config button */
+.h3-orbit{position:absolute;inset:0;transition:transform 240ms var(--smooth),opacity 160ms var(--smooth);opacity:0}
+.h3-orbit.on{opacity:1}
+.h3-pill{position:absolute;left:50%;top:13%;width:86px;height:56px;border-radius:16px;background:#fff;
+  box-shadow:0 8px 20px -10px #43576460,0 0 0 1px #e1e8ec;transform:translate(-50%,-50%);transition:transform 240ms var(--smooth)}
+.h3-slot{position:absolute;z-index:1;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:6px;width:80px;color:#647c8c;--is:19px;transition:color 160ms var(--smooth)}
+.h3-slot span{font-size:10.5px;max-width:78px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.h3-slot.sel{color:#2c4b5d}
+.h3-center{position:absolute;z-index:1;left:50%;top:50%;width:46%;height:46%;transform:translate(-50%,-50%);border-radius:50%;background:#fff;
+  box-shadow:0 1px 3px #4357641c,0 0 0 1px #e3eaee;display:grid;grid-template-rows:1fr auto;justify-items:center;padding:20px 12px 14px;text-align:center}
+.h3-top{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:0}
+.h3-crumb{font-size:10px;color:#8aa0ad}
+.h3-name{font-size:13.5px;font-weight:600;color:var(--ink-strong);max-width:118px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.h3-sub{font-size:10.5px;color:var(--muted)}
+.h3-edit{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px;border-radius:11px;background:#eef3f6;color:#5b7484;font-size:10.5px;--is:12px;transition:background 160ms var(--smooth),color 160ms var(--smooth)}
+.h3-center.sel .h3-edit{background:var(--accent);color:#fff}
+@media (prefers-reduced-motion:reduce){*{transition-duration:0s !important}}
+body{padding:0}main{max-width:none;gap:0}main>header,.controls,.keys,.note{display:none}.stage{height:100vh;border-radius:0;box-shadow:none}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Action wheel: Halo and three variants</h1>
+    <p class="sub">The current wheel is shown first for comparison. Halo is the one you picked. Each variant keeps its frosted ring and changes one part: the selection marker, the inner ring, or the center. All of them keep the same behaviour: hold <kbd>Alt</kbd>+<kbd>Q</kbd>, point to choose (the pointer angle counts even outside the ring), use the arrow keys, click a group to enter it, right-click to go back, and use the center to edit the config. Only the look and the motion change.</p>
+  </header>
+  <div class="controls">
+    <div class="seg" role="radiogroup" aria-label="Design" id="seg">
+      <span class="thumb"></span>
+      <button role="radio" data-v="cur" aria-checked="false">Current</button>
+      <button role="radio" data-v="a" aria-checked="true">Halo</button>
+      <button role="radio" data-v="h1" aria-checked="false">Halo · Glow</button>
+      <button role="radio" data-v="h4" aria-checked="false">Glow · Blend</button>
+      <button role="radio" data-v="h2" aria-checked="false">Halo · Track</button>
+      <button role="radio" data-v="h3" aria-checked="false">Halo · Pill</button>
+    </div>
+    <button class="chip" id="pin" aria-pressed="true"><kbd>K</kbd>Keep open</button>
+  </div>
+  <div class="keys"><span><kbd>1</kbd>–<kbd>6</kbd> designs</span><span><kbd>←</kbd><kbd>→</kbd> step</span><span><kbd>↑</kbd> enter group</span><span><kbd>↓</kbd> or right-click: back</span><span><kbd>Enter</kbd> run</span><span>With Keep open off, hold <kbd>Alt</kbd>+<kbd>Q</kbd> and release to run</span></div>
+
+  <div class="stage" id="stage">
+    <div class="fake-app" style="left:6%;top:9%;width:230px;height:150px"><b>Notes</b><i style="width:80%"></i><i style="width:62%"></i><i style="width:70%"></i></div>
+    <div class="fake-app" style="right:7%;top:14%;width:250px;height:190px"><b>Terminal</b><i style="width:55%"></i><i style="width:75%"></i><i style="width:40%"></i></div>
+    <div class="fake-app" style="left:12%;bottom:10%;width:280px;height:120px"><b>Git</b><i style="width:66%"></i><i style="width:48%"></i></div>
+    <div class="overlay" id="overlay"><div class="host" id="host"></div></div>
+    <div class="toast" id="toast"></div>
+  </div>
+  <div class="note" id="note"></div>
+</main>
+
+<script>
+(() => {
+'use strict';
+const $ = (s, r = document) => r.querySelector(s);
+const SMOOTH = 'cubic-bezier(.3,.1,.2,1)';
+const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+
+const ICONS = {
+  term:'<path d="m5 8 4 4-4 4M12 16h7"/><rect x="2.5" y="4" width="19" height="16" rx="2.5"/>',
+  globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  git:'<circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 8.2v7.6M18 10.2c0 4-6 3-11 6"/>',
+  note:'<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
+  layers:'<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
+  camera:'<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  upload:'<path d="M12 16V4M7 9l5-5 5 5M5 20h14"/>', check:'<path d="m5 12 5 5 9-10"/>',
+  logs:'<path d="M5 6h14M5 12h14M5 18h9"/>', layout:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 4v16"/>',
+  settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  back:'<path d="m15 18-6-6 6-6"/>', focus:'<circle cx="12" cy="12" r="3"/><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/>',
+};
+const icon = (n, size) => `<svg class="i" viewBox="0 0 24 24"${size ? ` style="--is:${size}px"` : ''}>${ICONS[n] || ICONS.layers}</svg>`;
+
+/* ---------- wheel data: same shape as workspace.wheel (parent / kind) ---------- */
+const DATA = {
+  '': [
+    { id:'term', name:'Terminal', kind:'app', icon:'term' },
+    { id:'browser', name:'Browser', kind:'app', icon:'globe' },
+    { id:'git', name:'Git status', kind:'action', icon:'git' },
+    { id:'deploy', name:'Deploy', kind:'group', icon:'layers' },
+    { id:'notes', name:'Notes', kind:'app', icon:'note' },
+    { id:'layouts', name:'Layouts', kind:'group', icon:'layers' },
+    { id:'shot', name:'Screenshot', kind:'action', icon:'camera' },
+  ],
+  deploy: [
+    { id:'up', name:'Upload file', kind:'action', icon:'upload' },
+    { id:'val', name:'Validate SDF', kind:'action', icon:'check' },
+    { id:'logs', name:'Open logs', kind:'action', icon:'logs' },
+  ],
+  layouts: [
+    { id:'focus', name:'Focus', kind:'action', icon:'focus' },
+    { id:'review', name:'Review', kind:'action', icon:'layout' },
+    { id:'split', name:'Split', kind:'action', icon:'layout' },
+    { id:'present', name:'Present', kind:'action', icon:'layout' },
+  ],
+};
+const NAMES = { deploy:'Deploy', layouts:'Layouts' };
+const kindText = e => e.kind === 'group' ? `Group · ${DATA[e.id].length} items` : e.kind === 'app' ? 'App · release to open' : 'Action · release to run';
+
+/* ---------- state ---------- */
+let design = 'a', parent = '', keyIdx = null, pointer = null, pinned = true, open = true, held = false;
+const entries = () => DATA[parent];
+const slots = () => Math.max(6, entries().length);
+const angleOf = i => i * 2 * Math.PI / slots();
+const P = (i, r) => [r * Math.sin(angleOf(i)), -r * Math.cos(angleOf(i))];
+
+const stage = $('#stage'), overlay = $('#overlay'), host = $('#host');
+let D = null; // current design renderer
+
+/* selection: index of an entry, 'center', or null */
+function selection(){
+  if (keyIdx !== null) return keyIdx;
+  if (!pointer) return null;
+  const s = scale();
+  if (pointer.dist < D.dead * s) return 'center';
+  const idx = Math.round(pointer.angle / (2 * Math.PI) * slots()) % slots();
+  return entries()[idx] ? idx : null; // empty slot = nothing (cancels)
+}
+
+/* ---------- shared helpers for the glide (shortest way round) ---------- */
+function glider(){
+  let deg = 0;
+  return target => { const d = ((target - deg) % 360 + 540) % 360 - 180; deg += d; return deg; };
+}
+
+/* ================= renderers ================= */
+const R = {};
+
+R.cur = {
+  dead: 360 * .24, overlay: 'cur-overlay', size: 360,
+  note: ['Current', 'A grey 360 px disc with hard wedge cut-outs and a thin outline arc on the selected slot. Every slot is a separate filled block, so the wheel reads as a heavy pie chart next to Orvane’s light, airy surfaces. It has no open motion and no selection motion.'],
+  build(root){
+    const n = slots(), w = el('div', 'cur');
+    for (let i = 0; i < n; i++){
+      const e = entries()[i], b = el('div', 'cur-entry' + (e ? '' : ' empty'));
+      const step = 2 * Math.PI / n, a0 = i * step - step / 2 + .008, a1 = i * step + step / 2 - .008, pts = [];
+      const pt = (a, r) => [50 + r * Math.sin(a), 50 - r * Math.cos(a)];
+      for (let k = 0; k <= 24; k++) pts.push(pt(a0 + (a1 - a0) * k / 24, 49));
+      for (let k = 24; k >= 0; k--) pts.push(pt(a0 + (a1 - a0) * k / 24, 24));
+      b.style.clipPath = `polygon(${pts.map(p => `${p[0]}% ${p[1]}%`).join(',')})`;
+      if (e){
+        const c = el('span', 'cur-content', `${icon(e.icon, 22)}<span>${e.name}</span>`);
+        c.style.left = `${50 + 36 * Math.sin(i * step)}%`; c.style.top = `${50 - 36 * Math.cos(i * step)}%`;
+        b.append(c);
+      }
+      w.append(b);
+    }
+    const center = el('div', 'cur-center');
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('viewBox', '0 0 100 100'); svg.classList.add('cur-outline');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); svg.append(path);
+    w.append(center, svg); root.append(w);
+    this.w = w; this.center = center; this.path = path;
+  },
+  update(sel){
+    const n = slots(), step = 2 * Math.PI / n, list = entries();
+    [...this.w.querySelectorAll('.cur-entry')].forEach((b, i) => b.classList.toggle('sel', sel === i));
+    this.center.classList.toggle('sel', sel === 'center');
+    const e = typeof sel === 'number' ? list[sel] : null;
+    this.center.innerHTML = `${icon('settings', 18)}<strong>Edit config</strong><small>${sel === 'center' ? 'Release Alt+Q to edit' : e ? e.name : 'Point to select'}</small>${parent ? '<small>Right-click to go back</small>' : ''}`;
+    if (typeof sel === 'number'){
+      const pt = (a) => [50 + 49.5 * Math.sin(a), 50 - 49.5 * Math.cos(a)];
+      const a = pt(sel * step - step / 2 + .025), b = pt(sel * step + step / 2 - .025);
+      this.path.setAttribute('d', `M ${a[0]} ${a[1]} A 49.5 49.5 0 0 1 ${b[0]} ${b[1]}`);
+    } else this.path.removeAttribute('d');
+  },
+};
+
+R.a = {
+  dead: 344 * .23, overlay: 'a-overlay', size: 344, anim: true,
+  note: ['Halo', 'One continuous frosted ring and no cut-up wedges. Labels sit straight on the glass. The selected slot is marked by a soft tinted lens with a thin accent arc on its outer edge, and that lens glides around the ring as you point (220 ms, transform only). The white center shows what will run: icon, name and kind. The calmest of the three, closest to the current layout.'],
+  build(root){
+    const n = slots(), w = el('div', 'a');
+    const step = 360 / n, r0 = 26.5, r1 = 48.2, a = (step / 2 - 1.2) * Math.PI / 180;
+    const p = (ang, r) => `${(50 + r * Math.sin(ang)).toFixed(3)} ${(50 - r * Math.cos(ang)).toFixed(3)}`;
+    const sector = `M ${p(-a, r1)} A ${r1} ${r1} 0 0 1 ${p(a, r1)} L ${p(a, r0)} A ${r0} ${r0} 0 0 0 ${p(-a, r0)} Z`;
+    const arc = `M ${p(-a + .03, 48.6)} A 48.6 48.6 0 0 1 ${p(a - .03, 48.6)}`;
+    const lens = el('div', 'a-lens', `<svg viewBox="0 0 100 100"><path d="${sector}" fill="rgba(111,137,152,.11)"/><path d="${arc}" fill="none" stroke="#6f8998" stroke-width=".9" stroke-linecap="round"/></svg>`);
+    w.append(lens);
+    for (let i = 0; i < n; i++){
+      const e = entries()[i], [x, y] = P(i, 344 * .37);
+      const s = e ? el('div', 'a-slot', `${icon(e.icon, 20)}<span>${e.name}</span>`) : el('div', 'a-dot');
+      s.style.left = `${172 + x}px`; s.style.top = `${172 + y}px`; w.append(s);
+    }
+    const center = el('div', 'a-center'); w.append(center); root.append(w);
+    this.w = w; this.lens = lens; this.center = center; this.glide = glider(); this.lastSel = undefined;
+  },
+  update(sel){
+    const list = entries(), n = slots();
+    [...this.w.querySelectorAll('.a-slot, .a-dot')].forEach((s, i) => s.classList.toggle('sel', sel === i));
+    const on = typeof sel === 'number';
+    if (on){
+      const was = this.lens.classList.contains('on');
+      if (!was) this.lens.style.transition = 'opacity 160ms ' + SMOOTH; // appear in place, then glide
+      this.lens.style.transform = `rotate(${this.glide(sel * 360 / n)}deg)`;
+      if (!was){ this.lens.offsetWidth; this.lens.style.transition = ''; }
+    }
+    this.lens.classList.toggle('on', on);
+    this.center.classList.toggle('sel', sel === 'center');
+    if (sel === this.lastSel) return; this.lastSel = sel;
+    const crumb = parent ? `<div class="a-crumb">${icon('back')}${NAMES[parent]}</div>` : '';
+    if (on){ const e = list[sel]; this.center.innerHTML = `${crumb}<div class="a-tile">${icon(e.icon)}</div><div class="a-name">${e.name}</div><div class="a-sub">${kindText(e)}</div>`; }
+    else if (sel === 'center') this.center.innerHTML = `${crumb}<div class="a-tile">${icon('settings')}</div><div class="a-name">Edit config</div><div class="a-sub">Release to edit</div>`;
+    else this.center.innerHTML = `${crumb}<div class="a-sub">Point to choose</div>`;
+  },
+};
+
+R.b = {
+  dead: 54, overlay: 'b-overlay', size: 380, anim: true,
+  note: ['B · Orbit', 'No disc at all. Each slot is its own small floating tile, styled like Orvane’s apps and popovers, set on a faint guide circle around a small hub. The chosen tile lifts 5 px outward with a slightly deeper shadow. A small accent dot on the guide follows your pointer’s angle live, so you always see which way you’re aiming. The lightest look, and the most “made of Orvane parts”.'],
+  build(root){
+    const n = slots(), w = el('div', 'b');
+    w.append(el('div', 'b-guide'));
+    const pin = el('div', 'b-pin'); w.append(pin);
+    this.chips = [];
+    for (let i = 0; i < n; i++){
+      const e = entries()[i];
+      if (!e){ const g = el('div', 'b-ghost'), [x, y] = P(i, 134); g.style.transform = `translate(${x}px,${y}px)`; w.append(g); this.chips.push(null); continue; }
+      const c = el('div', 'b-chip', `${icon(e.icon, 18)}<span>${e.name}</span>`);
+      w.append(c); this.chips.push(c);
+    }
+    const hub = el('div', 'b-hub'); w.append(hub); root.append(w);
+    this.w = w; this.pin = pin; this.hub = hub; this.lastSel = undefined;
+  },
+  update(sel){
+    const n = slots();
+    this.chips.forEach((c, i) => {
+      if (!c) return;
+      const on = sel === i, [x, y] = P(i, on ? 139 : 134);
+      c.classList.toggle('sel', on); c.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`;
+    });
+    // pin: follows the live pointer angle; snaps to the slot under keyboard control
+    const show = (pointer && keyIdx === null && pointer.dist >= this.dead * scale()) || typeof sel === 'number';
+    const ang = keyIdx !== null && typeof sel === 'number' ? angleOf(sel) : pointer ? pointer.angle : 0;
+    this.pin.style.transition = keyIdx !== null ? `transform 220ms ${SMOOTH}, opacity 140ms ${SMOOTH}` : `opacity 140ms ${SMOOTH}`;
+    this.pin.style.transform = `translate(${(134 * Math.sin(ang)).toFixed(1)}px,${(-134 * Math.cos(ang)).toFixed(1)}px)`;
+    this.pin.classList.toggle('on', !!show);
+    this.hub.classList.toggle('sel', sel === 'center');
+    if (sel === this.lastSel) return; this.lastSel = sel;
+    const back = parent ? `<small>‹ ${NAMES[parent]}</small>` : '';
+    if (typeof sel === 'number'){ const e = entries()[sel]; this.hub.innerHTML = `${back}<strong>${e.name}</strong><small>${e.kind === 'group' ? 'Open group' : e.kind === 'app' ? 'Open app' : 'Run'}</small>`; }
+    else if (sel === 'center') this.hub.innerHTML = `${back}${icon('settings', 16)}<strong>Edit config</strong>`;
+    else this.hub.innerHTML = `${back}${icon('settings', 16)}<small>Edit config</small>`;
+  },
+};
+
+R.c = {
+  dead: 78, overlay: 'c-overlay', size: 300, anim: true,
+  note: ['C · Dial', 'A smaller, solid dial (300 px) that reads like a precise instrument. The ring holds icons only. Fine tick marks separate the slots, and a short accent notch on the rim marks the choice, rotating to follow it. All the words live in the white center: where you are (Wheel › Deploy), the name, what it does, and the key to release. The most refined and compact option, but slots are recognised by icon until selected.'],
+  build(root){
+    const n = slots(), w = el('div', 'c');
+    for (let i = 0; i < n; i++){
+      const t = el('div', 'c-tick'), a = (i + .5) * 360 / n;
+      t.style.transform = `rotate(${a}deg) translateY(-136px)`; w.append(t);
+    }
+    const notch = el('div', 'c-notch-wrap', '<div class="c-notch"></div>'); w.append(notch);
+    this.wells = [];
+    for (let i = 0; i < n; i++){
+      const e = entries()[i], [x, y] = P(i, 110);
+      const s = e ? el('div', 'c-well', icon(e.icon, 19)) : el('div', 'c-empty');
+      s.style.left = `${150 + x}px`; s.style.top = `${150 + y}px`; w.append(s); this.wells.push(s);
+    }
+    const center = el('div', 'c-center'); w.append(center); root.append(w);
+    this.w = w; this.notch = notch; this.center = center; this.glide = glider(); this.lastSel = undefined;
+  },
+  update(sel){
+    const n = slots(), on = typeof sel === 'number';
+    this.wells.forEach((s, i) => s.classList.toggle('sel', sel === i));
+    if (on){
+      const was = this.notch.classList.contains('on');
+      if (!was) this.notch.style.transition = 'opacity 160ms ' + SMOOTH;
+      this.notch.style.transform = `rotate(${this.glide(sel * 360 / n)}deg)`;
+      if (!was){ this.notch.offsetWidth; this.notch.style.transition = ''; }
+    }
+    this.notch.classList.toggle('on', on);
+    this.center.classList.toggle('sel', sel === 'center');
+    if (sel === this.lastSel) return; this.lastSel = sel;
+    const crumb = `<div class="c-crumb">Wheel${parent ? ' › ' + NAMES[parent] : ''}</div>`;
+    if (on){ const e = entries()[sel]; this.center.innerHTML = `${crumb}<div class="c-name">${e.name}</div><div class="c-sub">${e.kind === 'group' ? `${DATA[e.id].length} items` : e.kind === 'app' ? 'Open app' : 'Run action'}</div><div class="c-key">${e.kind === 'group' ? 'click or ↑' : 'release Alt+Q'}</div>`; }
+    else if (sel === 'center') this.center.innerHTML = `${crumb}<div class="c-name">Edit config</div><div class="c-sub">Wheel settings</div><div class="c-key">release Alt+Q</div>`;
+    else this.center.innerHTML = `${crumb}<div class="c-name" style="color:#9aabb6;font-weight:500">Choose</div><div class="c-sub">point or use ← →</div>`;
+  },
+};
+
+
+/* shared Halo pieces */
+function haloRing(root){ const w = el('div', 'a'); root.append(w); return w; }
+const pt = (ang, r) => `${(50 + r * Math.sin(ang)).toFixed(3)} ${(50 - r * Math.cos(ang)).toFixed(3)}`;
+function crumbText(){ return parent ? '‹ ' + NAMES[parent] : ''; }
+function rotateGlide(node, glide, sel, n){
+  const was = node.classList.contains('on');
+  if (!was) node.style.transition = 'opacity 160ms ' + SMOOTH;  // appear in place, then glide
+  const deg = glide(sel * 360 / n);
+  node.style.transform = `rotate(${deg}deg)`;
+  if (!was){ node.offsetWidth; node.style.transition = ''; }
+  return deg;
+}
+
+R.h1 = {
+  dead: 344 * .22, overlay: 'a-overlay', size: 344, anim: true,
+  note: ['Halo · Glow', 'Changes the selection marker and slots. The arc line is gone. The chosen slot gets a soft glow that’s strongest at the outer edge and fades toward the middle, and its icon sits on a small white disc, like a lifted button. Very faint dividers give the ring quiet structure. The center is text only: name and what it does.'],
+  build(root){
+    const w = haloRing(root); w.classList.add('h1');
+    this.ring = w;
+    this.layer = this.buildLayer(); w.append(this.layer);
+    // the center disc stays put across levels; only its text changes
+    this.center = el('div', 'h1-center'); this.ctext = el('div', 'h1-ctext');
+    this.center.append(this.ctext); w.append(this.center);
+    this.lastSel = undefined;
+  },
+  // dividers, glow and slots for the current level, in one layer that can crossfade
+  buildLayer(){
+    const n = slots(), step = 360 / n, a = (step / 2 - 1) * Math.PI / 180, layer = el('div', 'h1-layer');
+    let div = '';
+    for (let i = 0; i < n; i++){ const b = (i + .5) * 2 * Math.PI / n; div += `<line x1="${50 + 27 * Math.sin(b)}" y1="${50 - 27 * Math.cos(b)}" x2="${50 + 50 * Math.sin(b)}" y2="${50 - 50 * Math.cos(b)}"/>`; }
+    layer.insertAdjacentHTML('beforeend', `<svg class="h1-div" viewBox="0 0 100 100"><g stroke="#43576414" stroke-width=".3">${div}</g></svg>`);
+    // the glow runs right to the ring's edge (r 50 = the ring's radius)
+    const sector = `M ${pt(-a, 50)} A 50 50 0 0 1 ${pt(a, 50)} L ${pt(a, 27)} A 27 27 0 0 0 ${pt(-a, 27)} Z`;
+    const lens = el('div', 'h1-lens', `<svg viewBox="0 0 100 100"><defs><radialGradient id="h1g" cx="50" cy="50" r="50" gradientUnits="userSpaceOnUse"><stop offset=".52" stop-color="#6f8998" stop-opacity=".03"/><stop offset="1" stop-color="#6f8998" stop-opacity=".2"/></radialGradient></defs><path d="${sector}" fill="url(#h1g)"/></svg>`);
+    layer.append(lens);
+    this.items = [];
+    for (let i = 0; i < n; i++){
+      const e = entries()[i], [x, y] = P(i, 344 * .37);
+      const s = e ? el('div', 'h1-slot', `<div class="h1-ico">${icon(e.icon, 19)}</div><span>${e.name}</span>`) : el('div', 'a-dot');
+      s.style.left = `${172 + x}px`; s.style.top = `${172 + y}px`; layer.append(s); this.items.push(s);
+    }
+    this.lens = lens; this.glide = glider();
+    return layer;
+  },
+  // entering a group (dir 1) or going back (dir -1): the ring stays, the old level
+  // drifts slightly away and fades while the new one settles in its place
+  relevel(dir){
+    const T = { duration: 240, easing: SMOOTH };
+    const old = this.layer, oldOp = getComputedStyle(old).opacity;
+    old.getAnimations().forEach(x => x.cancel());
+    old.classList.add('h1-out');
+    this.layer = this.buildLayer(); this.ring.insertBefore(this.layer, this.center);
+    old.animate([{ opacity: oldOp, transform: 'none' }, { opacity: 0, transform: `scale(${dir > 0 ? 1.035 : .965})` }], { ...T, fill: 'forwards' });
+    setTimeout(() => old.remove(), T.duration + 40); // a timer, not onfinish: finish events stall in background tabs
+    this.layer.animate([{ opacity: 0, transform: `scale(${dir > 0 ? .965 : 1.035})` }, { opacity: 1, transform: 'none' }], T);
+    // center text: the old words fade out while the new ones fade in, the disc never blinks
+    this.center.querySelectorAll('.h1-ctext.h1-out').forEach(g => g.remove());
+    const ghost = this.ctext; ghost.getAnimations().forEach(x => x.cancel()); ghost.classList.add('h1-out');
+    this.ctext = el('div', 'h1-ctext'); this.center.append(this.ctext);
+    this.lastSel = undefined; this.update(selection());
+    ghost.animate([{ opacity: 1 }, { opacity: 0 }], { ...T, duration: 180, fill: 'forwards' });
+    setTimeout(() => ghost.remove(), 220);
+    this.ctext.animate([{ opacity: 0 }, { opacity: 1 }], { ...T, duration: 180 });
+  },
+  update(sel){
+    const on = typeof sel === 'number';
+    this.items.forEach((s, i) => s.classList.toggle('sel', sel === i));
+    if (on) rotateGlide(this.lens, this.glide, sel, slots());
+    this.lens.classList.toggle('on', on);
+    this.center.classList.toggle('sel', sel === 'center');
+    if (sel === this.lastSel) return; this.lastSel = sel;
+    const c = parent ? `<div class="h1-crumb">${crumbText()}</div>` : '';
+    if (on){ const e = entries()[sel]; this.ctext.innerHTML = `${c}<div class="h1-name">${e.name}</div><div class="h1-sub">${kindText(e)}</div>`; }
+    else if (sel === 'center') this.ctext.innerHTML = `${c}<div class="h1-name">Edit config</div><div class="h1-sub">Release to edit</div>`;
+    else this.ctext.innerHTML = `${c}<div class="h1-idle">${icon('settings', 16)}Point to choose</div>`;
+  },
+};
+
+// Glow · Blend: Halo · Glow, with the handoff between a slot and the center
+// following the pointer. Near the center's edge the slot glow fades out and
+// Glow's own center ring fades in, in step with the distance (Proximity's
+// fade), smoothed so it never pops. Arrow keys fade it over 220 ms.
+R.h4 = Object.assign(Object.create(R.h1), {
+  note: ['Halo · Glow · Blend', 'Halo · Glow with a gradual handoff to the center. As the pointer nears the center, the slot’s glow fades out and Glow’s own center ring fades in, in step with the distance, so moving slowly blends slowly. With the arrow keys the same fade runs over 220 ms. The center text crossfades on that handoff. It appears by fading in while growing gently into place. Choosing an outer item lifts its icon as the wheel fades away; choosing Edit config grows the center disc outward as it fades; cancelling is a quick fade. With Keep open on, the wheel comes back after a moment so you can watch again.'],
+  build(root){
+    R.h1.build.call(this, root);
+    this.ring.classList.add('h4'); this.mode = undefined;
+  },
+  update(sel){
+    const prev = this.lastSel, before = this.ctext.innerHTML;
+    R.h1.update.call(this, sel);
+    // the center also shows the chosen thing's icon
+    if (sel !== prev){
+      const c = parent ? `<div class="h1-crumb">${crumbText()}</div>` : '';
+      if (typeof sel === 'number'){ const e = entries()[sel]; this.ctext.innerHTML = `${c}<div class="h4-cico">${icon(e.icon, 20)}</div><div class="h1-name">${e.name}</div><div class="h1-sub">${kindText(e)}</div>`; }
+      else if (sel === 'center') this.ctext.innerHTML = `${c}<div class="h4-cico">${icon('settings', 20)}</div><div class="h1-name">Edit config</div><div class="h1-sub">Release to edit</div>`;
+    }
+    // 1 = all slot glow, 0 = all center ring
+    const live = pointer && keyIdx === null && sel !== null;
+    let t = typeof sel === 'number' ? 1 : 0;
+    if (live){
+      const d = pointer.dist / scale(), band = 34;
+      t = Math.min(1, Math.max(0, (d - (this.dead - band)) / (2 * band)));
+    }
+    const ease = live ? '120ms ' + SMOOTH : '220ms ' + SMOOTH;
+    this.lens.style.transition = `transform 220ms ${SMOOTH}, opacity ${ease}`;
+    this.lens.style.opacity = sel === null ? 0 : t;
+    this.center.style.setProperty('--ring', sel === null ? 0 : 1 - t);
+    this.center.style.setProperty('--ring-ease', ease);
+    // center text: crossfade when the selection moves between a slot and the center
+    if (sel === prev) return;
+    const mode = typeof sel === 'number' ? 'slot' : sel;
+    const handoff = this.mode !== undefined && mode !== this.mode && (mode === 'center' || this.mode === 'center');
+    this.mode = mode;
+    if (!handoff || reduce.matches) return;
+    const T = { duration: 200, easing: SMOOTH };
+    const ghost = el('div', 'h1-ctext h1-out', before);
+    this.center.append(ghost);
+    ghost.animate([{ opacity: 1 }, { opacity: 0 }], { ...T, fill: 'forwards' }); setTimeout(() => ghost.remove(), 240);
+    this.ctext.animate([{ opacity: 0 }, { opacity: 1 }], T);
+  },
+});
+// Glow · Blend: appearing and closing.
+// Appear: the ring fades in while growing gently into place.
+// Choosing an outer item: its icon lifts a little while the wheel fades away.
+// Choosing Edit config: the center disc grows outward as it fades, opening toward the config.
+// Cancelling: a quick, quiet fade.
+Object.assign(R.h4, {
+  enter(){
+    this.ring.animate([{ opacity: 0, scale: .92 }, { opacity: 1, scale: 1 }], { duration: 280, easing: SMOOTH });
+  },
+  exit(sel){
+    const ring = this.ring, T = (d, extra) => ({ duration: d, easing: SMOOTH, fill: 'forwards', ...extra });
+    if (typeof sel === 'number'){
+      const ico = this.items[sel].querySelector('.h1-ico');
+      ico.animate([{ scale: 1 }, { scale: 1.12 }], T(300));
+      ring.animate([{ opacity: 1, scale: 1 }, { opacity: 0, scale: .97 }], T(220, { delay: 80 }));
+      return 300;
+    }
+    if (sel === 'center'){
+      this.center.animate([{ scale: 1, opacity: 1 }, { scale: 1.18, opacity: 0 }], T(280));
+      ring.animate([{ opacity: 1 }, { opacity: 0 }], T(260));
+      return 280;
+    }
+    ring.animate([{ opacity: 1, scale: 1 }, { opacity: 0, scale: .98 }], T(160));
+    return 160;
+  },
+});
+
+R.h2 = {
+  dead: 344 * .21, overlay: 'a-overlay', size: 344, anim: true,
+  note: ['Halo · Track', 'Changes the inner ring. A hairline track circles just outside the center, and a short accent segment glides along it to point at the chosen slot, like a progress ring. There’s no fill in the slot. Groups show a small item-count badge on their icon, so you can tell them from actions at a glance. The center leads with a larger icon.'],
+  build(root){
+    const n = slots(), w = haloRing(root), step = 2 * Math.PI / n, a = step / 2 - .07, r = 26.5;
+    w.insertAdjacentHTML('beforeend', `<svg class="h2-track" viewBox="0 0 100 100"><circle cx="50" cy="50" r="${r}" fill="none" stroke="#dde6ea" stroke-width=".7"/></svg>`);
+    const seg = el('div', 'h2-seg', `<svg viewBox="0 0 100 100"><path d="M ${pt(-a, r)} A ${r} ${r} 0 0 1 ${pt(a, r)}" fill="none" stroke="#6f8998" stroke-width="1.5" stroke-linecap="round"/></svg>`);
+    w.append(seg);
+    this.items = [];
+    for (let i = 0; i < n; i++){
+      const e = entries()[i], [x, y] = P(i, 344 * .385);
+      const badge = e && e.kind === 'group' ? `<span class="h2-badge">${DATA[e.id].length}</span>` : '';
+      const s = e ? el('div', 'h2-slot', `<div class="h2-icon">${icon(e.icon, 20)}${badge}</div><span>${e.name}</span>`) : el('div', 'a-dot');
+      s.style.left = `${172 + x}px`; s.style.top = `${172 + y}px`; w.append(s); this.items.push(s);
+    }
+    this.center = el('div', 'h2-center'); w.append(this.center);
+    this.seg = seg; this.glide = glider(); this.lastSel = undefined;
+  },
+  update(sel){
+    const on = typeof sel === 'number';
+    this.items.forEach((s, i) => s.classList.toggle('sel', sel === i));
+    if (on) rotateGlide(this.seg, this.glide, sel, slots());
+    this.seg.classList.toggle('on', on);
+    this.center.classList.toggle('sel', sel === 'center');
+    if (sel === this.lastSel) return; this.lastSel = sel;
+    const c = parent ? `<small>${crumbText()}</small>` : '';
+    if (on){ const e = entries()[sel]; this.center.innerHTML = `${c}${icon(e.icon, 22)}<strong>${e.name}</strong><small>${kindText(e)}</small>`; }
+    else if (sel === 'center') this.center.innerHTML = `${c}${icon('settings', 22)}<strong>Edit config</strong><small>Release to edit</small>`;
+    else this.center.innerHTML = `${c}${icon('settings', 22)}<small>Point to choose</small>`;
+  },
+};
+
+R.h3 = {
+  dead: 344 * .23, overlay: 'a-overlay', size: 344, anim: true,
+  note: ['Halo · Pill', 'Changes the selection marker and the center. A white capsule, like a raised button, travels around the ring to the chosen slot and stays upright as it goes (240 ms). The center is split in two: what will run at the top, and a separate Edit config button at the bottom, so the config entry is visible instead of hidden behind the center.'],
+  build(root){
+    const n = slots(), w = haloRing(root);
+    const orbit = el('div', 'h3-orbit', '<div class="h3-pill"></div>'); w.append(orbit);
+    this.items = [];
+    for (let i = 0; i < n; i++){
+      const e = entries()[i], [x, y] = P(i, 344 * .37);
+      const s = e ? el('div', 'h3-slot', `${icon(e.icon, 19)}<span>${e.name}</span>`) : el('div', 'a-dot');
+      s.style.left = `${172 + x}px`; s.style.top = `${172 + y}px`; w.append(s); this.items.push(s);
+    }
+    this.center = el('div', 'h3-center', `<div class="h3-top"></div><div class="h3-edit">${icon('settings', 12)}Edit config</div>`); w.append(this.center);
+    this.orbit = orbit; this.pill = orbit.firstChild; this.glide = glider(); this.lastSel = undefined;
+  },
+  update(sel){
+    const on = typeof sel === 'number';
+    this.items.forEach((s, i) => s.classList.toggle('sel', sel === i));
+    if (on){
+      const was = this.orbit.classList.contains('on');
+      if (!was) this.pill.style.transition = 'none';
+      const deg = rotateGlide(this.orbit, this.glide, sel, slots());
+      this.pill.style.transform = `translate(-50%,-50%) rotate(${-deg}deg)`; // counter-rotate: stays upright
+      if (!was){ this.pill.offsetWidth; this.pill.style.transition = ''; }
+    }
+    this.orbit.classList.toggle('on', on);
+    this.center.classList.toggle('sel', sel === 'center');
+    if (sel === this.lastSel) return; this.lastSel = sel;
+    const top = this.center.firstChild, c = parent ? `<div class="h3-crumb">${crumbText()}</div>` : '';
+    if (on){ const e = entries()[sel]; top.innerHTML = `${c}<div class="h3-name">${e.name}</div><div class="h3-sub">${kindText(e)}</div>`; }
+    else if (sel === 'center') top.innerHTML = `${c}<div class="h3-name">Edit config</div><div class="h3-sub">Release to edit</div>`;
+    else top.innerHTML = `${c}<div class="h3-sub">Point to choose</div>`;
+  },
+};
+
+/* ================= mounting, opening, levels ================= */
+function scale(){ return Math.min(1, (stage.clientWidth - 24) / (D.size + 40), (stage.clientHeight - 24) / (D.size + 40)); }
+function mount(animateOpen){
+  D = R[design];
+  host.innerHTML = '';
+  overlay.className = 'overlay ' + D.overlay;
+  host.style.setProperty('--s', scale());
+  D.build(host);
+  D.update(selection());
+  if (animateOpen && D.enter && !reduce.matches) D.enter();
+  else if (animateOpen && D.anim && !reduce.matches)
+    host.firstElementChild.animate([{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: SMOOTH });
+}
+function setLevel(p, keepKey){
+  parent = p; keyIdx = keepKey ?? null;
+  D = R[design];
+  if (D.relevel && host.firstElementChild && !reduce.matches){ D.relevel(p ? 1 : -1); return; }
+  host.innerHTML = ''; D.build(host); D.update(selection());
+  // the new level's contents fade in where they are; nothing moves
+  if (D.anim && !reduce.matches) host.firstElementChild.animate([{ opacity: .0 }, { opacity: 1 }], { duration: 160, easing: SMOOTH });
+}
+let closing = false, closeTimer = 0, reopenTimer = 0;
+function show(v){
+  clearTimeout(closeTimer); clearTimeout(reopenTimer); closing = false;
+  overlay.getAnimations().forEach(a => a.cancel()); overlay.style.pointerEvents = '';
+  open = v; overlay.style.display = v ? '' : 'none';
+  if (v){ parent = ''; keyIdx = null; mount(true); }
+}
+function refresh(){ if (open && !closing) D.update(selection()); }
+// Choosing (or cancelling) closes the wheel. Designs with an exit animation play it
+// first; the others close at once, as before. Groups never close the wheel.
+// With Keep open on, the wheel comes back after a moment so the animations can be watched again.
+function choose(sel, closeAfter){
+  const e = typeof sel === 'number' ? entries()[sel] : null;
+  if (e && e.kind === 'group') return run(sel);
+  if (!D.exit || reduce.matches){ if (closeAfter) show(false); return run(sel); }
+  closing = true; overlay.style.pointerEvents = 'none';
+  const ms = D.exit(sel);
+  overlay.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms, easing: SMOOTH, fill: 'forwards' });
+  closeTimer = setTimeout(() => {
+    show(false); run(sel);
+    if (pinned) reopenTimer = setTimeout(() => { if (pinned && !open) show(true); }, 900);
+  }, ms);
+}
+
+let toastTimer = 0;
+function toast(text){
+  const t = $('#toast'); t.textContent = text; clearTimeout(toastTimer);
+  t.getAnimations().forEach(a => a.cancel());
+  t.style.opacity = 1; t.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, easing: SMOOTH });
+  toastTimer = setTimeout(() => { t.style.opacity = 0; }, 1400);
+}
+function run(sel){
+  if (sel === 'center') return toast('Would open the wheel config');
+  if (typeof sel !== 'number') return toast('Nothing selected: cancelled');
+  const e = entries()[sel];
+  if (e.kind === 'group') return setLevel(e.id);
+  toast(`${e.kind === 'app' ? 'Would open' : 'Would run'}: ${e.name}`);
+}
+
+/* ---------- input ---------- */
+stage.addEventListener('pointermove', e => {
+  const r = host.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+  pointer = { dist: Math.hypot(dx, dy), angle: (Math.atan2(dy, dx) + Math.PI / 2 + 2 * Math.PI) % (2 * Math.PI) };
+  keyIdx = null; refresh();
+});
+stage.addEventListener('pointerleave', () => { pointer = null; refresh(); });
+stage.addEventListener('click', () => { if (open && !closing) choose(selection(), false); });
+stage.addEventListener('contextmenu', e => { e.preventDefault(); if (open && !closing && parent) back(); });
+function back(){ const from = parent; setLevel('', Math.max(0, DATA[''].findIndex(x => x.id === from))); }
+
+document.addEventListener('keydown', e => {
+  if (e.altKey && e.code === 'KeyQ'){ e.preventDefault(); if (!pinned && !held){ held = true; show(true); } return; }
+  if (e.ctrlKey || e.metaKey || e.altKey && !/^Arrow/.test(e.key)) return;
+  if (e.key === 'k' || e.key === 'K'){ togglePin(); return; }
+  if (!open || closing) return;
+  const list = entries(), cur = selection();
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft'){
+    e.preventDefault();
+    const d = e.key === 'ArrowRight' ? 1 : -1, base = typeof cur === 'number' ? cur : (d > 0 ? -1 : 0);
+    keyIdx = (base + d + list.length) % list.length; refresh();
+  } else if (e.key === 'ArrowUp'){ e.preventDefault(); if (typeof cur === 'number' && list[cur].kind === 'group') setLevel(list[cur].id, 0); }
+  else if (e.key === 'ArrowDown'){ e.preventDefault(); if (parent) back(); }
+  else if (e.key === 'Enter'){ e.preventDefault(); choose(cur, false); }
+  else if (e.key === 'Escape' && !pinned){ choose(null, true); }
+}, true);
+document.addEventListener('keyup', e => {
+  if (held && (e.key === 'Alt' || e.code === 'KeyQ')){ held = false; if (!open || closing) return; choose(selection(), true); }
+});
+
+/* ---------- controls ---------- */
+const seg = $('#seg'), thumb = $('.thumb', seg), pinBtn = $('#pin');
+function placeThumb(){ const on = seg.querySelector('[aria-checked="true"]'); thumb.style.width = on.offsetWidth + 'px'; thumb.style.transform = `translateX(${on.offsetLeft - 3}px)`; }
+function setDesign(v){
+  design = v; seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-checked', b.dataset.v === v)); placeThumb();
+  const [t, d] = R[v].note; $('#note').innerHTML = `<h2>${t}</h2><p>${d}</p>`;
+  if (open){ keyIdx = null; parent = ''; mount(true); }
+}
+function togglePin(){ pinned = !pinned; pinBtn.setAttribute('aria-pressed', pinned); show(pinned); if (!pinned) toast('Hold Alt+Q to open the wheel'); }
+seg.querySelectorAll('button').forEach(b => { b.addEventListener('mousedown', e => e.preventDefault()); b.onclick = () => setDesign(b.dataset.v); });
+pinBtn.addEventListener('mousedown', e => e.preventDefault());
+pinBtn.onclick = togglePin;
+new ResizeObserver(() => { placeThumb(); if (D) host.style.setProperty('--s', scale()); }).observe(stage);
+
+D = R[design];
+setDesign('h4');
+})();
+</script>
+</body>
+</html>

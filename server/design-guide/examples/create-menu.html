@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Create menu</title>
+<style>
+:root{--canvas:#e9edf0;--app:#f7f9fa;--strong:#273f50;--text:#455968;--faint:#8296a2;--accent:#6f8998;--run:#365f78;--line:#e3eaee;--mono:"Cascadia Code",Consolas,monospace}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{font:13px/1.5 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;color:var(--text);background:var(--canvas);-webkit-font-smoothing:antialiased;position:relative;overflow:hidden}
+svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.dock{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);display:flex;align-items:center;gap:4px;padding:6px;border-radius:12px;background:#f7f9fa;box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c}
+.dock button{display:flex;align-items:center;gap:7px;height:30px;padding:0 10px;border:0;border-radius:7px;background:transparent;font:inherit;font-size:12px;color:var(--text)}
+.dock button.on{background:#e4edf2;color:var(--strong)}
+.dock i{width:1px;height:18px;background:var(--line);margin:0 3px}
+.panel{position:absolute;left:calc(50% + 40px);bottom:72px;width:470px;display:grid;grid-template-columns:1fr 180px;border:1px solid #dbe4ea;border-radius:10px;background:#fbfcfd;box-shadow:0 14px 36px -10px #263f5540;overflow:hidden}
+.main{padding:6px}
+.search{display:flex;align-items:center;gap:7px;height:32px;padding:0 8px;margin-bottom:4px;border-bottom:1px solid var(--line);color:var(--faint);font-size:12.5px}
+.it{display:grid;grid-template-columns:30px 1fr auto;align-items:center;gap:9px;padding:5px 6px;border-radius:7px;cursor:pointer}
+.it:hover,.it.on{background:#e7eef2}
+.ico{display:grid;place-items:center;width:30px;height:30px;border-radius:8px;border:1px solid #dde6eb;background:#fff;color:var(--run)}
+.it.on .ico{background:#365f78;border-color:#365f78;color:#fff}
+.it strong{display:block;font-size:12.5px;font-weight:550;color:var(--strong)}
+.it div span{display:block;font-size:11.5px;color:var(--faint)}
+kbd{font:10.5px var(--mono);color:var(--faint);padding:1px 5px;border:1px solid #dce5ea;border-radius:4px;background:#f4f7f9}
+.side{padding:12px;border-left:1px solid var(--line);background:#f5f8fa}
+.side h4{margin:0 0 6px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#8ea1ac}
+.side a{display:flex;align-items:center;gap:7px;height:28px;padding:0 6px;border-radius:6px;font-size:12px;color:var(--text);cursor:pointer}
+.side a:hover{background:#e7eef2}
+.side svg{width:13px;height:13px;color:var(--accent)}
+.side hr{border:0;border-top:1px solid var(--line);margin:10px 0}
+.foot{grid-column:1/-1;display:flex;justify-content:space-between;padding:7px 12px;border-top:1px solid var(--line);font-size:11px;color:var(--faint)}
+.ghost{position:absolute;left:150px;top:100px;width:460px;height:290px;border:1.5px dashed #9fb6c3;border-radius:10px;background:#fbfcfd70;display:grid;place-items:center;color:#7f95a2;font-size:12px}
+</style></head><body>
+<div class="ghost">Browser opens here, in the middle of the view</div>
+<div class="panel" role="menu" aria-label="New app">
+  <div class="main">
+    <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>New app…</div>
+    <div class="it on" role="menuitem"><span class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg></span><div><strong>Browser</strong><span>Web pages, live clips</span></div><kbd>1</kbd></div>
+    <div class="it" role="menuitem"><span class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10l3 2-3 2M12 15h4"/></svg></span><div><strong>Terminal</strong><span>PowerShell in a folder</span></div><kbd>2</kbd></div>
+    <div class="it" role="menuitem"><span class="ico"><svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6z"/><path d="M9 9h6M9 13h6M9 17h4"/></svg></span><div><strong>Notes</strong><span>Pages and blocks</span></div><kbd>3</kbd></div>
+    <div class="it" role="menuitem"><span class="ico"><svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg></span><div><strong>File Explorer</strong><span>Browse a folder</span></div><kbd>4</kbd></div>
+    <div class="it" role="menuitem"><span class="ico"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="9" r="2"/><path d="M6 8v8M18 11c0 4-6 3-10 6"/></svg></span><div><strong>Git</strong><span>Status, history and diffs</span></div><kbd>5</kbd></div>
+    <div class="it" role="menuitem"><span class="ico"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="3"/><path d="M8 10l3 2-3 2M13 15h3"/></svg></span><div><strong>Agent sessions</strong><span>Claude Code and Codex</span></div><kbd>6</kbd></div>
+    <div class="it" role="menuitem"><span class="ico"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><div><strong>Build an app…</strong><span>Describe it, or start from blocks</span></div><kbd>B</kbd></div>
+  </div>
+  <div class="side">
+    <h4>From the library</h4>
+    <a><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>Daily list</a>
+    <a><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>Calculator</a>
+    <a><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>NetSuite query</a>
+    <hr>
+    <h4>Recently closed</h4>
+    <a><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/></svg>Browser · Pinterest</a>
+    <a><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/></svg>Terminal · orvane</a>
+  </div>
+  <div class="foot"><span>Type to filter · 1–6 create · Enter opens</span><span>Esc close</span></div>
+</div>
+<div class="dock"><button>Daily list</button><button>Notes</button><button>Browser</button><button>Terminal</button><i></i><button aria-label="Search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg></button><button class="on" aria-label="New app"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>
+</body></html>

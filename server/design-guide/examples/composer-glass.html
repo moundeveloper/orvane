@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Prompt Context</title>
+<style>
+
+:root {
+  color-scheme: light;
+  --ink: #354c5c;
+  --subtle: #526b79;
+  --line: #a6bdcb;
+  --canvas: #e9edf0;
+  --water: #6f8998;
+  --light: #f7f9fa;
+  --glass: rgba(241, 248, 252, 0.48);
+  --blur: 23px;
+  --sat: 118%;
+  --brightness: 1.02;
+  --edge: rgba(255, 255, 255, 0.88);
+  --shine: .53;
+  --glint: .15;
+  --radius: 15px;
+  --field: rgba(255, 255, 255, 0.44);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body { font: 13px/1.45 Inter, "Segoe UI", system-ui, sans-serif; color: var(--ink); }
+button, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid #527487; outline-offset: 2px; }
+.stage {
+  position: relative; display: grid; place-items: center;
+  min-height: max(490px, 100svh); padding: 34px 18px 58px; isolation: isolate;
+  background:
+    radial-gradient(circle at center, #b6c6d166 1px, transparent 1.25px) 0 0 / 21px 21px,
+    radial-gradient(ellipse at 70% 75%, #cddde7, transparent 62%),
+    var(--canvas);
+}
+.scene { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.cards { position: absolute; inset: 0; transition: transform 220ms ease; }
+.stage[data-shifted="true"] .cards { transform: translate(74px, -32px); }
+.canvas-pane {
+  position: absolute; overflow: hidden; border: 1px solid #fff9; border-radius: 12px;
+  box-shadow: 0 14px 36px #23496125, 0 2px 5px #182e4619;
+}
+.canvas-pane header { display: flex; justify-content: space-between; align-items: center; padding: 11px 15px 9px; border-bottom: 1px solid #a3b8c03d; font-weight: 600; }
+.canvas-pane header span { color: #456275; letter-spacing: 2px; }
+.notes {
+  top: 12%; left: 6%; width: 40%; min-width: 248px; height: 54%;
+  transform: rotate(-1.5deg); color: #465968; background: #f7f9fa;
+}
+.notes ul { list-style: none; padding: 6px 15px; margin: 0; }
+.notes li { padding: 10px 0; border-bottom: 1px solid #dce5ea; }
+.notes li::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border: 1px solid #7896a7; border-radius: 2px; }
+.browser {
+  top: 16%; right: 6%; width: 47%; min-width: 270px; height: 59%;
+  transform: rotate(1.7deg); background: #eaf2f7;
+}
+.browser header { background: #e3edf4; }
+.window-body {
+  position: relative; display: flex; align-items: end; min-height: 168px;
+  padding: 17px; color: white; background:
+    radial-gradient(ellipse at 69% 10%, #d5f0ef, transparent 46%),
+    radial-gradient(ellipse at 18% 85%, #519eae, transparent 54%),
+    linear-gradient(133deg, #376d89, #538baf 55%, #6b7cbd);
+}
+.window-body::before, .window-body::after {
+  position: absolute; content: ""; width: 82%; height: 90%; right: -19%; bottom: -67%;
+  background: #d5f5fba1; border-radius: 60%; transform: rotate(-28deg);
+  box-shadow: 0 -1px 2px #f5fcff; 
+}
+.window-body::after { right: 28%; bottom: -74%; background: #a5dbe8; }
+.foldercard {
+  width: 48%; min-width: 286px; height: 25%; right: 21%; bottom: 12%;
+  background: #d9e9ec; transform: rotate(-1.2deg);
+}
+.foldercard .files { display: flex; flex-wrap: wrap; gap: 7px; padding: 12px; }
+.foldercard .files span { background: #edf5f6; border-radius: 5px; border: 1px solid #b8cdd4; padding: 6px; }
+.glass {
+  position: relative; width: min(558px, 100%); border: 1px solid var(--edge);
+  border-radius: var(--radius); background: var(--glass);
+  backdrop-filter: blur(var(--blur)) saturate(var(--sat)) brightness(var(--brightness));
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--sat)) brightness(var(--brightness));
+  box-shadow: 0 26px 56px #203a5142, 0 6px 16px #1f3d5020, inset 0 1px 1px #fff9, inset 0 -1px 1px #f7feff82;
+}
+.glass::before {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none; content: ""; border-radius: inherit;
+  background:
+    linear-gradient(132deg, #fff 0%, transparent 28%, transparent 75%, #f2fbff 100%),
+    radial-gradient(ellipse at 78% -36%, #fff, transparent 59%);
+  opacity: var(--shine);
+}
+.glass::after {
+  position: absolute; z-index: 0; inset: 0; pointer-events: none; content: ""; border-radius: inherit;
+  background: linear-gradient(140deg, transparent 13%, #fff 32%, #fff6 53%, transparent 69%);
+  opacity: var(--glint);
+}
+
+:root { --glass: rgba(242,248,252,.63); --blur: 17px; --sat: 128%; --shine: .44; --glint: .10; }
+button, input, textarea { font: inherit; color: inherit; }
+button { padding: 0; }
+.stage { min-height: max(490px, 100svh); padding: 22px 15px 45px; }
+.glass { width: min(654px,100%); }
+.glass > header, .main { position: relative; z-index: 1; }
+.glass > header { display: flex; gap: 9px; align-items: center; padding: 11px 14px; min-height: 42px; border-bottom: 1px solid #ffffffa3; font-weight: 640; }
+.mark { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 17px; height: 17px; border: 1px solid #6b8b9c; border-radius: 5px; font-size: 10px; color: #446879; }
+.main { display: grid; min-width: 0; }
+.composer { display: grid; gap: 10px; padding: 12px 14px; min-width: 0; }
+.composer form {
+  display: grid; gap: 8px; min-width: 0; padding: 10px;
+  border: 1px solid #ffffffda; border-radius: 12px;
+  background: #f9fcfead; box-shadow: inset 0 1px 3px #53738c16;
+}
+.composer form:has(textarea:focus) { border-color: #7b97a7; background: #f9fcfec4; }
+input {
+  width: 100%; padding: 8px 10px; min-width: 0; outline-offset: 1px; border: 1px solid #fff;
+  background: #f9fcfeaa; border-radius: 8px; box-shadow: inset 0 1px 3px #53738c16;
+}
+textarea {
+  display: block; width: 100%; min-width: 0; min-height: 61px; max-height: 140px;
+  field-sizing: content; resize: none; overflow-y: auto; background: transparent;
+  padding: 2px 3px; border: 0; outline: none;
+}
+textarea:focus { outline: none; }
+textarea::placeholder, input::placeholder { color: #526b79; }
+.context-block { display: grid; gap: 6px; min-width: 0; }
+.context-tools, .footer, .chips, .menu-head { display:flex; align-items:center; gap:7px; min-width:0; }
+.menu-head b { font-size: 12px; font-weight: 650; }
+.context-tools, .chips { flex-wrap: wrap; }
+.context-tools > .add { border-color: transparent; box-shadow: none; background: transparent; padding-inline: 4px 6px; }
+.context-tools > .add:hover, .context-tools > .add[aria-expanded=true] { background: #e4eff5; }
+.chip {
+  display:flex; align-items:center; min-width:0; max-width:100%;
+  background:#f5fafcdb; border:1px solid #bed3df; border-radius:6px;
+}
+.chip button { border:0; background:none; padding: 4px 6px; min-width:0; }
+.chip .chip-text { display:flex; gap:6px; align-items:center; white-space:nowrap; }
+.chip .chip-text span:last-child { overflow:hidden; text-overflow:ellipsis; }
+.chip button:hover { background:#e1edf4; }
+.chip .remove { color:#536b7c; border-left:1px solid #cedee6; }
+.mini, .picker button.trigger, .send, .shift, .done {
+  min-height:30px; border:1px solid #bcd0db; border-radius:6px; background:#f8fcfdd9;
+  padding:5px 8px; white-space:nowrap; box-shadow:0 1px 0 #fff8 inset;
+}
+.mini:hover, .picker button.trigger:hover, .done:hover { background:#fff; }
+.mini { display:flex; align-items:center; gap:5px; }
+.mini kbd { font:inherit; font-size:10px; border:1px solid #c1d0d9; color:#506d7d; padding:0 3px; border-radius:3px; }
+.footer { justify-content:start; }
+.picker { flex: 0 1 auto; min-width:0; position:relative; }
+.picker button.trigger { display:flex; align-items:center; gap:12px; padding-right:11px; max-width:100%; }
+.picker .value { overflow:hidden; text-overflow:ellipsis; }
+.arrow { width:6px;height:6px;border:solid #527589;border-width:0 1.4px 1.4px 0;transform:rotate(45deg); margin-top:-3px; flex:0 0 auto; }
+.send {
+  display:grid; place-items:center; margin-left:auto; width:30px; flex:0 0 30px; padding:0;
+  background:#c4dfeacb; border-color:#a6c5d4; color:#243f50;
+}
+.send svg { display:block; }
+.send:hover { background:#daedf4; }
+.send:disabled { opacity:.56; cursor:default; }
+.model-menu, .folder-menu {
+  position:absolute; left:0; bottom:calc(100% + 5px); z-index:5; min-width:200px; max-height:var(--menu-height, 230px); overflow:auto;
+  border:1px solid #bed0dc; background:#f5fafc; box-shadow:0 9px 22px #24445733; padding:5px; border-radius:8px;
+}
+.model-menu { display: flex; flex-direction: column; gap: 5px; overflow: hidden; }
+.model-search { flex: 0 0 auto; padding: 5px 7px; border-color: #c0d3de; }
+.model-search:focus { outline: 1px solid #7b97a7; outline-offset: -1px; }
+.model-options { min-height: 0; overflow-y: auto; padding: 2px; }
+.model-empty { color:#526b79; padding:5px 6px; }
+.model-menu p, .folder-menu p { font-size:11px; font-weight:650; color:#526b79; margin:3px 5px 2px; }
+.option, .source {
+  display:flex; align-items:center; gap:8px; width:100%; text-align:left; min-width:0; border:1px solid transparent;
+  padding:5px 6px; border-radius:5px; background:transparent;
+}
+.option:hover,.source:hover { background:#e6f0f6; }
+.option[aria-selected=true], .source[aria-pressed=true] { background:#e4eff5; border-color:#c9dce6; }
+.option span:last-child, .source-copy { min-width:0; flex:1; }
+.source-copy strong, .source-copy small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.source-copy strong { font-size:12px; font-weight:640; }
+.source-copy small { color:#526b79; font-size:11px; line-height:1.25; }
+.source .sign { color:#3e687b; min-width:13px; text-align:center; }
+.drawer {
+  position:absolute; bottom:calc(100% + 7px); left:0; width:min(285px,100%); z-index:3;
+  padding:8px; border:1px solid #bbd1dd; border-radius:9px; background:#f6fafdf5;
+  box-shadow:0 10px 24px #28455736; display:grid; gap:6px;
+}
+.menu-head { justify-content:space-between; }
+.menu-head .done { min-height:24px; padding:2px 7px; }
+.drawer input { padding:5px 7px; font-size:12px; }
+.source-list { display:grid; gap:3px; min-height:0; max-height:var(--source-height, 153px); overflow-y:auto; }
+.source-list, .model-options, .folder-menu, textarea {
+  scrollbar-width: thin; scrollbar-color: #809cac #e7eff3; overscroll-behavior-y: contain;
+}
+.context-block { position:relative; }
+@media (width > 590px) {
+  [data-layout="drawer"] .glass { width:min(774px,100%); }
+  [data-layout="drawer"][data-context="open"] .main { grid-template-columns:minmax(0,1fr) 227px; }
+  [data-layout="drawer"] .drawer {
+    position:relative; bottom:auto; left:auto; width:auto; align-content:start;
+    border:0; border-left:1px solid #ffffffba; border-radius:0 0 var(--radius) 0;
+    box-shadow:none; background:#f7fbfd80; padding:11px 10px;
+  }
+  [data-layout="drawer"] .source-list { max-height:230px; }
+}
+.preview { margin:0; padding:6px 8px; border:1px solid #c6d9e2; border-radius:6px; background:#f5fafade; color:#445e6e; font-size:12px; overflow-wrap:anywhere; }
+.shift { position:absolute; right:14px; bottom:12px; font-size:11px; }
+.status { min-width:0; color:#40667a; font-size:11px; }
+.status:empty { display:none; }
+[hidden] { display:none !important; }
+@media(max-width:590px) {
+  .footer { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; }
+  .footer .send { grid-column:3; grid-row:1; }
+  .footer .status { grid-column:1 / -1; grid-row:2; }
+  .model-menu { left:0; min-width:175px; }
+  .folder-menu { left:auto; right:0; min-width:175px; }
+}
+@media(prefers-reduced-motion:reduce) { .cards {transition:none;} }
+</style>
+</head>
+<body>
+<main class="stage" data-layout="row">
+  <div class="scene" aria-hidden="true">
+    <div class="cards">
+      <section class="canvas-pane notes">
+        <header>Research notes <span>···</span></header>
+        <ul><li>Collect glass references</li><li>Compare prompt layouts</li><li>Review material passes</li></ul>
+      </section>
+      <section class="canvas-pane browser">
+        <header>Browser <span>···</span></header>
+        <div class="window-body">Web design</div>
+      </section>
+      <section class="canvas-pane foldercard">
+        <header>Surveying <span>···</span></header>
+        <div class="files"><span>notes.md</span><span>references</span><span>prompt-layout.html</span></div>
+      </section>
+    </div>
+  </div>
+
+  <section class="glass" aria-label="AI task">
+    <header><span class="mark" aria-hidden="true">✧</span> New AI task</header>
+    <div class="main">
+      <div class="composer">
+        <form>
+          <textarea aria-label="Task prompt" aria-keyshortcuts="Enter Shift+Enter Escape" placeholder="What should the agent work on?">Use the launch notes and the Web design board to compare the two prompt layouts.</textarea>
+          <div class="context-block">
+            <div class="context-tools">
+              <button class="mini add" type="button" aria-expanded="false" aria-controls="sources">＋ Add context <kbd>@</kbd></button>
+              <div class="chips" aria-label="Attached context"></div>
+            </div>
+            <p class="preview" hidden aria-live="polite"></p>
+            <section class="drawer" id="sources" aria-label="Context picker" hidden>
+              <div class="menu-head"><b>Add context</b><button type="button" class="done">Done</button></div>
+              <input type="search" aria-label="Find context" placeholder="Find context…">
+              <div class="source-list"></div>
+            </section>
+          </div>
+          <footer class="footer">
+            <div class="picker">
+              <button class="trigger model-trigger" type="button" aria-label="Choose model" aria-controls="model-options" aria-haspopup="listbox" aria-expanded="false"><span class="value">Opus 5.5 · Claude Code</span><i class="arrow" aria-hidden="true"></i></button>
+              <div class="model-menu" hidden>
+                <input class="model-search" type="search" aria-label="Search models" placeholder="Search models…" autocomplete="off">
+                <div id="model-options" class="model-options" role="listbox" aria-label="Models by provider"></div>
+                <div class="model-empty" role="status" hidden>No matching models</div>
+              </div>
+            </div>
+            <div class="picker">
+              <button class="trigger folder-trigger" type="button" aria-label="Working folder" aria-haspopup="listbox" aria-expanded="false"><span class="value">Runs in Surveying</span><i class="arrow" aria-hidden="true"></i></button>
+              <div role="listbox" aria-label="Working folders" class="folder-menu" hidden></div>
+            </div>
+            <span class="status" role="status"></span>
+            <button class="send" type="submit" aria-label="Start task" title="Start task">
+              <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 12.5v-9m-4 4 4-4 4 4"/></svg>
+            </button>
+          </footer>
+        </form>
+      </div>
+    </div>
+  </section>
+  <button class="shift" type="button" aria-pressed="false">Shift backdrop</button>
+</main>
+<script>
+const stage = document.querySelector('.stage');
+const composer = stage.querySelector('form');
+const draft = composer.querySelector('textarea');
+const add = composer.querySelector('.add');
+const drawer = composer.querySelector('.drawer');
+const search = drawer.querySelector('input');
+const list = drawer.querySelector('.source-list');
+const chips = composer.querySelector('.chips');
+const preview = composer.querySelector('.preview');
+const status = composer.querySelector('.status');
+const send = composer.querySelector('.send');
+const sources = [
+  { id:'file', mark:'F', name:'launch-notes.md', kind:'File · Surveying', excerpt:'Compare readability, reflection and the behavior of the context controls.' },
+  { id:'web', mark:'W', name:'Web design board', kind:'Browser tab · Pinterest', excerpt:'Frosted panels, reflective edges and compact launcher references.' },
+  { id:'selection', mark:'S', name:'Selected text', kind:'Selection · Research notes', excerpt:'Show two glass treatments at the same size and over the same backdrop.' },
+  { id:'terminal', mark:'T', name:'Terminal output', kind:'Terminal · Surveying', excerpt:'Preview build completed. Two design variants rendered.' },
+  { id:'chat', mark:'C', name:'Earlier design chat', kind:'Session · Agent sessions', excerpt:'The matte variant prioritizes blur; the clear variant lets stronger canvas colors through.' }
+];
+const attached = new Set(['file','web']);
+let previewId;
+function node(tag,text,className) {
+  const el = document.createElement(tag);
+  if(text) el.textContent = text;
+  if(className) el.className = className;
+  return el;
+}
+function button(text, className) {
+  const el = node('button',text,className);
+  el.type = 'button';
+  return el;
+}
+function renderChips() {
+  chips.replaceChildren();
+  for(const item of sources.filter(item=>attached.has(item.id))) {
+    const chip = node('div',null,'chip');
+    const label = button(null,'chip-text');
+    label.append(node('span',item.mark,'mark'),node('span',item.name));
+    label.setAttribute('aria-label','Preview '+item.name);
+    label.title = item.kind;
+    label.onclick = () => {
+      previewId = previewId === item.id ? undefined : item.id;
+      preview.hidden = !previewId;
+      preview.textContent = previewId ? item.excerpt : '';
+    };
+    const remove = button('×','remove');
+    remove.setAttribute('aria-label','Remove '+item.name);
+    remove.onclick = () => {
+      attached.delete(item.id);
+      if(previewId === item.id) { preview.hidden = true; previewId = undefined; }
+      renderChips();
+      renderSources();
+      add.focus();
+    };
+    chip.append(label,remove); chips.append(chip);
+  }
+}
+function renderSources() {
+  list.replaceChildren();
+  const query=search.value.trim().toLowerCase();
+  for(const item of sources.filter(item=>(item.name+' '+item.kind).toLowerCase().includes(query))) {
+    const row = button(null,'source');
+    row.setAttribute('aria-pressed',String(attached.has(item.id)));
+    row.setAttribute('aria-label',item.name);
+    const copy=node('span',null,'source-copy');
+    copy.append(node('strong',item.name),node('small',item.kind));
+    row.append(node('span',item.mark,'mark'),copy,node('span',attached.has(item.id)?'✓':'+','sign'));
+    row.onclick=()=>{
+      if(attached.has(item.id)) attached.delete(item.id);
+      else attached.add(item.id);
+      if(!attached.has(previewId)) { previewId=undefined; preview.hidden=true; }
+      renderChips();renderSources();
+      Array.from(list.children).find(el=>el.getAttribute('aria-label')===item.name)?.focus();
+    };
+    list.append(row);
+  }
+  if(!list.children.length) list.append(node('span','No matching context','status'));
+}
+const contextBlock = drawer.parentElement;
+const wide = matchMedia('(width > 590px)');
+const isDrawer = stage.dataset.layout === 'drawer';
+const isDocked = () => isDrawer && wide.matches;
+
+function fitContextPicker() {
+  if (drawer.hidden || isDocked()) return;
+  const available = contextBlock.getBoundingClientRect().top - 15;
+  const chromeHeight = drawer.offsetHeight - list.offsetHeight;
+  drawer.style.setProperty('--source-height', Math.max(44, Math.min(153, available - chromeHeight)) + 'px');
+}
+function toggleDrawer(open, focus = true) {
+  drawer.hidden=!open;
+  stage.dataset.context=open?'open':'closed';
+  add.setAttribute('aria-expanded',String(open));
+  fitContextPicker();
+  if(open && focus) search.focus({ preventScroll: true });
+  if(!open && focus) add.focus({ preventScroll: true });
+}
+function placeDrawer() {
+  const docked = isDocked();
+  (docked ? stage.querySelector('.main') : contextBlock).append(drawer);
+  toggleDrawer(docked, false);
+}
+renderChips();renderSources();placeDrawer();
+if (isDrawer) wide.addEventListener('change', placeDrawer);
+window.addEventListener('resize', fitContextPicker);
+add.onclick=()=>toggleDrawer(drawer.hidden);
+drawer.querySelector('.done').onclick=()=>toggleDrawer(false);
+search.oninput=renderSources;
+search.onkeydown=e=>{
+  if(e.key==='ArrowDown') {e.preventDefault();list.querySelector('button')?.focus();}
+};
+draft.addEventListener('keydown', event => {
+  if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (event.key === '@') {
+    event.preventDefault();
+    toggleDrawer(true);
+  } else if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    draft.blur();
+  } else if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault();
+    if (!event.repeat && !send.disabled) composer.requestSubmit(send);
+  }
+});
+draft.oninput=()=>{send.disabled=!draft.value.trim();status.textContent='';};
+const choices = [
+  { provider:'Claude Code', names:['Opus 5.5','Sonnet 5.5','Haiku 5.5','Fable 5.2'] },
+  { provider:'Codex', names:['GPT-6.2 Sol','Provider default'] }
+];
+function picker(trigger, menu, groups, prefix = '') {
+  let selected = groups[0].names[0];
+  const filter = menu.querySelector('.model-search');
+  const empty = menu.querySelector('.model-empty');
+  const results = menu.querySelector('.model-options') ?? menu;
+  const entries = [];
+  const visibleOptions = () => entries.flatMap(({ options }) => options.filter(option => !option.hidden));
+  function filterOptions() {
+    const terms = filter.value.trim().toLowerCase().split(/\s+/);
+    for (const { provider, section, options } of entries) {
+      for (const option of options) {
+        const label = (option.textContent + ' ' + provider).toLowerCase();
+        option.hidden = !terms.every(term => label.includes(term));
+      }
+      section.hidden = options.every(option => option.hidden);
+    }
+    empty.hidden = visibleOptions().length > 0;
+    results.scrollTop = 0;
+  }
+  function setOpen(open) {
+    menu.hidden = !open;
+    trigger.setAttribute('aria-expanded', String(open));
+    if (!open) return;
+    const available = trigger.getBoundingClientRect().top - 12;
+    menu.style.setProperty('--menu-height', Math.max(92, Math.min(230, available)) + 'px');
+    if (filter) {
+      filter.value = '';
+      filterOptions();
+      filter.focus({ preventScroll: true });
+    } else {
+      (results.querySelector('[aria-selected=true]') || visibleOptions()[0])?.focus();
+    }
+  }
+  for (const { provider = '', names } of groups) {
+    const section = provider ? node('div') : results;
+    if (provider) {
+      section.setAttribute('role', 'group');
+      section.setAttribute('aria-label', provider);
+      const label = node('p', provider);
+      label.setAttribute('aria-hidden', 'true');
+      section.append(label);
+      results.append(section);
+    }
+    const options = names.map(name => {
+      const option = button(name, 'option');
+      option.setAttribute('role', 'option');
+      option.setAttribute('aria-selected', String(name === selected));
+      option.onclick = () => {
+        selected = name;
+        trigger.querySelector('.value').textContent = prefix + name + (provider ? ' · ' + provider : '');
+        for (const item of results.querySelectorAll('[role=option]')) {
+          item.setAttribute('aria-selected', String(item === option));
+        }
+        setOpen(false);
+        trigger.focus({ preventScroll: true });
+      };
+      section.append(option);
+      return option;
+    });
+    entries.push({ provider, section, options });
+  }
+  filter?.addEventListener('input', filterOptions);
+  trigger.onclick = () => setOpen(menu.hidden);
+  menu.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      trigger.focus({ preventScroll: true });
+      return;
+    }
+    const options = visibleOptions();
+    if (event.target === filter && event.key === 'Enter') {
+      event.preventDefault();
+      options[0]?.click();
+      return;
+    }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    if (!options.length) return;
+    const index = options.indexOf(document.activeElement);
+    const delta = event.key === 'ArrowDown' ? 1 : -1;
+    if (index === 0 && delta === -1 && filter) {
+      filter.focus({ preventScroll: true });
+      return;
+    }
+    const next = index < 0 ? (delta === 1 ? 0 : options.length - 1) : (index + delta + options.length) % options.length;
+    options[next].focus();
+  });
+  document.addEventListener('pointerdown', event => {
+    if (!trigger.parentElement.contains(event.target)) setOpen(false);
+  });
+}
+picker(composer.querySelector('.model-trigger'),composer.querySelector('.model-menu'),choices);
+picker(composer.querySelector('.folder-trigger'),composer.querySelector('.folder-menu'),[{names:['Surveying','Design studies']}],'Runs in ');
+drawer.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();toggleDrawer(false);}});
+document.addEventListener('pointerdown',e=>{
+  if(!isDocked() && !drawer.hidden && !drawer.contains(e.target) && !add.contains(e.target)) toggleDrawer(false,false);
+});
+composer.addEventListener('submit',e=>{e.preventDefault();if(draft.value.trim())status.textContent='Preview ready';});
+stage.querySelector('.shift').onclick=e=>{
+  const button=e.currentTarget;
+  const shifted=stage.dataset.shifted!=='true';
+  stage.dataset.shifted=String(shifted);
+  button.setAttribute('aria-pressed',String(shifted));
+  button.textContent=shifted?'Reset backdrop':'Shift backdrop';
+};
+</script>
+</body>
+</html>
