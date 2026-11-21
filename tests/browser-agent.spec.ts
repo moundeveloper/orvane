@@ -10,8 +10,21 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 // shares a tab again.
 test("the AI opens, drives and hands back a Browser tab", async ({}, info) => {
   test.setTimeout(240_000);
+  let stopPendingNavigation: (() => void) | undefined;
   const site = createServer((request, response) => {
     response.setHeader("content-type", "text/html");
+    if (request.url === "/slow-redirect") {
+      setTimeout(() => response.writeHead(302, { Location: "/two" }).end(), 1300);
+      return;
+    }
+    if (request.url === "/cancel") {
+      stopPendingNavigation?.();
+      return;
+    }
+    if (request.url === "/stream") {
+      response.write("<!doctype html><title>Streaming</title><h1>Streaming</h1>");
+      return;
+    }
     if (request.url === "/two") return response.end("<!doctype html><title>Second</title><h1>Second page</h1>");
     response.end(`<!doctype html><title>Form fixture</title>
 <h1>Form</h1>
@@ -113,6 +126,44 @@ test("the AI opens, drives and hands back a Browser tab", async ({}, info) => {
 
     const readShot = await raw("browser_act", { tabId, action: "read", selector: "h1", screenshot: true });
     expect((readShot.content as any[]).some((part) => part.type === "image")).toBe(true);
+
+    const redirected = await call("browser_act", { tabId, action: "navigate", url: "/slow-redirect" });
+    expect(redirected.page.url).toBe(`${origin}/two`);
+    stopPendingNavigation = () => {
+      void app.evaluate(({ webContents }, url) => {
+        webContents.getAllWebContents().find((w) => w.getType() === "webview" && w.getURL() === url)?.navigationHistory.goBack();
+      }, `${origin}/two`);
+    };
+    const canceled = await Promise.race([
+      raw("browser_act", { tabId, action: "navigate", url: "/cancel" }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(Error("Cancellation did not settle")), 13_000).unref()),
+    ]);
+    expect(canceled.isError).toBe(true);
+    expect(JSON.stringify(canceled.content)).toContain("Navigation was canceled");
+    await expect.poll(async () => (await call("browser_snapshot", { tabId })).url).toBe(`${origin}/`);
+    expect((await call("browser_act", { tabId, action: "navigate", url: "/stream" })).page.url).toBe(`${origin}/stream`);
+    expect((await call("browser_act", { tabId, action: "navigate", url: "back" })).page.url).toBe(`${origin}/`);
+
+    // A capture rejection or stall must preserve DOM results and release the MCP queue.
+    const setCaptureState = (state: "reject" | "stall" | "restore", url = `${origin}/`) =>
+      app.evaluate(({ webContents }, { url, state }) => {
+        const guest = webContents.getAllWebContents().find((w) => w.getType() === "webview" && w.getURL() === url)!;
+        if (state === "restore") { delete (guest as Partial<typeof guest>).capturePage; return; }
+        guest.capturePage = state === "reject" ? () => Promise.reject(Error("UnknownVizError")) : () => new Promise(() => {});
+      }, { url, state });
+    await setCaptureState("reject");
+    const rejectedPicture = await call("browser_act", { tabId, action: "read", selector: "h1", screenshot: true });
+    expect(rejectedPicture).toMatchObject({ text: "Form", screenshotWarning: expect.any(String) });
+    const stalledTab = (await call("browser_open", { url: `${origin}/two` })).tabId as string;
+    await setCaptureState("stall", `${origin}/two`);
+    const pendingPicture = call("browser_act", { tabId: stalledTab, action: "eval", expression: "document.title", screenshot: true });
+    await new Promise((done) => setTimeout(done, 150));
+    const listed = await call("browser_tabs");
+    expect(listed.browsers).toHaveLength(1);
+    expect(await pendingPicture).toMatchObject({ value: "Second", screenshotWarning: expect.stringMatching(/timed out/i) });
+    expect(await call("browser_control", { tabId: stalledTab, action: "close" })).toMatchObject({ closed: true });
+    await call("browser_control", { tabId, action: "take" });
+    await setCaptureState("restore");
     // A page script that never answers fails on its own and doesn't block
     // the requests after it.
     const stuck = await raw("browser_act", { tabId, action: "eval", expression: "new Promise(() => {})" });
@@ -185,6 +236,7 @@ test("the AI opens, drives and hands back a Browser tab", async ({}, info) => {
   } finally {
     await client.close().catch(() => undefined);
     await app.close();
+    site.closeAllConnections();
     site.close();
   }
 });

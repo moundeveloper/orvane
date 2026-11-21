@@ -998,6 +998,8 @@ defineExpose({
               >Dock icon<CustomSelect v-model="app.icon">
                 <option value="app">App</option>
                 <option value="text">Text</option>
+                <option value="ai">AI</option>
+                <option value="agent-sessions">Agent sessions</option>
                 <option value="list">List</option>
                 <option value="counter">Counter</option>
                 <option value="code">Code</option>

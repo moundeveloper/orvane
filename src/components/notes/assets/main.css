@@ -89,20 +89,6 @@
   color: #eb5757;
 }
 
-:where(.notes-workspace, .notes-portal)::-webkit-scrollbar,
-:where(.notes-workspace, .notes-portal) *::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-:where(.notes-workspace, .notes-portal)::-webkit-scrollbar-thumb,
-:where(.notes-workspace, .notes-portal) *::-webkit-scrollbar-thumb {
-  background: var(--notes-border);
-  border-radius: 5px;
-}
-:where(.notes-workspace, .notes-portal)::-webkit-scrollbar-track,
-:where(.notes-workspace, .notes-portal) *::-webkit-scrollbar-track {
-  background: transparent;
-}
 
 .notes-workspace .icon-btn,
 .notes-portal .icon-btn {

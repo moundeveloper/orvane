@@ -203,6 +203,47 @@ test("Desktop Browser pauses pages nobody sees and resumes them at once", async 
   }
 });
 
+// Each pause used to add a "destroyed" listener that resuming never removed,
+// so panning a page off and on screen grew the list until Node warned
+// (MaxListenersExceededWarning).
+test("Desktop Browser pause and resume cycles do not pile up page listeners", async ({}, info) => {
+  test.setTimeout(120000);
+  const { server, origin } = await site();
+  const { app, page } = await launch("5194", (name) => info.outputPath(name));
+  try {
+    await page.evaluate(() => localStorage.setItem("orvane.browser.pauseAfterMs", "200"));
+    await createBrowser(page, `${origin}/one`, "Fixture one");
+    await page.locator(".canvas-background").click({ position: { x: 5, y: 5 } });
+    const listeners = () =>
+      app.evaluate(({ webContents }) =>
+        webContents
+          .getAllWebContents()
+          .find((c) => c.getType() === "webview" && c.getURL().endsWith("/one"))!
+          .listenerCount("destroyed"),
+      );
+    const start = await listeners();
+    for (let i = 0; i < 12; i++) {
+      await pan(page, 6000);
+      await page.waitForTimeout(700);
+      await pan(page, -6000);
+      await page.waitForTimeout(300);
+    }
+    // The cycles really paused the page: the last off-screen spell drew nothing.
+    await pan(page, 6000);
+    await page.waitForTimeout(1000);
+    const from = Date.now();
+    await page.waitForTimeout(600);
+    await pan(page, -6000);
+    await page.waitForTimeout(300);
+    expect(await framesBetween(app, "/one", from, from + 600)).toBeLessThan(5);
+    expect(await listeners()).toBeLessThanOrEqual(start + 1);
+  } finally {
+    await app.close();
+    server.closeAllConnections();
+    await new Promise((done) => server.close(done));
+  }
+});
+
 test("Desktop Browser discards long-unseen pages beyond the live limit", async ({}, info) => {
   test.setTimeout(150000);
   const { server, origin } = await site();

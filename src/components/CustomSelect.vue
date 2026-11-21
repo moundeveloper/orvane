@@ -26,6 +26,8 @@ const props = defineProps<{
   searchLabel?: string;
   inline?: boolean;
   teleportTo?: HTMLElement;
+  preferAbove?: boolean;
+  triggerIcon?: string;
 }>();
 const emit = defineEmits<{ "update:modelValue": [value: T]; change: [] }>();
 const attrs = useAttrs(),
@@ -75,6 +77,7 @@ const visibleOptions = computed(() => {
 const position = ref({
   left: "0px",
   top: "0px",
+  bottom: "auto",
   width: "180px",
   maxHeight: "240px",
   fontSize: "11px",
@@ -105,16 +108,26 @@ function place() {
   const start = Math.max(8, r.left);
   const width = Math.max(minWidth, Math.min(r.right, innerWidth - 8) - start);
   const left = Math.max(8, Math.min(start, innerWidth - 8 - width));
+  const above = props.preferAbove && r.top >= Math.min(height, 96 * scale) + 12;
+  const available = props.preferAbove
+    ? above
+      ? r.top
+      : below
+    : Math.max(below, r.top);
   const top =
-    below < height && r.top > below
+    below < height && r.top > below && !props.preferAbove
       ? Math.max(8, r.top - height - 5 * scale)
       : r.bottom + 5 * scale;
   position.value = {
     left: left / scale + "px",
-    top: top / scale + "px",
+    top: above ? "auto" : top / scale + "px",
+    bottom: above ? (innerHeight - r.top) / scale + 5 + "px" : "auto",
     width: width / scale + "px",
     maxHeight:
-      Math.max(80, Math.min(248, (Math.max(below, r.top) - 16) / scale)) + "px",
+      Math.max(
+        props.preferAbove ? 28 : 80,
+        Math.min(248, (available - 16) / scale),
+      ) + "px",
     fontSize: "11px",
     zoom: String(scale),
   };
@@ -264,7 +277,10 @@ onBeforeUnmount(() => {
     @click.stop="show"
     @keydown.stop="key"
   >
-    <span>{{ label }}</span
+    <span v-if="triggerIcon" class="select-trigger-icon-label"
+      ><Icon :name="triggerIcon" :size="13" /><span>{{ label }}</span></span
+    >
+    <span v-else>{{ label }}</span
     ><Icon name="down" :size="12" />
   </button>
   <Teleport :to="teleportTo || 'body'" :disabled="inline"

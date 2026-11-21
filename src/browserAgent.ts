@@ -34,8 +34,9 @@ export type PageOp =
   | { type: "wheel"; x: number; y: number; dx: number; dy: number }
   | { type: "text"; text: string }
   | { type: "key"; key: string }
-  | { type: "screenshot" }
-  | { type: "navigate"; action: "back" | "forward" | "reload" };
+  | { type: "screenshot"; timeoutMs: number }
+  | { type: "navigate"; action: "back" | "forward" | "reload"; timeoutMs: number }
+  | { type: "navigate"; action: "url"; url: string; timeoutMs: number };
 export interface BrowserAgentHost {
   blockId: string;
   tabs(): AgentTabInfo[];
@@ -45,7 +46,7 @@ export interface BrowserAgentHost {
   setAccess(tabId: string, access: AgentAccess | undefined): void;
   /** The guest's webContents id once the page exists (it may be loading). */
   page(tabId: string): number | undefined;
-  navigate(tabId: string, url: string): void;
+  navigationUrl(tabId: string, url: string): string;
   select(tabId: string): void;
   close(tabId: string): void;
   /** NetSuite environments the signed-in tab's user can open (desktop only). */
@@ -193,7 +194,7 @@ async function controlled(tabId: string) {
  * settles) must not hold up every later request: the window answers one MCP
  * request at a time. */
 const PAGE_LIMIT_MS = 12_000;
-async function run<T>(id: number, code: string) {
+async function run<T>(id: number, code: string, timeout = PAGE_LIMIT_MS) {
   const d = desktop();
   if (!d) throw Error("Browser control needs the Orvane desktop app.");
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -203,7 +204,7 @@ async function run<T>(id: number, code: string) {
       new Promise((_, fail) => {
         timer = setTimeout(
           () => fail(Error("The page did not answer within 12 seconds (it may be busy or frozen). Check it with browser_screenshot; reload it with browser_act navigate \"reload\" if needed.")),
-          PAGE_LIMIT_MS,
+          timeout,
         );
       }),
     ])) as T;
@@ -260,19 +261,29 @@ async function settle(id: number, quiet = 0) {
       // Navigated meanwhile.
     }
 }
-async function page(id: number) {
+async function page(id: number, timeout = PAGE_LIMIT_MS) {
   try {
-    return await run<{ url: string; title: string }>(id, "({ url: location.href, title: document.title })");
+    return await run<{ url: string; title: string }>(id, "({ url: location.href, title: document.title })", timeout);
   } catch {
     return undefined;
   }
 }
-async function screenshot(id: number) {
-  const data = (await op(id, { type: "screenshot" })) as string;
-  return data ? { image: data, mimeType: "image/jpeg" } : { image: "" };
+async function screenshot(id: number, deadline: number) {
+  const timeoutMs = Math.min(1800, deadline - Date.now());
+  if (timeoutMs <= 0) return { screenshotWarning: "Screenshot capture timed out." };
+  try {
+    const capture = (await op(id, { type: "screenshot", timeoutMs })) as {
+      image?: string; screenshotWarning?: string;
+    };
+    if (capture?.image) return { image: capture.image, mimeType: "image/jpeg" };
+    return { screenshotWarning: capture?.screenshotWarning || "The Browser could not capture the page image." };
+  } catch {
+    return { screenshotWarning: "The Browser could not capture the page image." };
+  }
 }
 
 async function act(args: Record<string, unknown>) {
+  const deadline = Date.now() + LIMIT_MS;
   const tabId = str(args, "tabId");
   if (!tabId) throw Error("tabId is required.");
   const { host, id } = await controlled(tabId);
@@ -282,17 +293,24 @@ async function act(args: Record<string, unknown>) {
   switch (action) {
     case "navigate": {
       const url = str(args, "url");
-      if (url === "back" || url === "forward" || url === "reload") await op(id, { type: "navigate", action: url });
+      if (!url) throw Error('navigate needs url (an address, or "back", "forward", "reload").');
+      let navigation: PageOp;
+      if (url === "back" || url === "forward" || url === "reload")
+        navigation = { type: "navigate", action: url, timeoutMs: deadline - Date.now() };
       else if (url?.startsWith("/") && !url.startsWith("//")) {
         // A path on the tab's own site (saved routes): the same path works
         // on every account of a site (NetSuite dev, sandbox, production).
-        const here = (await page(id))?.url;
+        const here = (await page(id, Math.max(1, deadline - Date.now())))?.url;
         if (!here || !/^https?:/.test(here)) throw Error("The tab has no site yet to open that path on.");
-        host.navigate(tabId, new URL(url, here).href);
-      } else if (url) host.navigate(tabId, url);
-      else throw Error('navigate needs url (an address, or "back", "forward", "reload").');
-      await sleep(300);
-      break;
+        navigation = { type: "navigate", action: "url", url: host.navigationUrl(tabId, new URL(url, here).href), timeoutMs: deadline - Date.now() };
+      } else navigation = { type: "navigate", action: "url", url: host.navigationUrl(tabId, url), timeoutMs: deadline - Date.now() };
+      if (navigation.timeoutMs <= 0) throw Error("Navigation did not start in time.");
+      const landed = (await op(id, navigation)) as { page?: { url: string; title: string }; error?: string };
+      if (!landed.page) throw Error(landed.error || "The Browser did not report where navigation landed.");
+      const out: Record<string, unknown> = { ok: true, page: landed.page };
+      if (args.snapshot) out.snapshot = await run(id, snapshotScript(num(args, "maxElements", 150), 0), Math.max(1, deadline - Date.now()));
+      if (args.screenshot) Object.assign(out, await screenshot(id, deadline));
+      return out;
     }
     case "click":
     case "hover": {
@@ -380,7 +398,7 @@ async function act(args: Record<string, unknown>) {
     }
     case "read": {
       result = await untilReady(id, () => readScript(target(args), num(args, "maxLength", 8000)), timeout);
-      return args.screenshot ? { ...result, ...(await screenshot(id)) } : result;
+      return args.screenshot ? { ...result, ...(await screenshot(id, deadline)) } : result;
     }
     case "eval": {
       const expression = str(args, "expression");
@@ -392,7 +410,7 @@ async function act(args: Record<string, unknown>) {
         if (!/SyntaxError|Unexpected/.test(String(error))) throw error;
         value = await run(id, evalScript(expression, true));
       }
-      return args.screenshot ? { value, ...(await screenshot(id)) } : { value };
+      return args.screenshot ? { value, ...(await screenshot(id, deadline)) } : { value };
     }
     default:
       throw Error("Unknown action. Use navigate, click, hover, fill, select, type, press, scroll, wait, read or eval.");
@@ -401,7 +419,7 @@ async function act(args: Record<string, unknown>) {
   await settle(id, action === "hover" ? 400 : action === "click" ? 250 : 0);
   const out: Record<string, unknown> = { ok: true, ...result, page: await page(id) };
   if (args.snapshot) out.snapshot = await run(id, snapshotScript(num(args, "maxElements", 150), 0));
-  if (args.screenshot) Object.assign(out, await screenshot(id));
+  if (args.screenshot) Object.assign(out, await screenshot(id, deadline));
   return out;
 }
 
@@ -516,8 +534,9 @@ export async function runBrowserAgent(
     );
   }
   if (request.op === "screenshot") {
+    const deadline = Date.now() + LIMIT_MS;
     const { id } = await controlled(tabId);
-    return { ...(await screenshot(id)), page: await page(id) };
+    return { ...(await screenshot(id, deadline)), page: await page(id, Math.max(1, deadline - Date.now())) };
   }
   return act(args);
 }

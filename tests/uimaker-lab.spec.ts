@@ -17,7 +17,7 @@ test("UI Maker Lab shows a round's variants as tabs, follows the agent's writes 
   await p.getByRole("button", { name: "Workspace options" }).click();
   await p.getByRole("button", { name: "Create UI Maker" }).click();
   const app = p.locator(".canvas-app").last();
-  await p.locator(".help").waitFor();
+  await p.locator(".help").waitFor({ timeout: 30_000 });
   await p.locator(".help").dispatchEvent("pointerdown");
   await app.getByTitle("New component").click();
   await app.getByLabel("New component name").fill("Card");

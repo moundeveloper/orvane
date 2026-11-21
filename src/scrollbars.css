@@ -1,0 +1,31 @@
+/* The one scrollbar look for all of Orvane: narrow, muted, no arrow buttons.
+   It is imported once by main.ts and injected as text into the documents
+   Orvane renders itself (code-app sandboxes, UI Maker previews and Lab
+   variants), so every scrollbar looks the same.
+
+   Rules that keep it that way (bench/css-guard.test.mjs checks them):
+   - Style scrollbars only here. Elsewhere a scrollbar may only be hidden
+     (`scrollbar-width: none` or `::-webkit-scrollbar { display: none }`) or
+     have its track inset with margins.
+   - Never set `scrollbar-width: thin` or `scrollbar-color`. In Chromium any
+     non-auto value of either one switches the element back to the native
+     Windows bar with arrow buttons and ignores these rules. scrollbar-color
+     is inherited, so one on a container affects everything inside it.
+   - To tint the thumb for a darker surface, set `--scroll-thumb` on it. */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb, #bacbd5);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

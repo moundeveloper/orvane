@@ -59,6 +59,7 @@ Everything in the UI is custom-styled. Never ship browser-native controls whose 
 - Paused guests (off-screen pages are paused with the debugger) stay paused across `dom-ready`. Don't assume a reloaded page is running.
 - Changes to `electron/main.mjs` or `electron/preload.cjs` need a full Orvane restart. Tell the owner when that applies.
 - Playwright keyboard events don't reach webview guests. Use `webContents.sendInputEvent` in tests.
+- Agent sessions can start and resume local Claude Code and Codex sessions through their installed CLIs. Keep transcript files read-only in Orvane and let each CLI save its own turns.
 
 ## 7. Testing
 

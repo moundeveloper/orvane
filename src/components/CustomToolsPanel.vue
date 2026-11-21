@@ -240,7 +240,6 @@ async function act(action: "disable" | "remove", tool: Tool) {
   padding: 14px;
   overflow: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
 }
 .tools-head {
   display: flex;
@@ -397,7 +396,6 @@ async function act(action: "disable" | "remove", tool: Tool) {
   border-radius: 6px;
   background: #eef2f4;
   white-space: pre-wrap;
-  scrollbar-width: thin;
 }
 @media (prefers-reduced-motion: reduce) {
   .tools-caret {

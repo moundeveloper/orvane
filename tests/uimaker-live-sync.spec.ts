@@ -108,3 +108,38 @@ test("uimaker_size MCP tool sets and validates the artboard size", async () => {
     await rm(directory, { recursive: true, force: true }).catch(() => undefined);
   }
 });
+
+test("uimaker_create MCP tool adds a component with a blank v1", async () => {
+  test.setTimeout(60_000);
+  const directory = await mkdtemp(join(tmpdir(), "orvane-create-"));
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [resolve("server/launch.mjs")],
+    env: {
+      ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined)),
+      ORVANE_MCP_STATE_DIR: directory,
+      ORVANE_DATA_DIR: directory,
+      ORVANE_MCP_PORT: "0",
+    },
+    stderr: "pipe",
+  });
+  const client = new Client({ name: "orvane-create-test", version: "1.0.0" });
+  try {
+    await client.connect(transport);
+    const call = async (args: Record<string, unknown>) =>
+      (await client.callTool({ name: "uimaker_create", arguments: args })) as { isError?: boolean; content: { text?: string }[] };
+    const made = JSON.parse((await call({ name: "Agent Sessions", intent: "Sessions app", width: 1180, height: 760 })).content[0]!.text!);
+    expect(made).toEqual({ id: "agent-sessions", name: "Agent Sessions", width: 1180, height: 760 });
+    expect(JSON.parse((await call({ name: "Agent Sessions", height: "auto" })).content[0]!.text!)).toMatchObject({ height: null });
+    expect((await call({ name: "Bad", width: 10 })).isError).toBe(true);
+    const listed = (await client.callTool({ name: "uimaker_list", arguments: {} })) as { content: { text: string }[] };
+    const list = JSON.parse(listed.content[0]!.text);
+    expect(list).toHaveLength(2);
+    expect(list[0]).toMatchObject({ id: "agent-sessions", intent: "Sessions app", width: 1180, height: 760, latest: 1 });
+    const round = (await client.callTool({ name: "uimaker_lab_round", arguments: { component: "agent-sessions", title: "Layout", kind: "new" } })) as { isError?: boolean };
+    expect(round.isError).toBeFalsy();
+  } finally {
+    await client.close().catch(() => undefined);
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+  }
+});

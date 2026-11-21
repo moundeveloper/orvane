@@ -6,11 +6,12 @@ import Database from "better-sqlite3";
 import {
   expositionSchema,
   expositionPartSchema,
-  type ClaudeSession,
-  type ClaudeMessage,
+  type AgentSession,
+  type AgentMessage,
   type VisualRecord,
 } from "../src/exposition.ts";
 import { z } from "zod";
+import { stepInput, stepOutput } from "./step-details.ts";
 
 const keySchema = z.string().min(1).max(1000);
 const readSchema = z.object({
@@ -39,15 +40,36 @@ type Cache = {
   size: number;
   mtime: number;
   ino: number;
-  messages: ClaudeMessage[];
+  messages: AgentMessage[];
   ids: Set<string>;
   warnings: Set<string>;
   pending?: Promise<void>;
 };
 const canonical = (p: string) =>
   process.platform === "win32" ? resolve(p).toLowerCase() : resolve(p);
-export class ClaudeSessions {
-  private files = new Map<string, { path: string; info: ClaudeSession }>();
+
+function codexUserMessage(record: any): string {
+  if (record?.type !== "event_msg") return "";
+  const event = record.payload;
+  if (event?.type === "user_message")
+    return typeof event.message === "string" ? event.message : "";
+  const item = event?.item;
+  if (
+    event?.type !== "item_completed" ||
+    item?.type !== "UserMessage" ||
+    !Array.isArray(item.content)
+  )
+    return "";
+  return item.content
+    .filter(
+      (part: { type?: string; text?: string }) =>
+        part?.type === "text" && typeof part.text === "string",
+    )
+    .map((part: { text: string }) => part.text)
+    .join("\n");
+}
+export class SessionTranscripts {
+  private files = new Map<string, { path: string; info: AgentSession }>();
   private cache = new Map<string, Cache>();
   private indexedAt = 0;
   private indexing?: Promise<void>;
@@ -61,6 +83,7 @@ export class ClaudeSessions {
         "projects",
       ),
     database = "claude-visuals.sqlite",
+    private readonly provider: "claude" | "codex" = "claude",
   ) {
     this.root = resolve(root);
     mkdirSync(directory, { recursive: true });
@@ -78,7 +101,7 @@ export class ClaudeSessions {
     ]);
     const rel = relative(root, target);
     if (rel.startsWith("..") || isAbsolute(rel))
-      throw Error("Session path is outside the Claude transcript directory.");
+      throw Error("Session path is outside the transcript directory.");
     return target;
   }
   async list() {
@@ -92,8 +115,33 @@ export class ClaudeSessions {
       .map((f) => f.info)
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }
+  async find(key: string) {
+    await this.list();
+    const file = this.files.get(key);
+    if (!file) throw Error("Session not found. Refresh the session list.");
+    await this.allowed(file.path);
+    return file.info;
+  }
+  invalidate() {
+    this.indexedAt = 0;
+  }
+  private async *transcripts(
+    path: string,
+    depth: number,
+  ): AsyncGenerator<string> {
+    const entries = await readdir(path, { withFileTypes: true }).catch(
+      () => [],
+    );
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue;
+      const file = join(path, entry.name);
+      if (depth && entry.isDirectory())
+        yield* this.transcripts(file, depth - 1);
+      if (!depth && entry.isFile() && entry.name.endsWith(".jsonl")) yield file;
+    }
+  }
   private async index() {
-    const next = new Map<string, { path: string; info: ClaudeSession }>();
+    const next = new Map<string, { path: string; info: AgentSession }>();
     let folders;
     try {
       folders = await readdir(this.root, { withFileTypes: true });
@@ -108,23 +156,13 @@ export class ClaudeSessions {
     for (const folder of folders) {
       if (!folder.isDirectory() || folder.isSymbolicLink()) continue;
       const path = join(this.root, folder.name);
-      let entries;
-      try {
-        entries = await readdir(path, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-      for (const entry of entries) {
-        if (
-          !entry.isFile() ||
-          !entry.name.endsWith(".jsonl") ||
-          entry.isSymbolicLink()
-        )
-          continue;
-        const file = join(path, entry.name),
-          key = Buffer.from(`${folder.name}/${entry.name}`).toString(
-            "base64url",
-          );
+      for await (const file of this.transcripts(
+        path,
+        this.provider === "codex" ? 2 : 0,
+      )) {
+        const name = relative(this.root, file).split(/[\\/]/).join("/");
+        const encoded = Buffer.from(name).toString("base64url");
+        const key = this.provider === "codex" ? `codex:${encoded}` : encoded;
         try {
           await this.allowed(file);
           const info = await stat(file),
@@ -139,9 +177,14 @@ export class ClaudeSessions {
           const handle = await open(file, "r");
           let head: string, tail: string;
           try {
-            const length = Math.min(info.size, 96 * 1024),
+            const length = Math.min(
+                info.size,
+                (this.provider === "codex" ? 384 : 96) * 1024,
+              ),
               a = Buffer.alloc(length),
-              b = Buffer.alloc(Math.min(info.size, 32 * 1024));
+              b = Buffer.alloc(
+                this.provider === "codex" ? 0 : Math.min(info.size, 32 * 1024),
+              );
             await handle.read(a, 0, a.length, 0);
             await handle.read(
               b,
@@ -156,10 +199,23 @@ export class ClaudeSessions {
           }
           let title = existing?.info.title || "",
             project = existing?.info.project || folder.name,
-            sessionId = entry.name.slice(0, -6);
+            sessionId = name.split("/").at(-1)!.slice(0, -6);
           for (const line of head.split("\n")) {
             try {
               const d = JSON.parse(line);
+              if (this.provider === "codex") {
+                if (d.type === "session_meta") {
+                  if (typeof d.payload?.id === "string")
+                    sessionId = d.payload.id;
+                  if (typeof d.payload?.cwd === "string")
+                    project = d.payload.cwd;
+                }
+                if (!title)
+                  title = codexUserMessage(d)
+                    .replace(/\s+/g, " ")
+                    .slice(0, 140);
+                continue;
+              }
               if (typeof d.sessionId === "string") sessionId = d.sessionId;
               if (typeof d.cwd === "string") project = d.cwd;
               if (!title && d.type === "user") {
@@ -169,7 +225,9 @@ export class ClaudeSessions {
               }
             } catch {}
           }
-          for (const line of tail.split("\n")) {
+          for (const line of this.provider === "claude"
+            ? tail.split("\n")
+            : []) {
             try {
               const d = JSON.parse(line);
               if (
@@ -183,8 +241,13 @@ export class ClaudeSessions {
             path: file,
             info: {
               key,
+              ...(this.provider === "codex" ? { provider: this.provider } : {}),
               sessionId,
-              title: title || "Untitled Claude session",
+              title:
+                title ||
+                (this.provider === "codex"
+                  ? "Untitled Codex session"
+                  : "Untitled session"),
               project,
               updatedAt: info.mtimeMs,
               bytes: info.size,
@@ -218,6 +281,95 @@ export class ClaudeSessions {
       );
       return;
     }
+    if (this.provider === "codex") {
+      const item = d?.payload;
+      const userMessage = codexUserMessage(d);
+      if (userMessage) {
+        d = {
+          type: "user",
+          message: { content: userMessage },
+          timestamp: d.timestamp,
+        };
+      } else if (
+        d?.type === "response_item" &&
+        item?.type === "message" &&
+        item.role === "assistant"
+      ) {
+        const content = Array.isArray(item.content)
+          ? item.content
+              .filter((part: { type?: string }) => part?.type === "output_text")
+              .map((part: { text?: string }) => ({
+                type: "text",
+                text: part.text,
+              }))
+          : [];
+        d = {
+          type: "assistant",
+          message: { content },
+          timestamp: d.timestamp,
+          uuid: item.id,
+        };
+      } else if (
+        d?.type === "response_item" &&
+        ["function_call", "custom_tool_call", "local_shell_call"].includes(
+          item?.type,
+        ) &&
+        typeof item.call_id === "string"
+      ) {
+        // Codex logs each tool call as its own item: read it like a Claude
+        // tool_use, and its output like a tool_result.
+        let input: unknown = item.input ?? item.action;
+        if (typeof item.arguments === "string")
+          try {
+            input = JSON.parse(item.arguments);
+          } catch {
+            input = { arguments: item.arguments };
+          }
+        d = {
+          type: "assistant",
+          message: {
+            content: [
+              {
+                type: "tool_use",
+                id: item.call_id,
+                name: String(item.name || item.type),
+                input: typeof input === "string" ? { input } : input,
+              },
+            ],
+          },
+          timestamp: d.timestamp,
+          uuid: `call:${item.call_id}`,
+        };
+      } else if (
+        d?.type === "response_item" &&
+        ["function_call_output", "custom_tool_call_output"].includes(
+          item?.type,
+        ) &&
+        typeof item.call_id === "string"
+      ) {
+        let output = item.output;
+        if (typeof output === "string")
+          try {
+            const parsed = JSON.parse(output);
+            if (typeof parsed?.output === "string") output = parsed.output;
+          } catch {
+            /* Plain text output. */
+          }
+        d = {
+          type: "user",
+          message: {
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: item.call_id,
+                content: output,
+              },
+            ],
+          },
+          timestamp: d.timestamp,
+        };
+      } else return;
+    }
     if (
       !d ||
       typeof d !== "object" ||
@@ -228,14 +380,16 @@ export class ClaudeSessions {
       return;
     const content = d.message.content,
       text = this.text(content),
-      tools: ClaudeMessage["tools"] = [];
+      tools: AgentMessage["tools"] = [],
+      at = typeof d.timestamp === "string" ? Date.parse(d.timestamp) : NaN;
     if (Array.isArray(content))
-      for (const b of content)
+      for (const b of content) {
         if (
           b?.type === "tool_use" &&
           typeof b.id === "string" &&
           typeof b.name === "string"
-        )
+        ) {
+          const input = stepInput(b.input);
           tools.push({
             id: b.id,
             name: b.name,
@@ -243,11 +397,25 @@ export class ClaudeSessions {
             typeof b.input?.view?.id === "string"
               ? { visualId: b.input.view.id }
               : {}),
+            ...(input ? { input } : {}),
+            ...(Number.isFinite(at) ? { startedAt: at } : {}),
           });
+        }
+        // A result lands in a later record: attach it to its call.
+        if (b?.type === "tool_result" && typeof b.tool_use_id === "string")
+          this.attachResult(cache, b, at);
+      }
     if (!text && !tools.length) return;
     const id = typeof d.uuid === "string" ? d.uuid : `record-${offset}`;
     if (cache.ids.has(id)) return;
     cache.ids.add(id);
+    // Tool calls logged one record at a time join the reply before them, so
+    // a turn reads as one list of steps.
+    const last = cache.messages.at(-1);
+    if (!text && d.type === "assistant" && last?.role === "assistant") {
+      last.tools.push(...tools.filter((tool) => !last.tools.some((item) => item.id === tool.id)));
+      return;
+    }
     cache.messages.push({
       id,
       role: d.type,
@@ -262,6 +430,23 @@ export class ClaudeSessions {
       cache.warnings.add(
         "Showing the latest 2,000 transcript messages. The original file is unchanged.",
       );
+    }
+  }
+  private attachResult(
+    cache: { messages: AgentMessage[] },
+    block: { tool_use_id: string; content?: unknown; is_error?: unknown },
+    at: number,
+  ) {
+    for (let i = cache.messages.length - 1, seen = 0; i >= 0 && seen < 200; i--, seen++) {
+      const tool = cache.messages[i]!.tools.find(
+        (item) => item.id === block.tool_use_id,
+      );
+      if (!tool) continue;
+      const output = stepOutput(block.content);
+      tool.status = block.is_error === true ? "failed" : "completed";
+      if (output) tool.output = output;
+      if (Number.isFinite(at)) tool.endedAt = at;
+      return;
     }
   }
   private async refresh(key: string) {

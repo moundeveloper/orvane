@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orvane Motion Pass</title>
+<style>
+:root{
+  --smooth:cubic-bezier(.3,.1,.2,1); /* gentle start (~5% in frame 1), soft landing, no overshoot */
+  --orv:cubic-bezier(.16,1,.3,1);    /* Orvane's current motion.ts curve */
+  --k:1;
+  --canvas:#e9edf0; --app:#f7f9fa; --ink:#455968; --ink-strong:#344f5e; --muted:#718591;
+  --accent:#6f8998; --line:#d3dde3; --hover:#e8eef2;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{background:var(--canvas)}
+body{background:var(--canvas);color:var(--ink);font:13px/1.45 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;padding:28px 16px 56px;-webkit-font-smoothing:antialiased}
+main{max-width:1120px;margin:0 auto;display:grid;gap:16px}
+h1{font-size:16px;font-weight:560;letter-spacing:-.035em;color:var(--ink-strong)}
+.sub{color:var(--muted);max-width:80ch}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;transition:background .15s ease,color .15s ease}
+kbd{font:11px/1 ui-monospace,Consolas,monospace;padding:2px 5px;border-radius:4px;background:#e1e8ec;color:#556c7a}
+
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.seg{position:relative;display:inline-flex;height:30px;padding:3px;border-radius:7px;background:#e1e8ec}
+.seg button{position:relative;z-index:1;padding:0 11px;border-radius:5px;color:#607583}
+.seg button:hover{background:transparent;color:var(--ink-strong)}
+.seg button[aria-checked="true"]{color:var(--ink-strong)}
+.seg .thumb{position:absolute;top:3px;bottom:3px;left:0;border-radius:5px;background:#fff;box-shadow:0 1px 3px #43576422;transition:transform calc(240ms*var(--k)) var(--smooth),width calc(240ms*var(--k)) var(--smooth)}
+.chip{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 10px;border-radius:7px;background:#e1e8ec;color:#556c7a}
+.chip:hover{background:#d9e3e9}
+.chip[aria-pressed="true"]{background:var(--accent);color:#fff}
+.chip[aria-pressed="true"] kbd{background:#ffffff33;color:#fff}
+.seg button:focus-visible,.chip:focus-visible,.card button:focus-visible{outline:1px solid #7a96a6;outline-offset:1px}
+
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+@media (max-width:820px){.grid{grid-template-columns:1fr}}
+.card{background:var(--app);border-radius:10px;box-shadow:0 1px 2px #4357641a,0 8px 24px -14px #43576440;display:grid;grid-template-rows:auto 1fr auto;min-width:0}
+.card > header{padding:12px 14px 0}
+.card h2{font-size:13px;font-weight:600;color:var(--ink-strong)}
+.card .what{color:var(--muted);font-size:12px}
+#dp{min-height:340px}
+.demo{padding:14px;min-height:200px;position:relative;min-width:0}
+.spec{border-top:1px solid #e3eaee;padding:8px 14px 10px;font:11px/1.5 ui-monospace,Consolas,monospace;color:#6c808c}
+.spec b{font-weight:600;color:#4f6676}
+body:not(.smooth) .spec .s, body.smooth .spec .c{display:none}
+
+svg.i{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+/* ---------- date picker (editor.css replica) ---------- */
+.picker-trigger{display:inline-flex;align-items:center;gap:6px;padding:6px 9px;border-radius:5px;background:#e7eef2;color:#455968;font-size:12px;line-height:1.3;white-space:nowrap}
+.picker-trigger:hover{background:#e0e9ee}
+.picker-trigger[aria-expanded="true"]{background:#dfeaf0}
+.select-popover{position:absolute;z-index:10;background:#f4f8fa;box-shadow:0 10px 30px -10px #43576445,0 0 0 1px #4357640d;padding:.5em;border-radius:6px;outline:none;color:#455968}
+.picker-head{display:flex;align-items:center;gap:.25em;margin-bottom:.4em}
+.picker-title{flex:1;text-align:center;font-weight:600;color:#3d505d;text-transform:capitalize}
+.picker-title-button{display:inline-flex;align-items:center;justify-content:center;gap:.3em;padding:.35em .5em;border-radius:.3em}
+.picker-nav{display:grid;place-items:center;width:2.2em;height:2.2em;border-radius:.3em}
+.select-popover button:hover{background:#e2ecf2}
+.clip{overflow:hidden}
+.picker-days{display:grid;grid-template-columns:repeat(7,2.4em);gap:.15em}
+.picker-weekday{text-align:center;font-size:.8em;color:#687d8a;text-transform:uppercase;padding-bottom:.2em}
+.picker-day{height:2.2em;border-radius:.3em;font-variant-numeric:tabular-nums}
+.picker-day.outside{color:#a6b4bd}
+.picker-day.today{color:#45697e;font-weight:700}
+.picker-day.selected{background:#6f8998;color:#fff}
+.picker-day.selected:hover{background:#6f8998}
+.picker-months{width:17.2em}
+.picker-month-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.25em}
+.picker-month{padding:.75em 0;border-radius:.3em;text-transform:capitalize}
+.picker-month.selected{background:#6f8998;color:#fff}
+.picker-month.current:not(.selected){color:#45697e;font-weight:700}
+.picker-foot{display:flex;justify-content:space-between;gap:.5em;margin-top:.4em;padding-top:.4em;border-top:1px solid #dde4e8}
+.picker-foot > button{padding:.35em .7em;border-radius:.3em;color:#556c7a}
+
+/* ---------- calendar month (CalendarView replica) ---------- */
+.cal-head{display:flex;align-items:center;gap:4px;margin-bottom:10px}
+.cal-head h3{flex:1;font-size:15px;font-weight:600;color:#3d505d;text-transform:capitalize}
+.cal-month-button{display:inline-flex;align-items:center;gap:6px;margin-left:-6px;padding:4px 6px;border-radius:5px}
+.cal-month-button:hover{background:var(--hover)}
+.icon-button{width:29px;height:29px;display:inline-grid;place-items:center;border-radius:6px}
+.icon-button:hover,.subtle-button:hover{background:#e5ecf0}
+.subtle-button{height:29px;padding:0 10px;border-radius:6px;color:#556c7a}
+.cal-weekdays,.cal-cells{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.cal-weekday{text-align:center;font-size:10px;color:var(--muted);padding-bottom:4px;text-transform:uppercase}
+.cal-cells{position:relative}
+.cal-day{position:relative;z-index:1;aspect-ratio:1/.86;min-height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border-radius:6px;color:#455968;font-size:12px}
+.cal-day:hover{background:var(--hover)}
+.cal-day.outside{color:#a6b4bd}
+.cal-day.today .cal-date{color:var(--accent);font-weight:700}
+body:not(.smooth) .cal-day.selected{background:#dfe8ed;box-shadow:inset 0 0 0 1.5px var(--accent)}
+body.smooth .cal-day.selected,body.smooth .cal-day.selected:hover{background:transparent}
+.cal-ring{position:absolute;left:0;top:0;z-index:0;border-radius:6px;background:#dfe8ed;box-shadow:inset 0 0 0 1.5px var(--accent);pointer-events:none;display:none}
+body.smooth .cal-ring{display:block}
+.cal-dots{display:flex;gap:3px;height:5px}
+.cal-dots i{width:5px;height:5px;border-radius:50%;background:#8fa3b0}
+.cal-dots i.remind{background:var(--accent)}
+.cal-dots i.done{opacity:.35}
+
+/* ---------- folder tree (FileFolderTree replica) ---------- */
+.folder-tree{max-width:340px}
+.ft-row{display:flex;align-items:center;border-radius:4px;color:#526b7a}
+.ft-row:hover{background:#eaf1f4}
+.ft-row.selected{background:#dfeaf0;color:#344f5e}
+.ft-toggle{flex:none;display:grid;place-items:center;width:23px;height:27px;color:inherit}
+.ft-toggle:hover,.ft-name:hover{background:transparent}
+.ft-toggle .chev{transition:none}
+body.smooth .ft-toggle .chev{transition:transform calc(200ms*var(--k)) var(--smooth)}
+.ft-toggle[aria-expanded="true"] .chev{transform:rotate(90deg)}
+.ft-name{display:flex;align-items:center;gap:7px;min-width:0;flex:1;text-align:left;padding:6px 4px;color:inherit}
+.ft-name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ft-name small{margin-left:auto;padding:0 5px;border-radius:8px;background:#e3ecf0;color:#718591;font-size:10px}
+.ft-children{margin-left:16px}
+.ft-hint{color:#718591;font-size:11px;padding:5px 8px}
+
+/* ---------- switches (BrowserDrawer replica) ---------- */
+.drawer{display:grid;gap:2px;max-width:380px}
+.drawer-row{display:flex;align-items:center;gap:10px;padding:8px 6px;border-radius:6px}
+.drawer-row:hover{background:#eef3f5}
+.drawer-row label{flex:1;min-width:0;cursor:pointer}
+.drawer-row label b{display:block;font-weight:500;color:var(--ink-strong)}
+.drawer-row label small{display:block;color:var(--muted);font-size:11.5px;line-height:1.35}
+.sw{appearance:none;-webkit-appearance:none;position:relative;flex:0 0 30px;height:18px;margin:0 3px;border-radius:12px;background:var(--line);cursor:pointer}
+.sw::after{content:"";position:absolute;top:50%;left:3px;width:12px;height:12px;border-radius:50%;background:#fff;transform:translateY(-50%);transition:left .15s}
+.sw:checked{background:var(--accent)}
+.sw:checked::after{left:calc(100% - 15px)}
+.sw:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* smoothed: knob on transform with the gentle curve, track colour fades with it */
+body.smooth .sw{transition:background-color calc(220ms*var(--k)) var(--smooth)}
+body.smooth .sw::after{transition:transform calc(220ms*var(--k)) var(--smooth)}
+body.smooth .sw:checked::after{left:3px;transform:translate(12px,-50%)}
+
+/* ---------- number field (CustomNumber replica) ---------- */
+.fields{display:grid;gap:12px;max-width:260px}
+.field-label{font-size:12px;color:var(--muted);margin-bottom:4px}
+.number-field{display:flex;align-items:center;width:100%;background:#e7eef2;border-radius:4px;color:#455968;overflow:hidden}
+.number-field:focus-within{box-shadow:inset 0 -1px #8da6b5}
+.number-field input{flex:1;min-width:0;width:0;padding:8px 9px;border:0;background:transparent;font:inherit;color:inherit;font-variant-numeric:tabular-nums;outline:none}
+.nf-box{position:relative;flex:1;min-width:0;display:flex}
+.nf-box input{line-height:18px}
+.nf-ghost{position:absolute;inset:0;padding:8px 9px;line-height:18px;white-space:pre;pointer-events:none;font-variant-numeric:tabular-nums;overflow:hidden;opacity:0}
+.number-stepper{display:flex;gap:1px;padding:3px;flex:none}
+.number-stepper button{display:grid;place-items:center;width:23px;height:24px;border-radius:3px}
+.number-stepper button:hover:not(:disabled){background:#d9e5ec}
+.number-stepper button:disabled{opacity:.4;cursor:default}
+.number-stepper button:disabled:hover{background:transparent}
+
+/* ---------- split tabs (SplitTabs replica) ---------- */
+.st-root{border-radius:8px;overflow:hidden;background:#fff;box-shadow:0 0 0 1px #dce5e9}
+.st-bars{border-bottom:1px solid #dce5e9;background:#f0f4f6}
+.st-scroll{display:flex;align-items:flex-end;gap:2px;padding:4px 8px 0;min-height:34px;overflow:hidden}
+.st-tab{display:flex;align-items:center;gap:2px;min-width:0;max-width:150px;padding:0 4px 0 8px;border-radius:5px 5px 0 0;color:#607583}
+.st-tab:hover:not(.active){background:#e6eef2;color:#455968}
+.st-tab.active{background:#fff;color:#344f5e;box-shadow:0 1px #fff}
+.st-tab > button:first-child{display:flex;align-items:center;gap:6px;min-width:0;padding:7px 3px;color:inherit}
+.st-tab > button:first-child:hover{background:transparent}
+.st-tab > button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st-close{display:grid;place-items:center;width:18px;height:18px;border-radius:3px;color:inherit;opacity:0}
+.st-tab:hover .st-close,.st-tab.active .st-close,.st-close:focus-visible{opacity:1}
+.st-tab .st-close:hover{background:#d5e3ea}
+.st-add{display:grid;place-items:center;width:25px;height:25px;margin:0 0 4px 2px;border-radius:4px;color:#607583}
+.st-add:hover{background:#e2ebef}
+.st-pane{height:150px;padding:10px 12px;font:12px/1.6 ui-monospace,Consolas,monospace;color:#4b6170;overflow:hidden}
+.st-pane .p{color:#3f8a6e}
+.st-pane .dim{color:#93a5b0}
+
+@media (prefers-reduced-motion:reduce){*{transition-duration:0s !important}}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:#c9d4da;border-radius:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-button{display:none}
+</style>
+</head>
+<body class="smooth">
+<main>
+  <header>
+    <h1>Orvane motion pass: six components</h1>
+    <p class="sub">Copies of real Orvane components, made to look and behave like the app. Switch between <b>Current</b> (how they move today) and <b>Smoothed</b> (the proposal). The proposal uses one gentle curve, <code>cubic-bezier(.3,.1,.2,1)</code>. It starts softly (about 5% of the motion in the first frame), so nothing jumps, then slows down to rest. Everything fades in from 0. It follows Orvane's motion rules: no bounce, no stagger, closing is instant, and nearby content never animates.</p>
+  </header>
+
+  <div class="controls">
+    <div class="seg" role="radiogroup" aria-label="Motion" id="modeSeg">
+      <span class="thumb"></span>
+      <button role="radio" aria-checked="false" data-v="current">Current</button>
+      <button role="radio" aria-checked="true" data-v="smooth">Smoothed</button>
+    </div>
+    <span style="color:var(--muted);font-size:12px"><kbd>M</kbd> toggles</span>
+    <button class="chip" id="slowBtn" aria-pressed="false"><kbd>S</kbd>Slow-mo ×4</button>
+  </div>
+
+  <div class="grid">
+    <!-- 1. Date picker -->
+    <section class="card">
+      <header><h2>Date picker</h2><p class="what">pickers/DatePicker.vue + MonthYearGrid.vue. Change months, then click the month name.</p></header>
+      <div class="demo" id="dp"></div>
+      <div class="spec"><span class="c"><b>Now:</b> the popover reveals, but months and the month grid swap instantly.</span><span class="s"><b>Smoothed:</b> the popover fades in from 0 and moves 4px, 220 ms. Days slide 10px from the side you're moving toward and fade in from 0, 260 ms. The month grid scales from .97, and back to days from 1.03, 240 ms. The title fades in, 200 ms.</span></div>
+    </section>
+
+    <!-- 2. Calendar -->
+    <section class="card">
+      <header><h2>Calendar month</h2><p class="what">CalendarView.vue. Click days, and use ‹ › and Today.</p></header>
+      <div class="demo" id="cal"></div>
+      <div class="spec"><span class="c"><b>Now:</b> the selection ring jumps and months swap instantly.</span><span class="s"><b>Smoothed:</b> the selection ring glides to the clicked day, 240 ms, transform only. Months slide 10px and fade in from 0, 260 ms. The ring rides along with the month.</span></div>
+    </section>
+
+    <!-- 3. Folder tree -->
+    <section class="card">
+      <header><h2>Folder tree</h2><p class="what">FileFolderTree.vue (File Cabinet). Expand and collapse folders.</p></header>
+      <div class="demo" id="tree"></div>
+      <div class="spec"><span class="c"><b>Now:</b> the chevron icon swaps and children pop in.</span><span class="s"><b>Smoothed:</b> the chevron rotates 90°, 200 ms. Children fade in from 0 and move from −4px as one block, 220 ms. Collapsing is instant. The rows below move instantly, never animated.</span></div>
+    </section>
+
+    <!-- 4. Switches -->
+    <section class="card">
+      <header><h2>Switches</h2><p class="what">BrowserDrawer.vue settings rows. Click a row or a switch.</p></header>
+      <div class="demo" id="sw"></div>
+      <div class="spec"><span class="c"><b>Now:</b> the knob animates <code>left</code> (a layout property), 150 ms ease. The track colour snaps.</span><span class="s"><b>Smoothed:</b> the knob moves on <code>transform</code>, 220 ms. The track colour fades on the same curve and timing.</span></div>
+    </section>
+
+    <!-- 5. Number field -->
+    <section class="card">
+      <header><h2>Number field</h2><p class="what">CustomNumber.vue. Click or hold − / +, or use ↑ ↓ in the field.</p></header>
+      <div class="demo" id="num"></div>
+      <div class="spec"><span class="c"><b>Now:</b> the value swaps instantly.</span><span class="s"><b>Smoothed:</b> the old value fades out as the new one fades in on the same spot, 180 ms, with no movement. The number never goes blank. Held steps are instant.</span></div>
+    </section>
+
+    <!-- 6. Split tabs -->
+    <section class="card">
+      <header><h2>Tabs</h2><p class="what">SplitTabs.vue. Switch tabs, add with +, close with ×.</p></header>
+      <div class="demo" id="tabs"></div>
+      <div class="spec"><span class="c"><b>Now:</b> new tabs and pane switches are instant.</span><span class="s"><b>Smoothed:</b> a new tab fades in from 0 and 3px below, 220 ms. Switching fades the pane in from 0, 180 ms, with no movement, so terminals don't shift. Closing stays instant.</span></div>
+    </section>
+  </div>
+</main>
+
+<script>
+(() => {
+'use strict';
+const $ = (s, r = document) => r.querySelector(s);
+const h = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstChild; };
+const SMOOTH = 'cubic-bezier(.3,.1,.2,1)', ORV = 'cubic-bezier(.16,1,.3,1)';
+const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+let smooth = true, slow = 1;
+const root = document.documentElement;
+
+/* One managed animation per element. An interrupted one is retargeted from what is on screen now. */
+const running = new WeakMap();
+function play(el, frames, dur, { always = false, easing = SMOOTH } = {}){
+  if ((!smooth && !always) || reduce.matches) return;
+  const prev = running.get(el);
+  if (prev && prev.playState === 'running'){
+    const cs = getComputedStyle(el);
+    frames = [{ ...frames[0], opacity: cs.opacity, transform: cs.transform }, frames[1]];
+  }
+  prev?.cancel();
+  const a = el.animate(frames, { duration: dur * slow, easing });
+  running.set(el, a);
+  a.onfinish = () => { if (running.get(el) === a) running.delete(el); };
+}
+
+const ICON = {
+  back:'<path d="m15 18-6-6 6-6"/>', forward:'<path d="m9 18 6-6-6-6"/>', down:'<path d="m6 9 6 6 6-6"/>', right:'<path d="m9 18 6-6-6-6"/>',
+  calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  open:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v1H8.5a2 2 0 0 0-1.9 1.4L4.5 19H5"/><path d="M6.6 11.4A2 2 0 0 1 8.5 10H21l-2.3 7.6a2 2 0 0 1-1.9 1.4H4.5z"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>', minus:'<path d="M5 12h14"/>', x:'<path d="M6 6l12 12M18 6 6 18"/>',
+  term:'<path d="m5 8 4 4-4 4M12 16h7"/>', file:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+};
+const icon = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24">${ICON[n]}</svg>`;
+
+/* ---------- calendar helpers (Monday first, always 6 weeks so the size never changes) ---------- */
+const pad2 = n => String(n).padStart(2, '0');
+const dayKey = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+const parseDay = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m-1, d); };
+const monthName = (y, m, f = 'long') => new Date(y, m, 1).toLocaleDateString(undefined, { month: f });
+function monthDays(first){
+  const start = new Date(first); start.setDate(1 - ((first.getDay() + 6) % 7));
+  return Array.from({ length: 42 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return { key: dayKey(d), date: d.getDate(), outside: d.getMonth() !== first.getMonth() }; });
+}
+const WEEK = Array.from({ length: 7 }, (_, i) => new Date(2024, 0, 1 + i).toLocaleDateString(undefined, { weekday: 'narrow' }));
+const TODAY = dayKey(new Date());
+
+/* ================= 1. Date picker ================= */
+(() => {
+  const host = $('#dp');
+  let value = '', shown = new Date(), view = 'days', open = false;
+  const trigger = h(`<button type="button" class="picker-trigger" aria-haspopup="dialog" aria-expanded="false">${icon('calendar')}<span>Choose a date</span></button>`);
+  const pop = h(`<div class="select-popover" role="dialog" aria-label="Choose a date" tabindex="-1" style="display:none;left:14px;top:52px"></div>`);
+  host.append(trigger, pop);
+
+  function label(){ trigger.querySelector('span').textContent = value ? parseDay(value).toLocaleDateString(undefined, { day:'numeric', month:'short', year:'numeric' }) : 'Choose a date'; }
+  function render(dir = 0, swapped = false){
+    pop.innerHTML = '';
+    if (view === 'days'){
+      const head = h(`<div class="picker-head">
+        <button type="button" class="picker-nav" aria-label="Previous month">${icon('back')}</button>
+        <button type="button" class="picker-title picker-title-button" aria-label="Choose month and year"><span class="t">${monthName(shown.getFullYear(), shown.getMonth())} ${shown.getFullYear()}</span>${icon('down')}</button>
+        <button type="button" class="picker-nav" aria-label="Next month">${icon('forward')}</button></div>`);
+      const [prev, title, next] = head.children;
+      prev.onclick = () => shift(-1); next.onclick = () => shift(1);
+      title.onclick = () => { view = 'months'; render(0, true); };
+      const clip = h('<div class="clip"></div>');
+      const days = h('<div class="picker-days"></div>');
+      WEEK.forEach(d => days.append(h(`<span class="picker-weekday" aria-hidden="true">${d}</span>`)));
+      monthDays(shown).forEach(d => {
+        const b = h(`<button type="button" class="picker-day${d.outside ? ' outside' : ''}${d.key === TODAY ? ' today' : ''}${d.key === value ? ' selected' : ''}">${d.date}</button>`);
+        b.onclick = () => { value = d.key; label(); close(); };
+        days.append(b);
+      });
+      clip.append(days);
+      pop.append(head, clip);
+      if (dir){
+        play(days, [{ opacity:0, transform:`translateX(${dir*10}px)` }, { opacity:1, transform:'none' }], 260);
+        play(title.querySelector('.t'), [{ opacity:0 }, { opacity:1 }], 200);
+      }
+      if (swapped) play(clip, [{ opacity:0, transform:'scale(1.03)' }, { opacity:1, transform:'none' }], 240);
+    } else {
+      let year = shown.getFullYear();
+      const wrap = h(`<div class="picker-months"><div class="picker-head">
+        <button type="button" class="picker-nav" aria-label="Previous year">${icon('back')}</button>
+        <span class="picker-title"></span>
+        <button type="button" class="picker-nav" aria-label="Next year">${icon('forward')}</button></div><div class="clip"><div class="picker-month-grid"></div></div></div>`);
+      const t = $('.picker-title', wrap), grid = $('.picker-month-grid', wrap);
+      const fill = (dir) => {
+        t.textContent = year; grid.innerHTML = '';
+        const now = new Date(), sel = value ? parseDay(value) : null;
+        for (let m = 0; m < 12; m++){
+          const b = h(`<button type="button" class="picker-month${year === shown.getFullYear() && m === shown.getMonth() ? ' selected' : ''}${year === now.getFullYear() && m === now.getMonth() ? ' current' : ''}">${monthName(year, m, 'short')}</button>`);
+          b.onclick = () => { shown = new Date(year, m, 1); view = 'days'; render(0, true); };
+          grid.append(b);
+        }
+        if (dir){ play(grid, [{ opacity:0, transform:`translateX(${dir*10}px)` }, { opacity:1, transform:'none' }], 260); play(t, [{ opacity:0 }, { opacity:1 }], 200); }
+      };
+      wrap.querySelectorAll('.picker-nav')[0].onclick = () => { year--; fill(-1); };
+      wrap.querySelectorAll('.picker-nav')[1].onclick = () => { year++; fill(1); };
+      fill(0);
+      pop.append(wrap);
+      if (swapped) play($('.clip', wrap), [{ opacity:0, transform:'scale(.97)' }, { opacity:1, transform:'none' }], 240);
+    }
+    const foot = h(`<div class="picker-foot"><button type="button">Clear</button><button type="button">Today</button></div>`);
+    foot.children[0].onclick = () => { value = ''; label(); close(); };
+    foot.children[1].onclick = () => { value = TODAY; label(); close(); };
+    pop.append(foot);
+  }
+  function shift(by){ shown = new Date(shown.getFullYear(), shown.getMonth() + by, 1); render(by); }
+  function show(){
+    const at = value ? parseDay(value) : new Date();
+    shown = new Date(at.getFullYear(), at.getMonth(), 1); view = 'days';
+    open = true; trigger.setAttribute('aria-expanded', 'true');
+    render(); pop.style.display = 'block'; pop.focus({ preventScroll: true });
+    // Current: Orvane's existing popover motion (motion.ts "popover"). Smoothed: same reveal on the gentle curve, from 0.
+    if (smooth) play(pop, [{ opacity:0, transform:'translateY(-4px)' }, { opacity:1, transform:'none' }], 220);
+    else play(pop, [{ opacity:.2, transform:'translateY(-3px)' }, { opacity:1, transform:'none' }], 160, { always: true, easing: ORV });
+  }
+  function close(){ open = false; trigger.setAttribute('aria-expanded', 'false'); pop.style.display = 'none'; } // instant, no exit animation
+  trigger.onclick = e => { e.stopPropagation(); open ? close() : show(); };
+  pop.addEventListener('pointerdown', e => e.stopPropagation());
+  pop.addEventListener('keydown', e => {
+    if (e.key === 'Escape'){ e.stopPropagation(); view === 'months' ? (view = 'days', render(0, true)) : (close(), trigger.focus()); }
+    if (view === 'days' && e.key === 'PageUp'){ e.preventDefault(); shift(-1); }
+    if (view === 'days' && e.key === 'PageDown'){ e.preventDefault(); shift(1); }
+  });
+  document.addEventListener('pointerdown', () => open && close());
+})();
+
+/* ================= 2. Calendar month ================= */
+(() => {
+  const host = $('#cal');
+  let month = new Date(new Date().getFullYear(), new Date().getMonth(), 1), selected = TODAY;
+  // a few fake items so the dots show
+  const items = {};
+  for (let i = -20; i < 40; i += 3){ const d = new Date(); d.setDate(d.getDate() + i); items[dayKey(d)] = [{ remind: i % 2 === 0 }, { done: i < 0 }, ...(i % 9 === 0 ? [{}] : [])]; }
+
+  host.innerHTML = `<div class="cal-head"><h3><button type="button" class="cal-month-button"><span class="t"></span>${icon('down')}</button></h3>
+    <button type="button" class="icon-button" aria-label="Previous month">${icon('back')}</button>
+    <button type="button" class="subtle-button">Today</button>
+    <button type="button" class="icon-button" aria-label="Next month">${icon('forward')}</button></div>
+    <div class="cal-weekdays">${WEEK.map(d => `<span class="cal-weekday" aria-hidden="true">${d}</span>`).join('')}</div>
+    <div class="clip"><div class="cal-cells" role="grid"><span class="cal-ring"></span></div></div>`;
+  const title = $('.t', host), cells = $('.cal-cells', host), ring = $('.cal-ring', host);
+  const [prevB, todayB, nextB] = host.querySelectorAll('.cal-head > button');
+
+  function placeRing(animate){
+    const el = cells.querySelector(`[data-key="${selected}"]`);
+    if (!el){ ring.style.visibility = 'hidden'; return; }
+    ring.style.visibility = 'visible';
+    ring.style.width = el.offsetWidth + 'px'; ring.style.height = el.offsetHeight + 'px';
+    ring.style.transition = animate && smooth && !reduce.matches ? `transform ${240*slow}ms ${SMOOTH}` : 'none';
+    ring.style.transform = `translate(${el.offsetLeft}px, ${el.offsetTop}px)`;
+  }
+  function render(dir = 0){
+    title.textContent = month.toLocaleDateString(undefined, { month:'long', year:'numeric' });
+    cells.querySelectorAll('.cal-day').forEach(n => n.remove());
+    monthDays(month).forEach(c => {
+      const list = items[c.key] || [];
+      const b = h(`<button type="button" class="cal-day${c.outside ? ' outside' : ''}${c.key === TODAY ? ' today' : ''}${c.key === selected ? ' selected' : ''}" data-key="${c.key}" aria-pressed="${c.key === selected}"><span class="cal-date">${c.date}</span><span class="cal-dots" aria-hidden="true">${list.slice(0,3).map(it => `<i class="${it.done ? 'done' : ''} ${it.remind ? 'remind' : ''}"></i>`).join('')}</span></button>`);
+      b.onclick = () => select(c.key);
+      cells.append(b);
+    });
+    placeRing(false);
+    if (dir){
+      play(cells, [{ opacity:0, transform:`translateX(${dir*10}px)` }, { opacity:1, transform:'none' }], 260);
+      play(title, [{ opacity:0 }, { opacity:1 }], 200);
+    }
+  }
+  function select(key){
+    const d = parseDay(key);
+    if (d.getMonth() !== month.getMonth() || d.getFullYear() !== month.getFullYear()){
+      const dir = d > month ? 1 : -1; selected = key; month = new Date(d.getFullYear(), d.getMonth(), 1); render(dir); return;
+    }
+    selected = key;
+    cells.querySelectorAll('.cal-day').forEach(b => { const on = b.dataset.key === key; b.classList.toggle('selected', on); b.setAttribute('aria-pressed', on); });
+    placeRing(true);
+  }
+  prevB.onclick = () => { month = new Date(month.getFullYear(), month.getMonth() - 1, 1); render(-1); };
+  nextB.onclick = () => { month = new Date(month.getFullYear(), month.getMonth() + 1, 1); render(1); };
+  todayB.onclick = () => select(TODAY);
+  render();
+  new ResizeObserver(() => placeRing(false)).observe(cells);
+  document.addEventListener('motionmode', () => placeRing(false));
+})();
+
+/* ================= 3. Folder tree ================= */
+(() => {
+  const host = $('#tree');
+  const TREE = { name:'SuiteScripts', count: 4, children: [
+    { name:'Libraries', count: 6, children: [ { name:'lodash', count: 1, children: [] }, { name:'moment', count: 2, children: [] } ] },
+    { name:'Restlets', count: 3, children: [] },
+    { name:'Suitelets', count: 5, children: [ { name:'Approvals', count: 2, children: [] }, { name:'Reports', count: 7, children: [ { name:'Archive', count: 0, children: [] } ] } ] },
+    { name:'User Events', count: 9, children: [] },
+  ]};
+  const tree = h('<div class="folder-tree" role="tree"></div>');
+  host.append(tree);
+  let selectedRow = null;
+
+  function node(f){
+    const wrap = h('<div class="ft-entry"></div>');
+    const row = h(`<div class="ft-row" role="treeitem">
+      <button type="button" class="ft-toggle" aria-expanded="false" aria-label="Expand ${f.name}">${icon('right', 'chev')}</button>
+      <button type="button" class="ft-name"><span class="fi">${icon('folder')}</span><span>${f.name}</span>${f.count ? `<small>${f.count}</small>` : ''}</button></div>`);
+    const tog = row.children[0], name = row.children[1];
+    let kids = null;
+    tog.onclick = () => {
+      const open = tog.getAttribute('aria-expanded') !== 'true';
+      tog.setAttribute('aria-expanded', open); tog.setAttribute('aria-label', `${open ? 'Collapse' : 'Expand'} ${f.name}`);
+      name.querySelector('.fi').innerHTML = icon(open ? 'open' : 'folder');
+      if (open){
+        kids = h('<div class="ft-children" role="group"></div>');
+        if (!f.children.length) kids.append(h('<p class="ft-hint">No subfolders</p>'));
+        f.children.forEach(c => kids.append(node(c)));
+        wrap.append(kids);
+        play(kids, [{ opacity:0, transform:'translateY(-4px)' }, { opacity:1, transform:'none' }], 220);
+      } else { kids?.remove(); kids = null; } // collapse is instant
+    };
+    name.onclick = () => { selectedRow?.classList.remove('selected'); row.classList.add('selected'); selectedRow = row; };
+    wrap.append(row);
+    return wrap;
+  }
+  tree.append(node(TREE));
+  tree.querySelector('.ft-toggle').click();
+})();
+
+/* ================= 4. Switches ================= */
+(() => {
+  const host = $('#sw');
+  const ROWS = [
+    ['Collapse when idle', 'Fold the drawer after 5 seconds without a pointer over it.', true],
+    ['Peek on hover', 'Show a live preview of the page under the tab strip.', false],
+    ['Picture in picture', 'Keep playing video in a small floating window.', false],
+    ['Pause off-screen pages', 'Saves CPU while the page is outside the camera.', true],
+  ];
+  const d = h('<div class="drawer"></div>');
+  ROWS.forEach(([t, help, on], i) => {
+    const row = h(`<div class="drawer-row"><label for="sw${i}"><b>${t}</b><small>${help}</small></label><input id="sw${i}" class="sw" type="checkbox" role="switch" ${on ? 'checked' : ''}></div>`);
+    d.append(row);
+  });
+  host.append(d);
+})();
+
+/* ================= 5. Number field ================= */
+(() => {
+  const host = $('#num');
+  const FIELDS = [
+    { label:'Retries', value:3, min:0, max:10, step:1, fmt: v => String(v) },
+    { label:'Canvas zoom', value:100, min:25, max:400, step:5, fmt: v => v + '%' },
+  ];
+  const wrap = h('<div class="fields"></div>');
+  FIELDS.forEach(f => {
+    const el = h(`<div><div class="field-label">${f.label}</div><div class="number-field">
+      <div class="nf-box"><input type="text" inputmode="decimal" role="spinbutton" autocomplete="off" spellcheck="false"><span class="nf-ghost" aria-hidden="true"></span></div>
+      <div class="number-stepper"><button type="button" aria-label="Decrease ${f.label}">${icon('minus')}</button><button type="button" aria-label="Increase ${f.label}">${icon('plus')}</button></div></div></div>`);
+    const input = $('input', el), ghost = $('.nf-ghost', el), [dec, inc] = el.querySelectorAll('.number-stepper button');
+
+    // Soft crossfade: the old value fades out on top while the new one fades in underneath,
+    // in the same spot, on the same curve. The two opacities always add up to 1, so the
+    // number never goes blank and nothing moves.
+    const stopFade = () => { ghost.getAnimations().forEach(a => a.cancel()); input.getAnimations().forEach(a => a.cancel()); };
+    function crossfade(oldText){
+      stopFade();
+      if (!smooth || reduce.matches) return;
+      ghost.textContent = oldText;
+      const opts = { duration: 180 * slow, easing: SMOOTH };
+      ghost.animate([{ opacity: 1 }, { opacity: 0 }], opts);
+      input.animate([{ opacity: 0 }, { opacity: 1 }], opts);
+    }
+    const sync = () => {
+      input.value = f.fmt(f.value); input.setAttribute('aria-valuenow', f.value);
+      dec.disabled = f.value <= f.min; inc.disabled = f.value >= f.max;
+    };
+    const adjust = (dir, instant = false) => {
+      const next = Math.min(f.max, Math.max(f.min, f.value + dir * f.step));
+      if (next === f.value) return;
+      const before = input.value;
+      f.value = next; sync(); // value updates first; the fade is decoration only
+      instant ? stopFade() : crossfade(before);
+    };
+    // press and hold repeats: 400 ms delay, then every 70 ms. Repeats are instant so the text doesn't churn.
+    [[dec, -1], [inc, 1]].forEach(([b, dir]) => {
+      let t1 = 0, t2 = 0;
+      const stop = () => { clearTimeout(t1); clearInterval(t2); };
+      b.addEventListener('pointerdown', e => { if (b.disabled) return; e.preventDefault(); adjust(dir); t1 = setTimeout(() => { t2 = setInterval(() => { adjust(dir, true); if (b.disabled) stop(); }, 70); }, 400); });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, stop));
+      b.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); adjust(dir); } });
+    });
+    input.addEventListener('keydown', e => {
+      if (e.key === 'ArrowUp'){ e.preventDefault(); adjust(1); }
+      if (e.key === 'ArrowDown'){ e.preventDefault(); adjust(-1); }
+    });
+    input.addEventListener('change', () => { const n = parseFloat(input.value); if (!isNaN(n)) f.value = Math.min(f.max, Math.max(f.min, Math.round(n / f.step) * f.step)); sync(); });
+    sync(); wrap.append(el);
+  });
+  host.append(wrap);
+})();
+
+/* ================= 6. Split tabs ================= */
+(() => {
+  const host = $('#tabs');
+  const KINDS = [
+    { name:'Terminal', icon:'term', body: n => `<div><span class="p">orvane ❯</span> pnpm dev</div><div class="dim">  VITE v6  ready in ${300 + n*17} ms</div><div class="dim">  ➜  Local: http://localhost:${5170 + n}/</div><div><span class="p">orvane ❯</span> _</div>` },
+    { name:'server.log', icon:'file', body: n => `<div class="dim">[09:4${n}:02] GET /api/workspace 200 4ms</div><div class="dim">[09:4${n}:03] snapshot saved (rev ${120 + n})</div><div>[09:4${n}:07] backup: 3 files, 1.2 MB</div>` },
+    { name:'README.md', icon:'file', body: () => `<div><b># Orvane</b></div><div>Local-first desktop workspace.</div><div class="dim">Apps live on an infinite canvas…</div>` },
+  ];
+  let tabs = [], active = null, seq = 0;
+  const rootEl = h(`<div class="st-root"><div class="st-bars"><div class="st-scroll" role="tablist"></div></div><div class="st-pane" role="tabpanel"></div></div>`);
+  host.append(rootEl);
+  const bar = $('.st-scroll', rootEl), pane = $('.st-pane', rootEl);
+  const addBtn = h(`<button type="button" class="st-add" aria-label="New tab">${icon('plus')}</button>`);
+
+  function renderBar(){
+    bar.innerHTML = '';
+    tabs.forEach(t => {
+      const el = h(`<div class="st-tab${t === active ? ' active' : ''}" role="presentation"><button type="button" role="tab" aria-selected="${t === active}">${icon(t.kind.icon)}<span>${t.kind.name}${t.n > 1 ? ' ' + t.n : ''}</span></button><button type="button" class="st-close" aria-label="Close tab">${icon('x')}</button></div>`);
+      el.children[0].onclick = () => activate(t);
+      el.children[1].onclick = () => closeTab(t);
+      t.el = el; bar.append(el);
+    });
+    bar.append(addBtn);
+  }
+  function activate(t, fade = true){
+    if (t === active) return;
+    active = t; renderBar();
+    pane.innerHTML = t.kind.body(t.n);
+    if (fade) play(pane, [{ opacity:0 }, { opacity:1 }], 180);
+  }
+  function addTab(kind, animate = true){
+    seq++;
+    const t = { kind, n: tabs.filter(x => x.kind === kind).length + 1 };
+    tabs.push(t); active = null; activate(t, animate);
+    if (animate) play(t.el, [{ opacity:0, transform:'translateY(3px)' }, { opacity:1, transform:'none' }], 220);
+  }
+  function closeTab(t){ // instant: no exit motion, neighbours move at once
+    const i = tabs.indexOf(t); tabs.splice(i, 1);
+    if (!tabs.length){ active = null; renderBar(); pane.innerHTML = '<div class="dim">No tabs. Press + to open one.</div>'; return; }
+    if (t === active){ active = null; activate(tabs[Math.min(i, tabs.length - 1)]); } else renderBar();
+  }
+  addBtn.onclick = () => addTab(KINDS[seq % KINDS.length]);
+  addTab(KINDS[0], false); addTab(KINDS[1], false); activate(tabs[0], false);
+})();
+
+/* ---------- global controls ---------- */
+const seg = $('#modeSeg'), thumb = $('.thumb', seg), slowBtn = $('#slowBtn');
+function placeThumb(){ const on = seg.querySelector('[aria-checked="true"]'); thumb.style.width = on.offsetWidth + 'px'; thumb.style.transform = `translateX(${on.offsetLeft - 3}px)`; }
+function setMode(v){
+  smooth = v === 'smooth';
+  document.body.classList.toggle('smooth', smooth);
+  seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-checked', b.dataset.v === v));
+  placeThumb(); document.dispatchEvent(new Event('motionmode'));
+}
+seg.querySelectorAll('button').forEach(b => b.onclick = () => setMode(b.dataset.v));
+function toggleSlow(){ slow = slow === 1 ? 4 : 1; slowBtn.setAttribute('aria-pressed', slow !== 1); root.style.setProperty('--k', slow); }
+slowBtn.onclick = toggleSlow;
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  if (t instanceof HTMLInputElement && t.type === 'text') return; // shortcuts defer to text fields
+  if (e.key === 'm' || e.key === 'M'){ setMode(smooth ? 'current' : 'smooth'); e.preventDefault(); }
+  if (e.key === 's' || e.key === 'S'){ toggleSlow(); e.preventDefault(); }
+});
+placeThumb();
+new ResizeObserver(placeThumb).observe(seg);
+})();
+</script>
+</body>
+</html>

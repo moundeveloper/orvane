@@ -130,7 +130,7 @@ const CANVAS_GESTURES = `(() => {
       return;
     } else if (mod && !event.altKey) {
       if (key === "tab") name = event.shiftKey ? "tab-back" : "tab-next";
-      else if (event.shiftKey) name = ({ a: "search", c: "copy-url", t: "reopen-tab", p: "commands" })[key];
+      else if (event.shiftKey) name = ({ a: "search", c: "copy-url", t: "reopen-tab", p: "commands", k: "agent" })[key];
       else if (/^[1-9]$/.test(key)) name = "tab-" + key;
       else name = ({ k: "palette", l: "address", t: "new-tab", w: "close-tab", b: "library",
         o: "promote-peek", [String.fromCharCode(92)]: "sidebar" })[key];
@@ -221,7 +221,7 @@ async function startServer() {
 function stopServer() {
   const closing = netSuiteBroker?.close().catch(error => console.error("NetSuite broker close failed:", error.message));
   netSuiteBroker = undefined;
-  server?.kill();
+  server?.stdin.end();
   server = undefined;
   return closing;
 }
@@ -653,6 +653,94 @@ function pageAgentMouse(guest, op) {
 }
 /** Guests receiving AI input right now (see before-mouse-event). */
 const agentInput = new Set();
+function agentDeadline(ms, cap) {
+  return Number.isFinite(ms) ? Math.max(1, Math.min(ms, cap)) : cap;
+}
+function navigateAgentPage(guest, op) {
+  const history = guest.navigationHistory;
+  const page = () => ({ page: { url: guest.getURL(), title: guest.getTitle() } });
+  if ((op.action === "back" && !history.canGoBack()) ||
+      (op.action === "forward" && !history.canGoForward())) return page();
+  let requested;
+  if (op.action === "url") {
+    if (typeof op.url !== "string" || !web(op.url)) throw Error("Enter an http or https address.");
+    const destination = new URL(op.url);
+    if (isOrvane(destination.href) ||
+        (["localhost", "127.0.0.1", "[::1]"].includes(destination.hostname) && destination.port === String(port)))
+      throw Error("Orvane itself can't be opened inside its own browser.");
+    requested = destination.href;
+  } else if (!["back", "forward", "reload"].includes(op.action)) {
+    throw Error("Unknown navigation action.");
+  }
+  return new Promise((resolve) => {
+    let started;
+    let done = false;
+    const timer = setTimeout(() => finish({ error: "Navigation did not commit in time. Check the tab before retrying." }), agentDeadline(op.timeoutMs, 8000));
+    function finish(result) {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      guest.removeListener("did-start-navigation", start);
+      guest.removeListener("did-navigate", commit);
+      guest.removeListener("did-navigate-in-page", inPage);
+      guest.removeListener("did-fail-provisional-load", fail);
+      guest.removeListener("destroyed", destroyed);
+      resolve(result);
+    }
+    function start({ url, isMainFrame }) {
+      if (!isMainFrame) return;
+      if (started) return finish({ error: "Navigation was canceled by another navigation." });
+      if (!requested || url === requested) started = url;
+    }
+    function commit() {
+      if (started) finish(page());
+    }
+    function inPage(_event, url, isMainFrame) {
+      if (isMainFrame && (started || url === requested)) finish(page());
+    }
+    function fail(_event, code, description, url, isMainFrame) {
+      if (!isMainFrame || (code === -3 && (!started || url !== started))) return;
+      finish({ error: code === -3 ? "Navigation was canceled." : `Navigation failed (${description || code}).` });
+    }
+    function destroyed() {
+      finish({ error: "The page closed before navigation committed." });
+    }
+    guest.on("did-start-navigation", start);
+    guest.on("did-navigate", commit);
+    guest.on("did-navigate-in-page", inPage);
+    if (!requested) guest.on("did-fail-provisional-load", fail);
+    guest.once("destroyed", destroyed);
+    try {
+      if (requested) {
+        void guest.loadURL(requested).catch((error) => finish({
+          error: error.code === "ERR_ABORTED" ? "Navigation was canceled." : `Navigation failed (${error.code || error.message}).`,
+        }));
+      } else if (op.action === "back") history.goBack();
+      else if (op.action === "forward") history.goForward();
+      else guest.reload();
+    } catch (error) {
+      finish({ error: `Navigation failed (${error.message}).` });
+    }
+  });
+}
+async function captureAgentPage(guest, op) {
+  let timer;
+  try {
+    const image = await Promise.race([
+      guest.capturePage(),
+      new Promise((resolve) => { timer = setTimeout(resolve, agentDeadline(op.timeoutMs, 1800)); }),
+    ]);
+    if (!image) return { screenshotWarning: "Screenshot capture timed out." };
+    if (image.isEmpty()) return { screenshotWarning: "The page has no rendered image yet." };
+    const { width } = image.getSize();
+    const scaled = width > 1280 ? image.resize({ width: 1280 }) : image;
+    return { image: scaled.toJPEG(70).toString("base64") };
+  } catch {
+    return { screenshotWarning: "The Browser could not capture the page image." };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 ipcMain.handle("orvane:page-agent", async (event, id, op) => {
   const guest = ownGuest(event, id);
   if (!guest || !op || typeof op !== "object") throw Error("No such page.");
@@ -700,19 +788,10 @@ ipcMain.handle("orvane:page-agent", async (event, id, op) => {
       guest.sendInputEvent({ type: "keyUp", keyCode, modifiers });
       return true;
     }
-    case "screenshot": {
-      const image = await guest.capturePage();
-      if (!image || image.isEmpty()) return "";
-      const { width } = image.getSize();
-      const scaled = width > 1280 ? image.resize({ width: 1280 }) : image;
-      return scaled.toJPEG(70).toString("base64");
-    }
-    case "navigate": {
-      if (op.action === "back") guest.navigationHistory.goBack();
-      else if (op.action === "forward") guest.navigationHistory.goForward();
-      else if (op.action === "reload") guest.reload();
-      return true;
-    }
+    case "screenshot":
+      return captureAgentPage(guest, op);
+    case "navigate":
+      return navigateAgentPage(guest, op);
     default:
       throw Error("Unknown page action.");
   }
@@ -1037,7 +1116,13 @@ async function pauseGuest(guest) {
     return; // Another debugger owns the page; leave it running.
   }
   pausedGuests.add(guest.id);
-  const forget = () => pausedGuests.delete(guest.id);
+  // Both listeners go once the pause ends either way; otherwise every
+  // pause/resume cycle would leave one more on the page.
+  const forget = () => {
+    pausedGuests.delete(guest.id);
+    debug.removeListener("detach", forget);
+    if (!guest.isDestroyed()) guest.removeListener("destroyed", forget);
+  };
   debug.once("detach", forget);
   guest.once("destroyed", forget);
   try {

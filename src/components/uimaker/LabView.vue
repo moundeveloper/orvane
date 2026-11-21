@@ -4,6 +4,7 @@
 // MCP tools; picking a variant saves it as the component's next iteration.
 import { computed, ref, watch } from 'vue';
 import { labUrl } from './editor.js';
+import { adoptScrollbars } from '../../scrollbars';
 
 const props = defineProps({ model: Object, editor: Object });
 const ui = props.model.ui;
@@ -47,7 +48,7 @@ async function pick() {
     <button v-else class="btn primary" :disabled="!variant || picking" @click="pick">Pick</button>
   </header>
   <div class="lab-stage">
-    <iframe v-if="src" :key="src" :src="src" :title="variant.label"></iframe>
+    <iframe v-if="src" :key="src" :src="src" :title="variant.label" @load="adoptScrollbars($event.target.contentDocument)"></iframe>
     <p v-else class="lab-empty">{{ round ? 'No variants yet' : 'No rounds yet' }}</p>
   </div>
 </section>

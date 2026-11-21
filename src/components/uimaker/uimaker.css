@@ -19,10 +19,6 @@
 .uimaker .spacer { flex: 1; }
 .uimaker .um-icon { display: inline-flex; width: 14px; height: 14px; flex: none; }
 .uimaker .um-icon svg { width: 100%; height: 100%; }
-.uimaker ::-webkit-scrollbar { width: 6px; height: 6px; }
-.uimaker ::-webkit-scrollbar-button { display: none; }
-.uimaker ::-webkit-scrollbar-thumb { background: #c3ced5; border-radius: 3px; }
-.uimaker ::-webkit-scrollbar-track { background: transparent; }
 
 /* ---------- shared pieces ---------- */
 /* Tabs: the same segmented control as .seg, so every tab row shares one shape. */
@@ -262,11 +258,11 @@
 
 /* ---------- lab: variants of one round as tabs, rounds in the side panel ---------- */
 .uimaker .lab { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-.uimaker .lab-bar { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px; border-bottom: 1px solid var(--um-line); flex: none; min-width: 0; }
+.uimaker .lab-bar { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 7px 12px; box-sizing: border-box; border-bottom: 1px solid var(--um-line); flex: none; min-width: 0; }
 .uimaker .lab-kind { flex: none; padding: 1px 6px; border-radius: 5px; font-size: 10.5px; line-height: 16px; color: var(--um-mut); background: var(--um-well); }
 .uimaker .lab-title { color: var(--um-strong); font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; flex: none; }
-.uimaker .lab-tabs { min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.uimaker .lab-tabs::-webkit-scrollbar { display: none; }
+/* Many variants wrap onto more rows inside the same well; the bar grows. */
+.uimaker .lab-tabs { flex: 0 1 auto; min-width: 0; flex-wrap: wrap; }
 .uimaker .lab-tabs button { white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
 .uimaker .lab-won { width: 5px; height: 5px; border-radius: 50%; background: var(--um-green); }
 .uimaker .lab-stage { position: relative; flex: 1; min-height: 0; background: var(--um-canvas); }

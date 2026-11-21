@@ -189,6 +189,24 @@ export class UiMakerService {
     await fsp.writeFile(path.join(this.components, id, "v1", "index.html"), BLANK);
     return { id };
   }
+  /** Creates a component the way the editor's New button does: a blank v1 and
+   * an entry in the saved state, which open editors adopt on the next change. */
+  async create(input: { name: string; intent?: string; width?: number; height?: number | null }) {
+    const name = input.name.trim();
+    if (!name) throw Error("Give the component a name.");
+    const width = input.width ?? 480, height = input.height === undefined ? 360 : input.height;
+    if (!Number.isInteger(width) || width < 40 || width > 3000) throw Error("Width must be a whole number from 40 to 3000.");
+    if (height !== null && (!Number.isInteger(height) || height < 20 || height > 6000))
+      throw Error("Height must be a whole number from 20 to 6000, or auto.");
+    const { id } = await this.createFolder(name);
+    const state = this.readState();
+    state.components.push({ id, name, width, height, intent: input.intent ?? "", refs: [], bstrokes: [], bpins: [], target: null, match: null });
+    this.saveState(state);
+    // Touch the folder so open editors pull the new state.
+    await fsp.writeFile(path.join(this.components, id, "artboard.json"), JSON.stringify({ width, height, at: Date.now() }));
+    this.addFeed("create", id, `Created ${name}`);
+    return { id, name, width, height };
+  }
   async saveRef(type: string, data: Buffer) {
     const ext = IMAGE_TYPES[type];
     if (!ext) throw Error("Only PNG, JPEG, WebP and GIF images can be references.");

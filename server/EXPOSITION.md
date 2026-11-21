@@ -4,7 +4,7 @@ Orvane mirrors local Claude Code conversations and renders structured explanatio
 
 ## Use in the desktop apps
 
-1. Start Orvane. In **Workspace options**, choose **Create Claude sessions**. Select a session in the list.
+1. Start Orvane. In **Workspace options**, choose **Create Agent sessions**. Select a Claude session in the list.
 2. Run `scripts/install-orvane-exposition.ps1` to set up the single `orvane` connector for workspace, automation, NetSuite and Exposition tools in the Claude Code user profile and Claude Desktop's local MCP configuration. The installer consolidates legacy registrations, preserves other servers and hooks, installs the personal skill, and backs up changed configuration under `~/.claude/backups/`. Fully quit and reopen Claude Desktop to load the updated tool list.
 3. Reopen a local session in Claude Desktop’s **Code** tab so the new tool, skill and SessionStart hook load. Ask Claude to explain something visually in Orvane.
 
@@ -58,7 +58,7 @@ Views declare `illustrative`, `historical`, `proposal` or `verified`. The last r
 - The app polls the selected conversation approximately every 1.8 seconds while visible. Newline-incomplete records wait until complete. Source truncation/replacement resets the backend cache.
 - Explanations persist separately in `.orvane/claude-visuals.sqlite`, with revision checks. Multiple MCP processes and the UI backend share SQLite/WAL, rather than relying on process-local state.
 - The UI attaches a view to its explicit anchor, or to the `exposition_show` tool call whose input names that stable view ID. If that message is not loaded, the view appears in **Session visuals** until its anchor is available. A visual is never moved into another session.
-- The current release mirrors locally available sessions. It does not provide remote/cloud transcript retrieval or a send-to-Claude interface.
+- Agent sessions reads local transcript files. Messages sent from Orvane run through the provider CLI, which saves its own transcript. See [Send messages to Claude Code and Codex](../README.md#send-messages-to-claude-code-and-codex).
 
 ## Validation
 

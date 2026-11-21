@@ -12,7 +12,7 @@ import { siteMemoryApi } from "./server/site-memory-api.ts";
 import { workspaceMemoryApi } from "./server/workspace-memory-api.ts";
 import { customToolsApi } from "./server/custom-tools-api.ts";
 import { certificatesApi } from "./server/certificates-api.ts";
-import { claudeApi } from "./server/claude-api.ts";
+import { agentSessionsApi } from "./server/agent-sessions-api.ts";
 import { filesApi } from "./server/files-api.ts";
 import { netSuiteWorkspaceApi } from "./server/netsuite-workspace-api.ts";
 import { terminalApi } from "./server/terminal.ts";
@@ -24,7 +24,7 @@ export default defineConfig({
   // which makes the frosted header disappear in the production desktop app.
   build: { cssMinify: "esbuild" },
   plugins: [
-    claudeApi(process.env.ORVANE_DATA_DIR || fileURLToPath(new URL("./.orvane", import.meta.url))),
+    agentSessionsApi(process.env.ORVANE_DATA_DIR || fileURLToPath(new URL("./.orvane", import.meta.url))),
     certificatesApi(
       process.env.ORVANE_DATA_DIR ||
         fileURLToPath(new URL("./.orvane", import.meta.url)),

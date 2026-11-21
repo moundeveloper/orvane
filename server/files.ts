@@ -434,6 +434,20 @@ export function createFilesService(directory: string) {
       return { path };
     },
     preview: (a) => preview(absolute(a.path)),
+    // Which of these paths exist, and which are folders. Used to turn file
+    // names in agent replies into links only when they point at something.
+    exists: async (a) => ({
+      entries: await Promise.all(
+        paths(a.paths)
+          .slice(0, 200)
+          .map((path) =>
+            stat(path).then(
+              (info) => ({ path, dir: info.isDirectory() }),
+              () => ({ path, dir: null }),
+            ),
+          ),
+      ),
+    }),
     mkdir: async (a) => {
       const path = await unique(absolute(a.path), validName(a.name));
       await mkdir(path);

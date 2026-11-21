@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { AgentRun } from "./agentSessions.ts";
 const text = z.string().min(1).max(2000);
 const id = z.string().min(1).max(200);
 const base = { id, title: text, detail: z.boolean().optional() };
@@ -177,7 +178,8 @@ export interface VisualRecord {
   revision: number;
   updatedAt: number;
 }
-export interface ClaudeSession {
+export interface AgentSession {
+  provider?: "claude" | "codex";
   key: string;
   sessionId: string;
   title: string;
@@ -185,26 +187,39 @@ export interface ClaudeSession {
   updatedAt: number;
   bytes: number;
 }
-export interface ClaudeMessage {
+/** A tool call read from a transcript, with its result once one is logged. */
+export interface AgentToolCall {
+  id: string;
+  name: string;
+  visualId?: string;
+  input?: Record<string, string>;
+  output?: string;
+  /** Set when the transcript holds the result. */
+  status?: "completed" | "failed";
+  startedAt?: number;
+  endedAt?: number;
+}
+export interface AgentMessage {
   id: string;
   role: "user" | "assistant";
   text: string;
   at: string;
-  tools: { id: string; name: string; visualId?: string }[];
+  tools: AgentToolCall[];
   truncated: boolean;
 }
-export interface ClaudeRead {
-  session: ClaudeSession;
-  messages: ClaudeMessage[];
+export interface AgentSessionRead {
+  run?: AgentRun | null;
+  session: AgentSession;
+  messages: AgentMessage[];
   before: string | null;
   warnings: string[];
   visuals: VisualRecord[];
 }
-export async function claudeRequest<T>(
+export async function agentRequest<T>(
   operation: string,
   args: unknown = {},
 ): Promise<T> {
-  const response = await fetch(`/__orvane/claude/${operation}`, {
+  const response = await fetch(`/__orvane/agents/${operation}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(args),
@@ -217,7 +232,7 @@ export async function claudeRequest<T>(
         "error" in data &&
         typeof data.error === "string"
         ? data.error
-        : "Claude sessions could not be read.",
+        : "The session request failed.",
     );
   return data as T;
 }

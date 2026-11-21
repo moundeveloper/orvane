@@ -2,6 +2,7 @@
 // register a function that lists their commands; the palette asks for them
 // when it opens, so commands always reflect the app's current state.
 import { shallowReactive } from "vue";
+import type { ReferenceReviewRequest, ReferenceReviewResult } from "./uimakerReferenceReview";
 
 export type Command = {
   id: string;
@@ -38,7 +39,17 @@ export type OpenRequest =
   | { kind: "notes-page"; blockId?: string; pageId: string }
   | { kind: "browser-url"; blockId?: string; url: string; reuse?: boolean }
   | { kind: "git-commit"; blockId?: string; workspaceId: string; hash: string }
-  | { kind: "explorer-path"; blockId?: string; path: string; select?: string };
+  | { kind: "explorer-path"; blockId?: string; path: string; select?: string }
+  | {
+      kind: "uimaker";
+      blockId: string;
+      component: string;
+      mode: "review" | "inspect" | "lab";
+      version?: number;
+      reference?: { mime: string; data: string; caption: string };
+      review?: ReferenceReviewRequest;
+      opened?: Promise<{ component: string; mode: string; version: number; referenceAdded?: true } | ReferenceReviewResult>;
+    };
 export const OPEN_EVENT = "orvane:open-request";
 /** Drag data of a Browser tab: { url, title }. */
 export const PAGE_DRAG_MIME = "application/x-orvane-page";

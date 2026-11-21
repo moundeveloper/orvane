@@ -6,9 +6,11 @@ import Icon from "./Icon.vue";
 import { allCommands, requestOpen, type Command } from "../commands";
 import { flatten, type CanvasApp } from "../model";
 import { api, iconOf, type FileEntry } from "./files/explorer";
+import { agentRequest, type AgentSession } from "../exposition";
+import { agentNames } from "../agentSessions";
 
 const props = defineProps<{ apps: CanvasApp[]; initial?: string }>();
-const emit = defineEmits<{ close: []; focusApp: [appId: string]; focusBlock: [blockId: string] }>();
+const emit = defineEmits<{ close: []; focusApp: [appId: string]; focusBlock: [blockId: string]; agentSession: [key: string] }>();
 type Result = { key: string; section: string; title: string; detail?: string; icon: string; hint?: string; run: () => unknown };
 const query = ref(props.initial ?? "");
 const input = ref<HTMLInputElement>();
@@ -16,6 +18,19 @@ const list = ref<HTMLElement>();
 const active = ref(0);
 const commandsOnly = computed(() => query.value.startsWith(">"));
 const text = computed(() => query.value.replace(/^>\s*/, "").trim().toLowerCase());
+const agentSessions = shallowRef<AgentSession[]>([]);
+const agentResults = computed<Result[]>(() => commandsOnly.value || text.value.length < 2 ? [] :
+  agentSessions.value
+    .map((session) => ({ session, rank: score(`${session.title} ${session.project} ${agentNames[session.provider ?? "claude"]}`, session.title) }))
+    .filter(({ rank }) => rank > 0)
+    .sort((a, b) => b.rank - a.rank)
+    .slice(0, 8)
+    .map(({ session }) => ({
+      key: `agent:${session.key}`, section: "Agent sessions", title: session.title,
+      detail: `${agentNames[session.provider ?? "claude"]} · ${session.project}`, icon: "agent-sessions",
+      run: () => emit("agentSession", session.key),
+    })),
+);
 // Every word must appear somewhere; earlier and title matches rank higher.
 function score(haystack: string, title: string) {
   const words = text.value.split(/\s+/).filter(Boolean);
@@ -264,6 +279,7 @@ onBeforeUnmount(() => clearTimeout(timer));
 const results = computed(() => [
   ...appResults.value,
   ...commandResults.value,
+  ...agentResults.value,
   ...notes.value,
   ...historyResults.value,
   ...commits.value,
@@ -297,7 +313,13 @@ function keydown(event: KeyboardEvent) {
   else return;
   void nextTick(() => list.value?.querySelector(".cp-item.active")?.scrollIntoView({ block: "nearest" }));
 }
-onMounted(() => void nextTick(() => input.value?.focus()));
+onMounted(() => {
+  void nextTick(() => input.value?.focus());
+  if (!commandsOnly.value)
+    void agentRequest<{ sessions: AgentSession[] }>("sessions")
+      .then(({ sessions }) => { agentSessions.value = sessions; })
+      .catch(() => {});
+});
 </script>
 <template>
   <div class="cp-backdrop" @pointerdown.stop.self="emit('close')">

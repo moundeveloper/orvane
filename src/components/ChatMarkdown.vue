@@ -1,9 +1,101 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { Marked } from "marked";
 import DOMPurify from "dompurify";
+import { api as fileRequest } from "./files/explorer";
 
-const props = defineProps<{ text: string }>();
+// base: the session folder, for paths the agent wrote relative to it.
+const props = defineProps<{ text: string; base?: string }>();
+
+// File and folder names in a reply become links into the File Explorer, but
+// only once the path is known to exist. Shared by every message.
+const known = new Map<string, boolean | null>();
+const version = ref(0);
+let pending = new Set<string>();
+let checking: ReturnType<typeof setTimeout> | undefined;
+function check(path: string) {
+  if (known.has(path) || pending.has(path)) return;
+  pending.add(path);
+  checking ??= setTimeout(async () => {
+    const batch = [...pending];
+    pending = new Set();
+    checking = undefined;
+    try {
+      const { entries } = await fileRequest<{
+        entries: { dir: boolean | null }[];
+      }>("exists", { paths: batch });
+      batch.forEach((path, index) => known.set(path, entries[index]?.dir ?? null));
+    } catch {
+      for (const path of batch) known.set(path, null);
+    }
+    version.value++;
+  }, 60);
+}
+const absolutePath = /^(?:[a-z]:[\\/]|\\\\)/i;
+function localPath(raw: string) {
+  let text = raw.trim();
+  if (!text || /^(?:https?|mailto):/i.test(text) || text.startsWith("#"))
+    return null;
+  if (/^file:/i.test(text)) text = text.replace(/^file:\/*/i, "");
+  try {
+    text = decodeURI(text);
+  } catch {
+    /* Keep it as written. */
+  }
+  text = text
+    .replace(/^\/(?=[a-z]:[\\/])/i, "")
+    .replace(/#L\d+(?:-L?\d+)?$/i, "")
+    .replace(/:\d+(?::\d+)?$/, "");
+  if (/[<>"|?*\n]/.test(text) || /^[a-z][\w+.-]*:\/\//i.test(text)) return null;
+  if (absolutePath.test(text)) return text.replace(/\//g, "\\");
+  if (!props.base || /^~/.test(text)) return null;
+  const parts = props.base.replace(/[\\/]+$/, "").split(/[\\/]/);
+  for (const part of text.replace(/^\.[\\/]/, "").split(/[\\/]+/)) {
+    if (part === "..") parts.pop();
+    else if (part && part !== ".") parts.push(part);
+  }
+  return parts.join("\\");
+}
+// Inline code that reads like a file name or path, e.g. `src/App.vue:12`.
+const codePath =
+  /^(?:[a-z]:[\\/]|\.{1,2}[\\/])?[\w@.-]+(?:[\\/][\w@ .()-]+)*[\\/]?(?::\d+(?::\d+)?)?$/i;
+function codeCandidate(text: string) {
+  if (!codePath.test(text) || text.length > 260) return null;
+  const bare = text.replace(/:\d+(?::\d+)?$/, "");
+  if (!/[\\/]/.test(bare) && !/[\w-]\.[a-z0-9]{1,6}$/i.test(bare)) return null;
+  return localPath(bare);
+}
+function markPath(element: Element, path: string) {
+  const dir = known.get(path);
+  if (dir === undefined) return check(path);
+  if (dir === null) return;
+  element.classList.add("md-path");
+  element.setAttribute("data-path", path);
+  element.setAttribute("data-dir", String(dir));
+  element.setAttribute("title", dir ? "Open folder in Orvane" : "Show file in Orvane");
+  element.setAttribute("role", "link");
+  element.setAttribute("tabindex", "0");
+}
+function openPath(event: Event) {
+  const element = (event.target as Element).closest<HTMLElement>("[data-path]");
+  if (!element) return;
+  event.preventDefault();
+  const target = element.dataset.path!;
+  window.dispatchEvent(
+    new CustomEvent("orvane:open-link", {
+      detail: {
+        link: {
+          kind: element.dataset.dir === "true" ? "folder" : "file",
+          target,
+          label: target.split("\\").pop() || target,
+        },
+      },
+    }),
+  );
+}
+function openPathKey(event: KeyboardEvent) {
+  if (event.key === "Enter") openPath(event);
+}
 const escape = (text: string) =>
   text.replace(
     /[&<>"']/g,
@@ -21,6 +113,7 @@ const markdown = new Marked({
   },
 });
 const html = computed(() => {
+  void version.value;
   const fragment = DOMPurify.sanitize(
     markdown.parse(props.text, { async: false }),
     {
@@ -68,11 +161,19 @@ const html = computed(() => {
   );
   for (const link of fragment.querySelectorAll("a")) {
     const href = link.getAttribute("href") || "";
-    if (!/^(https?:|mailto:|#)/i.test(href)) link.removeAttribute("href");
-    else if (!href.startsWith("#")) {
+    if (!/^(https?:|mailto:|#)/i.test(href)) {
+      link.removeAttribute("href");
+      const path = localPath(href);
+      if (path) markPath(link, path);
+    } else if (!href.startsWith("#")) {
       link.setAttribute("target", "_blank");
       link.setAttribute("rel", "noopener noreferrer");
     }
+  }
+  for (const code of fragment.querySelectorAll(":not(pre) > code")) {
+    if (code.closest("a")) continue;
+    const path = codeCandidate(code.textContent || "");
+    if (path) markPath(code, path);
   }
   for (const input of fragment.querySelectorAll("input")) {
     input.type = "checkbox";
@@ -92,7 +193,14 @@ const html = computed(() => {
   return container.innerHTML;
 });
 </script>
-<template><div class="chat-markdown" v-html="html"></div></template>
+<template>
+  <div
+    class="chat-markdown"
+    @click="openPath"
+    @keydown="openPathKey"
+    v-html="html"
+  ></div>
+</template>
 <style scoped>
 .chat-markdown {
   min-width: 0;
@@ -153,6 +261,26 @@ const html = computed(() => {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+/* Files and folders the reply names: open them in the File Explorer. */
+.chat-markdown :deep(.md-path) {
+  color: #385d76;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: #9fb6c3;
+  text-underline-offset: 3px;
+}
+.chat-markdown :deep(.md-path:hover) {
+  color: #274a61;
+  text-decoration-color: currentColor;
+}
+.chat-markdown :deep(code.md-path) {
+  text-decoration: none;
+  box-shadow: inset 0 -1px #9fb6c3;
+}
+.chat-markdown :deep(code.md-path:hover) {
+  background: #dde7ed;
+}
+.chat-markdown :deep(.md-path:focus-visible),
 .chat-markdown :deep(a:focus-visible) {
   outline: 1px solid #7a96a6;
   outline-offset: 2px;

@@ -86,6 +86,11 @@ import {
   CalendarDays,
   Bell,
   Redo2,
+  Orbit,
+  MessagesSquare,
+  Bot,
+  Cpu,
+  Paperclip,
 } from "@lucide/vue";
 const props = withDefaults(defineProps<{ name: string; size?: number }>(), {
   size: 16,
@@ -180,6 +185,11 @@ const icons: Record<string, unknown> = {
   calendar: CalendarDays,
   bell: Bell,
   redo: Redo2,
+  ai: Orbit,
+  "agent-sessions": MessagesSquare,
+  bot: Bot,
+  cpu: Cpu,
+  attachment: Paperclip,
 };
 const icon = computed(() => icons[props.name] || LayoutGrid);
 </script>

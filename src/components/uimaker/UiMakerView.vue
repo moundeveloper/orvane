@@ -7,16 +7,87 @@ import CustomSelect from '../CustomSelect.vue';
 import CustomNumber from '../CustomNumber.vue';
 import UiIcon from './UiIcon.vue';
 import ReviewPanel from './ReviewPanel.vue';
+import ReferenceReview from './ReferenceReview.vue';
 import LabView from './LabView.vue';
 import LabRounds from './LabRounds.vue';
 import { measureFrame } from './overlay.js';
+import { adoptScrollbars } from '../../scrollbars';
 import { createEditorModel, mountEditor, COLORS, TOOLS, BTOOLS, compUrl, refUrl } from './editor.js';
+import { onOpenRequest } from '../../commands';
 
 const props = defineProps({ block: Object });
 const model = createEditorModel();
 const { ui } = model;
 const root = ref(null);
 const editor = shallowRef(null);
+const pendingReview = shallowRef(null);
+const referenceReviews = new Map();
+const referenceReviewOpen = ref(false);
+const referenceReviewBusy = ref(false);
+const referenceReviewError = ref('');
+const referenceReviewStatus = ref('');
+const referenceReviewTrigger = ref(null);
+function showReferenceReview() {
+  referenceReviewOpen.value = true;
+  void nextTick(() => root.value?.querySelector('.reference-review')?.focus({ preventScroll: true }));
+}
+function closeReferenceReview(refocus = true) {
+  if (referenceReviewBusy.value) return;
+  referenceReviewOpen.value = false;
+  if (refocus) referenceReviewTrigger.value?.focus({ preventScroll: true });
+}
+async function reviewReferences(componentId, request) {
+  if (request.action === 'status') {
+    const entry = referenceReviews.get(request.id);
+    if (!entry || entry.component !== componentId) throw Error('Reference review not found in this UI Maker window.');
+    return entry.result;
+  }
+  if (pendingReview.value) throw Error('Finish the pending reference review before proposing another batch.');
+  const previous = request.replaces && referenceReviews.get(request.replaces);
+  if (request.replaces && (previous?.component !== componentId || previous.result.status !== 'alternatives-requested' || previous.result.replacement))
+    throw Error('Only an unanswered request for alternatives can be replaced.');
+  const exclude = previous?.result.exclude ?? [];
+  if (request.candidates.some(candidate => exclude.includes(candidate.source)))
+    throw Error('Previously rejected references cannot be proposed again in this review.');
+  await editor.value.openSavedView(componentId, 'review');
+  if (previous) previous.result.replacement = request.id;
+  const result = { id: request.id, status: 'pending' };
+  referenceReviews.set(request.id, { component: componentId, result });
+  if (referenceReviews.size > 40) referenceReviews.delete(referenceReviews.keys().next().value);
+  pendingReview.value = { component: componentId, id: request.id, candidates: request.candidates, exclude };
+  referenceReviewError.value = referenceReviewStatus.value = '';
+  showReferenceReview();
+  return result;
+}
+function finishReferenceReview(result, message) {
+  referenceReviews.get(result.id).result = result;
+  referenceReviewOpen.value = false;
+  pendingReview.value = null;
+  referenceReviewStatus.value = message;
+}
+async function acceptReferences(sources) {
+  const batch = pendingReview.value;
+  if (!batch || referenceReviewBusy.value) return;
+  const candidates = batch.candidates.filter(candidate => sources.includes(candidate.source));
+  if (!candidates.length) return;
+  referenceReviewBusy.value = true;
+  referenceReviewError.value = '';
+  try {
+    await editor.value.addReviewedReferences(batch.component, candidates);
+    finishReferenceReview({ id: batch.id, status: 'accepted', selected: candidates.map(candidate => candidate.source) }, 'References added');
+  } catch (error) {
+    referenceReviewError.value = error.message;
+  } finally {
+    referenceReviewBusy.value = false;
+  }
+}
+function rejectReferences(feedback) {
+  const batch = pendingReview.value;
+  if (!batch || referenceReviewBusy.value) return;
+  const exclude = [...batch.exclude, ...batch.candidates.map(candidate => candidate.source)];
+  finishReferenceReview({ id: batch.id, status: 'alternatives-requested', feedback, exclude }, 'Alternatives requested');
+}
+let stopOpenRequest;
 function savedView() {
   try { return JSON.parse(props.block.value || '{}'); } catch { return {}; }
 }
@@ -28,8 +99,18 @@ onMounted(() => {
       if (props.block.value !== value) props.block.value = value;
     },
   });
+  stopOpenRequest = onOpenRequest(request => {
+    if (request.kind !== 'uimaker' || request.blockId !== props.block.id || !model.state) return;
+    request.opened = request.review
+      ? reviewReferences(request.component, request.review)
+      : editor.value.openSavedView(request.component, request.mode, request.version, request.reference);
+    return true;
+  });
 });
-onUnmounted(() => editor.value?.dispose());
+onUnmounted(() => {
+  stopOpenRequest?.();
+  editor.value?.dispose();
+});
 
 const component = computed(() => model.state?.components.find(c => c.id === ui.c));
 const versions = computed(() => model.versions[ui.c] ?? []);
@@ -83,6 +164,8 @@ function confirmDelete() {
 }
 function outsideMenu(event) {
   if (menu.value && !event.target.closest?.('.um-menu')) closeMenu();
+  // The reference review stays open until the owner closes it (× or Escape)
+  // or answers it; a click elsewhere must not hide pending candidates.
 }
 onMounted(() => window.addEventListener('pointerdown', outsideMenu, true));
 onUnmounted(() => window.removeEventListener('pointerdown', outsideMenu, true));
@@ -116,6 +199,7 @@ watch(() => [ui.c, ui.v, ui.cmp.against, component.value?.width, component.value
 });
 function hidePreviewScrollbars(frame) {
   const doc = frame.contentDocument;
+  adoptScrollbars(doc);
   if (!doc?.head || doc.getElementById('uimaker-preview-scrollbars')) return;
   const style = doc.createElement('style');
   style.id = 'uimaker-preview-scrollbars';
@@ -220,6 +304,9 @@ watch(() => [component.value?.width, component.value?.height, ui.h], () => {
             :disabled="!component" @click="editor.setMode(mode)">{{ mode[0].toUpperCase() + mode.slice(1) }}</button>
         </div>
         <div class="spacer"></div>
+        <button v-if="pendingReview" ref="referenceReviewTrigger" type="button" class="btn reference-review-trigger"
+          :aria-expanded="referenceReviewOpen" @click="referenceReviewOpen ? closeReferenceReview() : showReferenceReview()">Review references</button>
+        <span v-else-if="referenceReviewStatus" role="status">{{ referenceReviewStatus }}</span>
         <div v-show="ui.mode !== 'lab'" class="size" title="Artboard width × height">
           <CustomNumber v-model="sizeDraft.width" :min="40" :max="3000" :disabled="!component" aria-label="Artboard width"
             @change="editor.resize('width', $event)" />
@@ -387,6 +474,10 @@ watch(() => [component.value?.width, component.value?.height, ui.h], () => {
     </template>
   </div>
   <div class="toast" :class="{ show: model.toast }" role="status">{{ model.toast }}</div>
+  <ReferenceReview v-if="pendingReview" v-show="referenceReviewOpen" :key="pendingReview.id"
+    :name="model.state.components.find(item => item.id === pendingReview.component)?.name ?? pendingReview.component"
+    :candidates="pendingReview.candidates" :busy="referenceReviewBusy" :error="referenceReviewError"
+    @accept="acceptReferences" @alternatives="rejectReferences" @close="closeReferenceReview()" />
   <div v-if="model.help" class="help" @pointerdown.self="model.help = false">
     <div class="sheet">
       <h2>You draw the brief. Your agent builds the next iteration.</h2>

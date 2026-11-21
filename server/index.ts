@@ -88,6 +88,7 @@ const closeUiMaker = registerUiMakerTools(
   server,
   process.env.ORVANE_DATA_DIR ||
     fileURLToPath(new URL("../.orvane", import.meta.url)),
+  liveRun,
 );
 server.registerTool(
   "notes_data",

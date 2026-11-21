@@ -7,7 +7,7 @@ import {
   defineAsyncComponent,
 } from "vue";
 const GitViewer = defineAsyncComponent(() => import("./GitViewer.vue"));
-const ClaudeSessions = defineAsyncComponent(() => import("./ClaudeSessions.vue"));
+const AgentSessions = defineAsyncComponent(() => import("./AgentSessions.vue"));
 const CertificateManager = defineAsyncComponent(
   () => import("./CertificateManager.vue"),
 );
@@ -33,6 +33,7 @@ import { uid, type Block } from "../model";
 import Icon from "./Icon.vue";
 import { vMotion } from "../motion";
 import { APP_RUNTIME } from "../appRuntime";
+import { scrollbarCss } from "../scrollbars";
 import { activateApp, appOf } from "../canvasScroll";
 const props = defineProps<{
   block: Block;
@@ -136,7 +137,7 @@ watch(
 );
 onBeforeUnmount(() => clearTimeout(codeTimer));
 const sandboxDocument = (code: string) => {
-  const scrollbars = `<style>:root{color-scheme:light;scrollbar-width:thin;scrollbar-color:#b8cbd6 transparent}*{scrollbar-width:thin;scrollbar-color:#b8cbd6 transparent}::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#b8cbd6;border-radius:3px}::-webkit-scrollbar-button{display:none;width:0;height:0}</style>`;
+  const scrollbars = `<style>:root{color-scheme:light}${scrollbarCss}</style>`;
   const gutter = `<style>html.orvane-scroll-y{box-sizing:border-box;padding-inline-end:10px}</style><script>(()=>{let pending=false;const update=()=>{pending=false;const root=document.documentElement;const needed=root.scrollHeight>innerHeight+1;if(root.classList.contains('orvane-scroll-y')!==needed)root.classList.toggle('orvane-scroll-y',needed)};const schedule=()=>{if(!pending){pending=true;requestAnimationFrame(update)}};addEventListener('DOMContentLoaded',()=>{new ResizeObserver(schedule).observe(document.body);new MutationObserver(schedule).observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true});schedule()});addEventListener('resize',schedule)})();<\/script>`;
   return `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">${scrollbars}${gutter}<script>window.onerror=(message)=>parent.postMessage({orvaneCodeError:String(message)},'*');window.onunhandledrejection=(e)=>parent.postMessage({orvaneCodeError:String(e.reason?.message||e.reason)},'*');<\/script>${APP_RUNTIME}${code}`;
 };
@@ -162,7 +163,7 @@ const sandboxDocument = (code: string) => {
       @click.stop="emit('select', block.id)"
       :aria-label="`Edit ${block.label}`"
     ></div>
-    <ClaudeSessions v-if="block.kind === 'claude'" :block="block" />
+    <AgentSessions v-if="block.kind === 'claude'" :block="block" />
     <CertificateManager v-else-if="block.kind === 'certificates'" />
     <NotesView
       v-else-if="block.kind === 'notes'"

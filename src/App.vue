@@ -43,6 +43,8 @@ import { netSuiteCanvas, querySource, readRecordPreview, RECORD_PREVIEW_MIME, ty
 import { WORKBENCH_WIDGET, workbenchEditable, type WorkbenchKind } from "./workbenchWidgets";
 import { DRAG_MIME } from "./components/files/explorer";
 import CommandPalette from "./components/CommandPalette.vue";
+import AgentLauncher from "./components/AgentLauncher.vue";
+import { agentOpenRequests, agentRunIndicators } from "./agentNavigation";
 import BoardLayer from "./components/BoardLayer.vue";
 import BoardTools from "./components/BoardTools.vue";
 import { BOARD_COLORS, ensureBoard, type Tool } from "./board";
@@ -873,7 +875,7 @@ function createApp() {
 }
 let panFrame = 0;
 const toolApps = {
-  claude: { name: "Claude sessions", icon: "text" },
+  claude: { name: "Agent sessions", icon: "agent-sessions" },
   git: { name: "Git viewer", icon: "git" },
   projects: { name: "Projects Hub", icon: "folder" },
   notes: { name: "Notes", icon: "text" },
@@ -929,15 +931,59 @@ function createGitViewer(kind: keyof typeof toolApps = "git", value?: string) {
   createdAppId.value = app.id;
   panel.value = null;
   void focusApp(app);
+  return app;
 }
 // ---- Command palette (Ctrl+K) ----
 const palette = ref<string | null>(null);
+const agentLauncher = ref(false);
+const agentStarting = ref(false);
+const agentDockButton = ref<HTMLElement>();
+const agentPopovers = ref<HTMLElement>();
+const agentDockStatus = computed(() => {
+  const runs = [...agentRunIndicators.values()];
+  if (runs.some((run) => run.awaitingApproval)) return "Needs approval";
+  if (runs.some((run) => run.status === "running" || run.status === "stopping")) return "Running";
+  const latest = runs.at(-1)?.status;
+  return latest === "failed" ? "Failed" : latest === "completed" ? "Done" : undefined;
+});
+function openAgentLauncher() {
+  if (!canEdit.value || importBusy.value || agentStarting.value) return;
+  palette.value = null;
+  agentLauncher.value = true;
+}
+function toggleAgentLauncher() {
+  if (agentStarting.value) return;
+  if (agentLauncher.value) agentLauncher.value = false;
+  else openAgentLauncher();
+}
+function dockIcon(app: CanvasApp) {
+  return app.icon === "text" && flatten(app.blocks).some(block => block.kind === "claude")
+    ? "agent-sessions"
+    : app.icon;
+}
+function openAgentSession(request: Parameters<typeof agentOpenRequests.set>[1]) {
+  const existing = workspace.apps.find((app) =>
+    !app.archived && !app.deleted && flatten(app.blocks).some((block) => block.kind === "claude"),
+  );
+  const app = existing ?? createGitViewer("claude");
+  if (!app) return;
+  if (app.layoutHidden && canEdit.value) app.layoutHidden = false;
+  const block = flatten(app.blocks).find((entry) => entry.kind === "claude");
+  if (block) agentOpenRequests.set(block.id, request);
+  if (existing) void focusApp(app);
+}
 // Ctrl+K (search and commands) and Ctrl+Shift+P (commands only) are caught
 // in the capture phase, before apps that keep keys to themselves. Notes
 // search lives on Alt+K, so Ctrl+K opens the palette inside Notes too.
 function paletteKeys(e: KeyboardEvent) {
   if (!ready.value || inboxOpen.value || !(e.ctrlKey || e.metaKey) || e.altKey) return;
   const key = e.key.toLowerCase();
+  if (key === "k" && e.shiftKey && canEdit.value && !importBusy.value) {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleAgentLauncher();
+    return;
+  }
   const commands = key === "p" && e.shiftKey;
   if (!commands && !(key === "k" && !e.shiftKey)) return;
   e.preventDefault();
@@ -945,11 +991,15 @@ function paletteKeys(e: KeyboardEvent) {
   openPalette(commands ? ">" : "");
 }
 function openPalette(initial: string) {
+  if (agentStarting.value) return;
+  agentLauncher.value = false;
   palette.value = palette.value === null ? initial : null;
 }
 // Web pages in the Browser app forward the same shortcuts.
 function paletteEvent(event: Event) {
-  openPalette(String((event as CustomEvent<string>).detail ?? ""));
+  const detail = String((event as CustomEvent<string>).detail ?? "");
+  if (detail === "agent") openAgentLauncher();
+  else openPalette(detail);
 }
 function focusBlock(blockId: string) {
   const app = workspace.apps.find((a) => !a.archived && !a.deleted && flatten(a.blocks).some((b) => b.id === blockId));
@@ -1372,6 +1422,7 @@ const stopCanvasCommands = registerCommands("canvas", () => {
     { id: "custom-tools", title: "Custom tools", icon: "code", detail: "Workspace", keywords: "mcp agent tools chain code", run: openCustomTools },
     { id: "workspace-inbox", title: "Open workspace inbox", icon: "archive", detail: "Workspace", keywords: "capture clipboard screenshot", run: openInbox },
     ...(writable ? [
+      { id: "agent-launcher", title: "Open AI launcher", icon: "ai", hint: "Ctrl+Shift+K", keywords: "new task agent Codex Claude prompt", run: openAgentLauncher },
       { id: "folder-compare", title: "Compare two folders", icon: "columns", detail: "Canvas", run: () => placeWorkbench("folder-compare", {}) },
       { id: "test-results", title: "Pin Playwright results", icon: "terminal", detail: "Canvas", run: () => placeWorkbench("test-results", {}) },
     ] : []),
@@ -3654,6 +3705,29 @@ function browserForMcp(request: Extract<RunRequest, { kind: "browser" }>) {
  * person would in this window. Errors are returned, never retried. */
 async function runForMcp(request: RunRequest) {
   if (request.kind === "browser") return browserForMcp(request);
+  if (request.kind === "uimaker-open") {
+    const targets = liveApps.value.flatMap((app) =>
+      flatten(app.blocks).filter((block) => block.kind === "uimaker").map((block) => ({ app, block })),
+    );
+    const target = request.appId
+      ? targets.find(({ app }) => app.id === request.appId)
+      : targets.find(({ app }) => app.id === active.value) ?? targets[0];
+    if (!target) throw Error("No matching UI Maker app is on the canvas.");
+    if (request.review?.action !== "status") {
+      if (target.app.layoutHidden) target.app.layoutHidden = false;
+      await focusApp(target.app);
+    }
+    const detail: Extract<OpenRequest, { kind: "uimaker" }> = {
+      kind: "uimaker", blockId: target.block.id, component: request.component,
+      mode: request.mode, version: request.version, reference: request.reference, review: request.review,
+    };
+    for (let attempt = 0; attempt < 40; attempt++) {
+      window.dispatchEvent(new CustomEvent<OpenRequest>(OPEN_EVENT, { detail }));
+      if (detail.opened) return { appId: target.app.id, ...(await detail.opened) };
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw Error("UI Maker did not finish opening.");
+  }
   if (request.kind === "runs")
     return {
       runs: traces.value.map(({ id: _id, ...t }) => t),
@@ -3961,7 +4035,20 @@ onBeforeUnmount(() => {
       @close="palette = null"
       @focus-app="focusAppById"
       @focus-block="focusBlock"
+      @agent-session="openAgentSession({ key: $event })"
     />
+    <Transition name="agent-launcher">
+      <AgentLauncher
+        v-if="agentLauncher"
+        :apps="workspace.apps"
+        :anchor="agentDockButton"
+        :popovers="agentPopovers"
+        @close="agentLauncher = false"
+        @starting="agentStarting = $event"
+        @started="openAgentSession({ run: $event }); agentLauncher = false"
+      />
+    </Transition>
+    <div ref="agentPopovers" class="agent-launcher-popovers" />
     <CustomToolsPanel v-if="customToolsOpen" @close="customToolsOpen = false" />
     <ActionStudio
       v-if="actionStudio"
@@ -4232,7 +4319,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </div>
-    <div class="topbar-frost" aria-hidden="true"></div>
+    <div class="topbar-frost workspace-frost" aria-hidden="true"></div>
     <header class="topbar" @pointerdown.stop>
       <div class="wordmark" :class="{ 'restore-drag': restoreDrag }"
         @pointerdown="beginWindowDrag" @pointermove="moveWindowDrag" @pointerup="endWindowDrag($event)"
@@ -4729,7 +4816,7 @@ onBeforeUnmount(() => {
         <Icon name="key" :size="14" />Create Certificate manager
       </button>
       <button class="subtle-button" :disabled="!canEdit || importBusy" @click="createGitViewer('claude')">
-        <Icon name="text" :size="14" />Create Claude sessions
+        <Icon name="agent-sessions" :size="14" />Create Agent sessions
       </button>
       <button
         class="subtle-button"
@@ -5237,12 +5324,25 @@ onBeforeUnmount(() => {
         title="Center canvas"
         @click="home"
       >
-        <Icon name="box" :size="18" /></button
-      ><span class="dock-divider"></span>
+        <Icon name="box" :size="18" />
+      </button>
+      <button
+        ref="agentDockButton"
+        type="button"
+        class="dock-ai dock-action icon-button"
+        :class="{ selected: agentLauncher }"
+        :disabled="!canEdit || importBusy || agentStarting"
+        :aria-expanded="agentLauncher"
+        :aria-controls="agentLauncher ? 'agent-launcher' : undefined"
+        aria-label="AI launcher"
+        title="AI launcher (Ctrl+Shift+K)"
+        @click="toggleAgentLauncher"
+      ><Icon name="ai" :size="17" /></button>
+      <span class="dock-divider"></span>
       <div ref="dockTabs" class="dock-tabs">
         <div ref="dockMeasure" class="dock-measure" aria-hidden="true">
           <span v-for="a in apps" :key="a.id" class="dock-measure-tab">
-            <Icon :name="a.icon" :size="15" /><span>{{ a.name || "Untitled" }}</span>
+            <Icon :name="dockIcon(a)" :size="15" /><span>{{ a.name || "Untitled" }}</span>
           </span>
           <span v-if="!apps.length" class="empty-dock-label">Your canvas</span>
         </div>
@@ -5267,8 +5367,10 @@ onBeforeUnmount(() => {
           @keydown.shift.f10.prevent="openDockContext(a, $event)"
           @click="chooseDockApp(a, index >= dockVisibleCount)"
           :title="a.group ? `${a.name} · ${a.group}` : a.name"
+          :aria-description="flatten(a.blocks).some((block) => block.kind === 'claude') ? agentDockStatus : undefined"
         >
-          <Icon :name="a.icon" :size="15" /><span>{{
+          <Icon :name="dockIcon(a)" :size="15" /><i v-if="agentDockStatus && flatten(a.blocks).some((block) => block.kind === 'claude')"
+            class="agent-dock-dot" :data-status="agentDockStatus" :title="agentDockStatus" aria-hidden="true" /><span>{{
             a.name || "Untitled"
           }}</span></button>
         </Teleport>

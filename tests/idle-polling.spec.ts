@@ -25,15 +25,15 @@ test("the editing window renews its storage lease every few seconds, not every s
   expect(leases(from)).toBeLessThanOrEqual(8);
 });
 
-test("Claude Sessions stops polling while panned off screen and resumes on return", async ({ page }) => {
+test("Agent sessions stops polling while panned off screen and resumes on return", async ({ page }) => {
   test.setTimeout(150_000);
-  const polls = count(page, (url) => url.pathname.startsWith("/__orvane/claude/"));
+  const polls = count(page, (url) => url.pathname.startsWith("/__orvane/agents/"));
   await page.addInitScript(() => localStorage.setItem("orvane.examples.v1", "installed"));
   await page.goto("/", { waitUntil: "domcontentloaded", timeout: 90_000 });
   await page.locator('main[data-editable="true"]').waitFor({ timeout: 60_000 });
   await page.getByRole("button", { name: "Workspace options" }).click();
-  await page.getByRole("button", { name: "Create Claude sessions", exact: true }).click();
-  const app = page.locator(".claude-app");
+  await page.getByRole("button", { name: "Create Agent sessions", exact: true }).click();
+  const app = page.locator(".agent-sessions-app");
   await expect(app).toBeVisible({ timeout: 20_000 });
   await expect.poll(() => polls(0), { timeout: 15_000 }).toBeGreaterThan(0);
 

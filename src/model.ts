@@ -246,7 +246,7 @@ export function validGraph(
   );
 }
 export const kinds: { kind: Kind; name: string; description: string }[] = [
-  {kind: "claude", name: "Claude sessions", description: "Local session chats with interactive visual explanations"},
+  {kind: "claude", name: "Agent sessions", description: "Start and resume Claude Code and Codex sessions"},
   {
     kind: "certificates",
     name: "Certificate manager",
@@ -347,7 +347,7 @@ export function makeBlock(kind: Kind): Block {
       browser: "Web browser",
       netsuite: "NetSuite",
       certificates: "Certificate manager",
-      claude: "Claude sessions",
+      claude: "Agent sessions",
       "netsuite-record": "NetSuite record preview",
       "browser-clip": "Browser clip",
       "folder-compare": "Folder comparison",

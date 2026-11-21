@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { referenceReviewRequest } from "./uimakerReferenceReview";
 import {
   emptyWorkspace,
   appMinimum,
@@ -310,6 +311,19 @@ export const runSchema = z.discriminatedUnion("kind", [
     .strict(),
   z.object({ kind: z.literal("layout-apply"), layoutId: id }).strict(),
   z.object({ kind: z.literal("trigger-run"), triggerId: id }).strict(),
+  z.object({
+    kind: z.literal("uimaker-open"),
+    component: z.string().min(1).max(80),
+    mode: z.enum(["review", "inspect", "lab"]),
+    version: z.number().int().positive().optional(),
+    appId: id.optional(),
+    review: referenceReviewRequest.optional(),
+    reference: z.object({
+      mime: z.enum(["image/png", "image/jpeg", "image/webp", "image/gif"]),
+      data: z.string().min(1).max(6_666_668),
+      caption: z.string().max(400),
+    }).strict().optional(),
+  }).strict(),
   // AI control of Browser tabs (src/browserAgent.ts checks the arguments).
   z
     .object({

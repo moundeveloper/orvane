@@ -560,8 +560,8 @@ function show(url: string) {
   revision.value++;
   save();
 }
-function go(text = address.value, fromAi = false) {
-  if (!fromAi && aiLocked(activeTab.value.id)) return say("AI is using this tab. Take control first.");
+function go(text = address.value) {
+  if (aiLocked(activeTab.value.id)) return say("AI is using this tab. Take control first.");
   const result = resolveInput(text);
   if ("error" in result) {
     error.value = result.error!;
@@ -961,7 +961,11 @@ onMounted(() => {
   // Canvas gestures made over a page arrive from the main process; replay
   // them where the canvas listens, in canvas screen coordinates.
   stopGuestInput = desktop?.onGuestInput((input) => {
-    if (input.kind === "pointer-down") return closeBrowserPopovers();
+    if (input.kind === "pointer-down") {
+      closeBrowserPopovers();
+      window.dispatchEvent(new Event("orvane:guest-pointer-down"));
+      return;
+    }
     const view = webviewFor(input.from);
     if (!view) return;
     if (input.kind === "inspect") return startInspect(view, input.x, input.y);
@@ -1097,13 +1101,14 @@ onMounted(() => {
         return undefined; // Not attached yet.
       }
     },
-    navigate(tabId, url) {
+    navigationUrl(tabId, url) {
       const tab = state.value.tabs.find((t) => t.id === tabId);
       if (!tab) throw Error("No such tab.");
       if (tab.id !== state.value.active) goToTab(tab);
       const result = resolveInput(url);
       if ("error" in result) throw Error(result.error);
-      go(url, true);
+      if (!result.url) throw Error("Enter a web address.");
+      return result.url;
     },
     select(tabId) {
       const tab = state.value.tabs.find((t) => t.id === tabId);
@@ -3370,8 +3375,8 @@ function shortcut(name: string) {
   if (name === "space-down" || name === "space-up")
     return void window.dispatchEvent(new CustomEvent("orvane:space", { detail: name === "space-down" }));
   // Orvane's Ctrl+K search and Ctrl+Shift+P commands, pressed inside a page.
-  if (name === "palette" || name === "commands")
-    return void window.dispatchEvent(new CustomEvent("orvane:palette", { detail: name === "commands" ? ">" : "" }));
+  if (name === "palette" || name === "commands" || name === "agent")
+    return void window.dispatchEvent(new CustomEvent("orvane:palette", { detail: name === "palette" ? "" : name === "commands" ? ">" : "agent" }));
   if (name === "google-sign-in") say("Continue sign-in on the site in your system browser.");
   else if (name === "address") focusAddress();
   else if (name === "new-tab") addTab();
@@ -5145,8 +5150,6 @@ function browserWheel(event: WheelEvent) {
   padding: 0 12px 10px;
   overflow: hidden auto;
   flex: 0 1 auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgb(108 143 164 / 35%) transparent;
 }
 .side-title {
   display: flex;
@@ -6319,8 +6322,6 @@ function browserWheel(event: WheelEvent) {
   width: min(248px, calc(100% - 8px));
   max-height: calc(100% - 8px);
   overflow: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--scroll-thumb) transparent;
   padding: 6px;
   border: 1px solid var(--line);
   border-radius: 11px;

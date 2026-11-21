@@ -829,7 +829,25 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
 
   $('boardFit').onclick = () => fitBoard();
   $('boardMax').onclick = () => { $('boardwrap').classList.toggle('max'); fitBoard(); renderBoard(); };
-  async function addRefs(files) {
+  async function uploadReference(blob, caption) {
+    const response = await fetch(API + 'ref', { method: 'POST', headers: { 'content-type': blob.type }, body: blob });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error);
+    let ar = 0.66;
+    try { const image = await createImageBitmap(blob); ar = image.height / image.width; image.close(); } catch {}
+    return { id: uid(), file: result.file, caption, ar };
+  }
+  function placeReference(owner, reference) {
+    // Place in the first free slot of a tidy grid under the hub.
+    const bw = 240; let k = 0, bx, by;
+    do { bx = owner.hub.x - bw - 12 + (k % 2) * (bw + 24); by = owner.hub.y + 70 + Math.floor(k / 2) * 230; k++; }
+    while (owner.refs.some(ref => Math.abs(ref.bx - bx) < bw && Math.abs(ref.by - by) < 200));
+    owner.refs.push({ ...reference, bx, by, bw });
+  }
+  function referenceBlob({ data, mime }) {
+    return new Blob([Uint8Array.from(atob(data), char => char.charCodeAt(0))], { type: mime });
+  }
+  async function addRefs(files, caption = '') {
     files = files.filter(f => f && f.type.startsWith('image/'));
     if (!files.length) return 0;
     if (!bowner()) ui.board = 'global';
@@ -837,17 +855,12 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
     snap();
     let added = 0;
     for (const f of files) {
-      const r = await fetch(API + 'ref', { method: 'POST', headers: { 'content-type': f.type }, body: f });
-      const j = await r.json();
-      if (!r.ok) { toast(j.error); continue; }
-      let ar = 0.66; try { const bm = await createImageBitmap(f); ar = bm.height / bm.width; } catch {}
-      // place in the first free slot of a tidy grid under the hub
-      const bw = 240; let k = 0, bx, by;
-      do { bx = o.hub.x - bw - 12 + (k % 2) * (bw + 24); by = o.hub.y + 70 + Math.floor(k / 2) * 230; k++; }
-      while (o.refs.some(q => Math.abs(q.bx - bx) < bw && Math.abs(q.by - by) < 200));
-      o.refs.push({ id: uid(), file: j.file, caption: '', bx, by, bw, ar });
-      ui.ref = o.refs.at(-1).id; ui.bpin = null;
-      added++;
+      try {
+        const reference = await uploadReference(f, caption);
+        placeReference(o, reference);
+        ui.ref = reference.id; ui.bpin = null;
+        added++;
+      } catch (error) { toast(error.message); }
     }
     save(); fitBoard(o); renderBoard(); draw();
     return added;
@@ -954,6 +967,38 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
   // ---------- live link ----------
   async function pullVersions() { model.versions = (await post('versions')).versions; }
   async function pullFeed() { const r = await post('state'); model.feed = r.feed; model.lab = r.lab || {}; adoptComponents(r.state); adoptSizes(r.state); }
+  async function openSavedView(component, mode, version, reference) {
+    await Promise.all([pullVersions(), pullFeed()]);
+    if (!model.state.components.some(c => c.id === component))
+      throw new Error('UI Maker component not found.');
+    if (version !== undefined && !model.versions[component]?.some(item => item.n === version))
+      throw new Error('UI Maker version not found.');
+    openComp(component, version);
+    setMode(mode);
+    const view = { component, mode: ui.mode, version: ui.v };
+    if (!reference) return view;
+    if (!(await addRefs([referenceBlob(reference)], reference.caption))) throw new Error('The visual reference could not be added.');
+    await flush();
+    return { ...view, referenceAdded: true };
+  }
+  async function addReviewedReferences(component, candidates) {
+    const uploads = await Promise.all(candidates.map(candidate =>
+      uploadReference(referenceBlob(candidate), `${candidate.title} · ${candidate.source}`),
+    ));
+    const target = model.state.components.find(item => item.id === component);
+    if (!target) throw new Error('UI Maker component not found.');
+    const owner = ensureBoard(target);
+    snap();
+    for (const upload of uploads) placeReference(owner, upload);
+    try { await flush(); }
+    catch (error) {
+      const added = new Set(uploads.map(upload => upload.id));
+      owner.refs = owner.refs.filter(reference => !added.has(reference.id));
+      throw error;
+    }
+    if (comp() === target && ui.board === 'global') { fitBoard(owner); renderBoard(); }
+    toast(`${uploads.length} visual ${uploads.length === 1 ? 'reference' : 'references'} added.`);
+  }
   // Components another tool or agent added to the saved state join the list.
   // Only additions are taken: this editor's own unsaved edits stay as they are.
   function adoptComponents(saved) {
@@ -1027,10 +1072,10 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
       if (saveT) flush().catch(() => {});
       frame.onload = null;
     },
-    openComp, openVersion, newComponent, showLibrary, renameComponent, deleteComponent, resize, setMode,
+    openComp, openVersion, openSavedView, newComponent, showLibrary, renameComponent, deleteComponent, resize, setMode,
     setTool, setColor, setBoardColor, selectNote, deleteNote, updateNoteTitle,
     updateNoteColor, setTweak, removeTweak, selectBoard, updateCaption,
-    toggleTarget, removeRef, measure, save, copyPrompt, exportBrief, fit,
+    toggleTarget, removeRef, measure, save, copyPrompt, exportBrief, fit, addReviewedReferences,
     async labPick(round, variant) {
       try { const r = await post('lab-pick', { c: ui.c, round, variant }); await pullFeed(); return r; }
       catch (error) { toast(error.message, 5000); }

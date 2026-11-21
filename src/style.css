@@ -82,17 +82,6 @@ textarea::placeholder {
   color: #5b6c77;
   opacity: 1;
 }
-::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
-::-webkit-scrollbar-thumb {
-  background: #bdcbd3;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
 input[type="number"] {
   font-variant-numeric: tabular-nums;
 }
@@ -230,6 +219,8 @@ button:hover {
   border: 0 !important;
 }
 .workspace {
+  --dock-bottom: 24px;
+  --dock-height: 49px;
   position: fixed;
   inset: 0;
   overflow: hidden;
@@ -263,14 +254,17 @@ button:hover {
 .topbar > * {
   pointer-events: auto;
 }
+.workspace-frost,
+.floating-panel.workspace-frost {
+  background: rgb(247 250 252 / 8%);
+  backdrop-filter: blur(8px) saturate(120%);
+  -webkit-backdrop-filter: blur(8px) saturate(120%);
+}
 .topbar-frost {
   position: absolute;
   inset: 0 0 auto;
   height: 78px;
   z-index: 9;
-  background: rgb(247 250 252 / 8%);
-  backdrop-filter: blur(8px) saturate(120%);
-  -webkit-backdrop-filter: blur(8px) saturate(120%);
   mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
   -webkit-mask-image: linear-gradient(
     to bottom,
@@ -1180,14 +1174,14 @@ button:hover {
 .dock {
   position: absolute;
   z-index: 40;
-  bottom: 24px;
+  bottom: var(--dock-bottom);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 5px;
   max-width: calc(100% - 40px);
-  height: 49px;
+  height: var(--dock-height);
   padding: 7px 9px;
   background: #f5f8fa;
   border-radius: 9px;
@@ -1207,6 +1201,7 @@ button:hover {
 .dock-home {
   color: #566c7a;
 }
+.dock .dock-ai { flex: none; }
 .dock-tabs {
   position: relative;
   min-width: 0;
@@ -1303,6 +1298,37 @@ button:hover {
 .dock .selected {
   background: #e5edf2;
 }
+.agent-composer {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #e0e9ee;
+  border-radius: 12px;
+  background: #f9fcfead;
+  box-shadow: inset 0 1px 3px #53738c16;
+}
+.agent-composer:has(> textarea:focus) {
+  border-color: #7b97a7;
+  background: #f9fcfec4;
+}
+.agent-composer > textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 2px 3px;
+  field-sizing: content;
+  resize: none;
+  overflow-y: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1.55;
+}
+.agent-composer > textarea:focus { outline: none; box-shadow: none; }
+
 .floating-panel {
   position: absolute;
   background: #f7f9fa;
@@ -1312,6 +1338,16 @@ button:hover {
   padding: 20px;
   touch-action: auto;
 }
+.agent-dock-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: #60899f;
+}
+.agent-dock-dot[data-status="Needs approval"] { background: #a37635; }
+.agent-dock-dot[data-status="Done"] { background: #5d8d79; }
+.agent-dock-dot[data-status="Failed"] { background: #a36453; }
 .panel-heading {
   display: flex;
   align-items: center;
@@ -1715,6 +1751,10 @@ kbd {
   }
 }
 @media (max-width: 600px) {
+  .workspace {
+    --dock-bottom: 16px;
+    --dock-height: 47px;
+  }
   .topbar {
     left: 17px;
     right: 15px;
@@ -1733,11 +1773,9 @@ kbd {
     font-size: 14px;
   }
   .dock {
-    bottom: 16px;
     max-width: calc(100% - 24px);
     gap: 2px;
     padding: 6px;
-    height: 47px;
   }
   .dock-tab,
   .dock-measure-tab {

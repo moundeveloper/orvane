@@ -371,8 +371,6 @@ watch(
   padding: 20px 23px 38px;
   overflow: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--scroll-thumb) transparent;
 }
 .drawer-section {
   margin: 0 0 26px;
