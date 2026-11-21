@@ -127,6 +127,8 @@ export function uimakerApi(directory: string): Plugin {
       if (operation === "lab-start")
         return reply(200, await s.labStart(String(body.c), String(body.title || ""), body.kind === "new" ? "new" : "redesign"));
       if (operation === "lab-write") return reply(200, await s.labWrite(String(body.c), body));
+      if (operation === "size")
+        return reply(200, await s.setSize(String(body.c), { width: body.width, height: body.height === "auto" ? null : body.height }));
       return reply(404, { error: "Unknown UI Maker operation." });
     } catch (error) {
       reply(400, { error: error instanceof Error ? error.message : "UI Maker could not complete that." });

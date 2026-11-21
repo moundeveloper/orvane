@@ -153,6 +153,24 @@ export function registerUiMakerTools(server: McpServer, directory: string) {
     },
     async ({ from }) => guarded(async () => ({ content: [text(await uimaker.importWorkspace(from))] })),
   );
+  server.registerTool(
+    "uimaker_size",
+    {
+      description:
+        "Set a component's artboard size, the frame Review, Inspect and Compare show it in. Give width, height, or both; height \"auto\" makes it follow the content. Open editors take the new size live.",
+      inputSchema: {
+        component,
+        width: z.number().int().min(40).max(3000).optional().describe("Artboard width in px"),
+        height: z.union([z.number().int().min(20).max(6000), z.literal("auto")]).optional().describe('Artboard height in px, or "auto"'),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ component: c, width, height }) =>
+      guarded(async () => {
+        if (width === undefined && height === undefined) throw Error("Give a width, a height, or both.");
+        return { content: [text(await uimaker.setSize(c, { width, height: height === "auto" ? null : height }))] };
+      }),
+  );
   // ---------- Lab: rounds of side-by-side variants ----------
   const round = z.string().max(80).optional().describe("Lab round ID; omit for the open round");
   const variantId = z.string().min(1).max(80).regex(/^[a-z0-9][a-z0-9-]*$/).describe("Variant ID, lowercase-dashed (e.g. glow-blend)");

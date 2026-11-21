@@ -337,12 +337,33 @@ export class UiMakerService {
     return { v: out.v, round: round.id, variant };
   }
 
+  /** Sets a component's artboard size (height null = follows the content).
+   * artboard.json beside the iterations tells open editors to take the new size. */
+  async setSize(c: string, size: { width?: number; height?: number | null }) {
+    this.component(c);
+    const state = this.readState();
+    const comp = state.components.find((x) => x.id === c)!;
+    if (size.width !== undefined) {
+      if (!Number.isInteger(size.width) || size.width < 40 || size.width > 3000) throw Error("Width must be a whole number from 40 to 3000.");
+      comp.width = size.width;
+    }
+    if (size.height !== undefined) {
+      if (size.height !== null && (!Number.isInteger(size.height) || size.height < 20 || size.height > 6000))
+        throw Error("Height must be a whole number from 20 to 6000, or auto.");
+      comp.height = size.height;
+    }
+    this.saveState(state);
+    await fsp.writeFile(path.join(this.components, c, "artboard.json"), JSON.stringify({ width: comp.width, height: comp.height ?? null, at: Date.now() }));
+    this.addFeed("size", c, `Artboard set to ${comp.width} × ${comp.height ?? "auto"}`);
+    return { width: comp.width, height: comp.height ?? null };
+  }
+
   /** Calls back (debounced) when an iteration or response file changes. */
   watch(listener: () => void) {
     fs.mkdirSync(this.components, { recursive: true });
     let timer: ReturnType<typeof setTimeout> | undefined;
     const watcher = fs.watch(this.components, { recursive: true }, (_e, file) => {
-      if (file && !/(index\.html|response\.json|round\.json)$|[\\/]lab[\\/].+\.html$/.test(file) && /\./.test(path.basename(file))) return;
+      if (file && !/(index\.html|response\.json|round\.json|artboard\.json)$|[\\/]lab[\\/].+\.html$/.test(file) && /\./.test(path.basename(file))) return;
       clearTimeout(timer);
       timer = setTimeout(listener, 500);
     });

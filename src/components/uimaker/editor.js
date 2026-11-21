@@ -88,6 +88,10 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
   };
   let saveT;
   let pendingWrite = Promise.resolve();
+  // Artboard sizes as last saved by this editor, to tell a size set from
+  // outside (uimaker_size) apart from this editor's own unsaved changes.
+  const savedSizes = new Map();
+  const sizeKey = c => `${c.width}x${c.height ?? 'auto'}`;
   const save = () => {
     clearTimeout(saveT);
     saveT = setTimeout(() => flush().catch(error => toast('Could not save: ' + error.message)), 350);
@@ -96,9 +100,11 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
     clearTimeout(saveT);
     saveT = null;
     const body = JSON.stringify({ state: model.state });
+    const sizes = model.state.components.map(c => [c.id, sizeKey(c)]);
     const write = pendingWrite.then(async () => {
       const response = await fetch(API + 'save', { method: 'POST', headers: { 'content-type': 'application/json' }, body, keepalive: document.visibilityState === 'hidden' && body.length < 60000 });
       if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || response.statusText);
+      for (const [id, key] of sizes) savedSizes.set(id, key);
     });
     pendingWrite = write.catch(() => {});
     return write;
@@ -924,7 +930,27 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
 
   // ---------- live link ----------
   async function pullVersions() { model.versions = (await post('versions')).versions; }
-  async function pullFeed() { const r = await post('state'); model.feed = r.feed; model.lab = r.lab || {}; }
+  async function pullFeed() { const r = await post('state'); model.feed = r.feed; model.lab = r.lab || {}; adoptComponents(r.state); adoptSizes(r.state); }
+  // Components another tool or agent added to the saved state join the list.
+  // Only additions are taken: this editor's own unsaved edits stay as they are.
+  function adoptComponents(saved) {
+    if (!model.state || !saved?.components) return;
+    const have = new Set(model.state.components.map(c => c.id));
+    for (const c of saved.components) if (!have.has(c.id)) { c.refs ||= []; model.state.components.push(c); savedSizes.set(c.id, sizeKey(c)); }
+  }
+  // A size saved from outside replaces the shown one, unless this editor has
+  // since changed that size itself.
+  function adoptSizes(saved) {
+    if (!model.state || !saved?.components) return;
+    for (const s of saved.components) {
+      const c = model.state.components.find(x => x.id === s.id), key = sizeKey(s);
+      if (!c || key === savedSizes.get(s.id)) continue;
+      savedSizes.set(s.id, key);
+      if (key === sizeKey(c)) continue;
+      c.width = s.width; c.height = s.height ?? null;
+      if (c.id === ui.c) { needFit = true; loadFrame(); }
+    }
+  }
   function listen() {
     events = new EventSource(API + 'events');
     events.onmessage = async m => {
@@ -954,7 +980,7 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
     model.state = r.state; model.versions = r.versions; model.feed = r.feed; model.lab = r.lab || {};
     model.state.notes ||= []; model.state.strokes ||= []; model.state.tweaks ||= [];
     for (const n of model.state.notes) n.refs ||= [];
-    for (const c of model.state.components) c.refs ||= [];
+    for (const c of model.state.components) { c.refs ||= []; savedSizes.set(c.id, sizeKey(c)); }
     stage.style.transform = `translate(${ui.px}px,${ui.py}px) scale(${ui.zoom})`;
     const savedComponent = model.state.components.find(c => c.id === view?.c);
     if (savedComponent) {
