@@ -293,6 +293,29 @@ export function registerBrowserTools(server: McpServer, liveRun: LiveRun, dataDi
   );
 
   server.registerTool(
+    "browser_netsuite_environments",
+    {
+      description:
+        "NetSuite environments, like the Browser header's environment picker. list: the accounts and environments the signed-in user can open (production, sandboxes, release previews), read through a NetSuite tab shared with you (tabId, or the first shared one). open {environment}: goes to the tab already on that account, else opens a new tab on its home page for the user (granted to you: take it with browser_control to work there). environment is the account ID, or words that all appear in its label and type, e.g. \"sandbox consitech\"; an unclear name returns the candidates.",
+      inputSchema: {
+        action: z.enum(["list", "open"]),
+        environment: z.string().max(120).optional().describe("open: account ID or words from the environment's label"),
+        tabId: z.string().optional().describe("A signed-in NetSuite tab shared with you; default: the first one."),
+        sessionId: session,
+      },
+      annotations: { readOnlyHint: false, ...live },
+    },
+    async ({ action, environment, tabId: tab, sessionId }) =>
+      guarded(() =>
+        request(
+          action === "list" ? "netsuite-environments" : "netsuite-open",
+          { ...(tab ? { tabId: tab } : {}), ...(environment ? { environment } : {}) },
+          sessionId,
+        ),
+      ),
+  );
+
+  server.registerTool(
     "browser_flow",
     {
       description:

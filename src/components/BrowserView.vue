@@ -1114,6 +1114,26 @@ onMounted(() => {
       delete aiAccess[tabId];
       closeTab(tabId);
     },
+    ...(desktop?.browserNetSuiteEnvironments
+      ? {
+          async netSuiteEnvironments(tabId: string) {
+            if (discarded[tabId]) restoreTab(tabId);
+            const until = Date.now() + 3000;
+            let view = webviews.get(tabId);
+            while (!view && Date.now() < until) {
+              await new Promise((done) => setTimeout(done, 100));
+              view = webviews.get(tabId);
+            }
+            if (!view) throw Error("That NetSuite tab is not loaded. Select it, then try again.");
+            return desktop!.browserNetSuiteEnvironments!(view.getWebContentsId());
+          },
+          openNetSuiteEnvironment(origin: string) {
+            const tabId = switchNetSuiteEnvironment(origin);
+            if (!tabId) throw Error(`${origin} is not a NetSuite account address.`);
+            return tabId;
+          },
+        }
+      : {}),
   });
 });
 onBeforeUnmount(() => stopAgentHost?.());
@@ -3233,6 +3253,7 @@ function browserTools(): MenuItem[] {
     { label: "Pin a live element", icon: "box", disabled: !canPinClip?.() || !useWebview || !activeTab.value.url || !!peek.value, run: () => void pickElement() },
   ];
 }
+/** Returns the id of the tab now showing that account. */
 function switchNetSuiteEnvironment(origin: string) {
   if (!netSuiteAppOrigin.test(origin)) return;
   const existing = state.value.tabs.find((tab) => {
@@ -3240,10 +3261,14 @@ function switchNetSuiteEnvironment(origin: string) {
     return current === origin || (current === "https://system.netsuite.com" &&
       originOf(tab.rootUrl || started[tab.id] || "") === origin);
   });
-  if (existing) return goToTab(existing);
+  if (existing) {
+    goToTab(existing);
+    return existing.id;
+  }
   const url = `${origin}/app/center/card.nl`;
   const tab = addTab(url);
   openingEnvironment.set(tab.id, url);
+  return tab.id;
 }
 const netSuiteOrigin = computed(() => originOf(activeTab.value.url));
 const showNetSuiteEnvironment = computed(() => !!desktop?.browserNetSuiteEnvironments &&

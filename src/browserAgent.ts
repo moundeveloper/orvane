@@ -48,6 +48,18 @@ export interface BrowserAgentHost {
   navigate(tabId: string, url: string): void;
   select(tabId: string): void;
   close(tabId: string): void;
+  /** NetSuite environments the signed-in tab's user can open (desktop only). */
+  netSuiteEnvironments?(tabId: string): Promise<NetSuiteEnvironment[]>;
+  /** Does what the header's environment picker does: goes to a tab already on
+   * that account, else opens one on its home page. Returns the tab id. */
+  openNetSuiteEnvironment?(origin: string): string;
+}
+export interface NetSuiteEnvironment {
+  origin: string;
+  label: string;
+  accountId?: string;
+  name?: string;
+  type?: string;
 }
 
 const hosts = new Map<string, BrowserAgentHost>();
@@ -81,9 +93,60 @@ const LIMIT_MS = 11_000; // MCP bridge requests end after 15 s.
 
 export type BrowserRequest = {
   kind: "browser";
-  op: "tabs" | "open" | "take" | "release" | "close" | "act" | "snapshot" | "screenshot";
+  op: "tabs" | "open" | "take" | "release" | "close" | "act" | "snapshot" | "screenshot" | "netsuite-environments" | "netsuite-open";
   args: Record<string, unknown>;
 };
+
+const NETSUITE_APP = /^https:\/\/[a-z0-9-]+\.app\.netsuite\.com$/i;
+const originOf = (url: string) => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return "";
+  }
+};
+/** The signed-in NetSuite tab the environment list is read through: the one
+ * named, or the first one shared with the AI. */
+function netSuiteSource(tabId?: string) {
+  if (tabId) {
+    const host = hostOfTab(tabId);
+    if (!host.access(tabId))
+      throw Error(`The user has not shared tab ${tabId}. Ask them to choose "Let AI use this tab" in its tab menu.`);
+    const tab = host.tabs().find((t) => t.tabId === tabId)!;
+    if (!NETSUITE_APP.test(originOf(tab.url))) throw Error(`Tab ${tabId} is not a signed-in NetSuite page.`);
+    return { host, tab };
+  }
+  for (const host of hosts.values())
+    for (const tab of host.tabs()) if (tab.access && NETSUITE_APP.test(originOf(tab.url))) return { host, tab };
+  throw Error(
+    "No signed-in NetSuite tab is shared with you. Ask the user to share one (tab menu → Let AI use this tab), or open https://system.netsuite.com with browser_open, let it sign in, and pass its tabId.",
+  );
+}
+const describeEnvironment = ({ origin, label, accountId, name, type }: NetSuiteEnvironment) => ({
+  origin, label, ...(accountId ? { accountId } : {}), ...(name ? { name } : {}), ...(type ? { type } : {}),
+});
+/** One environment by account ID, address, label, or words that all appear
+ * in its label and type ("sandbox consitech"). */
+export function pickEnvironment(list: NetSuiteEnvironment[], wanted: string) {
+  const q = wanted.trim().toLowerCase();
+  if (!q) throw Error("Name the environment to open (words from its label, or its account ID).");
+  const exact = list.find(
+    (e) =>
+      e.origin.toLowerCase() === q ||
+      e.label.toLowerCase() === q ||
+      e.accountId?.toLowerCase() === q.replace(/-/g, "_") ||
+      new URL(e.origin).hostname.split(".")[0] === q,
+  );
+  if (exact) return exact;
+  const words = q.split(/[\s,()]+/).filter(Boolean);
+  const hits = list.filter((e) => {
+    const text = `${e.label} ${e.type ?? ""} ${e.accountId ?? ""}`.toLowerCase();
+    return words.every((w) => text.includes(w));
+  });
+  if (hits.length === 1) return hits[0]!;
+  if (!hits.length) throw Error(`No NetSuite environment matches "${wanted}". Environments: ${list.map((e) => e.label).join("; ")}.`);
+  throw Error(`"${wanted}" matches ${hits.length} environments: ${hits.map((e) => e.label).join("; ")}. Be more specific.`);
+}
 
 function hostOfTab(tabId: string) {
   for (const host of hosts.values())
@@ -394,6 +457,24 @@ export async function runBrowserAgent(
       out.page = await page(id);
     }
     return out;
+  }
+  if (request.op === "netsuite-environments" || request.op === "netsuite-open") {
+    const { host, tab } = netSuiteSource(str(args, "tabId"));
+    if (!host.netSuiteEnvironments || !host.openNetSuiteEnvironment) throw Error("NetSuite environments need the Orvane desktop app.");
+    const list = await host.netSuiteEnvironments(tab.tabId);
+    if (request.op === "netsuite-environments")
+      return { source: tab.tabId, current: originOf(tab.url), environments: list.map(describeEnvironment) };
+    const environment = pickEnvironment(list, str(args, "environment") ?? "");
+    const before = new Set(host.tabs().map((t) => t.tabId));
+    const tabId = host.openNetSuiteEnvironment(environment.origin);
+    const reused = before.has(tabId);
+    // A new tab is opened for the user, like a pick in the header; the AI may
+    // take it to work there. An existing tab keeps its access as it was.
+    if (!reused) {
+      opened.set(tabId, "user");
+      host.setAccess(tabId, "granted");
+    }
+    return { tabId, reused, access: host.access(tabId) ?? "none", environment: describeEnvironment(environment) };
   }
   const tabId = str(args, "tabId");
   if (!tabId) throw Error("tabId is required.");
