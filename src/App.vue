@@ -25,6 +25,7 @@ import AppTooltip from "./components/AppTooltip.vue";
 import { exampleApps, upgradeExampleApps } from "./examples";
 import { runIsolated } from "./sandbox";
 import Icon from "./components/Icon.vue";
+import MemoryPanel from "./components/MemoryPanel.vue";
 import CustomSelect from "./components/CustomSelect.vue";
 import CustomNumber from "./components/CustomNumber.vue";
 import { migrateGroups, groupBounds } from "./groups";
@@ -501,7 +502,7 @@ function dismissHint() {
 const createdAppId = ref("");
 
 const panel = ref<
-    "search" | "workspace" | "help" | "geometry" | "groups" | "layouts" | null
+    "search" | "workspace" | "help" | "geometry" | "groups" | "layouts" | "memory" | null
   >(null),
   query = ref(""),
   searchInput = ref<HTMLInputElement>(),
@@ -592,6 +593,24 @@ const spatialGroups = computed(() =>
     .map((group) => ({ ...group, bounds: groupBounds(group.members) })),
 );
 const layoutNameInput = ref<HTMLInputElement>();
+// Orvane memory: entries an AI saved that wait for the owner's review.
+const memoryPending = ref(0);
+async function pullMemoryCount() {
+  if (document.visibilityState !== "visible") return;
+  try {
+    const response = await fetch("/__orvane/workspace-memory", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "count" }),
+    });
+    if (response.ok) memoryPending.value = (await response.json()).unreviewed ?? 0;
+  } catch {
+    /* the count is a hint; the panel shows errors */
+  }
+}
+const memoryCountTimer = setInterval(() => void pullMemoryCount(), 20_000);
+onBeforeUnmount(() => clearInterval(memoryCountTimer));
+void pullMemoryCount();
 function openLayouts() {
   panel.value = "layouts";
   void nextTick(() => layoutNameInput.value?.focus());
@@ -1379,6 +1398,7 @@ const stopCanvasCommands = registerCommands("canvas", () => {
     })),
     ...(writable
       ? [
+          { id: "memory", title: "Memory", icon: "library", detail: "Orvane", keywords: "remember preferences procedures ai notes", run: () => (panel.value = "memory") },
           { id: "layout-save", title: "Save current layout…", icon: "layers", detail: "Layouts", keywords: "workspace snapshot arrangement", run: () => openLayouts() },
           { id: "layout-show-all", title: "Show all apps", icon: "eye", detail: "Layouts", keywords: "unhide", run: () => showAllApps() },
         ]
@@ -4247,6 +4267,14 @@ onBeforeUnmount(() => {
             layouts.find((l) => l.id === workspace.activeLayout)?.name || "Layouts"
           }}</span>
         </button>
+        <button
+          class="subtle-button"
+          aria-label="Memory"
+          @click="panel = panel === 'memory' ? null : 'memory'"
+        >
+          <Icon name="library" :size="14" /><span>Memory</span
+          ><span v-if="memoryPending" class="memory-pending" :aria-label="`${memoryPending} to review`">{{ memoryPending }}</span>
+        </button>
         <span v-if="ready && !canEdit" class="field-help">Read-only tab</span>
         <button
           class="subtle-button"
@@ -4927,6 +4955,21 @@ onBeforeUnmount(() => {
           /><Icon :name="app.icon" :size="13" /><span>{{ app.name || "Untitled" }}</span></label
         >
       </div>
+    </section>
+    <section
+      v-if="panel === 'memory'"
+      class="groups-panel floating-panel"
+      v-motion="{ kind: 'popover' }"
+      aria-label="Memory"
+      @pointerdown.stop
+    >
+      <div class="panel-heading">
+        <h1>Memory</h1>
+        <button class="icon-button" aria-label="Close memory" @click="panel = null">
+          <Icon name="close" />
+        </button>
+      </div>
+      <MemoryPanel @count="memoryPending = $event" />
     </section>
     <section
       v-if="panel === 'groups'"

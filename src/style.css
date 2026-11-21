@@ -204,6 +204,17 @@ button:hover {
   line-height: 1.3;
   white-space: nowrap;
 }
+/* Header Memory button: AI-saved entries waiting for review. */
+.memory-pending {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #6e91a6;
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
 .subtle-button:hover {
   background: #e8eef2;
 }

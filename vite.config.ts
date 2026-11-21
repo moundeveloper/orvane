@@ -9,6 +9,7 @@ import { projectsApi } from "./server/projects-api.ts";
 import { notesApi } from "./server/notes-api.ts";
 import { uimakerApi } from "./server/uimaker-api.ts";
 import { siteMemoryApi } from "./server/site-memory-api.ts";
+import { workspaceMemoryApi } from "./server/workspace-memory-api.ts";
 import { customToolsApi } from "./server/custom-tools-api.ts";
 import { certificatesApi } from "./server/certificates-api.ts";
 import { claudeApi } from "./server/claude-api.ts";
@@ -52,6 +53,10 @@ export default defineConfig({
         fileURLToPath(new URL("./.orvane", import.meta.url)),
     ),
     siteMemoryApi(
+      process.env.ORVANE_DATA_DIR ||
+        fileURLToPath(new URL("./.orvane", import.meta.url)),
+    ),
+    workspaceMemoryApi(
       process.env.ORVANE_DATA_DIR ||
         fileURLToPath(new URL("./.orvane", import.meta.url)),
     ),

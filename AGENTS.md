@@ -77,6 +77,7 @@ Everything in the UI is custom-styled. Never ship browser-native controls whose 
 ## 9. Memory
 
 - When something to remember involves Orvane, save it inside Orvane, not only in your own AI memory. The owner may switch between Claude and Codex, and only Orvane's stores are shared by every AI connected to its MCP.
+- The owner's preferences and usual way of doing things in Orvane go in Orvane memory through the `workspace_memory` tool (notes and procedures). `workspace_status` returns it; the owner reviews it from the header's Memory button.
 - Facts about a website (routes, notes, flows) go in Orvane's site memory through the `browser_memory` tool.
 - If no Orvane store fits the fact, say so and ask the owner where it should go.
 
