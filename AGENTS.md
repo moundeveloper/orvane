@@ -74,7 +74,13 @@ Everything in the UI is custom-styled. Never ship browser-native controls whose 
 - Commit, push or merge only when asked. "Merge into main" means fast-forward or merge into `master` and push.
 - Conventional commit subjects (`feat:`, `fix:`, `docs:`) with a short body describing what changed.
 
-## 9. Talking to the owner
+## 9. Memory
+
+- When something to remember involves Orvane, save it inside Orvane, not only in your own AI memory. The owner may switch between Claude and Codex, and only Orvane's stores are shared by every AI connected to its MCP.
+- Facts about a website (routes, notes, flows) go in Orvane's site memory through the `browser_memory` tool.
+- If no Orvane store fits the fact, say so and ask the owner where it should go.
+
+## 10. Talking to the owner
 
 - Plain, direct language. Lead with what changed and whether it works.
 - When something is ambiguous and the choice belongs to the owner (design, gestures, scope), ask instead of deciding.
