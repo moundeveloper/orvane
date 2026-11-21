@@ -35,6 +35,7 @@ import {
 import RuleControl from "./RuleControl.vue";
 import CustomSelect from "./CustomSelect.vue";
 import Icon from "./Icon.vue";
+import StepLibrary, { stepMime, type StepEntry } from "./StepLibrary.vue";
 import { vMotion } from "../motion";
 const props = withDefaults(
   defineProps<{
@@ -482,7 +483,61 @@ function graphPoint(point: { x: number; y: number }) {
   const { x, y, zoom } = viewport.value;
   return { x: (point.x - x) / zoom, y: (point.y - y) / zoom };
 }
-function add(action: ActionKind) {
+// The step library: shown beside the board, remembered between openings.
+const libraryKey = "orvane.step-library.v1";
+const libraryOpen = ref(
+  (() => {
+    try {
+      return localStorage.getItem(libraryKey) !== "closed";
+    } catch {
+      return true;
+    }
+  })(),
+);
+const library = ref<InstanceType<typeof StepLibrary>>();
+function toggleLibrary() {
+  libraryOpen.value = !libraryOpen.value;
+  try {
+    localStorage.setItem(libraryKey, libraryOpen.value ? "open" : "closed");
+  } catch {}
+}
+function libraryShortcut(event: KeyboardEvent) {
+  if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey) return;
+  const target = event.target as HTMLElement | null;
+  if (target?.closest("input, textarea, select, [contenteditable], .code-editor")) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (!libraryOpen.value) toggleLibrary();
+  void nextTick(() => library.value?.focusSearch());
+}
+// Enter or a click adds the step after the one selected node, if any.
+function addFromLibrary(entry: StepEntry, at?: { x: number; y: number }) {
+  if (!at) {
+    const selected = getSelectedNodes.value;
+    const only = selected.length === 1 ? selected[0]! : null;
+    if (only) {
+      wireDrop.value = {
+        from: { nodeId: only.id, id: null, type: "source", position: Position.Right },
+        position: { x: only.position.x + 300, y: only.position.y },
+        style: { left: "0", top: "0", right: "auto", maxHeight: "0" },
+      };
+    }
+  }
+  add(entry.action, entry.preset, at);
+}
+function dropStep(event: DragEvent) {
+  const key = event.dataTransfer?.getData(stepMime);
+  const entry = key ? library.value?.find(key) : undefined;
+  if (!entry) return;
+  event.preventDefault();
+  addFromLibrary(entry, graphPoint(viewportPoint(event.clientX, event.clientY)));
+}
+function dragOverStep(event: DragEvent) {
+  if (!event.dataTransfer?.types.includes(stepMime)) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "copy";
+}
+function add(action: ActionKind, preset?: Partial<Rule>, at?: { x: number; y: number }) {
   const drop = wireDrop.value;
   closeAddMenu();
   if (
@@ -492,8 +547,13 @@ function add(action: ActionKind) {
   )
     return;
   commitGraph();
-  const rule: Rule = { id: uid(), action, target: "", appId: "", value: "" };
+  const rule: Rule = { id: uid(), action, target: "", appId: "", value: "", ...preset };
   props.block.rules.push(rule);
+  if (at) {
+    graph.value.positions[rule.id] = at;
+    nextTick(sync);
+    return;
+  }
   if (drop) {
     graph.value.positions[rule.id] = drop.position;
     const { from } = drop;
@@ -569,6 +629,7 @@ function disconnectInput(id: string) {
 <template>
   <div
     class="node-workspace"
+    :class="{ 'has-library': libraryOpen }"
     v-motion="{ kind: 'workspace', show: ready, initial: false }"
     :style="{ opacity: ready ? undefined : 0 }"
     :data-ready="ready"
@@ -577,6 +638,7 @@ function disconnectInput(id: string) {
     @touchstart.capture="blockNativeWire"
     @pointerdown.stop
     @wheel.stop
+    @keydown="libraryShortcut"
   >
     <header class="node-toolbar">
       <button class="subtle-button" @click="emit('close')">
@@ -614,6 +676,13 @@ function disconnectInput(id: string) {
           @click="addOpen ? closeAddMenu() : (addOpen = true)"
         >
           <Icon name="plus" :size="13" />Add node
+        </button><button
+          class="subtle-button"
+          :aria-pressed="libraryOpen"
+          title="Step library (/)"
+          @click="toggleLibrary"
+        >
+          <Icon name="library" :size="13" />Library
         </button>
       </div>
     </header>
@@ -694,7 +763,12 @@ function disconnectInput(id: string) {
         </button>
       </div>
     </div>
-    <div class="node-stage" :data-flow-id="flowId">
+    <div
+      class="node-stage"
+      :data-flow-id="flowId"
+      @dragover="dragOverStep"
+      @drop="dropStep"
+    >
       <VueFlow
         :id="flowId"
         v-model:nodes="nodes"
@@ -799,6 +873,14 @@ function disconnectInput(id: string) {
         <Icon name="unlink" :size="13" />Disconnect selected wire
       </button>
     </div>
+    <StepLibrary
+      v-if="libraryOpen"
+      ref="library"
+      class="node-library"
+      :actions="actions"
+      :workspace="workspace"
+      @add="addFromLibrary($event)"
+    />
     <footer class="node-status">
       <span v-motion="{ kind: 'fade', state: notice, initial: false }">{{
         notice ||

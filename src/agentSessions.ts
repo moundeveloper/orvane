@@ -7,6 +7,22 @@ export const agentPermissions = {
   codex: "Codex can write in the workspace. Shell network access is disabled.",
 };
 
+/** Reasoning effort; unset means the provider's own default. */
+export const agentEfforts = ["low", "medium", "high", "max"] as const;
+export type AgentEffort = (typeof agentEfforts)[number];
+/** How edits are handled: ask before each, accept them, or only plan. */
+export type AgentEditMode = "ask" | "auto" | "plan";
+export const agentEditModes: Record<AgentProvider, AgentEditMode[]> = {
+  // Codex runs without approval prompts, so it can't ask first.
+  claude: ["ask", "auto", "plan"],
+  codex: ["auto", "plan"],
+};
+export const agentEditModeNames: Record<AgentEditMode, string> = {
+  ask: "Ask first",
+  auto: "Auto-accept",
+  plan: "Plan only",
+};
+
 export interface AgentActivity {
   id: string;
   kind: "mcp" | "tool" | "command" | "reasoning" | "search" | "changes";
@@ -26,6 +42,9 @@ export interface AgentRun {
   provider: AgentProvider;
   folder: string;
   model?: string;
+  effort?: AgentEffort;
+  mode?: AgentEditMode;
+  fork?: boolean;
   key?: string;
   sessionId?: string;
   message: string;

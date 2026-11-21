@@ -501,6 +501,21 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   display: flex;
   gap: 3px;
 }
+/* The step library sits beside the board; the toolbar, panels and status
+   bar span both columns. */
+.node-workspace.has-library {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.node-workspace.has-library > :not(.node-stage, .node-library) {
+  grid-column: 1 / -1;
+}
+.node-workspace.has-library > .node-stage {
+  grid-column: 1;
+}
+.node-library {
+  grid-row: 3;
+  grid-column: 2;
+}
 .node-stage {
   grid-row: 3;
   flex: 1;

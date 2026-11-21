@@ -1047,6 +1047,27 @@ function openLinkEvent(event: Event) {
   if (link.kind === "page" && !/^https?:\/\//i.test(link.target)) return;
   void openNoteLink(link, !!detail.external, detail.sourceBlockId);
 }
+// "Open in Git" from an agent run: show that repository in the Git viewer.
+async function openGitEvent(event: Event) {
+  const path = (event as CustomEvent<{ path?: string }>).detail?.path;
+  if (typeof path !== "string" || !path) return;
+  const app = liveApps.value.find((a) => flatten(a.blocks).some((b) => b.kind === "git"));
+  const block = app && flatten(app.blocks).find((b) => b.kind === "git");
+  if (!app || !block) {
+    status.value = "Add a Git app to open this repository.";
+    return;
+  }
+  try {
+    const { gitRequest } = await import("./git");
+    const workspace = await gitRequest<{ id: string }>("git_workspace_add", { path });
+    block.gitWorkspaceId = workspace.id;
+  } catch (error) {
+    status.value = error instanceof Error ? error.message : "The repository could not be opened.";
+    return;
+  }
+  if (app.layoutHidden && canEdit.value) app.layoutHidden = false;
+  await focusApp(app);
+}
 function focusAppById(appId: string) {
   const app = workspace.apps.find((a) => a.id === appId);
   if (!app) return;
@@ -3943,6 +3964,7 @@ onMounted(() => {
   }).orvaneDesktop?.onTouchpad?.(touchpadInput);
   window.addEventListener(ACTIVATE_EVENT, activatedApp);
   window.addEventListener("orvane:open-link", openLinkEvent);
+  window.addEventListener("orvane:open-git", openGitEvent);
   window.addEventListener("orvane:palette", paletteEvent);
   window.addEventListener("paste", pasteImage);
   window.addEventListener("pointermove", trackPointer, { passive: true });
@@ -3968,6 +3990,7 @@ onBeforeUnmount(() => {
   stopTouchpad?.();
   window.removeEventListener(ACTIVATE_EVENT, activatedApp);
   window.removeEventListener("orvane:open-link", openLinkEvent);
+  window.removeEventListener("orvane:open-git", openGitEvent);
   window.removeEventListener("orvane:palette", paletteEvent);
   window.removeEventListener("paste", pasteImage);
   window.removeEventListener("pointermove", trackPointer);

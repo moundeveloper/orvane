@@ -20,8 +20,15 @@ import ExpositionView from "./ExpositionView.vue";
 import Icon from "./Icon.vue";
 import ChatMarkdown from "./ChatMarkdown.vue";
 import AgentRunActivity from "./AgentRunActivity.vue";
+import ThinkingTrail from "./ThinkingTrail.vue";
 import CustomSelect from "./CustomSelect.vue";
 import ContextPicker from "./ContextPicker.vue";
+import ComposerModes from "./ComposerModes.vue";
+import FilesChanged from "./FilesChanged.vue";
+import MessageActions, { type MessageAction } from "./MessageActions.vue";
+import { sendToNotes } from "../agentMessageNotes";
+import SlashMenu, { type SlashEntry } from "./SlashMenu.vue";
+import SessionTimeline, { type SessionApproval } from "./SessionTimeline.vue";
 import { registerCommands } from "../commands";
 import {
   agentBusy,
@@ -32,6 +39,8 @@ import {
   type AgentProvider,
   type AgentRun,
   type AgentActivity,
+  type AgentEditMode,
+  type AgentEffort,
 } from "../agentSessions";
 import {
   api as fileRequest,
@@ -96,6 +105,19 @@ const dock = ref<HTMLFormElement>();
 const paths = ref<string[]>([]);
 // An "@" before the caret opens the file picker; its text is the query.
 const mention = ref<{ start: number; query: string } | null>(null);
+// "/" at the start of the composer: skills, session commands, saved prompts.
+const slash = ref<{ query: string } | null>(null);
+const slashMenu = ref<InstanceType<typeof SlashMenu>>();
+const slashItems = ref<SlashEntry[]>([]);
+const slashLoading = ref(false);
+const savedPrompts = ref<{ name: string; text: string }[]>([]);
+const promptName = ref<string | null>(null);
+const promptNameInput = ref<HTMLInputElement>();
+const recentKey = "orvane-agent-recent-skills";
+const recentSkills = ref<Record<string, string[]>>({});
+try {
+  recentSkills.value = JSON.parse(localStorage.getItem(recentKey) || "{}");
+} catch {}
 const picker = ref<InstanceType<typeof ContextPicker>>();
 const rawPermissions = ref(new Set<string>());
 const menuOpen = ref(false);
@@ -105,6 +127,10 @@ const modelCatalogues = ref<
   Partial<Record<AgentProvider, { value: string; label: string }[]>>
 >({});
 const chosenModels = ref<Record<string, string>>({});
+// Effort and edit mode chosen per session, like the model.
+const chosenEfforts = ref<Record<string, AgentEffort | "">>({});
+const chosenModes = ref<Record<string, AgentEditMode | "">>({});
+const modes = ref<InstanceType<typeof ComposerModes>>();
 const runStarts = new Map<string, number>();
 const now = ref(Date.now());
 let clock: ReturnType<typeof setInterval> | undefined;
@@ -139,6 +165,18 @@ const model = computed({
   get: () => chosenModels.value[modelKey.value] ?? "",
   set: (value: string) => {
     chosenModels.value = { ...chosenModels.value, [modelKey.value]: value };
+  },
+});
+const effort = computed({
+  get: () => chosenEfforts.value[modelKey.value] ?? "",
+  set: (value: AgentEffort | "") => {
+    chosenEfforts.value = { ...chosenEfforts.value, [modelKey.value]: value };
+  },
+});
+const editMode = computed({
+  get: () => chosenModes.value[modelKey.value] ?? "",
+  set: (value: AgentEditMode | "") => {
+    chosenModes.value = { ...chosenModes.value, [modelKey.value]: value };
   },
 });
 const modelOptions = computed(() => {
@@ -243,15 +281,12 @@ const rowTime = (value: number) => {
     : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 };
 const working = computed(() => agentBusy(run.value));
-const workingLabel = computed(() => {
+// Head of the thinking trail: what the run is doing as a whole.
+const trailLabel = computed(() => {
   if (!run.value) return "";
   if (run.value.permissions.length) return "Waiting for your approval";
   if (run.value.status === "stopping") return "Stopping…";
-  return (
-    run.value.activities?.find((item) => item.status === "running")?.label ||
-    run.value.activity ||
-    "Working…"
-  );
+  return run.value.text ? "Writing the answer" : "Thinking";
 });
 const elapsed = computed(() => {
   const started = run.value && runStarts.get(run.value.id);
@@ -293,9 +328,18 @@ function readMention() {
   const field = composer.value;
   if (!field || field.selectionStart !== field.selectionEnd) {
     mention.value = null;
+    slash.value = null;
     return;
   }
   const before = field.value.slice(0, field.selectionStart);
+  const command = /^\/([\w:.-]*)$/.exec(before);
+  if (command) {
+    if (!slash.value) void loadSlash();
+    slash.value = { query: command[1]! };
+    mention.value = null;
+    return;
+  }
+  slash.value = null;
   const match = /(?:^|\s)@([^\s@]*)$/.exec(before);
   mention.value = match
     ? { start: before.length - match[1]!.length - 1, query: match[1]! }
@@ -315,6 +359,180 @@ async function pickMention(entry: FileEntry) {
   field.focus({ preventScroll: true });
   field.setSelectionRange(found.start, found.start);
 }
+async function loadSlash() {
+  slashLoading.value = true;
+  try {
+    const data = await agentRequest<{
+      items: SlashEntry[];
+      prompts: { name: string; text: string }[];
+    }>("slash", {
+      provider: provider.value,
+      folder: selected.value?.project || run.value?.folder || folder.value.trim() || undefined,
+    });
+    savedPrompts.value = data.prompts;
+    slashItems.value = [
+      ...data.items,
+      ...data.prompts.map((prompt) => ({
+        kind: "prompt" as const,
+        name: prompt.name,
+        description: "",
+        text: prompt.text,
+      })),
+    ];
+  } catch {
+    slashItems.value = [];
+  } finally {
+    slashLoading.value = false;
+  }
+}
+const recent = computed(() => recentSkills.value[provider.value] ?? []);
+function remember(name: string) {
+  const list = [name, ...recent.value.filter((item) => item !== name)].slice(0, 3);
+  recentSkills.value = { ...recentSkills.value, [provider.value]: list };
+  try {
+    localStorage.setItem(recentKey, JSON.stringify(recentSkills.value));
+  } catch {}
+}
+// A skill or command goes in as "/name "; a saved prompt as its text.
+async function pickSlash(entry: SlashEntry) {
+  const field = composer.value;
+  if (!field) return;
+  const end = field.selectionStart;
+  const text = entry.kind === "prompt" ? entry.text ?? "" : `/${entry.name} `;
+  draft.value = text + draft.value.slice(end);
+  if (entry.kind !== "prompt") remember(entry.name);
+  slash.value = null;
+  await nextTick();
+  field.focus({ preventScroll: true });
+  field.setSelectionRange(text.length, text.length);
+}
+async function useRecent(name: string) {
+  const field = composer.value;
+  if (!field) return;
+  draft.value = `/${name} ` + draft.value.replace(/^\/[\w:.-]*\s?/, "");
+  remember(name);
+  await nextTick();
+  field.focus({ preventScroll: true });
+  field.setSelectionRange(name.length + 2, name.length + 2);
+}
+async function startSavePrompt() {
+  promptName.value = draft.value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .split("-")
+    .slice(0, 4)
+    .join("-")
+    .slice(0, 40);
+  await nextTick();
+  promptNameInput.value?.select();
+}
+async function savePrompt() {
+  const name = promptName.value?.trim() ?? "";
+  if (!name || !draft.value.trim()) return;
+  try {
+    const data = await agentRequest<{ prompts: { name: string; text: string }[] }>(
+      "save-prompt",
+      { name, text: draft.value },
+    );
+    savedPrompts.value = data.prompts;
+    promptName.value = null;
+    composer.value?.focus({ preventScroll: true });
+  } catch (error) {
+    showRunError(error);
+  }
+}
+function promptNameKey(event: KeyboardEvent) {
+  if (event.isComposing) return;
+  if (event.key === "Enter") {
+    event.preventDefault();
+    void savePrompt();
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    promptName.value = null;
+    composer.value?.focus({ preventScroll: true });
+  }
+}
+// Actions from a message's hover menu.
+const forking = ref(false);
+const notice = ref("");
+let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+function showNotice(text: string) {
+  notice.value = text;
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => (notice.value = ""), 2400);
+}
+const slug = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .split("-")
+    .slice(0, 4)
+    .join("-")
+    .slice(0, 40) || "prompt";
+async function messageAction(action: MessageAction, text: string) {
+  try {
+    if (action === "copy") await navigator.clipboard.writeText(text);
+    else if (action === "reuse") {
+      draft.value = text;
+      await nextTick();
+      focusComposer();
+    } else if (action === "fork") startFork();
+    else if (action === "notes") {
+      const title =
+        text.trim().split(/\r?\n/, 1)[0]!.replace(/^#+\s*/, "").slice(0, 80) || "Agent message";
+      await sendToNotes(title, text);
+      showNotice("Sent to Notes");
+    } else if (action === "prompt") {
+      const data = await agentRequest<{ prompts: { name: string; text: string }[] }>("save-prompt", {
+        name: slug(text),
+        text,
+      });
+      savedPrompts.value = data.prompts;
+      showNotice(`Saved as /${slug(text)}`);
+    }
+  } catch (error) {
+    showRunError(error);
+  }
+}
+// The next message resumes into a new session that branches from this one.
+function startFork() {
+  if (provider.value !== "claude" || !selected.value) return;
+  forking.value = true;
+  focusComposer();
+}
+watch(active, () => {
+  forking.value = false;
+  timeline.value = false;
+});
+// The session timeline takes the conversation's place until closed.
+const timeline = ref(false);
+const approvals = ref<SessionApproval[]>([]);
+async function openTimeline() {
+  if (!selected.value) return;
+  const sessionId = selected.value.sessionId;
+  approvals.value = [];
+  timeline.value = true;
+  try {
+    const found = await agentRequest<SessionApproval[]>("session-approvals", { sessionId });
+    if (timeline.value && selected.value?.sessionId === sessionId) approvals.value = found;
+  } catch (cause) {
+    showRunError(cause);
+  }
+}
+function closeTimeline() {
+  timeline.value = false;
+  void nextTick(() => chat.value?.focus({ preventScroll: true }));
+}
+// "Ask about this change" sends a follow-up that carries the file.
+function askAbout(text: string, path: string) {
+  draft.value = text;
+  paths.value = [path];
+  void send();
+}
 async function addContext() {
   const field = composer.value;
   if (!field) return;
@@ -328,6 +546,28 @@ async function addContext() {
 }
 function composerKey(event: KeyboardEvent) {
   if (event.isComposing) return;
+  if (slash.value) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      slashMenu.value?.move(event.key === "ArrowDown" ? 1 : -1);
+      return;
+    }
+    if (
+      (event.key === "Tab" && !event.shiftKey) ||
+      (event.key === "Enter" && !event.shiftKey)
+    ) {
+      if (slashMenu.value?.pick()) {
+        event.preventDefault();
+        return;
+      }
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      slash.value = null;
+      return;
+    }
+  }
   if (mention.value) {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
@@ -350,6 +590,11 @@ function composerKey(event: KeyboardEvent) {
   }
   if (event.key === "Enter") return onEnter(event);
   if (event.key === "Escape") return leaveComposer(event);
+  // Shift+Tab cycles how edits are handled, as in the CLIs.
+  if (event.key === "Tab" && event.shiftKey && !event.ctrlKey && !event.altKey) {
+    event.preventDefault();
+    modes.value?.cycleMode();
+  }
 }
 function appKey(event: KeyboardEvent) {
   const target = event.target as HTMLElement;
@@ -416,10 +661,11 @@ function openFolder() {
     }),
   );
 }
-async function menuAction(action: "folder" | "id" | "resume" | "reload") {
-  closeMenu(true);
+async function menuAction(action: "folder" | "id" | "resume" | "reload" | "timeline") {
+  closeMenu(action !== "timeline");
   try {
-    if (action === "folder") await openFolder();
+    if (action === "timeline") await openTimeline();
+    else if (action === "folder") await openFolder();
     else if (action === "id" && selected.value)
       await navigator.clipboard.writeText(selected.value.sessionId);
     else if (action === "resume")
@@ -682,7 +928,12 @@ async function send() {
     const message = paths.value.length
       ? `${draft.value}\n\nLocal attachments:\n${paths.value.map((path) => JSON.stringify(path)).join("\n")}`
       : draft.value;
-    const chosen = model.value ? { model: model.value } : {};
+    const chosen = {
+      ...(model.value ? { model: model.value } : {}),
+      ...(effort.value ? { effort: effort.value } : {}),
+      ...(editMode.value ? { mode: editMode.value } : {}),
+      ...(forking.value && !newProvider.value ? { fork: true } : {}),
+    };
     const result = await agentRequest<AgentRun>("start", {
       message,
       target: newProvider.value
@@ -693,6 +944,7 @@ async function send() {
     draft.value = "";
     paths.value = [];
     mention.value = null;
+    forking.value = false;
     closeBrowser();
     watchRun(result);
   } catch (error) {
@@ -860,6 +1112,40 @@ const unregister = registerCommands(`agent-sessions:${props.block.id}`, () => [
     blockId: props.block.id,
     run: focusComposer,
   },
+  ...(messages.value.some((m) => m.role !== "user" && m.text)
+    ? [
+        {
+          id: `agent-copy-reply:${props.block.id}`,
+          title: "Copy last agent reply",
+          icon: "copy",
+          blockId: props.block.id,
+          run: () =>
+            messageAction("copy", [...messages.value].reverse().find((m) => m.role !== "user" && m.text)!.text),
+        },
+      ]
+    : []),
+  ...(selected.value
+    ? [
+        {
+          id: `agent-timeline:${props.block.id}`,
+          title: "Show session timeline",
+          icon: "clock",
+          blockId: props.block.id,
+          run: openTimeline,
+        },
+      ]
+    : []),
+  ...(provider.value === "claude" && selected.value
+    ? [
+        {
+          id: `agent-fork:${props.block.id}`,
+          title: "Fork this session",
+          icon: "git",
+          blockId: props.block.id,
+          run: startFork,
+        },
+      ]
+    : []),
   ...(["claude", "codex"] as const).map((kind) => ({
     id: `agent-new:${kind}:${props.block.id}`,
     title: `New ${agentNames[kind]} session…`,
@@ -1124,6 +1410,9 @@ onBeforeUnmount(() => {
               <button type="button" role="menuitem" @click="menuAction('resume')">
                 <Icon name="terminal" :size="14" /><span>Copy resume command</span>
               </button>
+              <button type="button" role="menuitem" @click="menuAction('timeline')">
+                <Icon name="clock" :size="14" /><span>Session timeline</span>
+              </button>
               <hr />
               <button type="button" role="menuitem" @click="menuAction('reload')">
                 <Icon name="refresh" :size="14" /><span>Reload transcript</span>
@@ -1138,7 +1427,15 @@ onBeforeUnmount(() => {
             class="cs-chat"
             aria-label="Session conversation"
           >
-            <div class="cs-thread">
+            <SessionTimeline
+              v-if="timeline && selected"
+              class="cs-timeline"
+              :messages="messages"
+              :approvals="approvals"
+              :base="selected.project"
+              @close="closeTimeline"
+            />
+            <div v-show="!timeline" class="cs-thread">
               <button
                 v-if="before"
                 type="button"
@@ -1179,6 +1476,12 @@ onBeforeUnmount(() => {
                     m.role === "user" ? "You" : agentNames[provider]
                   }}</strong
                   ><time>{{ time(m.at) }}</time>
+                  <MessageActions
+                    v-if="m.text"
+                    :user="m.role === 'user'"
+                    :can-fork="provider === 'claude' && !!selected"
+                    @action="messageAction($event, m.text)"
+                  />
                 </div>
                 <ChatMarkdown
                   v-if="m.text"
@@ -1208,14 +1511,45 @@ onBeforeUnmount(() => {
                 <div class="cs-message-meta"><strong>You</strong></div>
                 <ChatMarkdown class="cs-message-text" :text="run.message" />
               </article>
+              <ThinkingTrail
+                v-if="working && run"
+                :key="'trail:' + run.id"
+                :items="run.activities ?? []"
+                :base="run.folder"
+                :pending="!run.text && !run.permissions.length"
+                :status="run.permissions.length ? '' : run.activity"
+              >
+                <template #head>
+                  <span class="cs-mark cs-working"><Icon name="ai" :size="12" /></span>
+                  <span class="cs-dna" aria-hidden="true"
+                    ><span
+                      v-for="k in 9"
+                      :key="k"
+                      :style="{
+                        left: `${(k - 1) * 4.5}px`,
+                        animationDelay: `${-((10 - k) * 1.74) / 7}s`,
+                      }"
+                      ><b /><i /><i /></span
+                  ></span>
+                  <strong class="cs-trail-state">{{ trailLabel }}</strong>
+                  <time v-if="elapsed" class="cs-trail-time">{{ elapsed }}</time>
+                </template>
+              </ThinkingTrail>
               <AgentRunActivity
-                v-if="run?.activities?.length"
+                v-else-if="run?.activities?.length"
                 :key="run.id"
                 :items="run.activities"
               />
+              <FilesChanged
+                v-if="run && !working"
+                :key="'files:' + run.id"
+                :run-id="run.id"
+                :folder="run.folder"
+                @ask="askAbout"
+              />
               <article v-if="live && run?.text" class="cs-message cs-live">
                 <div class="cs-message-meta">
-                  <span class="cs-mark" :class="{ 'cs-working': working }"
+                  <span class="cs-mark"
                     ><Icon name="ai" :size="12"
                   /></span>
                   <strong>{{ agentNames[run.provider] }}</strong>
@@ -1226,27 +1560,6 @@ onBeforeUnmount(() => {
                   :base="run.folder"
                 />
               </article>
-              <div v-if="working && run" class="cs-working-line">
-                <span v-if="!run.text" class="cs-mark cs-working"
-                  ><Icon name="ai" :size="12"
-                /></span>
-                <span class="cs-dna" aria-hidden="true"
-                  ><span
-                    v-for="k in 9"
-                    :key="k"
-                    :style="{
-                      left: `${(k - 1) * 4.5}px`,
-                      animationDelay: `${-((10 - k) * 1.74) / 7}s`,
-                    }"
-                    ><b /><i /><i /></span
-                ></span>
-                <span
-                  class="cs-working-label"
-                  :class="{ 'cs-shimmer': !run.permissions.length }"
-                  >{{ workingLabel }}</span
-                >
-                <time v-if="elapsed">{{ elapsed }}</time>
-              </div>
               <section v-if="attachment.loose.length" class="cs-loose">
                 <h3>Session visuals</h3>
                 <span class="cs-muted"
@@ -1288,6 +1601,15 @@ onBeforeUnmount(() => {
           @submit.prevent="send"
         >
           <!-- Outside the dock, which scrolls and would clip it. -->
+          <div v-if="slash" class="cs-picker-anchor">
+            <SlashMenu
+              ref="slashMenu"
+              :query="slash.query"
+              :items="slashItems"
+              :loading="slashLoading"
+              @pick="pickSlash"
+            />
+          </div>
           <div v-if="mention" class="cs-picker-anchor">
             <ContextPicker
               ref="picker"
@@ -1430,6 +1752,11 @@ onBeforeUnmount(() => {
                 </button>
               </div>
             </div>
+            <p v-if="notice" class="cs-notice" role="status">{{ notice }}</p>
+            <p v-if="forking" class="cs-notice cs-forking" role="status">
+              <Icon name="git" :size="12" />The next message starts a new session branched from this one.
+              <button type="button" class="cs-btn cs-ghost cs-small" @click="forking = false">Cancel</button>
+            </p>
             <p v-if="runError" class="cs-run-error cs-card" role="alert">
               {{ runError }}
             </p>
@@ -1441,12 +1768,12 @@ onBeforeUnmount(() => {
                 placeholder="Write a message…"
                 rows="2"
                 maxlength="12000"
-                aria-keyshortcuts="Enter Shift+Enter Escape @"
+                aria-keyshortcuts="Enter Shift+Enter Escape @ / Shift+Tab"
                 @keydown="composerKey"
                 @input="readMention"
                 @click="readMention"
                 @keyup.left.right.home.end="readMention"
-                @blur="mention = null"
+                @blur="(mention = null), (slash = null)"
               />
               <div class="cs-context">
                 <button
@@ -1469,6 +1796,42 @@ onBeforeUnmount(() => {
                   >
                     <Icon name="close" :size="12" /></button
                 ></span>
+                <span class="cs-skills">
+                  <Icon v-if="recent.length" name="clock" :size="12" class="cs-skills-icon" />
+                  <button
+                    v-for="name in recent"
+                    :key="name"
+                    type="button"
+                    class="cs-skill"
+                    :title="`Use /${name}`"
+                    @pointerdown.prevent
+                    @click="useRecent(name)"
+                  >
+                    /{{ name }}
+                  </button>
+                  <input
+                    v-if="promptName !== null"
+                    ref="promptNameInput"
+                    v-model="promptName"
+                    class="cs-prompt-name"
+                    aria-label="Prompt name"
+                    placeholder="prompt-name"
+                    maxlength="40"
+                    @keydown="promptNameKey"
+                    @blur="promptName = null"
+                  />
+                  <button
+                    v-else
+                    type="button"
+                    class="cs-skill cs-skill-add"
+                    :disabled="!draft.trim()"
+                    title="Save this message as a prompt for /"
+                    @pointerdown.prevent
+                    @click="startSavePrompt"
+                  >
+                    <Icon name="plus" :size="11" />Save prompt
+                  </button>
+                </span>
               </div>
               <div class="cs-compose-actions">
                 <CustomSelect
@@ -1479,6 +1842,13 @@ onBeforeUnmount(() => {
                   search-label="Find a model"
                   trigger-icon="cpu"
                   prefer-above
+                  :disabled="busy"
+                />
+                <ComposerModes
+                  ref="modes"
+                  v-model:effort="effort"
+                  v-model:mode="editMode"
+                  :provider="provider"
                   :disabled="busy"
                 />
                 <span
@@ -1919,6 +2289,10 @@ onBeforeUnmount(() => {
   scrollbar-width: auto;
   scrollbar-color: auto;
 }
+.cs-timeline {
+  max-width: 640px;
+  margin: 0 auto;
+}
 .cs-chat::-webkit-scrollbar-track {
   margin-top: 50px;
   margin-bottom: var(--cs-dock-h, 150px);
@@ -1937,6 +2311,18 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 5px;
   min-width: 0;
+}
+.cs-message:hover :deep(.msg-actions) {
+  opacity: 1;
+}
+.cs-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--cs-run);
 }
 .cs-message-meta {
   display: flex;
@@ -1984,26 +2370,19 @@ onBeforeUnmount(() => {
   line-height: 1.6;
   color: #3d5262;
 }
-.cs-working-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  margin-top: -6px;
-  font-size: 12px;
-  color: var(--cs-run);
-  animation: cs-fade 160ms ease-out;
-}
-.cs-working-label {
+.cs-trail-state {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--cs-mono);
-  font-size: 11.5px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--cs-strong);
 }
-.cs-working-line time {
+.cs-trail-time {
   flex: none;
+  margin-left: auto;
+  font-size: 11.5px;
   color: var(--cs-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -2249,29 +2628,6 @@ onBeforeUnmount(() => {
     opacity: 0;
   }
 }
-.cs-shimmer {
-  background: linear-gradient(
-      90deg,
-      currentColor 0%,
-      currentColor 40%,
-      #b4cad6 50%,
-      currentColor 60%,
-      currentColor 100%
-    )
-    0 0 / 250% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: cs-shimmer 1.8s linear infinite;
-}
-@keyframes cs-shimmer {
-  from {
-    background-position: 100% 0;
-  }
-  to {
-    background-position: -150% 0;
-  }
-}
 .cs-tool-steps {
   max-width: 75ch;
 }
@@ -2365,7 +2721,62 @@ onBeforeUnmount(() => {
   margin: 0 auto;
   pointer-events: auto;
 }
-.cs-picker-anchor .context-picker {
+.cs-skills {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin-left: auto;
+}
+.cs-skills-icon {
+  flex: none;
+  color: #8296a2;
+}
+.cs-skill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  background: #e6eef3;
+  color: #385d76;
+  font: 11.5px/1 var(--cs-mono);
+  cursor: pointer;
+}
+.cs-skill:hover:not(:disabled) {
+  background: #dae6ed;
+}
+.cs-skill:focus-visible,
+.cs-prompt-name:focus-visible {
+  outline: 2px solid #6f8998;
+  outline-offset: 1px;
+}
+.cs-skill-add {
+  background: transparent;
+  color: #5d7381;
+  font-family: inherit;
+  font-size: 12px;
+}
+.cs-skill-add:disabled {
+  color: #a9b8c1;
+  cursor: default;
+}
+.cs-prompt-name {
+  width: 130px;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid #c9d6de;
+  border-radius: 6px;
+  background: #fbfcfd;
+  color: #273f50;
+  font: 11.5px/1 var(--cs-mono);
+  outline: none;
+}
+.cs-picker-anchor .context-picker,
+.cs-picker-anchor .slash-menu {
   left: 0;
   right: 0;
 }
@@ -2596,7 +3007,7 @@ onBeforeUnmount(() => {
   background: #d6e3ea;
 }
 .cs-compose-actions :deep(.select-trigger.cs-model) {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   width: auto;
   min-width: 0;
   max-width: 200px;
@@ -2718,10 +3129,6 @@ onBeforeUnmount(() => {
   .agent-sessions-app *::after {
     animation: none !important;
     transition: none !important;
-  }
-  .cs-shimmer {
-    -webkit-text-fill-color: currentColor;
-    background: none;
   }
 }
 </style>

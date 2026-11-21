@@ -732,15 +732,20 @@ test("app name releases focus on canvas, other apps and dock without losing the 
   await expect(name).not.toBeFocused();
 });
 
-test("embedded app scrollbars inherit thin muted styling", async ({ page }) => {
+// Embedded apps use the one scrollbar rule (src/scrollbars.css): narrow
+// ::-webkit-scrollbar styling, never scrollbar-width/color, which would bring
+// back the native bar with arrow buttons.
+test("embedded app scrollbars use the shared narrow muted style", async ({ page }) => {
   await page.goto("/");
   const body = page.frameLocator('iframe[title="Calculator"]').locator("body");
-  expect(await body.evaluate((el) => getComputedStyle(el).scrollbarColor)).toBe(
-    "rgb(184, 203, 214) rgba(0, 0, 0, 0)",
-  );
-  expect(await body.evaluate((el) => getComputedStyle(el).scrollbarWidth)).toBe(
-    "thin",
-  );
+  const style = await body.evaluate((el) => ({
+    width: getComputedStyle(el).scrollbarWidth,
+    color: getComputedStyle(el).scrollbarColor,
+    rule: [...el.ownerDocument.styleSheets].some((sheet) =>
+      [...sheet.cssRules].some((rule) => rule.cssText.includes("::-webkit-scrollbar-button")),
+    ),
+  }));
+  expect(style).toEqual({ width: "auto", color: "auto", rule: true });
 });
 
 test("selected nodes form a reusable group with an editable internal graph", async ({

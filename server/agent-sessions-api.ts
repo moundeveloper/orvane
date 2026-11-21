@@ -7,6 +7,7 @@ import { z } from "zod";
 import { SessionTranscripts } from "./session-transcripts.ts";
 import { AgentRunner } from "./agent-runner.ts";
 import { claudeModels, codexModels } from "./agent-cli.ts";
+import { listSkills, SavedPrompts } from "./agent-skills.ts";
 
 const base = "/__orvane/agents/";
 const key = z.string().min(1).max(1000);
@@ -16,17 +17,21 @@ const model = z
   .max(150)
   .regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/)
   .optional();
+const effort = z.enum(["low", "medium", "high", "max"]).optional();
+const mode = z.enum(["ask", "auto", "plan"]).optional();
 const start = z.object({
   message: z
     .string()
     .max(12_000)
     .refine((text) => !!text.trim(), "Enter a message."),
   target: z.union([
-    z.object({ key, model }),
+    z.object({ key, model, effort, mode, fork: z.boolean().optional() }),
     z.object({
       provider: z.enum(["claude", "codex"]),
       folder: z.string().min(1).max(2000).optional(),
       model,
+      effort,
+      mode,
     }),
   ]),
 });
@@ -39,6 +44,8 @@ export function agentSessionsApi(directory: string): Plugin {
       codex: SessionTranscripts;
       runner: AgentRunner;
       surveying: string;
+      prompts: SavedPrompts;
+      skillsHome: (provider: "claude" | "codex") => string;
     }
   >();
   let testing = false;
@@ -123,6 +130,15 @@ export function agentSessionsApi(directory: string): Plugin {
           claude,
           codex,
           runner,
+          prompts: new SavedPrompts(
+            join(directory, testing ? `tests/${namespace}.sqlite` : "workspace.sqlite"),
+          ),
+          skillsHome: (provider) =>
+            testing
+              ? join(dir, provider === "claude" ? ".claude" : ".codex", "skills")
+              : provider === "claude"
+                ? join(homedir(), ".claude", "skills")
+                : join(process.env.CODEX_HOME || join(homedir(), ".codex"), "skills"),
           surveying: testing
             ? join(dir, "Surveying")
             : process.env.ORVANE_SURVEYING_DIR ||
@@ -130,7 +146,7 @@ export function agentSessionsApi(directory: string): Plugin {
         };
         services.set(namespace, service);
       }
-      const { claude, codex, runner, surveying } = service;
+      const { claude, codex, runner, surveying, prompts, skillsHome } = service;
       if (streaming) {
         if (!runner.subscribe(id.parse(url.searchParams.get("id")), res))
           return reply(404, { error: "Run was not found." });
@@ -154,6 +170,37 @@ export function agentSessionsApi(directory: string): Plugin {
           runs: runner.recent(),
         });
       }
+      if (op === "slash") {
+        const { provider, folder } = z
+          .object({
+            provider: z.enum(["claude", "codex"]),
+            folder: z.string().max(2000).optional(),
+          })
+          .parse(args);
+        return reply(200, {
+          items: await listSkills(provider, skillsHome(provider), folder),
+          prompts: prompts.list(),
+        });
+      }
+      if (op === "save-prompt") {
+        const { name, text } = z
+          .object({ name: z.string().max(40), text: z.string().max(8000) })
+          .parse(args);
+        return reply(200, { prompts: prompts.save(name, text) });
+      }
+      if (op === "delete-prompt") {
+        const { name } = z.object({ name: z.string().max(40) }).parse(args);
+        return reply(200, { prompts: prompts.remove(name) });
+      }
+      if (op === "run-changes")
+        return reply(200, await runner.changes(id.parse(args.id)));
+      if (op === "run-diff")
+        return reply(
+          200,
+          await runner.diff(id.parse(args.id), z.string().min(1).max(2000).parse(args.path)),
+        );
+      if (op === "session-approvals")
+        return reply(200, await runner.approvals(z.string().min(1).max(200).parse(args.sessionId)));
       if (op === "inspect-run")
         return reply(200, runner.inspect(id.parse(args.id)));
       if (op === "launcher") {
@@ -209,6 +256,9 @@ export function agentSessionsApi(directory: string): Plugin {
                 folder: session.project,
                 sessionId: session.sessionId,
                 model: target.model,
+                effort: target.effort,
+                mode: target.mode,
+                fork: (session.provider ?? "claude") === "claude" && target.fork,
               },
               message,
             ),
@@ -250,7 +300,8 @@ export function agentSessionsApi(directory: string): Plugin {
     for (const { runner } of services.values()) runner.emergencyClose();
   };
   const close = () => {
-    for (const { claude, codex, runner } of services.values()) {
+    for (const { claude, codex, runner, prompts } of services.values()) {
+      prompts.close();
       runner.close();
       claude.close();
       codex.close();

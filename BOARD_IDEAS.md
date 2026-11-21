@@ -134,3 +134,47 @@ Left out on purpose:
 - sci-fi HUD styling.
 
 All three go against DESIGN.md (no dashboards, light theme, small motion).
+
+# Round 2: Orvane workspace
+
+Lab round **r1 "Board ideas: workspace"** on the new UI Maker component `orvane-board-ideas`. Same source board, same rules: Orvane's light look, Inter, compact controls, small motion, everything on the keyboard. These cover parts of Orvane that round 1 did not touch: the dock, triggers, automation runs, the File Explorer and the inbox. The source pins are proposed as references on the component; nothing is attached until you approve them.
+
+Nothing here is built. Pick the ones you want.
+
+### 1. Searchable app action menu (Lab: *Action menu*)
+
+- **Pin:** 688980443038314066, a context menu with "Search actions…", grouped items and shortcut hints.
+- **What:** the dock's right-click menu gains a search field, sections (this app / app management) and the shortcut beside each action, plus "Ask an agent about this page" for Browser apps.
+- **Build:** the dock menu already has Rename, Duplicate and app management; add the filter and the shortcut labels from the existing shortcut table. Similar to Raycast's action panel.
+
+### 2. Triggers day rail (Lab: *Day rail*)
+
+- **Pins:** 688980443029594432 ("Your day at a glance") and 688980443038246652 (vertical time rail).
+- **What:** today's triggers on a vertical time rail: runs that happened (ran / failed), a "now" line, and the planned runs after it. A failed run offers "Run now".
+- **Build:** `triggers.ts` already has each schedule, `lastRun` and `lastError`; the next runs follow from the schedule. Could live as a view inside the Action library's Triggers section.
+
+### 3. Automation run history (Lab: *Run history*)
+
+- **Pin:** 688980443038246645, a "Workflow plan" Gantt.
+- **What:** one lane per workflow, each run a bar on a time axis (Today / 7 days), failures in red; clicking a run shows which step failed, who started it, how long it took, and "Open workflow" / "Run again".
+- **Build:** `automation_runs` already records runs; it needs start and end times and the failing step per run.
+
+### 4. Dock create menu (Lab: *Create menu*)
+
+- **Pin:** 688980443038246591, a "+" menu listing what you can make, with icons.
+- **What:** the dock's "+" opens a searchable list of app kinds with a one-line description and number keys 1–6, plus "From the library" and "Recently closed" (archived apps) on the side.
+- **Build:** the app kinds and the library already exist; "Recently closed" reads archived apps.
+
+### 5. Folder cards in the File Explorer (Lab: *Folder cards*)
+
+- **Pin:** 688980443038247590, folders as cards with their contents peeking out.
+- **What:** a grid view where each folder shows its three most recent files as sheets (first lines of text files, image thumbnails), when it was last edited, and a Git or SDF badge. A List / Cards toggle keeps the current list.
+- **Build:** a folder read of the newest few files; image thumbnails are already available to the File Explorer. Pause off-screen previews.
+
+### 6. Inbox triage (Lab: *Inbox triage*)
+
+- **Pin:** 688980443038284922, a notification list with an expanded item and inline actions.
+- **What:** captures as compact rows grouped by day; the selected one expands with a preview and its actions, each on a key (O open, N sticky note, S send to Notes, C calendar today, D discard), J/K to move, and a "sorted today" count.
+- **Build:** the inbox already has Sticky note, Calendar today, Place on canvas and Discard; "Open in Browser" is for links, and "Send to Notes" can reuse the agent sessions' Send to Notes.
+
+Left out on purpose: the preferences sheet with theme cards (light theme only), the node-editor "click anywhere to spawn" canvas (it would change canvas gestures), and the HUD and poster pins.

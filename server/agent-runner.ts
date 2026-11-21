@@ -4,13 +4,15 @@ import {
   type ChildProcessWithoutNullStreams,
 } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, realpath, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import type { ServerResponse } from "node:http";
 import {
   agentBusy,
   summarizeAgentRun,
   type AgentActivity,
+  type AgentEditMode,
+  type AgentEffort,
   type AgentProvider,
   type AgentRun,
 } from "../src/agentSessions.ts";
@@ -22,6 +24,7 @@ import {
   verifyAgentLogin,
 } from "./agent-cli.ts";
 import { stepInput, stepOutput } from "./step-details.ts";
+import { compare, fileDiff, snapshot, type RunChange, type Snapshot } from "./run-changes.ts";
 
 type Target = {
   provider: AgentProvider;
@@ -29,6 +32,10 @@ type Target = {
   key?: string;
   sessionId?: string;
   model?: string;
+  effort?: AgentEffort;
+  mode?: AgentEditMode;
+  /** Resume into a new session that starts from this one (Claude). */
+  fork?: boolean;
 };
 type Entry = {
   view: AgentRun;
@@ -36,7 +43,7 @@ type Entry = {
   child?: ChildProcessWithoutNullStreams;
   clients: Set<ServerResponse>;
   inputs: Map<string, unknown>;
-  decisions: { tool: string; allowed: boolean }[];
+  decisions: { tool: string; allowed: boolean; at?: string }[];
   timer?: ReturnType<typeof setTimeout>;
   updates?: ReturnType<typeof setTimeout>;
   reason?: string;
@@ -45,6 +52,9 @@ type Entry = {
   claudeText: string;
   partial: string;
   claudeThinking?: { id: string; index: number };
+  /** Repository state when the run started; null outside a repository. */
+  before?: Snapshot | null;
+  changes?: Promise<{ root: string | null; files: RunChange[] }>;
 };
 
 const outputLimit = 60_000;
@@ -99,6 +109,45 @@ export class AgentRunner {
 
   inspect(id: string) {
     return this.runs.get(id)?.view ?? null;
+  }
+
+  /** Approvals given in one session, read from the saved run logs. */
+  async approvals(sessionId: string) {
+    const directory = join(this.directory, "agent-runs");
+    const names = await readdir(directory).catch(() => [] as string[]);
+    const files = await Promise.all(
+      names
+        .filter((name) => name.endsWith(".json"))
+        .slice(-2000)
+        .map(async (name) => {
+          const path = join(directory, name);
+          return { path, mtime: (await stat(path).catch(() => null))?.mtimeMs ?? 0 };
+        }),
+    );
+    // The newest 300 logs are enough for a session's overview.
+    files.sort((a, b) => b.mtime - a.mtime);
+    const found: { tool: string; allowed: boolean; at: string; runId: string }[] = [];
+    for (const { path } of files.slice(0, 300)) {
+      const record = await readFile(path, "utf8")
+        .then((text) => JSON.parse(text) as { id?: string; sessionId?: string; decisions?: Entry["decisions"]; finishedAt?: string })
+        .catch(() => null);
+      if (!record || record.sessionId !== sessionId || !Array.isArray(record.decisions)) continue;
+      for (const decision of record.decisions)
+        if (typeof decision?.tool === "string")
+          found.push({
+            tool: decision.tool,
+            allowed: decision.allowed === true,
+            at: decision.at ?? record.finishedAt ?? "",
+            runId: String(record.id ?? ""),
+          });
+    }
+    // Runs still open have not written a log yet.
+    for (const entry of this.runs.values())
+      if (entry.view.sessionId === sessionId)
+        for (const decision of entry.decisions)
+          found.push({ tool: decision.tool, allowed: decision.allowed, at: decision.at ?? "", runId: entry.view.id });
+    const unique = new Map(found.map((item) => [`${item.runId}|${item.at}|${item.tool}`, item]));
+    return [...unique.values()].sort((a, b) => a.at.localeCompare(b.at));
   }
 
   async start(target: Target, message: string) {
@@ -219,9 +268,12 @@ export class AgentRunner {
     try {
       await verifyAgentLogin(provider, command, folder, env);
       if (run.view.status === "stopping") return this.finish(run);
+      run.before = await snapshot(folder).catch(() => null);
+      // A Stop may arrive while the snapshot is read.
+      if ((run.view.status as AgentRun["status"]) === "stopping") return this.finish(run);
       const child = spawn(
         command.file,
-        [...command.args, ...agentArgs(provider, sessionId, run.view.model)],
+        [...command.args, ...agentArgs(provider, sessionId, run.view.model, run.view.effort, run.view.mode, run.view.fork)],
         {
           cwd: folder,
           env,
@@ -543,7 +595,7 @@ export class AgentRunner {
       throw Error("This approval request is unavailable.");
     const input = run.inputs.get(requestId);
     this.removePermission(run, requestId);
-    run.decisions.push({ tool: request.tool, allowed: allow });
+    run.decisions.push({ tool: request.tool, allowed: allow, at: new Date().toISOString() });
     this.write(run, {
       type: "control_response",
       response: {
@@ -588,6 +640,34 @@ export class AgentRunner {
     } else if (!run.updates && run.clients.size) {
       run.updates = setTimeout(() => this.publish(run, true), 80);
     }
+  }
+
+  /** Files the finished run created, changed or deleted. */
+  changes(id: string) {
+    const run = this.runs.get(id);
+    if (!run) throw Error("Run was not found.");
+    if (agentBusy(run.view)) throw Error("The run is still working.");
+    run.changes ??= (async () => {
+      const after = run.before ? await snapshot(run.view.folder).catch(() => null) : null;
+      if (run.before && after) return { root: after.root, files: compare(run.before, after) };
+      // Outside a repository: the files its edit steps named.
+      const named = new Set<string>();
+      for (const item of run.view.activities ?? [])
+        if (item.status === "completed" && item.input?.file_path && /^(Edit|MultiEdit|Write|NotebookEdit)$/.test(item.label))
+          named.add(item.input.file_path);
+      return {
+        root: null,
+        files: [...named].slice(0, 200).map((path) => ({ path, status: "M" as const, add: 0, del: 0 })),
+      };
+    })();
+    return run.changes;
+  }
+
+  async diff(id: string, path: string) {
+    const { root, files } = await this.changes(id);
+    const change = files.find((file) => file.path === path);
+    if (!root || !change) throw Error("That file is not among this run's changes.");
+    return fileDiff(root, change);
   }
 
   stop(id: string, reason?: string) {

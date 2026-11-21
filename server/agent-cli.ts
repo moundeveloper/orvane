@@ -5,7 +5,12 @@ import { dirname, isAbsolute, join } from "node:path";
 import { execFile, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { promisify } from "node:util";
-import { agentNames, type AgentProvider } from "../src/agentSessions.ts";
+import {
+  agentNames,
+  type AgentEditMode,
+  type AgentEffort,
+  type AgentProvider,
+} from "../src/agentSessions.ts";
 
 const execute = promisify(execFile);
 export type AgentCommand = { file: string; args: string[] };
@@ -283,10 +288,18 @@ export async function verifyAgentLogin(
   throw Error(loginHint(provider));
 }
 
+const claudeModes: Record<AgentEditMode, string> = {
+  ask: "default",
+  auto: "acceptEdits",
+  plan: "plan",
+};
 export function agentArgs(
   provider: AgentProvider,
   sessionId?: string,
   model?: string,
+  effort?: AgentEffort,
+  mode?: AgentEditMode,
+  fork?: boolean,
 ) {
   if (provider === "claude")
     return [
@@ -299,15 +312,21 @@ export function agentArgs(
       "--include-partial-messages",
       "--permission-prompt-tool=stdio",
       "--permission-mode",
-      "default",
+      claudeModes[mode ?? "ask"],
+      ...(effort ? ["--effort", effort] : []),
       ...(model ? ["--model", model] : []),
       ...(sessionId ? ["--resume", sessionId] : []),
+      ...(sessionId && fork ? ["--fork-session"] : []),
     ];
   return [
     "-a",
     "never",
     "-s",
-    "workspace-write",
+    mode === "plan" ? "read-only" : "workspace-write",
+    // Codex's highest effort is called xhigh.
+    ...(effort
+      ? ["-c", `model_reasoning_effort="${effort === "max" ? "xhigh" : effort}"`]
+      : []),
     "-c",
     'model_provider="openai"',
     "-c",
