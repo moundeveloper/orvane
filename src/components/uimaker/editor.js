@@ -189,6 +189,18 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
     frame.onload = () => {
       const d = frame.contentDocument;
       if (!d) return;
+      // Live mode (I) lets the pointer reach the component, so its Ctrl+wheel
+      // lands inside the iframe; replay it on the frame so the canvas zooms.
+      d.addEventListener('wheel', e => {
+        if (!e.ctrlKey && !e.metaKey) return;
+        e.preventDefault();
+        const r = frame.getBoundingClientRect(), k = frame.offsetWidth ? r.width / frame.offsetWidth : 1;
+        frame.dispatchEvent(new WheelEvent('wheel', {
+          clientX: r.left + e.clientX * k, clientY: r.top + e.clientY * k,
+          deltaX: e.deltaX, deltaY: e.deltaY, deltaMode: e.deltaMode,
+          ctrlKey: e.ctrlKey, metaKey: e.metaKey, bubbles: true, cancelable: true,
+        }));
+      }, { passive: false });
       const settle = final => {
         applyTweaks(d, cur(model.state.tweaks));
         ui.h = c.height || measureFrame(frame);
@@ -272,11 +284,13 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
       const x = bounds ? bounds.x + bounds.w / 2 : n.x;
       const y = bounds ? bounds.y + bounds.h / 2 : n.y;
       const pinX = ui.px + x * ui.zoom;
-      let left = n.lx < x;
+      // A dragged label keeps the side it was dropped on (see labelDown).
+      let left = n.labelMoved && typeof n.labelLeft === 'boolean' ? n.labelLeft : n.lx < x;
       let anchor = ui.px + n.lx * ui.zoom;
       // A label that would run past the view's edge flips to the pin's other
-      // side or slides back inside, at any view width.
-      if (pinX >= 0 && pinX <= width) {
+      // side or slides back inside, at any view width. A label the user has
+      // dragged stays exactly where it was put, like it does vertically.
+      if (!n.labelMoved && pinX >= 0 && pinX <= width) {
         const labelWidth = el.offsetWidth;
         const margin = 8;
         if (!left && anchor + labelWidth > width - margin) {
@@ -298,13 +312,22 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
   function labelDown(e, n) {
     if (editing || e.button) return;
     e.preventDefault();
-    const ox = (parseFloat(e.currentTarget.style.left) - ui.px) / ui.zoom;
+    // The box follows the cursor; which end hangs on the leader line (the
+    // side of the pin) follows from where the box is, so it never jumps.
+    const el = e.currentTarget, w = el.offsetWidth;
+    const boxLeft = parseFloat(el.style.left) - (el.classList.contains('left') ? w : 0);
     if (ui.note !== n.id) selectNote(n.id);
-    const sx = e.clientX, sy = e.clientY, oy = n.ly, k = ui.zoom * S(); let moved = false;
+    const sx = e.clientX, sy = e.clientY, oy = n.ly, s = S(), k = ui.zoom * s; let moved = false;
     const mv = m => {
       if (!moved && Math.hypot(m.clientX - sx, m.clientY - sy) < 3) return;
-      if (!moved) { snap(); moved = true; }
-      n.lx = ox + (m.clientX - sx) / k; n.ly = oy + (m.clientY - sy) / k; draw();
+      if (!moved) { snap(); moved = true; n.labelMoved = true; }
+      const target = n.elementPin ? resolveTarget(n) : null, bounds = target ? rectOf(target) : null;
+      const pinX = ui.px + (bounds ? bounds.x + bounds.w / 2 : n.x) * ui.zoom;
+      const left = boxLeft + (m.clientX - sx) / s;
+      n.labelLeft = left + w / 2 < pinX;
+      n.lx = ((n.labelLeft ? left + w : left) - ui.px) / ui.zoom;
+      n.ly = oy + (m.clientY - sy) / k;
+      draw();
     };
     const up = () => { window.removeEventListener('pointermove', mv); if (moved) save(); };
     on(window, 'pointermove', mv); on(window, 'pointerup', up, { once: true });

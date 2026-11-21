@@ -41,7 +41,7 @@ function drawLeader(g, n, k) {
 }
 function drawSvgLabel(g, n, i) {
   const name = noteName(n, i), w = name.length * 6.5 + 20, hgt = 22;
-  const x = n.lx < n.x ? n.lx - w : n.lx, y = n.ly - hgt / 2;
+  const x = (typeof n.labelLeft === 'boolean' ? n.labelLeft : n.lx < n.x) ? n.lx - w : n.lx, y = n.ly - hgt / 2;
   sv('rect', { x, y, width: w, height: hgt, rx: 11, fill: PAPER, stroke: n.color, 'stroke-width': 1.25 }, g);
   txt(g, name, { x: x + 10, y: y + 15, fill: INK, 'font-size': 11.5, 'font-weight': 500 });
 }
