@@ -121,6 +121,12 @@ export function uimakerApi(directory: string): Plugin {
         const out = await s.brief(String(body.c), Number(body.v));
         return reply(200, { dir: out.dir, brief: out.brief, next: out.next, warnings: out.warnings });
       }
+      // Lab: the editor picks; starting rounds and writing variants
+      // are here too so tests and other local tools can drive the same service.
+      if (operation === "lab-pick") return reply(200, await s.labPick(String(body.c), String(body.variant), body.round ? String(body.round) : undefined));
+      if (operation === "lab-start")
+        return reply(200, await s.labStart(String(body.c), String(body.title || ""), body.kind === "new" ? "new" : "redesign"));
+      if (operation === "lab-write") return reply(200, await s.labWrite(String(body.c), body));
       return reply(404, { error: "Unknown UI Maker operation." });
     } catch (error) {
       reply(400, { error: error instanceof Error ? error.message : "UI Maker could not complete that." });

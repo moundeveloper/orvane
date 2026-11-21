@@ -14,6 +14,7 @@ import { renderOverlay, applyTweaks, measureFrame, describe, rectOf, cssPath, no
 export const API = '/__orvane/uimaker/';
 export const compUrl = (c, v, t) => `${API}files/c/${encodeURIComponent(c)}/v${v}/index.html${t ? '?t=' + Math.round(t) : ''}`;
 export const refUrl = file => API + 'files/refs/' + encodeURIComponent(file);
+export const labUrl = (c, round, variant, t) => `${API}files/c/${encodeURIComponent(c)}/lab/${round}/${variant}.html${t ? '?t=' + Math.round(t) : ''}`;
 
 // ---------- tiny helpers ----------
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -47,9 +48,10 @@ export const BTOOLS = [['move', 'move', 'Move, select, pan (V)'], ['pen', 'pen',
 export const PROPS = ['width', 'height', 'padding', 'margin', 'gap', 'border-radius', 'font-size', 'font-weight', 'line-height', 'letter-spacing', 'color', 'background-color', 'border', 'box-shadow', 'opacity'];
 export function createEditorModel() {
   const ui = reactive({ c: null, v: null, h: 300, mode: 'review', tool: 'select', color: COLORS[0][0], size: 3, note: null, el: null, zoom: 1, px: 80, py: 60, tab: 'notes',
-  board: 'global', btool: 'move', bcolor: COLORS[0][0], ref: null, bpin: null, cmp: { against: 'prev', val: 50 }, compareHeight: 0 });
+  board: 'global', btool: 'move', bcolor: COLORS[0][0], ref: null, bpin: null, cmp: { against: 'prev', val: 50 }, compareHeight: 0,
+  labRound: null, labVariant: null });
   return reactive({
-    ui, state: null, versions: {}, feed: [],
+    ui, state: null, versions: {}, feed: [], lab: {},
     library: false, toast: '', help: false, newOpen: false, error: '', elementPreview: '',
   });
 }
@@ -897,6 +899,12 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
       return handled();
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (ui.mode === 'lab') {
+      const round = (model.lab[ui.c] || []).find(r => r.id === ui.labRound);
+      const variant = /^[1-9]$/.test(key) && round?.variants[+key - 1];
+      if (variant) { ui.labVariant = variant.id; handled(); }
+      return;
+    }
     const o = bowner();
     if (e.key === 'Delete' || e.key === 'Backspace') {
       if (ui.bpin && o) { handled(); snap(); o.bpins = o.bpins.filter(p => p.id !== ui.bpin); ui.bpin = null; save(); return renderBoard(); }
@@ -916,7 +924,7 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
 
   // ---------- live link ----------
   async function pullVersions() { model.versions = (await post('versions')).versions; }
-  async function pullFeed() { model.feed = (await post('state')).feed; }
+  async function pullFeed() { const r = await post('state'); model.feed = r.feed; model.lab = r.lab || {}; }
   function listen() {
     events = new EventSource(API + 'events');
     events.onmessage = async m => {
@@ -930,7 +938,8 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
         ui.v = latest; ui.note = null; ui.ref = ui.bpin = null; ui.board = 'global';
         rememberView();
         refreshCanvases(); loadFrame();
-        toast(`Agent delivered v${latest}. Compare it with v${wasLatest}, then review again.`, 6000);
+        if (vers().at(-1)?.response?.lab) toast(`Picked variant saved as v${latest}.`, 4000);
+        else toast(`Agent delivered v${latest}. Compare it with v${wasLatest}, then review again.`, 6000);
       } else {
         if (ver()?.mtime !== wasM) loadFrame();
         syncCompareTarget();
@@ -942,7 +951,7 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
   async function init() {
     const r = await post('state');
     if (lifetime.signal.aborted) return;
-    model.state = r.state; model.versions = r.versions; model.feed = r.feed;
+    model.state = r.state; model.versions = r.versions; model.feed = r.feed; model.lab = r.lab || {};
     model.state.notes ||= []; model.state.strokes ||= []; model.state.tweaks ||= [];
     for (const n of model.state.notes) n.refs ||= [];
     for (const c of model.state.components) c.refs ||= [];
@@ -973,5 +982,9 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
     setTool, setColor, setBoardColor, selectNote, deleteNote, updateNoteTitle,
     updateNoteColor, setTweak, removeTweak, selectBoard, updateCaption,
     toggleTarget, removeRef, measure, save, copyPrompt, exportBrief, fit,
+    async labPick(round, variant) {
+      try { const r = await post('lab-pick', { c: ui.c, round, variant }); await pullFeed(); return r; }
+      catch (error) { toast(error.message, 5000); }
+    },
   };
 }

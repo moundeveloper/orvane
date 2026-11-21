@@ -259,3 +259,29 @@
 @media (prefers-reduced-motion: reduce) {
   .uimaker .toast { transition: none; }
 }
+
+/* ---------- lab: variants of one round as tabs, rounds in the side panel ---------- */
+.uimaker .lab { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.uimaker .lab-bar { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px; border-bottom: 1px solid var(--um-line); flex: none; min-width: 0; }
+.uimaker .lab-kind { flex: none; padding: 1px 6px; border-radius: 5px; font-size: 10.5px; line-height: 16px; color: var(--um-mut); background: var(--um-well); }
+.uimaker .lab-title { color: var(--um-strong); font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; flex: none; }
+.uimaker .lab-tabs { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.uimaker .lab-tabs::-webkit-scrollbar { display: none; }
+.uimaker .lab-tabs button { white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+.uimaker .lab-won { width: 5px; height: 5px; border-radius: 50%; background: var(--um-green); }
+.uimaker .lab-stage { position: relative; flex: 1; min-height: 0; background: var(--um-canvas); }
+.uimaker .lab-stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--um-card); }
+.uimaker .lab-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--um-dim); }
+/* In the Lab the side panel shows only the rounds. */
+.uimaker .right.lab-side > :not(.lab-rounds) { display: none !important; }
+.uimaker .lab-rounds { display: flex; flex-direction: column; min-height: 0; padding: 12px 10px; gap: 6px; overflow-y: auto; }
+.uimaker .lab-rounds h3 { margin: 0 4px 2px; font-size: 11px; font-weight: 500; color: var(--um-dim); }
+.uimaker .lab-rounds nav { display: flex; flex-direction: column; gap: 2px; }
+.uimaker .lab-round { display: flex; flex-direction: column; gap: 2px; padding: 7px 8px; border-radius: 7px; text-align: left; }
+.uimaker .lab-round:hover { background: var(--um-hover); }
+.uimaker .lab-round.on { background: var(--um-card); box-shadow: inset 0 0 0 1px var(--um-line2); }
+.uimaker .lab-round-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.uimaker .lab-round-top b { color: var(--um-strong); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uimaker .lab-now { flex: none; padding: 0 5px; border-radius: 4px; font-size: 10px; line-height: 15px; color: #fff; background: var(--um-accent); }
+.uimaker .lab-round-meta { display: flex; gap: 8px; color: var(--um-dim); font-size: 11px; white-space: nowrap; overflow: hidden; }
+.uimaker .lab-none { margin: 4px; color: var(--um-dim); }

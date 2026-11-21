@@ -46,12 +46,14 @@ if (board) {
   ready();
 } else {
   const frame = document.getElementById('frame'), ov = document.getElementById('ov');
-  frame.style.width = comp.width + 'px';
+  // A lab variant is a whole page: render it at the viewport size it was given.
+  const lab = q.get('lab'), lw = +q.get('w') || 1280, lh = +q.get('h') || 800;
+  frame.style.width = (lab ? lw : comp.width) + 'px';
   frame.onload = async () => {
     const d = frame.contentDocument;
     try { await d.fonts.ready; } catch {}
-    applyTweaks(d, of(state.tweaks));
-    const h = comp.height || measureFrame(frame);
+    if (!lab) applyTweaks(d, of(state.tweaks));
+    const h = lab ? lh : comp.height || measureFrame(frame);
     frame.style.height = h + 'px';
     if (annot) {
       document.getElementById('shot').classList.add('annot');
@@ -61,7 +63,7 @@ if (board) {
     }
     ready();
   };
-  frame.src = `c/${encodeURIComponent(c)}/v${v}/index.html`;
+  frame.src = lab ? `c/${encodeURIComponent(c)}/lab/${lab}.html` : `c/${encodeURIComponent(c)}/v${v}/index.html`;
 }
 </script>
 </body>

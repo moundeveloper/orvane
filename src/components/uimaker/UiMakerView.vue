@@ -7,6 +7,8 @@ import CustomSelect from '../CustomSelect.vue';
 import CustomNumber from '../CustomNumber.vue';
 import UiIcon from './UiIcon.vue';
 import ReviewPanel from './ReviewPanel.vue';
+import LabView from './LabView.vue';
+import LabRounds from './LabRounds.vue';
 import { measureFrame } from './overlay.js';
 import { createEditorModel, mountEditor, COLORS, TOOLS, BTOOLS, compUrl, refUrl } from './editor.js';
 
@@ -214,11 +216,11 @@ watch(() => [component.value?.width, component.value?.height, ui.h], () => {
       </nav>
       <div v-show="!model.library" class="editor-controls">
         <div class="pills">
-          <button v-for="mode in ['review', 'inspect', 'compare']" :key="mode" :class="{ on: ui.mode === mode }"
+          <button v-for="mode in ['review', 'inspect', 'compare', 'lab']" :key="mode" :class="{ on: ui.mode === mode }"
             :disabled="!component" @click="editor.setMode(mode)">{{ mode[0].toUpperCase() + mode.slice(1) }}</button>
         </div>
         <div class="spacer"></div>
-        <div class="size" title="Artboard width × height">
+        <div v-show="ui.mode !== 'lab'" class="size" title="Artboard width × height">
           <CustomNumber v-model="sizeDraft.width" :min="40" :max="3000" :disabled="!component" aria-label="Artboard width"
             @change="editor.resize('width', $event)" />
           <span>×</span>
@@ -227,7 +229,7 @@ watch(() => [component.value?.width, component.value?.height, ui.h], () => {
           <button class="auto" :class="{ on: component && !component.height }" :disabled="!component"
             title="Height follows the content" @click="editor.resize('height', component.height ? 0 : Math.round(ui.h))">Auto</button>
         </div>
-        <div class="field zoom">
+        <div v-show="ui.mode !== 'lab'" class="field zoom">
           <button data-el="zOut" title="Zoom out">−</button><span>{{ Math.round(ui.zoom * 100) }}%</span>
           <button data-el="zIn" title="Zoom in">+</button><button data-el="zFit">Fit</button>
         </div>
@@ -247,7 +249,8 @@ watch(() => [component.value?.width, component.value?.height, ui.h], () => {
       <p v-else class="empty">No components yet.</p>
     </section>
 
-    <section v-show="!model.library" class="viewport" data-el="viewport">
+    <LabView v-if="!model.library && component && ui.mode === 'lab'" :model="model" :editor="editor" />
+    <section v-show="!model.library && ui.mode !== 'lab'" class="viewport" data-el="viewport">
       <div class="stage" data-el="stage">
         <div class="artboard" data-el="artboard" :style="{ minHeight: comparedHeight + 'px', '--handle-scale': 1 / ui.zoom }">
           <iframe data-el="frame" title="Component" scrolling="no" @load="hidePreviewScrollbars($event.target)"></iframe>
@@ -300,7 +303,8 @@ watch(() => [component.value?.width, component.value?.height, ui.h], () => {
     </section>
   </main>
 
-  <aside v-show="!model.library" class="right" data-el="right">
+  <aside v-show="!model.library" class="right" :class="{ 'lab-side': ui.mode === 'lab' }" data-el="right">
+    <LabRounds v-if="ui.mode === 'lab' && component" :model="model" />
     <div v-if="component" class="card">
       <div class="head">
         <h3>{{ component.name }}</h3>

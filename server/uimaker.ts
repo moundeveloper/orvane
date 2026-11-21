@@ -38,7 +38,14 @@ export interface Note extends Board {
 interface Stroke { id: string; c: string; v: number; tool: string; color: string; size: number; pts: Pt[]; note: string | null; target: Target }
 interface Tweak { id: string; c: string; v: number; selector: string; prop: string; value: string; from?: string }
 export interface UiState { name?: string; components: Component[]; notes: Note[]; strokes: Stroke[]; tweaks: Tweak[] }
-export interface Version { n: number; mtime: number; response: { summary?: string; notes?: Record<string, string> } | null }
+export interface Version { n: number; mtime: number; response: { summary?: string; notes?: Record<string, string>; lab?: { round: string; variant: string } } | null }
+export type LabKind = "redesign" | "new";
+export interface LabVariant { id: string; label: string; at: number; mtime?: number }
+export interface LabRound {
+  id: string; title: string; kind: LabKind; base: number | null;
+  status: "open" | "picked" | "closed"; picked?: string; pickedAs?: number; at: number; variants: LabVariant[];
+}
+export interface LabEdit { find: string; replace: string; all?: boolean }
 export interface FeedItem { id: string; at: number; kind: string; c?: string; text: string }
 export interface BriefImage { file: string; path: string; label: string }
 
@@ -172,7 +179,7 @@ export class UiMakerService {
     return out;
   }
   async snapshot() {
-    return { state: this.readState(), versions: await this.allVersions(), feed: this.readFeed() };
+    return { state: this.readState(), versions: await this.allVersions(), feed: this.readFeed(), lab: await this.allLab() };
   }
   /** Creates v1 for a new component; the editor adds it to its state. */
   async createFolder(name: string) {
@@ -209,24 +216,133 @@ export class UiMakerService {
     return { v: n, path: unix(file), html: await fsp.readFile(file, "utf8") };
   }
   /** Writes the next iteration. Never overwrites an existing version. */
-  async deliver(id: string, html: string, summary: string, notes: Record<string, string> = {}) {
+  async deliver(id: string, html: string, summary: string, notes: Record<string, string> = {}, lab?: { round: string; variant: string }) {
     this.component(id);
     if (!html.trim()) throw Error("The iteration HTML is empty.");
     const next = Math.max(0, ...(await this.versions(id)).map((x) => x.n)) + 1;
     const dir = path.join(this.components, id, `v${next}`);
     await fsp.mkdir(dir); // fails if a concurrent delivery already took this number
     // response.json first: the editor switches versions when index.html appears.
-    await fsp.writeFile(path.join(dir, "response.json"), JSON.stringify({ summary, notes }, null, 2) + "\n");
+    await fsp.writeFile(path.join(dir, "response.json"), JSON.stringify(lab ? { summary, notes, lab } : { summary, notes }, null, 2) + "\n");
     await fsp.writeFile(path.join(dir, "index.html"), html);
     this.addFeed("iteration", id, `v${next} delivered${summary ? " — " + summary : ""}`);
     return { v: next, path: unix(path.join(dir, "index.html")) };
   }
+  // ---------- lab: rounds of side-by-side variants ----------
+  // components/<c>/lab/<round>/round.json lists the round and its variants;
+  // each variant is one self-contained page, <variant>.html, next to it.
+  // A round is "open" while it is being worked on; picking a variant writes
+  // it as the component's next iteration and closes the round.
+  private labDir(c: string, round?: string) {
+    const dir = path.join(this.components, c, "lab");
+    if (round === undefined) return dir;
+    if (!ID.test(round)) throw Error("Invalid lab round ID.");
+    return path.join(dir, round);
+  }
+  async labRounds(c: string): Promise<LabRound[]> {
+    const out: LabRound[] = [];
+    for (const d of await fsp.readdir(this.labDir(c)).catch(() => [] as string[])) {
+      let round: LabRound;
+      try { round = JSON.parse(await fsp.readFile(path.join(this.labDir(c), d, "round.json"), "utf8")); } catch { continue; }
+      for (const v of round.variants) {
+        v.mtime = (await fsp.stat(path.join(this.labDir(c), d, `${v.id}.html`)).catch(() => undefined))?.mtimeMs ?? 0;
+      }
+      out.push(round);
+    }
+    return out.sort((a, b) => b.at - a.at);
+  }
+  async allLab() {
+    const out: Record<string, LabRound[]> = {};
+    for (const c of this.readState().components) {
+      const rounds = await this.labRounds(c.id);
+      if (rounds.length) out[c.id] = rounds;
+    }
+    return out;
+  }
+  private async saveRound(c: string, round: LabRound) {
+    const clean = { ...round, variants: round.variants.map(({ mtime: _m, ...v }) => v) };
+    await fsp.writeFile(path.join(this.labDir(c, round.id), "round.json"), JSON.stringify(clean, null, 2) + "\n");
+  }
+  /** The named round, or the open one when no ID is given. */
+  async labRound(c: string, id?: string) {
+    this.component(c);
+    const rounds = await this.labRounds(c);
+    const round = id ? rounds.find((r) => r.id === id) : rounds.find((r) => r.status === "open");
+    if (!round) throw Error(id ? `Component "${c}" has no lab round "${id}".` : `Component "${c}" has no open lab round. Start one with uimaker_lab_round.`);
+    return round;
+  }
+  /** Starts a new round and makes it the open one; an earlier open round is closed. */
+  async labStart(c: string, title: string, kind: LabKind) {
+    this.component(c);
+    title = title.trim().slice(0, 60);
+    if (!title) throw Error("A lab round needs a title.");
+    const rounds = await this.labRounds(c);
+    for (const r of rounds.filter((r) => r.status === "open")) await this.saveRound(c, { ...r, status: "closed" });
+    const n = Math.max(0, ...rounds.map((r) => Number(/^r(\d+)$/.exec(r.id)?.[1] ?? 0))) + 1;
+    const latest = (await this.versions(c)).at(-1)?.n ?? null;
+    const round: LabRound = { id: `r${n}`, title, kind, base: latest, status: "open", at: Date.now(), variants: [] };
+    await fsp.mkdir(this.labDir(c, round.id), { recursive: true });
+    await this.saveRound(c, round);
+    this.addFeed("lab", c, `Lab round started: ${title}`);
+    return round;
+  }
+  async labRead(c: string, variant: string, roundId?: string) {
+    const round = await this.labRound(c, roundId);
+    if (!round.variants.some((v) => v.id === variant)) throw Error(`Round "${round.id}" has no variant "${variant}".`);
+    const file = path.join(this.labDir(c, round.id), `${variant}.html`);
+    return { round, path: unix(file), html: await fsp.readFile(file, "utf8") };
+  }
+  /** Writes a variant: whole HTML, or exact find/replace edits applied to an
+   * existing variant (`from`, default the variant itself). Returns its size. */
+  async labWrite(c: string, input: {
+    variant: string; label?: string; round?: string; html?: string; from?: string; edits?: LabEdit[];
+  }) {
+    const round = await this.labRound(c, input.round);
+    if (round.status !== "open") throw Error(`Round "${round.id}" is ${round.status}; start a new round to add variants.`);
+    if (!ID.test(input.variant)) throw Error("Variant IDs use lowercase letters, digits and dashes.");
+    const existing = round.variants.find((v) => v.id === input.variant);
+    let html = input.html;
+    if (html === undefined) {
+      const source = input.from ?? (existing ? input.variant : undefined);
+      if (!source) throw Error("Give html, or edits with `from` (a variant to start from).");
+      html = (await this.labRead(c, source, round.id)).html;
+    }
+    for (const [i, edit] of (input.edits ?? []).entries()) {
+      const count = html.split(edit.find).length - 1;
+      if (!edit.find || count === 0) throw Error(`Edit ${i + 1}: the text to find is not in the page.`);
+      if (count > 1 && !edit.all) throw Error(`Edit ${i + 1}: the text to find occurs ${count} times; make it unique or set all.`);
+      html = edit.all ? html.split(edit.find).join(edit.replace) : html.replace(edit.find, () => edit.replace);
+    }
+    if (!html.trim()) throw Error("The variant HTML is empty.");
+    const label = (input.label ?? existing?.label ?? input.variant).trim().slice(0, 24);
+    await fsp.writeFile(path.join(this.labDir(c, round.id), `${input.variant}.html`), html);
+    if (existing) existing.label = label;
+    else round.variants.push({ id: input.variant, label, at: Date.now() });
+    await this.saveRound(c, round);
+    return { round: round.id, variant: input.variant, label, bytes: Buffer.byteLength(html) };
+  }
+  /** PNG of a lab variant as a whole page at the given viewport size. */
+  async labShot(c: string, variant: string, { round: roundId, width = 1280, height = 800 }: { round?: string; width?: number; height?: number } = {}) {
+    const round = await this.labRound(c, roundId);
+    if (!round.variants.some((v) => v.id === variant)) throw Error(`Round "${round.id}" has no variant "${variant}".`);
+    return this.shot(c, 0, { lab: `${round.id}/${variant}`, width, height });
+  }
+  /** Picks the winning variant: it becomes the next iteration and the round closes. */
+  async labPick(c: string, variant: string, roundId?: string) {
+    const { round, html } = await this.labRead(c, variant, roundId);
+    if (round.status === "picked") throw Error(`Round "${round.id}" already picked "${round.picked}" as v${round.pickedAs}.`);
+    const label = round.variants.find((v) => v.id === variant)!.label;
+    const out = await this.deliver(c, html, `${round.title} · ${label}`, {}, { round: round.id, variant });
+    await this.saveRound(c, { ...round, status: "picked", picked: variant, pickedAs: out.v });
+    return { v: out.v, round: round.id, variant };
+  }
+
   /** Calls back (debounced) when an iteration or response file changes. */
   watch(listener: () => void) {
     fs.mkdirSync(this.components, { recursive: true });
     let timer: ReturnType<typeof setTimeout> | undefined;
     const watcher = fs.watch(this.components, { recursive: true }, (_e, file) => {
-      if (file && !/(index\.html|response\.json)$/.test(file) && /\./.test(path.basename(file))) return;
+      if (file && !/(index\.html|response\.json|round\.json)$|[\\/]lab[\\/].+\.html$/.test(file) && /\./.test(path.basename(file))) return;
       clearTimeout(timer);
       timer = setTimeout(listener, 500);
     });
@@ -282,13 +398,13 @@ export class UiMakerService {
     return this.browser;
   }
   /** PNG of a version (clean or annotated) or of a reference board ("global" or a note ID). */
-  async shot(c: string, v: number, { annot = false, board = "", state = this.readState() } = {}) {
+  async shot(c: string, v: number, { annot = false, board = "", state = this.readState(), lab = "", width = 1280, height = 800 } = {}) {
     const [browser, { base }] = await Promise.all([this.launch(), this.renderServer()]);
     const token = randomUUID();
     this.renderStates.set(token, state);
-    const page = await browser.newPage({ viewport: { width: 1400, height: 900 }, deviceScaleFactor: 2 });
+    const page = await browser.newPage({ viewport: { width: lab ? width : 1400, height: lab ? height : 900 }, deviceScaleFactor: lab ? 1 : 2 });
     try {
-      const query = `c=${encodeURIComponent(c)}&v=${v}&annot=${annot ? 1 : 0}${board ? "&board=" + encodeURIComponent(board) : ""}`;
+      const query = `c=${encodeURIComponent(c)}&v=${v}&annot=${annot ? 1 : 0}${board ? "&board=" + encodeURIComponent(board) : ""}${lab ? `&lab=${lab}&w=${width}&h=${height}` : ""}`;
       await page.goto(`${base}/s/${token}/shot.html?${query}`, { waitUntil: "networkidle", timeout: 20000 });
       await page.waitForFunction("window.__ready === true", undefined, { timeout: 15000 });
       const el = await page.$(board ? "#bsvg" : "#shot");
