@@ -204,7 +204,8 @@ test("arrow keys drive the open wheel: Left/Right select, Up enters a group, Dow
   await expect(page.locator("main")).toHaveAttribute("data-ready", "true");
   await page.mouse.move(720, 450);
   await page.locator(".canvas-background").click({ position: { x: 20, y: 300 } });
-  const selected = page.locator(".radial-entry.selected");
+  // The level being left fades out for a moment; only the live one counts.
+  const selected = page.locator(".radial-layer:not(.leaving) .radial-entry.selected");
   await page.keyboard.down("Alt");
   await page.keyboard.down("q");
   await expect(page.getByLabel("Action wheel")).toBeVisible();
@@ -230,4 +231,118 @@ test("arrow keys drive the open wheel: Left/Right select, Up enters a group, Dow
   await page.keyboard.up("Alt");
   await expect(page.locator(".radial-overlay")).toHaveCount(0);
   await expect(page.locator(".dock-tab.active")).toHaveText("Gamma");
+});
+
+test("the wheel is a frosted Halo ring and levels crossfade in place", async ({
+  page,
+}) => {
+  const { emptyWorkspace, makeBlock } = await import("../src/model");
+  const workspace = emptyWorkspace();
+  for (const [index, name] of ["Alpha", "Beta"].entries())
+    workspace.apps.push({
+      id: `app-${name.toLowerCase()}`, name, icon: "text",
+      x: 120 + index * 460, y: 180, width: 420, height: 300,
+      blocks: [makeBlock("input")], archived: false, group: "", exposed: false,
+      accent: "#6f8998", padding: 12, gap: 12, radius: 8,
+    });
+  workspace.wheel = [
+    { id: "w-alpha", parent: "", name: "Go Alpha", kind: "app", appId: "app-alpha", bindings: {} },
+    { id: "w-more", parent: "", name: "More", kind: "group", appId: "", bindings: {} },
+    { id: "w-beta", parent: "w-more", name: "Go Beta", kind: "app", appId: "app-beta", bindings: {} },
+  ];
+  await page.addInitScript((data) => {
+    localStorage.setItem("orvane.examples.v1", "installed");
+    localStorage.setItem("orvane.workspace.v1", JSON.stringify(data));
+  }, workspace);
+  await page.goto("/");
+  await expect(page.locator("main")).toHaveAttribute("data-ready", "true");
+  await page.mouse.move(720, 450);
+  await page.locator(".canvas-background").click({ position: { x: 20, y: 300 } });
+  await page.keyboard.down("Alt");
+  await page.keyboard.down("q");
+  const ring = page.getByLabel("Action wheel");
+  await expect(ring).toBeVisible();
+  // Frosted glass like the top bar.
+  await expect(ring).toHaveCSS("backdrop-filter", "blur(8px) saturate(1.2)");
+  await expect(ring).toHaveCSS("background-color", "rgba(247, 250, 252, 0.08)");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  const center = page.locator(".radial-center-text:not(.leaving)");
+  await expect(center).toContainText("More");
+  await expect(center).toContainText("Group · 1 item");
+  await expect(page.locator(".radial-layer:not(.leaving) .radial-glow")).toHaveCSS("opacity", "1");
+  // The center shows the chosen thing's icon above its name.
+  await expect(center.locator(".radial-center-icon svg")).toHaveCount(1);
+  const before = await ring.elementHandle();
+  // Entering a group keeps the ring and center disc; the old level fades out
+  // over the new one, then leaves the DOM.
+  await page.keyboard.press("ArrowUp");
+  await expect(page.locator(".radial-layer.leaving")).toHaveCount(1);
+  await expect(page.locator(".radial-layer")).toHaveCount(2);
+  await expect(page.locator(".radial-layer")).toHaveCount(1);
+  await expect(center).toContainText("‹ More");
+  await expect(center).toContainText("Go Beta");
+  expect(await before!.evaluate((node) => node.isConnected)).toBe(true);
+  await page.screenshot({ path: "artifacts/action-wheel-halo.png" });
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator(".radial-layer")).toHaveCount(1);
+  await expect(page.locator(".radial-layer:not(.leaving) .radial-entry.selected")).toHaveAttribute("aria-label", "More");
+  await page.keyboard.press("Escape");
+  await page.keyboard.up("q");
+  await page.keyboard.up("Alt");
+});
+
+test("the slot glow hands off to the center ring with the pointer, and the wheel animates out", async ({
+  page,
+}) => {
+  const { emptyWorkspace, makeBlock } = await import("../src/model");
+  const workspace = emptyWorkspace();
+  workspace.apps.push({
+    id: "app-alpha", name: "Alpha", icon: "text",
+    x: 120, y: 180, width: 420, height: 300,
+    blocks: [makeBlock("input")], archived: false, group: "", exposed: false,
+    accent: "#6f8998", padding: 12, gap: 12, radius: 8,
+  });
+  workspace.wheel = [
+    { id: "w-alpha", parent: "", name: "Go Alpha", kind: "app", appId: "app-alpha", bindings: {} },
+  ];
+  await page.addInitScript((data) => {
+    localStorage.setItem("orvane.examples.v1", "installed");
+    localStorage.setItem("orvane.workspace.v1", JSON.stringify(data));
+  }, workspace);
+  await page.goto("/");
+  await expect(page.locator("main")).toHaveAttribute("data-ready", "true");
+  const size = page.viewportSize()!;
+  const cx = size.width / 2, cy = size.height / 2;
+  await page.locator(".canvas-background").click({ position: { x: 20, y: 300 } });
+  await page.mouse.move(cx, cy - 150);
+  await page.keyboard.down("Alt");
+  await page.keyboard.down("q");
+  await expect(page.getByLabel("Action wheel")).toBeVisible();
+  const glow = page.locator(".radial-layer:not(.leaving) .radial-glow");
+  const center = page.getByRole("button", { name: "Edit wheel config" });
+  const levels = async () => ({
+    glow: Number(await glow.evaluate((el) => (el as HTMLElement).style.opacity)),
+    ring: Number(await center.evaluate((el) => (el as HTMLElement).style.getPropertyValue("--ring"))),
+  });
+  // On the slot: all glow, no center ring.
+  expect(await levels()).toEqual({ glow: 1, ring: 0 });
+  // At the center's edge: half and half, in step with the distance.
+  await page.mouse.move(cx, cy - 86);
+  const half = await levels();
+  expect(half.glow).toBeGreaterThan(0.4);
+  expect(half.glow).toBeLessThan(0.6);
+  expect(half.glow + half.ring).toBeCloseTo(1, 5);
+  // Inside the center: all ring.
+  await page.mouse.move(cx, cy - 20);
+  expect(await levels()).toEqual({ glow: 0, ring: 1 });
+  await expect(page.locator(".radial-center-text:not(.leaving)")).toContainText("Edit config");
+  // Back on the slot, release: the wheel plays its exit, then leaves the DOM,
+  // and the app is focused straight away.
+  await page.mouse.move(cx, cy - 150);
+  await page.keyboard.up("q");
+  await page.keyboard.up("Alt");
+  await expect(page.locator(".radial-overlay[inert]")).toHaveCount(1);
+  await expect(page.locator(".dock-tab.active")).toHaveText("Alpha");
+  await expect(page.locator(".radial-overlay")).toHaveCount(0);
 });

@@ -29,6 +29,7 @@ import CustomSelect from "./components/CustomSelect.vue";
 import CustomNumber from "./components/CustomNumber.vue";
 import { migrateGroups, groupBounds } from "./groups";
 import { vMotion } from "./motion";
+import { closeWheel, openWheel, wheelLevelHooks, type WheelExit } from "./wheelMotion";
 import { importDrop, importImageData, importImageFile, importPath, mayHoldImage, measure, type PlacedImage } from "./imageDrop";
 import { isImage, peekKind } from "./components/files/explorer";
 import { isBackup, makeBackup, restoreImages } from "./backup";
@@ -2412,6 +2413,7 @@ const wheelCenterSelected = computed(
 );
 async function openWheelConfig(origin?: HTMLElement, reset = false) {
   const source = origin?.getBoundingClientRect();
+  if (wheelOpen.value) wheelExit = "center";
   wheelOpen.value = false;
   panel.value = null;
   if (reset) wheelParent.value = "";
@@ -2534,12 +2536,6 @@ function wheelSegment(index: number) {
     points.push(wheelPoint(start + ((end - start) * i) / 24, 24));
   return `polygon(${points.map((p) => `${p[0]}% ${p[1]}%`).join(",")})`;
 }
-function wheelArc(index: number) {
-  const step = (2 * Math.PI) / wheelSlotCount.value;
-  const a = wheelPoint(index * step - step / 2 + 0.025, 49.5);
-  const b = wheelPoint(index * step + step / 2 - 0.025, 49.5);
-  return `M ${a[0]} ${a[1]} A 49.5 49.5 0 0 1 ${b[0]} ${b[1]}`;
-}
 const wheelSelected = computed(() => {
   if (wheelKeyIndex.value !== null)
     return wheelEntries.value[wheelKeyIndex.value];
@@ -2555,6 +2551,133 @@ const wheelSelected = computed(() => {
       wheelSlotCount.value
   ];
 });
+// Faint dividers between the slots, from just outside the center to the edge.
+const wheelDividers = computed(() => {
+  const step = (2 * Math.PI) / wheelSlotCount.value;
+  return Array.from({ length: wheelSlotCount.value }, (_, i) => {
+    const a = wheelPoint((i + 0.5) * step, 27),
+      b = wheelPoint((i + 0.5) * step, 50);
+    return `M ${a[0]} ${a[1]} L ${b[0]} ${b[1]}`;
+  }).join(" ");
+});
+// The glow fills the top slot right to the ring's edge and is rotated to the
+// selected one, so moving the selection glides it the short way round.
+const wheelGlowShape = computed(() => {
+  const half = Math.PI / wheelSlotCount.value - Math.PI / 180;
+  const points: number[][] = [];
+  for (let i = 0; i <= 24; i++) points.push(wheelPoint(-half + (2 * half * i) / 24, 50));
+  for (let i = 24; i >= 0; i--) points.push(wheelPoint(-half + (2 * half * i) / 24, 27));
+  return `polygon(${points.map((p) => `${p[0]}% ${p[1]}%`).join(",")})`;
+});
+const wheelSelectedIndex = computed(() =>
+  wheelSelected.value
+    ? wheelEntries.value.findIndex((e) => e.id === wheelSelected.value?.id)
+    : -1,
+);
+const wheelGlowDeg = ref(0),
+  wheelGlowJump = ref(true);
+watch(
+  [wheelSelectedIndex, wheelParent],
+  ([index, parent], [previous, previousParent]) => {
+    if (index < 0) return;
+    const target = (index * 360) / wheelSlotCount.value;
+    if (previous < 0 || parent !== previousParent || !wheelOpen.value) {
+      // Appearing (or on a new level): show it in place, don't glide in.
+      wheelGlowJump.value = true;
+      wheelGlowDeg.value = target;
+      void nextTick(() => {
+        void document.body.offsetWidth;
+        wheelGlowJump.value = false;
+      });
+      return;
+    }
+    const last = wheelGlowDeg.value;
+    wheelGlowDeg.value = last + ((((target - last) % 360) + 540) % 360) - 180;
+  },
+);
+// 1 when the wheel goes into a group, -1 when it goes back out.
+let wheelLevelDirection = 1;
+watch(
+  wheelParent,
+  (parent, previous) => {
+    wheelLevelDirection =
+      parent && workspace.wheel?.find((e) => e.id === parent)?.parent === previous
+        ? 1
+        : -1;
+  },
+  { flush: "sync" },
+);
+const wheelLevelMotion = wheelLevelHooks(() => wheelLevelDirection, {
+  duration: 240,
+  scale: true,
+});
+const wheelCenterMotion = wheelLevelHooks(() => wheelLevelDirection, {
+  duration: 200,
+  scale: false,
+});
+const wheelRing = ref<HTMLElement>(),
+  wheelOverlay = ref<HTMLElement>();
+// How the wheel last closed ("cancel" unless an item or Edit config was chosen).
+let wheelExit: WheelExit = "cancel";
+let finishWheelClose: (() => void) | undefined;
+function wheelLeave(el: Element, done: () => void) {
+  const exit = wheelExit;
+  wheelExit = "cancel";
+  finishWheelClose = done;
+  closeWheel(el, exit, () => {
+    if (finishWheelClose === done) finishWheelClose = undefined;
+    done();
+  });
+}
+watch(wheelOpen, async (open) => {
+  if (!open) return;
+  // Reopening while the last wheel still fades out: drop that one at once.
+  finishWheelClose?.();
+  finishWheelClose = undefined;
+  await nextTick();
+  openWheel(wheelOverlay.value, wheelRing.value);
+});
+// The handoff between a slot and the center follows the pointer: in a band
+// around the center's edge the slot glow fades out and the center ring fades
+// in, in step with the distance (1 = all slot, 0 = all center). With the
+// arrow keys it is all-or-nothing and fades over 220 ms.
+const wheelBlend = computed(() => {
+  if (wheelKeyIndex.value !== null) return 1;
+  const diameter = Math.min(360, viewport.width * 0.86, viewport.height * 0.78);
+  const dead = diameter * 0.24,
+    band = diameter * 0.1;
+  const distance = Math.hypot(
+    pointerPosition.x - viewport.width / 2,
+    pointerPosition.y - viewport.height / 2,
+  );
+  return Math.min(1, Math.max(0, (distance - (dead - band)) / (2 * band)));
+});
+const wheelActive = computed(
+  () => wheelSelectedIndex.value >= 0 || wheelCenterSelected.value,
+);
+// The center text crossfades when the selection moves between the center
+// and the ring, as well as when the level changes.
+const wheelCenterKey = computed(
+  () => `${wheelParent.value}|${wheelCenterSelected.value ? "center" : "ring"}`,
+);
+function wheelEntryIcon(entry: (typeof wheelEntries.value)[number]) {
+  if (entry.kind === "group") return "layers";
+  if (entry.kind === "action")
+    return workspace.actions?.find((a) => a.id === entry.actionId)?.icon || "workflow";
+  return apps.value.find((a) => a.id === entry.appId)?.icon || "app";
+}
+function wheelEntryKind(entry: (typeof wheelEntries.value)[number]) {
+  if (entry.kind === "group") {
+    const count = (workspace.wheel || []).filter((e) => e.parent === entry.id).length;
+    return `Group · ${count} ${count === 1 ? "item" : "items"}`;
+  }
+  return entry.kind === "action" ? "Action · release to run" : "App · release to open";
+}
+const wheelCrumb = computed(() =>
+  wheelParent.value
+    ? (workspace.wheel || []).find((e) => e.id === wheelParent.value)?.name || ""
+    : "",
+);
 function trackWheelPointer(e: PointerEvent) {
   // Moving the pointer hands the selection back from the arrow keys.
   if (
@@ -2748,6 +2871,7 @@ const keyup = (e: KeyboardEvent) => {
       void openWheelConfig(wheelCenter.value);
       return;
     }
+    if (entry && entry.kind !== "group") wheelExit = "slot";
     wheelOpen.value = false;
     if (entry?.kind === "app") {
       const app = apps.value.find((a) => a.id === entry.appId);
@@ -3848,8 +3972,11 @@ onBeforeUnmount(() => {
         <Icon name="close" :size="13" />
       </button>
     </div>
+    <!-- Closing plays a short exit (see closeWheel); opening is animated in openWheel. -->
+    <Transition :css="false" @leave="wheelLeave">
     <div
       v-if="wheelOpen"
+      ref="wheelOverlay"
       class="radial-overlay"
       @contextmenu.prevent.stop="wheelBack"
       @pointerdown.stop
@@ -3857,72 +3984,99 @@ onBeforeUnmount(() => {
         wheelSelected?.kind === 'group' && (wheelParent = wheelSelected.id)
       "
     >
-      <div class="radial-wheel" aria-label="Action wheel">
+      <div
+        ref="wheelRing"
+        class="radial-wheel"
+        :class="{ keyed: wheelKeyIndex !== null }"
+        aria-label="Action wheel"
+      >
+        <!-- One layer per level: entering a group or going back crossfades
+             the layers in place while the ring and the center disc stay. -->
+        <Transition
+          :css="false"
+          @enter="wheelLevelMotion.enter"
+          @leave="wheelLevelMotion.leave"
+        >
+          <div :key="wheelParent" class="radial-layer">
+            <svg class="radial-dividers" viewBox="0 0 100 100" aria-hidden="true">
+              <path :d="wheelDividers" />
+            </svg>
+            <div
+              class="radial-glow"
+              :class="{ jump: wheelGlowJump }"
+              :style="{
+                clipPath: wheelGlowShape,
+                transform: `rotate(${wheelGlowDeg}deg)`,
+                opacity: wheelActive ? wheelBlend : 0,
+              }"
+              aria-hidden="true"
+            ></div>
+            <button
+              v-for="(_, index) in wheelSlotCount"
+              :key="index"
+              class="radial-entry"
+              :disabled="!wheelEntries[index]"
+              :aria-label="wheelEntries[index]?.name || 'Empty slot'"
+              :class="{
+                selected:
+                  wheelSelected && wheelSelected.id === wheelEntries[index]?.id,
+              }"
+              :style="{ clipPath: wheelSegment(index) }"
+              @click.stop="
+                wheelEntries[index]?.kind === 'group' &&
+                (wheelParent = wheelEntries[index]!.id)
+              "
+            >
+              <span
+                :class="wheelEntries[index] ? 'radial-entry-content' : 'radial-dot'"
+                :style="{
+                  left: `${50 + 37 * Math.sin((index * 2 * Math.PI) / wheelSlotCount)}%`,
+                  top: `${50 - 37 * Math.cos((index * 2 * Math.PI) / wheelSlotCount)}%`,
+                }"
+                ><template v-if="wheelEntries[index]"
+                  ><span class="radial-icon"
+                    ><Icon :name="wheelEntryIcon(wheelEntries[index]!)" :size="19"
+                  /></span><span>{{ wheelEntries[index]?.name }}</span></template
+                ></span
+              >
+            </button>
+          </div>
+        </Transition>
         <button
           ref="wheelCenter"
           class="radial-center"
           :class="{ selected: wheelCenterSelected }"
+          :style="{ '--ring': wheelActive ? 1 - wheelBlend : 0 }"
           aria-label="Edit wheel config"
           @click.stop="openWheelConfig(wheelCenter)"
         >
-          <Icon name="settings" :size="18" /><strong>Edit config</strong>
-          <small>{{
-            wheelCenterSelected
-              ? "Release Alt+Q to edit"
-              : wheelSelected?.name || "Point to select"
-          }}</small>
-          <small v-if="wheelParent">Right-click to go back</small>
-        </button>
-        <button
-          v-for="(_, index) in wheelSlotCount"
-          :key="index"
-          class="radial-entry"
-          :disabled="!wheelEntries[index]"
-          :aria-label="wheelEntries[index]?.name || 'Empty slot'"
-          :class="{
-            selected:
-              wheelSelected && wheelSelected.id === wheelEntries[index]?.id,
-          }"
-          :style="{ clipPath: wheelSegment(index) }"
-          @click.stop="
-            wheelEntries[index]?.kind === 'group' &&
-            (wheelParent = wheelEntries[index]!.id)
-          "
-        >
-          <span
-            v-if="wheelEntries[index]"
-            class="radial-entry-content"
-            :style="{
-              left: `${50 + 36 * Math.sin((index * 2 * Math.PI) / wheelSlotCount)}%`,
-              top: `${50 - 36 * Math.cos((index * 2 * Math.PI) / wheelSlotCount)}%`,
-            }"
-            ><Icon
-              :name="
-                wheelEntries[index]?.kind === 'group'
-                  ? 'layers'
-                  : wheelEntries[index]?.kind === 'action'
-                    ? workspace.actions?.find(
-                        (a) => a.id === wheelEntries[index]?.actionId,
-                      )?.icon || 'workflow'
-                    : apps.find((a) => a.id === wheelEntries[index]?.appId)
-                        ?.icon || 'app'
-              "
-              :size="22"
-            /><span>{{ wheelEntries[index]?.name }}</span></span
+          <Transition
+            :css="false"
+            @enter="wheelCenterMotion.enter"
+            @leave="wheelCenterMotion.leave"
           >
+            <span :key="wheelCenterKey" class="radial-center-text">
+              <small v-if="wheelCrumb" class="radial-crumb">‹ {{ wheelCrumb }}</small>
+              <template v-if="wheelCenterSelected">
+                <span class="radial-center-icon"><Icon name="settings" :size="20" /></span>
+                <strong>Edit config</strong><small>Release Alt+Q to edit</small>
+              </template>
+              <template v-else-if="wheelSelected">
+                <span class="radial-center-icon"
+                  ><Icon :name="wheelEntryIcon(wheelSelected)" :size="20"
+                /></span>
+                <strong>{{ wheelSelected.name }}</strong
+                ><small>{{ wheelEntryKind(wheelSelected) }}</small>
+              </template>
+              <span v-else class="radial-idle"
+                ><Icon name="settings" :size="16" />Point to select</span
+              >
+            </span>
+          </Transition>
         </button>
-        <svg class="radial-outline" viewBox="0 0 100 100" aria-hidden="true">
-          <path
-            v-if="wheelSelected"
-            :d="
-              wheelArc(
-                wheelEntries.findIndex((e) => e.id === wheelSelected?.id),
-              )
-            "
-          />
-        </svg>
       </div>
     </div>
+    </Transition>
     <div
       v-if="wheelEditing"
       class="wheel-config-backdrop"

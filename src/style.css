@@ -1930,6 +1930,9 @@ kbd {
   z-index: 200;
   background: #45596812;
 }
+/* Action wheel (Halo · Glow): a frosted ring like the top bar (.topbar-frost),
+   a soft glow in the selected slot that reaches the edge, faint dividers, and a
+   white center disc that says what will run. */
 .radial-wheel {
   position: absolute;
   left: 50%;
@@ -1938,42 +1941,130 @@ kbd {
   aspect-ratio: 1;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  background: #d8e1e6;
-  box-shadow: var(--shadow);
+  background: rgb(247 250 252 / 8%);
+  backdrop-filter: blur(8px) saturate(120%);
+  -webkit-backdrop-filter: blur(8px) saturate(120%);
+  box-shadow:
+    0 26px 64px -30px #43576470,
+    0 2px 6px -3px #4357642a,
+    inset 0 0 0 1px rgb(255 255 255 / 75%),
+    0 0 0 1px #dbe4e9;
+}
+.radial-layer {
+  position: absolute;
+  inset: 0;
+}
+.radial-dividers {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.radial-dividers path {
+  fill: none;
+  stroke: #43576414;
+  stroke-width: 0.3;
+}
+.radial-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle closest-side,
+    rgb(111 137 152 / 3%) 52%,
+    rgb(111 137 152 / 20%) 100%
+  );
+  pointer-events: none;
+  /* opacity follows the pointer (wheelBlend); this only smooths each step */
+  transition:
+    transform 220ms cubic-bezier(0.3, 0.1, 0.2, 1),
+    opacity 120ms cubic-bezier(0.3, 0.1, 0.2, 1);
+}
+.radial-wheel.keyed .radial-glow {
+  transition:
+    transform 220ms cubic-bezier(0.3, 0.1, 0.2, 1),
+    opacity 220ms cubic-bezier(0.3, 0.1, 0.2, 1);
+}
+.radial-glow.jump {
+  transition: opacity 120ms cubic-bezier(0.3, 0.1, 0.2, 1);
+}
+.radial-wheel.keyed .radial-glow.jump {
+  transition: opacity 220ms cubic-bezier(0.3, 0.1, 0.2, 1);
 }
 .radial-center {
   position: absolute;
   z-index: 2;
   inset: 26%;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #455968;
+  background: #fff;
+  box-shadow:
+    0 1px 3px #4357641c,
+    0 0 0 1px #e3eaee;
+}
+/* The center's ring fades in as the slot glow fades out (--ring = 1 - wheelBlend). */
+.radial-center::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px #9fb4c1;
+  opacity: var(--ring, 0);
+  pointer-events: none;
+  transition: opacity 120ms cubic-bezier(0.3, 0.1, 0.2, 1);
+}
+.radial-wheel.keyed .radial-center::after {
+  transition-duration: 220ms;
+}
+.radial-center-icon {
+  display: grid;
+  place-items: center;
+  margin-bottom: 3px;
+  color: #5f7a8b;
+}
+.radial-center-text {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 3px;
   align-items: center;
   justify-content: center;
-  padding: 12px;
-  border-radius: 50%;
+  padding: 14px;
   text-align: center;
-  color: #455968;
-  background: #f7f9fa;
-  pointer-events: none;
 }
 .radial-center strong {
   max-width: 100%;
-  font-size: 12px;
+  overflow: hidden;
+  color: #344f5e;
+  font-size: 14px;
   font-weight: 600;
-  overflow-wrap: anywhere;
-}
-.radial-center {
-  pointer-events: auto;
-}
-.radial-center.selected {
-  background: #e7eff3;
-  box-shadow: inset 0 0 0 1px #b8cbd6;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .radial-center small {
   display: block;
-  font-size: 10px;
+  color: var(--muted);
+  font-size: 10.5px;
   font-weight: 400;
+}
+.radial-center .radial-crumb {
+  margin-bottom: 3px;
+  color: #8aa0ad;
+  font-size: 10px;
+}
+.radial-idle {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: center;
+  color: #9aacb7;
+  font-size: 10.5px;
 }
 .radial-entry {
   position: absolute;
@@ -1983,49 +2074,71 @@ kbd {
   padding: 0;
   border: 0;
   border-radius: 0;
-  background: #f1f5f7;
-  color: #526c7c;
+  background: none;
+  color: #647c8c;
   cursor: pointer;
+  transition: color 180ms cubic-bezier(0.3, 0.1, 0.2, 1);
 }
 .radial-entry:disabled {
   opacity: 1;
-  background: #e9eff2;
+  background: none;
   cursor: default;
 }
 .radial-entry.selected {
-  background: #dce7ed;
-  color: #304e60;
+  background: none;
+  color: #2c4b5d;
 }
 .radial-entry-content {
   position: absolute;
   transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  width: 76px;
+  gap: 4px;
+  width: 84px;
   align-items: center;
   justify-content: center;
   pointer-events: none;
 }
-.radial-entry-content > span {
-  font-size: 10px;
-  max-width: 76px;
+.radial-entry-content > span:last-child {
+  font-size: 10.5px;
+  max-width: 84px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.radial-outline {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  overflow: visible;
+.radial-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  transition:
+    background 180ms cubic-bezier(0.3, 0.1, 0.2, 1),
+    box-shadow 180ms cubic-bezier(0.3, 0.1, 0.2, 1);
 }
-.radial-outline path {
-  fill: none;
-  stroke: #6f8998;
-  stroke-width: 0.6;
+.radial-entry.selected .radial-icon {
+  background: #fff;
+  box-shadow:
+    0 3px 10px -4px #43576455,
+    0 0 0 1px #e2e9ed;
+}
+.radial-dot {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
+  border-radius: 50%;
+  background: #cad6dc;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .radial-glow,
+  .radial-center,
+  .radial-center::after,
+  .radial-entry,
+  .radial-icon {
+    transition: none;
+  }
 }
 .wheel-config-backdrop {
   position: fixed;
