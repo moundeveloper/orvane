@@ -16,6 +16,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { terminal as client, type SessionListener } from "../../terminalClient";
 import { DRAG_MIME } from "../files/explorer";
+import { registerAppText } from "../../appText";
 import { TERMINAL } from "./controller";
 import Icon from "../Icon.vue";
 import type { PaneNode } from "../../terminalLayout";
@@ -26,6 +27,25 @@ const terminalFont = '"Cascadia Mono", "Cascadia Code", Consolas, "Courier New",
 const powerShell = computed(() => ctl.profileOf(props.pane.profile)?.kind === "powershell");
 const inputOffsetProperty = "--terminal-input-offset";
 const host = ref<HTMLDivElement>();
+// Selected text and the latest output, for Agent sessions (Ctrl+Shift+L,
+// app snapshots). xterm draws on a canvas, so the DOM has no text to read.
+let stopAppText: (() => void) | undefined;
+onMounted(() => {
+  if (!host.value) return;
+  stopAppText = registerAppText(host.value, {
+    selection: () => term?.getSelection() ?? "",
+    text: () => {
+      const buffer = term?.buffer.active;
+      if (!buffer) return "";
+      const lines: string[] = [];
+      const end = buffer.baseY + buffer.cursorY;
+      for (let y = Math.max(0, end - 120); y <= end; y++)
+        lines.push(buffer.getLine(y)?.translateToString(true) ?? "");
+      return lines.join("\n").replace(/\n+$/, "");
+    },
+  });
+});
+onBeforeUnmount(() => stopAppText?.());
 const dropping = ref(false);
 const hasScrollback = ref(false);
 let term: Terminal | undefined;

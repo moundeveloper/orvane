@@ -3,7 +3,12 @@
 // CustomSelect, and closed by Escape, a press outside, resizing or scrolling.
 import { nextTick, onBeforeUnmount, onMounted, ref, type Ref } from "vue";
 
-export function usePopover(trigger: Ref<HTMLElement | undefined>, popover: Ref<HTMLElement | undefined>, height: number) {
+export function usePopover(
+  trigger: Ref<HTMLElement | undefined>,
+  popover: Ref<HTMLElement | undefined>,
+  height: number,
+  options: { width?: number; alignEnd?: boolean; preferAbove?: boolean } = {},
+) {
   const open = ref(false);
   const style = ref<Record<string, string>>({});
   function place() {
@@ -15,9 +20,12 @@ export function usePopover(trigger: Ref<HTMLElement | undefined>, popover: Ref<H
     const fontSize = Math.max(10, Math.min(15, 12 * scale));
     const h = height * (fontSize / 12);
     const below = innerHeight - r.bottom;
+    const width = (options.width ?? 20) * fontSize;
+    const left = options.alignEnd ? r.right - width : r.left;
+    const above = (options.preferAbove && r.top >= h + 12) || (below < h + 12 && r.top > below);
     style.value = {
-      left: Math.max(8, Math.min(innerWidth - 8 - 20 * fontSize, r.left)) + "px",
-      top: (below < h + 12 && r.top > below ? Math.max(8, r.top - h - 6) : r.bottom + 6) + "px",
+      left: Math.max(8, Math.min(innerWidth - 8 - width, left)) + "px",
+      top: (above ? Math.max(8, r.top - h - 6) : r.bottom + 6) + "px",
       fontSize: fontSize + "px",
     };
   }

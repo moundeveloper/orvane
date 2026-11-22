@@ -81,6 +81,7 @@ export function localStorageApi(directory: string): Plugin {
         if (route === "revision")
           return reply(200, { revision: database.revision() });
         if (route === "snapshot") return reply(200, database.snapshot());
+        if (route === "canvas-rewind") return reply(200, database.rewind());
         if (route.startsWith("preference/"))
           return reply(200, {
             value: database.learned(decodeURIComponent(route.slice(11))),

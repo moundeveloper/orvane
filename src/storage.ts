@@ -271,6 +271,9 @@ export class WorkspaceStorage {
   async latestSnapshot() {
     return (await this.request<Snapshot | null>("snapshot")) || undefined;
   }
+  async canvasRewind() {
+    return this.request<import("./canvasRewind").RewindEntry[]>("canvas-rewind");
+  }
   async learned(id: string) {
     return this.preferences.has(id);
   }

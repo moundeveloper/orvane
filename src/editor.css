@@ -64,6 +64,21 @@
   background: #f7f9fa;
   font-size: inherit;
 }
+/* The search stays above the list; only the list scrolls, with its own scrollbar. */
+.select-popover.select-fixed-search {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.select-fixed-search .select-search {
+  position: static;
+  flex: none;
+}
+.select-fixed-search .select-options {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
 .select-no-results {
   padding: 8px 9px;
   color: #455968;

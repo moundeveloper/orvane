@@ -292,6 +292,7 @@ const claudeModes: Record<AgentEditMode, string> = {
   ask: "default",
   auto: "acceptEdits",
   plan: "plan",
+  full: "bypassPermissions",
 };
 export function agentArgs(
   provider: AgentProvider,
@@ -300,6 +301,7 @@ export function agentArgs(
   effort?: AgentEffort,
   mode?: AgentEditMode,
   fork?: boolean,
+  resumeAt?: string,
 ) {
   if (provider === "claude")
     return [
@@ -317,12 +319,14 @@ export function agentArgs(
       ...(model ? ["--model", model] : []),
       ...(sessionId ? ["--resume", sessionId] : []),
       ...(sessionId && fork ? ["--fork-session"] : []),
+      // Rewound chat: the new session keeps the transcript up to this message.
+      ...(sessionId && fork && resumeAt ? ["--resume-session-at", resumeAt] : []),
     ];
   return [
     "-a",
     "never",
     "-s",
-    mode === "plan" ? "read-only" : "workspace-write",
+    mode === "plan" ? "read-only" : mode === "full" ? "danger-full-access" : "workspace-write",
     // Codex's highest effort is called xhigh.
     ...(effort
       ? ["-c", `model_reasoning_effort="${effort === "max" ? "xhigh" : effort}"`]

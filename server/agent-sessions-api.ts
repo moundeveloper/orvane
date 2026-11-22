@@ -1,13 +1,14 @@
 import type { Plugin, Connect } from "vite";
 import { join } from "node:path";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { z } from "zod";
 import { SessionTranscripts } from "./session-transcripts.ts";
 import { AgentRunner } from "./agent-runner.ts";
 import { claudeModels, codexModels } from "./agent-cli.ts";
 import { listSkills, SavedPrompts } from "./agent-skills.ts";
+import { AgentSchedules } from "./agent-schedules.ts";
 
 const base = "/__orvane/agents/";
 const key = z.string().min(1).max(1000);
@@ -18,14 +19,22 @@ const model = z
   .regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/)
   .optional();
 const effort = z.enum(["low", "medium", "high", "max"]).optional();
-const mode = z.enum(["ask", "auto", "plan"]).optional();
+const mode = z.enum(["ask", "auto", "plan", "full"]).optional();
 const start = z.object({
   message: z
     .string()
     .max(12_000)
     .refine((text) => !!text.trim(), "Enter a message."),
   target: z.union([
-    z.object({ key, model, effort, mode, fork: z.boolean().optional() }),
+    z.object({
+      key,
+      model,
+      effort,
+      mode,
+      fork: z.boolean().optional(),
+      // Rewound chat (Claude): continue from this transcript message.
+      resumeAt: z.string().regex(/^[\da-f-]{36}$/i).optional(),
+    }),
     z.object({
       provider: z.enum(["claude", "codex"]),
       folder: z.string().min(1).max(2000).optional(),
@@ -45,14 +54,76 @@ export function agentSessionsApi(directory: string): Plugin {
       runner: AgentRunner;
       surveying: string;
       prompts: SavedPrompts;
+      schedules: AgentSchedules;
       skillsHome: (provider: "claude" | "codex") => string;
     }
   >();
   let testing = false;
+  let scheduler: ReturnType<typeof setInterval> | undefined;
   const catalogues = new Map<
     "codex" | "claude",
     { time: number; request: ReturnType<typeof codexModels> }
   >();
+  function serviceFor(namespace: string) {
+    let service = services.get(namespace);
+    if (!service) {
+      const dir = testing ? join(directory, "tests", namespace) : directory;
+      const claude = new SessionTranscripts(
+        dir,
+        testing ? join(dir, "claude-projects") : undefined,
+      );
+      const codex = new SessionTranscripts(
+        dir,
+        testing
+          ? join(dir, "codex-sessions")
+          : join(
+              process.env.CODEX_HOME || join(homedir(), ".codex"),
+              "sessions",
+            ),
+        undefined,
+        "codex",
+      );
+      const runner = new AgentRunner(
+        dir,
+        () => {
+          claude.invalidate();
+          codex.invalidate();
+        },
+        testing
+          ? () => {
+              const file = join(dir, "agent-cli.cjs");
+              if (!existsSync(file))
+                throw Error("No test CLI fixture is installed.");
+              return { file: process.execPath, args: [file] };
+            }
+          : undefined,
+      );
+      const workspaceFile = join(directory, testing ? `tests/${namespace}.sqlite` : "workspace.sqlite");
+      service = {
+        claude,
+        codex,
+        runner,
+        prompts: new SavedPrompts(workspaceFile),
+        schedules: new AgentSchedules(
+          workspaceFile,
+          (target, message) => runner.start(target, message),
+          (id) => runner.inspect(id),
+        ),
+        skillsHome: (provider) =>
+          testing
+            ? join(dir, provider === "claude" ? ".claude" : ".codex", "skills")
+            : provider === "claude"
+              ? join(homedir(), ".claude", "skills")
+              : join(process.env.CODEX_HOME || join(homedir(), ".codex"), "skills"),
+        surveying: testing
+          ? join(dir, "Surveying")
+          : process.env.ORVANE_SURVEYING_DIR ||
+            join(homedir(), "Orvane", "Surveying"),
+      };
+      services.set(namespace, service);
+    }
+    return service;
+  }
   const middleware: Connect.NextHandleFunction = async (req, res, next) => {
     if (!req.url?.startsWith(base)) return next();
     res.removeHeader("Access-Control-Allow-Origin");
@@ -93,60 +164,8 @@ export function agentSessionsApi(directory: string): Plugin {
     if (typeof namespace !== "string" || !/^[-\w]{1,80}$/.test(namespace))
       return reply(400, { error: "An isolated test workspace is required." });
     try {
-      let service = services.get(namespace);
-      if (!service) {
-        const dir = testing ? join(directory, "tests", namespace) : directory;
-        const claude = new SessionTranscripts(
-          dir,
-          testing ? join(dir, "claude-projects") : undefined,
-        );
-        const codex = new SessionTranscripts(
-          dir,
-          testing
-            ? join(dir, "codex-sessions")
-            : join(
-                process.env.CODEX_HOME || join(homedir(), ".codex"),
-                "sessions",
-              ),
-          undefined,
-          "codex",
-        );
-        const runner = new AgentRunner(
-          dir,
-          () => {
-            claude.invalidate();
-            codex.invalidate();
-          },
-          testing
-            ? () => {
-                const file = join(dir, "agent-cli.cjs");
-                if (!existsSync(file))
-                  throw Error("No test CLI fixture is installed.");
-                return { file: process.execPath, args: [file] };
-              }
-            : undefined,
-        );
-        service = {
-          claude,
-          codex,
-          runner,
-          prompts: new SavedPrompts(
-            join(directory, testing ? `tests/${namespace}.sqlite` : "workspace.sqlite"),
-          ),
-          skillsHome: (provider) =>
-            testing
-              ? join(dir, provider === "claude" ? ".claude" : ".codex", "skills")
-              : provider === "claude"
-                ? join(homedir(), ".claude", "skills")
-                : join(process.env.CODEX_HOME || join(homedir(), ".codex"), "skills"),
-          surveying: testing
-            ? join(dir, "Surveying")
-            : process.env.ORVANE_SURVEYING_DIR ||
-              join(homedir(), "Orvane", "Surveying"),
-        };
-        services.set(namespace, service);
-      }
-      const { claude, codex, runner, surveying, prompts, skillsHome } = service;
+      const service = serviceFor(namespace);
+      const { claude, codex, runner, surveying, prompts, schedules, skillsHome } = service;
       if (streaming) {
         if (!runner.subscribe(id.parse(url.searchParams.get("id")), res))
           return reply(404, { error: "Run was not found." });
@@ -156,7 +175,13 @@ export function agentSessionsApi(directory: string): Plugin {
       const chunks: Buffer[] = [];
       for await (const chunk of req) {
         length += Buffer.byteLength(chunk);
-        if (length > (op === "start" ? 96_000 : 16_000))
+        const limit =
+          op === "attachment-save"
+            ? 12_000_000
+            : ["start", "queue", "schedule-save", "notes-rewrite", "suggest"].includes(op)
+              ? 96_000
+              : 16_000;
+        if (length > limit)
           return reply(413, { error: "Request is too large." });
         chunks.push(Buffer.from(chunk));
       }
@@ -203,6 +228,23 @@ export function agentSessionsApi(directory: string): Plugin {
         return reply(200, await runner.approvals(z.string().min(1).max(200).parse(args.sessionId)));
       if (op === "inspect-run")
         return reply(200, runner.inspect(id.parse(args.id)));
+      if (op === "notes-rewrite") {
+        const input = z.object({
+          selection: z.string().trim().min(1).max(8_000),
+          instruction: z.string().trim().min(1).max(1_500),
+          previous: z.string().max(12_000).optional(),
+        }).parse(args);
+        const abort = new AbortController();
+        const cancel = () => abort.abort();
+        res.once("close", cancel);
+        try {
+          const result = await runner.rewrite(tmpdir(), JSON.stringify(input), abort.signal);
+          if (!res.destroyed) return reply(200, result);
+          return;
+        } finally {
+          res.off("close", cancel);
+        }
+      }
       if (op === "launcher") {
         await mkdir(surveying, { recursive: true });
         return reply(200, { surveying });
@@ -258,7 +300,10 @@ export function agentSessionsApi(directory: string): Plugin {
                 model: target.model,
                 effort: target.effort,
                 mode: target.mode,
-                fork: (session.provider ?? "claude") === "claude" && target.fork,
+                fork: (session.provider ?? "claude") === "claude" && (target.fork || !!target.resumeAt),
+                ...((session.provider ?? "claude") === "claude" && target.resumeAt
+                  ? { resumeAt: target.resumeAt }
+                  : {}),
               },
               message,
             ),
@@ -272,6 +317,105 @@ export function agentSessionsApi(directory: string): Plugin {
             message,
           ),
         );
+      }
+      if (op === "queue") {
+        const { message, first, steer } = z
+          .object({
+            message: start.shape.message,
+            first: z.boolean().optional(),
+            steer: z.boolean().optional(),
+          })
+          .parse(args);
+        const runId = id.parse(args.id);
+        const view = runner.enqueue(runId, message, first && !steer);
+        // Interrupt: stop now, and the message goes once the run has stopped.
+        if (first && !steer) runner.sendQueued(runId, view.queued![0]!.id);
+        // Steer: hand it to the working turn; if it can't take it, it stays queued.
+        if (steer) {
+          try {
+            runner.steer(runId, view.queued!.at(-1)!.id);
+          } catch (cause) {
+            return reply(200, { ...runner.inspect(runId), steerError: (cause as Error).message });
+          }
+        }
+        return reply(200, runner.inspect(runId));
+      }
+      if (op === "steer")
+        return reply(200, runner.steer(id.parse(args.id), z.uuid().parse(args.queueId)));
+      if (op === "runs") return reply(200, { runs: runner.recent() });
+      if (op === "suggest") {
+        const input = z
+          .object({ message: z.string().max(12_000), reply: z.string().trim().min(1).max(40_000) })
+          .parse(args);
+        const abort = new AbortController();
+        const cancel = () => abort.abort();
+        res.once("close", cancel);
+        try {
+          // The reply's end says most about what comes next.
+          const text = await runner.suggest(
+            tmpdir(),
+            JSON.stringify({ message: input.message.slice(0, 3000), reply: input.reply.slice(-6000) }),
+            abort.signal,
+          );
+          if (!res.destroyed) return reply(200, { text });
+          return;
+        } finally {
+          res.off("close", cancel);
+        }
+      }
+      if (op === "checkpoints")
+        return reply(200, {
+          checkpoints: await runner.sessionCheckpoints(z.string().min(1).max(200).parse(args.sessionId)),
+        });
+      if (op === "checkpoint-preview" || op === "checkpoint-restore") {
+        const { sessionId, commit, provider } = z
+          .object({
+            sessionId: z.string().min(1).max(200),
+            commit: z.string().regex(/^[0-9a-f]{40}$/),
+            provider: z.enum(["claude", "codex"]),
+          })
+          .parse(args);
+        const found = (await runner.sessionCheckpoints(sessionId)).find((item) => item.commit === commit);
+        if (!found?.folder) throw Error("That checkpoint is not part of this session.");
+        if (op === "checkpoint-preview")
+          return reply(200, await runner.checkpoints.preview(found.folder, commit));
+        const current = runner.current({ provider, sessionId });
+        if (current && (current.status === "running" || current.status === "stopping"))
+          throw Error("Stop the running turn before rewinding files.");
+        return reply(200, await runner.checkpoints.restore(found.folder, commit));
+      }
+      if (op === "attachment-save") {
+        const { data } = z
+          .object({ data: z.string().regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/).max(11_900_000) })
+          .parse(args);
+        const folder = join(testing ? join(directory, "tests", namespace) : directory, "agent-attachments");
+        await mkdir(folder, { recursive: true });
+        const name = `snapshot-${new Date().toISOString().replace(/[:.]/g, "-")}-${Math.random().toString(36).slice(2, 7)}.png`;
+        const path = join(folder, name);
+        await writeFile(path, Buffer.from(data.slice(data.indexOf(",") + 1), "base64"));
+        return reply(200, { path });
+      }
+      if (op === "unqueue")
+        return reply(
+          200,
+          runner.unqueue(id.parse(args.id), z.uuid().parse(args.queueId)),
+        );
+      if (op === "queue-now")
+        return reply(
+          200,
+          runner.sendQueued(id.parse(args.id), z.uuid().parse(args.queueId)),
+        );
+      if (op === "schedules") return reply(200, { schedules: schedules.list() });
+      if (op === "schedule-save") return reply(200, { schedules: schedules.save(args) });
+      if (op === "schedule-delete")
+        return reply(200, { schedules: schedules.remove(z.uuid().parse(args.id)) });
+      if (op === "schedule-enable")
+        return reply(200, {
+          schedules: schedules.setEnabled(z.uuid().parse(args.id), z.boolean().parse(args.enabled)),
+        });
+      if (op === "schedule-run") {
+        const view = await schedules.run(z.uuid().parse(args.id));
+        return reply(200, { run: view, schedules: schedules.list() });
       }
       if (op === "stop") {
         runner.stop(id.parse(args.id));
@@ -290,18 +434,37 @@ export function agentSessionsApi(directory: string): Plugin {
       }
       return reply(404, { error: "Unknown session operation." });
     } catch (error) {
+      if (res.destroyed) return;
       reply(400, {
         error:
           error instanceof Error ? error.message : "Session could not be read.",
       });
     }
   };
+  // Scheduled prompts run from here, with or without an open sessions app.
+  // Test workspaces start theirs with Run now.
+  const startScheduler = () => {
+    if (testing || scheduler) return;
+    const tick = () => {
+      try {
+        serviceFor("workspace").schedules.tick();
+      } catch (error) {
+        console.error("Scheduled prompts could not be checked:", error);
+      }
+    };
+    scheduler = setInterval(tick, 15_000);
+    scheduler.unref?.();
+    setTimeout(tick, 2_000).unref?.();
+  };
   const endChildren = () => {
     for (const { runner } of services.values()) runner.emergencyClose();
   };
   const close = () => {
-    for (const { claude, codex, runner, prompts } of services.values()) {
+    clearInterval(scheduler);
+    scheduler = undefined;
+    for (const { claude, codex, runner, prompts, schedules } of services.values()) {
       prompts.close();
+      schedules.close();
       runner.close();
       claude.close();
       codex.close();
@@ -317,11 +480,13 @@ export function agentSessionsApi(directory: string): Plugin {
     configureServer(s) {
       process.once("exit", endChildren);
       s.middlewares.use(middleware);
+      startScheduler();
       s.httpServer?.once("close", close);
     },
     configurePreviewServer(s) {
       process.once("exit", endChildren);
       s.middlewares.use(middleware);
+      startScheduler();
       s.httpServer.once("close", close);
     },
   };

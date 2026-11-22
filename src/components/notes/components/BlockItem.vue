@@ -20,6 +20,7 @@ const props = defineProps<{
   block: Block;
   index: number;
   focusRequest: { id: string; at: "start" | "end" } | null;
+  undoVersion: number;
   dropTarget: "before" | "after" | null;
   selected: boolean;
   multiSelected: boolean;
@@ -268,17 +269,21 @@ onMounted(() => {
 
 // re-sync DOM when html changed externally (undo/redo)
 watch(
-  () => props.block.html,
-  (html) => {
+  () => [props.block.html, props.undoVersion] as const,
+  ([html, version], [, previousVersion]) => {
     const el = contentEl.value;
     contentEmpty.value = isHtmlVisuallyEmpty(html);
+    const fromUndo = version !== previousVersion;
+    if (fromUndo) clearTimeout(saveTimer);
     if (
       el &&
       isText.value &&
       storedHtml(el.innerHTML) !== html &&
-      !contentHasSelection()
+      (fromUndo || !contentHasSelection())
     ) {
+      const hadFocus = document.activeElement === el;
       el.innerHTML = renderHtml(html);
+      if (fromUndo && hadFocus) focusAt("end");
     }
   },
 );
@@ -301,7 +306,7 @@ watch(
 // ---- input / markdown shortcuts ----
 
 let saveTimer: number | undefined;
-function onInput() {
+function onInput(event?: Event) {
   const el = contentEl.value;
   if (!el) return;
   const html = storedHtml(el.innerHTML === "<br>" ? "" : el.innerHTML);
@@ -312,6 +317,10 @@ function onInput() {
     emit("slash", props.block.id, el.getBoundingClientRect(), query);
   }
   clearTimeout(saveTimer);
+  if (event instanceof InputEvent && event.inputType === "insertReplacementText") {
+    void ws.updateBlock(props.block.id, { html });
+    return;
+  }
   saveTimer = window.setTimeout(
     () => ws.updateBlock(props.block.id, { html }),
     250,

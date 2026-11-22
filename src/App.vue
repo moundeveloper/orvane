@@ -48,8 +48,20 @@ import { DRAG_MIME } from "./components/files/explorer";
 import CommandPalette from "./components/CommandPalette.vue";
 import AgentLauncher from "./components/AgentLauncher.vue";
 import { agentOpenRequests, agentRunIndicators } from "./agentNavigation";
+import { agentRequest } from "./exposition";
+import type { AgentRun } from "./agentSessions";
+import {
+  configureHarness,
+  harness,
+  openRunFromAlert,
+  sendSelection,
+  startActivity,
+  stopActivity,
+} from "./agentHarness";
 import BoardLayer from "./components/BoardLayer.vue";
 import BoardTools from "./components/BoardTools.vue";
+import CanvasRewind from "./components/CanvasRewind.vue";
+import { captureRewind, restoreRewind, type RewindEntry } from "./canvasRewind";
 import { BOARD_COLORS, ensureBoard, type Tool } from "./board";
 import {
   emptyWorkspace,
@@ -211,7 +223,7 @@ const status = ref(""),
 const statusIsProblem = computed(
   () =>
     loadError.value ||
-    !/ (moved to trash|archived)\. Restore it/.test(status.value),
+    !/ (moved to trash|archived)\. Restore it|^(App|Canvas arrangement) restored\.$/.test(status.value),
 );
 // Same conditions as the status action buttons in the template.
 const statusHasActions = computed(
@@ -716,6 +728,77 @@ async function persist() {
       "Saving is unavailable. Your changes are still here; export a backup from Workspace or retry saving.";
   }
 }
+const rewind = ref<InstanceType<typeof CanvasRewind>>();
+const rewindOpen = ref(false);
+const rewindPreview = ref(false);
+const rewindLoading = ref(false);
+const rewindBusy = ref(false);
+const rewindError = ref("");
+const rewindEntries = ref<RewindEntry[]>([]);
+const rewindApps = computed(() => captureRewind(workspace).apps);
+let rewindRequest = 0;
+async function openRewind() {
+  if (rewindOpen.value || importBusy.value || gesture || loadError.value) return;
+  const request = ++rewindRequest;
+  if (focused.value) exitFocus();
+  panel.value = null;
+  rewindEntries.value = [];
+  rewindError.value = "";
+  rewindOpen.value = true;
+  rewindLoading.value = true;
+  try {
+    if (unsavedChanges.value && canEdit.value) {
+      clearTimeout(saveTimer);
+      await persist();
+    }
+    const entries = await store.canvasRewind();
+    if (request === rewindRequest) rewindEntries.value = entries;
+  } catch (cause) {
+    if (request === rewindRequest)
+      rewindError.value = cause instanceof Error ? cause.message : "Canvas history could not be loaded.";
+  } finally {
+    if (request === rewindRequest) rewindLoading.value = false;
+  }
+}
+function closeRewind() {
+  if (rewindBusy.value) return;
+  rewindRequest++;
+  rewindOpen.value = false;
+  rewindPreview.value = false;
+}
+async function restoreRewindEntry(entry: RewindEntry, appId?: string) {
+  if (!canEdit.value || importBusy.value || gesture || !rewindOpen.value) return;
+  if (activeExecutions.value) {
+    rewindError.value = "Wait for the current action to finish before restoring.";
+    return;
+  }
+  if (appId && !workspace.apps.some((app) => app.id === appId)) return;
+  rewindBusy.value = true;
+  importBusy.value = true;
+  rewindError.value = "";
+  clearTimeout(saveTimer);
+  try {
+    const before = JSON.parse(JSON.stringify(workspace)) as Workspace;
+    const next = JSON.parse(JSON.stringify(before)) as Workspace;
+    restoreRewind(next, entry.state, appId);
+    await store.write(next, "Before canvas rewind", before);
+    if (canvasRecordTimer) recordCanvas();
+    restoreRewind(workspace, entry.state, appId);
+    recordCanvas();
+    clearTimeout(saveTimer);
+    unsavedChanges.value = false;
+    if (active.value && !apps.value.some((app) => app.id === active.value)) active.value = "";
+    status.value = appId ? "App restored." : "Canvas arrangement restored.";
+    rewindBusy.value = false;
+    closeRewind();
+  } catch (cause) {
+    rewindError.value = cause instanceof Error ? cause.message : "The arrangement could not be restored.";
+    if (unsavedChanges.value && canEdit.value) void persist();
+  } finally {
+    rewindBusy.value = false;
+    importBusy.value = false;
+  }
+}
 // ---- Canvas undo (Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y) ----
 // Covers where apps are and whether they exist (move, resize, create,
 // duplicate, archive, delete, layout visibility) and the Board (sticky
@@ -966,6 +1049,42 @@ function dockIcon(app: CanvasApp) {
     ? "agent-sessions"
     : app.icon;
 }
+// The Agent sessions app, opened (or created) without changing what it shows.
+function openAgentSessionsApp() {
+  const existing = workspace.apps.find((app) =>
+    !app.archived && !app.deleted && flatten(app.blocks).some((block) => block.kind === "claude"),
+  );
+  if (existing) {
+    if (existing.layoutHidden && canEdit.value) existing.layoutHidden = false;
+    void focusApp(existing);
+  } else if (canEdit.value) createGitViewer("claude");
+}
+async function sendAgentSelection(from?: Element | null) {
+  const problem = await sendSelection(from);
+  if (problem) status.value = problem;
+}
+function openAgentActivity() {
+  harness.activityOpen = true;
+  openAgentSessionsApp();
+}
+configureHarness({
+  appName: (appId) => workspace.apps.find((app) => app.id === appId)?.name ?? "",
+  apps: () =>
+    [...workspace.apps]
+      .reverse()
+      .filter((app) => !app.archived && !app.deleted && !app.layoutHidden)
+      .map((app) => ({ id: app.id, name: app.name, icon: dockIcon(app) })),
+  focusApp: (appId) => focusAppById(appId),
+  openSessions: openAgentSessionsApp,
+  openRun: (runId) => {
+    void agentRequest<AgentRun | null>("inspect-run", { id: runId })
+      .then((run) => run && openAgentSession({ run }))
+      .catch(() => undefined);
+  },
+});
+function sendSelectionEvent(event: Event) {
+  void sendAgentSelection((event as CustomEvent<Element | null>).detail);
+}
 function openAgentSession(request: Parameters<typeof agentOpenRequests.set>[1]) {
   const existing = workspace.apps.find((app) =>
     !app.archived && !app.deleted && flatten(app.blocks).some((block) => block.kind === "claude"),
@@ -981,8 +1100,22 @@ function openAgentSession(request: Parameters<typeof agentOpenRequests.set>[1]) 
 // in the capture phase, before apps that keep keys to themselves. Notes
 // search lives on Alt+K, so Ctrl+K opens the palette inside Notes too.
 function paletteKeys(e: KeyboardEvent) {
-  if (!ready.value || inboxOpen.value || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+  if (!ready.value || inboxOpen.value || !(e.ctrlKey || e.metaKey)) return;
   const key = e.key.toLowerCase();
+  // Agent sessions: Ctrl+Shift+L sends the selection, Ctrl+Alt+U opens activity.
+  if (e.altKey && !e.shiftKey && key === "u") {
+    e.preventDefault();
+    e.stopPropagation();
+    openAgentActivity();
+    return;
+  }
+  if (e.altKey) return;
+  if (key === "l" && e.shiftKey) {
+    e.preventDefault();
+    e.stopPropagation();
+    void sendAgentSelection();
+    return;
+  }
   if (key === "k" && e.shiftKey && canEdit.value && !importBusy.value) {
     e.preventDefault();
     e.stopPropagation();
@@ -1433,7 +1566,9 @@ watch(ready, (isReady) => {
   checkReminders();
   checkTriggers();
 });
-const stopNotificationClicks = desktopWindow?.onNotificationClick?.((appId) => focusAppById(appId));
+const stopNotificationClicks = desktopWindow?.onNotificationClick?.(
+  (appId) => openRunFromAlert(appId) || focusAppById(appId),
+);
 onBeforeUnmount(() => {
   clearInterval(reminderTimer);
   stopNotificationClicks?.();
@@ -1453,10 +1588,15 @@ const stopCanvasCommands = registerCommands("canvas", () => {
   ];
   return [
     { id: "custom-tools", title: "Custom tools", icon: "code", detail: "Workspace", keywords: "mcp agent tools chain code", run: openCustomTools },
+    { id: "canvas-rewind", title: "Canvas rewind", icon: "clock", detail: "Canvas", keywords: "history restore arrangement", run: openRewind },
     { id: "workspace-inbox", title: "Open workspace inbox", icon: "archive", detail: "Workspace", keywords: "capture clipboard screenshot", run: openInbox },
     { id: "automation-timeline", title: "Automation timeline", icon: "clock", detail: "Action library", keywords: "workflow trigger runs history schedule failed", run: () => openActionStudio("", "", undefined, "timeline") },
     ...(writable ? [
       { id: "agent-launcher", title: "Open AI launcher", icon: "ai", hint: "Ctrl+Shift+K", keywords: "new task agent Codex Claude prompt", run: openAgentLauncher },
+      { id: "agent-send-selection", title: "Add selection to agent session", icon: "agent-sessions", hint: "Ctrl+Shift+L", keywords: "quote selected text terminal page Claude Codex context", run: () => void sendAgentSelection() },
+      { id: "agent-activity", title: "Agent activity", icon: "agent-sessions", hint: "Ctrl+Alt+U", keywords: "waiting approval running done sessions alerts", run: openAgentActivity },
+      { id: "agent-keep-awake", title: harness.settings.keepAwake ? "Stop keeping the PC awake for agents" : "Keep the PC awake while agents run", icon: "agent-sessions", keywords: "sleep power awake agent turn", run: () => { harness.settings.keepAwake = !harness.settings.keepAwake; } },
+      { id: "agent-alerts", title: harness.settings.alerts ? "Turn off agent alerts" : "Turn on agent alerts", icon: "agent-sessions", keywords: "notifications approval finished Claude Codex", run: () => { harness.settings.alerts = !harness.settings.alerts; } },
       { id: "folder-compare", title: "Compare two folders", icon: "columns", detail: "Canvas", run: () => placeWorkbench("folder-compare", {}) },
       { id: "test-results", title: "Pin Playwright results", icon: "terminal", detail: "Canvas", run: () => placeWorkbench("test-results", {}) },
     ] : []),
@@ -2147,6 +2287,7 @@ function touchEnd(e: PointerEvent) {
 }
 let gestureCapture: HTMLElement | undefined;
 function pointerDown(e: PointerEvent, app?: CanvasApp, edge = "") {
+  if (rewindPreview.value && e.button === 0 && boardTool.value !== "select") return;
   if (
     !app &&
     e.target instanceof Element &&
@@ -2824,6 +2965,10 @@ function wheelRemove(id: string) {
 }
 function keydown(e: KeyboardEvent) {
   if (!ready.value || e.defaultPrevented) return;
+  if (rewindOpen.value && !typing(e.target)) {
+    rewind.value?.key(e);
+    if (e.defaultPrevented) return;
+  }
   if (browserTabKeys(e)) return;
   // Ctrl+Left/Right goes to the previous/next app in dock order (wrapping).
   // In focus mode it swaps the focused app; on the canvas it moves the view
@@ -4031,6 +4176,8 @@ onMounted(() => {
   window.addEventListener("orvane:open-link", openLinkEvent);
   window.addEventListener("orvane:open-git", openGitEvent);
   window.addEventListener("orvane:palette", paletteEvent);
+  window.addEventListener("orvane:send-selection", sendSelectionEvent);
+  startActivity();
   window.addEventListener("paste", pasteImage);
   window.addEventListener("pointermove", trackPointer, { passive: true });
 });
@@ -4057,6 +4204,8 @@ onBeforeUnmount(() => {
   window.removeEventListener("orvane:open-link", openLinkEvent);
   window.removeEventListener("orvane:open-git", openGitEvent);
   window.removeEventListener("orvane:palette", paletteEvent);
+  window.removeEventListener("orvane:send-selection", sendSelectionEvent);
+  stopActivity();
   window.removeEventListener("paste", pasteImage);
   window.removeEventListener("pointermove", trackPointer);
   clearTimeout(dropNoticeTimer);
@@ -4496,7 +4645,7 @@ onBeforeUnmount(() => {
          repeat it while the workspace above is already inert for an MCP edit. -->
     <div
       class="canvas-plane"
-      v-show="ready"
+      v-show="ready && !rewindPreview"
       :inert="!canEdit || (importBusy && !mcpBusy)"
       :class="{ 'camera-moving': movingCamera }"
       :style="{
@@ -4656,6 +4805,20 @@ onBeforeUnmount(() => {
         ></div>
       </div>
     </div>
+    <CanvasRewind
+      v-if="rewindOpen"
+      ref="rewind"
+      v-model="rewindPreview"
+      :entries="rewindEntries"
+      :apps="rewindApps"
+      :camera="camera"
+      :can-restore="canEdit && !importBusy"
+      :busy="rewindBusy"
+      :loading="rewindLoading"
+      :error="rewindError"
+      @close="closeRewind"
+      @restore="restoreRewindEntry"
+    />
     <div ref="panShield" class="pan-shield" aria-hidden="true"></div>
     <div
       v-if="status"
@@ -4958,6 +5121,7 @@ onBeforeUnmount(() => {
       >
         Restore previous workspace
       </button>
+      <button class="subtle-button" @click="openRewind"><Icon name="clock" :size="14" />Canvas rewind</button>
       <div class="workspace-action-row">
         <button class="subtle-button" @click="exportWorkspace()">
           <Icon name="download" :size="14" />Export backup</button

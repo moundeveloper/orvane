@@ -25,6 +25,36 @@ import CustomSelect from "./CustomSelect.vue";
 import ContextPicker from "./ContextPicker.vue";
 import ComposerModes from "./ComposerModes.vue";
 import FilesChanged from "./FilesChanged.vue";
+import ContextRing from "./ContextRing.vue";
+import ScheduledPrompts from "./ScheduledPrompts.vue";
+import AgentTiles from "./AgentTiles.vue";
+import ActivityBell from "./AgentActivity.vue";
+import KeepAwake from "./KeepAwake.vue";
+import SnapshotPicker from "./SnapshotPicker.vue";
+import RewindCard, { type RewindMode, type SessionCheckpoint } from "./RewindCard.vue";
+import type { MentionSession } from "./ContextPicker.vue";
+import {
+  harness,
+  markSeen,
+  quoteText,
+  registerComposer,
+  snapshotApp,
+  touchComposer,
+  type AgentQuote,
+  type ComposerHandle,
+} from "../agentHarness";
+import {
+  HOST,
+  leaf,
+  leaves,
+  readTiles,
+  replaceLeaf,
+  split as splitTiles,
+  tileId,
+  type PaneSession,
+  type TileNode,
+  type TilesState,
+} from "../agentTiles";
 import MessageActions, { type MessageAction } from "./MessageActions.vue";
 import { sendToNotes } from "../agentMessageNotes";
 import SlashMenu, { type SlashEntry } from "./SlashMenu.vue";
@@ -39,16 +69,27 @@ import {
   type AgentProvider,
   type AgentRun,
   type AgentActivity,
+  type AgentContext,
   type AgentEditMode,
   type AgentEffort,
+  type AgentQueued,
+  type AgentSchedule,
 } from "../agentSessions";
 import {
   api as fileRequest,
+  DRAG_MIME,
   parentOf,
   type FileEntry,
   type Roots,
 } from "./files/explorer";
-const props = defineProps<{ block: Block }>();
+// `pane` runs this app as one split pane of another Agent Sessions app: only
+// the session view, no toolbar or session list. The host keeps the layout.
+const props = defineProps<{
+  block: Block;
+  pane?: PaneSession & { id: string; nonce: number };
+  focused?: boolean;
+}>();
+const emit = defineEmits<{ "pane-state": [state: PaneSession] }>();
 const sessions = ref<AgentSession[]>([]),
   active = ref(""),
   search = ref(""),
@@ -94,6 +135,11 @@ const newProvider = ref<AgentProvider>();
 const folder = ref("");
 const draft = ref("");
 const run = ref<AgentRun | null>(null);
+// Context use read from the transcript; a working Claude run streams fresher numbers.
+const sessionContext = ref<AgentContext | null>(null);
+const contextNow = computed(() =>
+  (agentBusy(run.value) && run.value?.context) || sessionContext.value || run.value?.context || null,
+);
 const sending = ref(false);
 const runError = ref("");
 const live = ref(false);
@@ -103,6 +149,21 @@ const folders = ref<FileEntry[]>([]);
 const sessionView = ref<HTMLElement>();
 const dock = ref<HTMLFormElement>();
 const paths = ref<string[]>([]);
+// Selections, app snapshots and mentioned sessions sent with the next message.
+// They stay when another session is opened, until sent or removed.
+const quotes = ref<AgentQuote[]>([]);
+const hasDraft = computed(() => !!draft.value.trim() || quotes.value.length > 0);
+const dropping = ref(false);
+const snapshotOpen = ref(false);
+const snapshotBusy = ref(false);
+// Suggested next message after a turn ends: the placeholder, Tab takes it.
+const suggestion = ref("");
+// Checkpoints taken before each turn, and the one being rewound to.
+const checkpoints = ref<SessionCheckpoint[]>([]);
+const rewinding = ref<SessionCheckpoint | null>(null);
+const rewindBusy = ref(false);
+// After "Restore chat": the next message continues from this transcript entry.
+const rewindAt = ref<{ resumeAt: string; message: string } | null>(null);
 // An "@" before the caret opens the file picker; its text is the query.
 const mention = ref<{ start: number; query: string } | null>(null);
 // "/" at the start of the composer: skills, session commands, saved prompts.
@@ -138,9 +199,25 @@ let dockSize: ResizeObserver | undefined;
 let stream: EventSource | undefined;
 let revision = 0;
 let browseRevision = 0;
-try {
-  active.value = JSON.parse(props.block.value || "{}").active || "";
-} catch {}
+const tiles = ref<TilesState>({ root: leaf(HOST), focus: HOST, panes: {} });
+// Bumped when the host tells a pane to open something.
+const paneNonces = ref<Record<string, number>>({});
+const tileView = ref<InstanceType<typeof AgentTiles>>();
+const paneRoot: TileNode = leaf(HOST);
+if (props.pane) {
+  active.value = props.pane.key || "";
+  if (!props.pane.key && props.pane.provider) {
+    newProvider.value = props.pane.provider;
+    folder.value = props.pane.folder || "";
+  }
+} else {
+  try {
+    const saved = JSON.parse(props.block.value || "{}");
+    active.value = saved.active || "";
+    const restored = readTiles(saved.tiles);
+    if (restored) tiles.value = restored;
+  } catch {}
+}
 const selected = computed(() =>
   sessions.value.find((s) => s.key === active.value),
 );
@@ -148,6 +225,13 @@ const provider = computed(
   () => newProvider.value || selected.value?.provider || "claude",
 );
 const busy = computed(() => sending.value || agentBusy(run.value));
+const queuePending = ref(false);
+const schedules = ref<AgentSchedule[]>([]);
+const schedulesOpen = ref(false);
+const schedulesLoading = ref(false);
+const schedulesPane = ref<InstanceType<typeof ScheduledPrompts>>();
+const contextRing = ref<InstanceType<typeof ContextRing>>();
+const scheduleButton = ref<HTMLButtonElement>();
 const filtered = computed(() => {
   const query = search.value.trim().toLowerCase();
   return sessions.value.filter(
@@ -179,11 +263,11 @@ const editMode = computed({
     chosenModes.value = { ...chosenModes.value, [modelKey.value]: value };
   },
 });
-const modelOptions = computed(() => {
-  const listed = modelCatalogues.value[provider.value];
+function modelOptionsFor(kind: AgentProvider) {
+  const listed = modelCatalogues.value[kind];
   const options = listed?.length
     ? listed
-    : provider.value === "claude"
+    : kind === "claude"
       ? ["sonnet", "opus", "haiku", "fable"].map((value) => ({
           value,
           label: value[0]!.toUpperCase() + value.slice(1),
@@ -195,22 +279,22 @@ const modelOptions = computed(() => {
       : [{ value: "", label: "Provider default" }]),
     ...options,
   ];
-});
-watch(
-  provider,
-  (kind) => {
-    if (modelCatalogues.value[kind]) return;
-    void agentRequest<{ models: { value: string; label: string }[] }>(
-      "models",
-      { provider: kind },
-    )
-      .then(({ models }) => {
-        modelCatalogues.value = { ...modelCatalogues.value, [kind]: models };
-      })
-      .catch(() => {});
-  },
-  { immediate: true },
-);
+}
+const modelOptions = computed(() => modelOptionsFor(provider.value));
+const loadingModels = new Set<AgentProvider>();
+async function loadModels(kind: AgentProvider) {
+  if (modelCatalogues.value[kind] || loadingModels.has(kind)) return;
+  loadingModels.add(kind);
+  try {
+    const { models } = await agentRequest<{ models: { value: string; label: string }[] }>("models", { provider: kind });
+    modelCatalogues.value = { ...modelCatalogues.value, [kind]: models };
+  } catch {
+    // Keep the built-in defaults available if catalogue loading fails.
+  } finally {
+    loadingModels.delete(kind);
+  }
+}
+watch(provider, loadModels, { immediate: true });
 type SessionState = "" | "running" | "approval" | "failed" | "stopped";
 function stateOf(summary?: AgentRunSummary): SessionState {
   if (!summary) return "";
@@ -500,7 +584,7 @@ async function messageAction(action: MessageAction, text: string) {
 }
 // The next message resumes into a new session that branches from this one.
 function startFork() {
-  if (provider.value !== "claude" || !selected.value) return;
+  if (provider.value !== "claude" || !selected.value || busy.value) return;
   forking.value = true;
   focusComposer();
 }
@@ -546,6 +630,34 @@ async function addContext() {
 }
 function composerKey(event: KeyboardEvent) {
   if (event.isComposing) return;
+  if (event.ctrlKey && event.altKey && !event.shiftKey && (event.code === "KeyS" || event.code === "KeyZ")) {
+    event.preventDefault();
+    if (event.code === "KeyS") openSnapshot();
+    else rewindLatest();
+    return;
+  }
+  if (suggestion.value && !draft.value && !mention.value && !slash.value) {
+    if (event.key === "Tab" && !event.shiftKey && !event.ctrlKey && !event.altKey) {
+      event.preventDefault();
+      draft.value = suggestion.value;
+      suggestion.value = "";
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      suggestion.value = "";
+      return;
+    }
+  }
+  if (event.altKey && event.key === "ArrowUp") {
+    const last = run.value?.queued?.at(-1);
+    if (last) {
+      event.preventDefault();
+      void editQueued(last);
+      return;
+    }
+  }
   if (slash.value) {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
@@ -599,7 +711,8 @@ function composerKey(event: KeyboardEvent) {
 function appKey(event: KeyboardEvent) {
   const target = event.target as HTMLElement;
   if (
-    event.key !== "/" ||
+    props.pane ||
+    schedulesOpen.value || event.key !== "/" ||
     event.ctrlKey ||
     event.metaKey ||
     event.altKey ||
@@ -661,10 +774,11 @@ function openFolder() {
     }),
   );
 }
-async function menuAction(action: "folder" | "id" | "resume" | "reload" | "timeline") {
+async function menuAction(action: "folder" | "id" | "resume" | "reload" | "timeline" | "suggest") {
   closeMenu(action !== "timeline");
   try {
-    if (action === "timeline") await openTimeline();
+    if (action === "suggest") toggleSuggest();
+    else if (action === "timeline") await openTimeline();
     else if (action === "folder") await openFolder();
     else if (action === "id" && selected.value)
       await navigator.clipboard.writeText(selected.value.sessionId);
@@ -775,6 +889,7 @@ function resetComposer() {
   browseRevision++;
   closeStream();
   run.value = null;
+  sessionContext.value = null;
   runError.value = "";
   draft.value = "";
   sending.value = false;
@@ -784,6 +899,11 @@ function resetComposer() {
   mention.value = null;
   rawPermissions.value = new Set();
   menuOpen.value = false;
+  suggestion.value = "";
+  snapshotOpen.value = false;
+  rewinding.value = null;
+  rewindAt.value = null;
+  checkpoints.value = [];
 }
 
 async function browse(path?: string) {
@@ -820,7 +940,9 @@ async function openNew(kind: AgentProvider) {
 }
 
 async function focusComposer() {
+  schedulesOpen.value = false;
   if (expanded.value) await collapse();
+  await nextTick();
   if (selected.value || newProvider.value) composer.value?.focus();
   else searchInput.value?.focus();
 }
@@ -830,7 +952,18 @@ async function present(value: AgentRun) {
   if (agentBusy(value) && !runStarts.has(value.id))
     runStarts.set(value.id, Date.now());
   recordIndicator(summarizeAgentRun(value));
+  if (value.next) {
+    const next = await agentRequest<AgentRun | null>("inspect-run", { id: value.next }).catch(() => null);
+    if (ticket !== revision) return;
+    if (next) {
+      if (active.value) await read();
+      if (ticket === revision) watchRun(next);
+      return;
+    }
+  }
   run.value = value;
+  if (value.context) sessionContext.value = value.context;
+  if (!agentBusy(value)) markSeen(value.id);
   if (!agentBusy(value)) {
     if (value.error) runError.value = value.error;
     if (value.status === "failed" && !draft.value && !value.text)
@@ -843,7 +976,13 @@ async function present(value: AgentRun) {
           s.sessionId === value.sessionId,
       );
       if (session && ticket === revision) {
+        const waitingDraft = draft.value;
+        const waitingPaths = paths.value;
         await select(session.key);
+        if (active.value === session.key && !draft.value) {
+          draft.value = waitingDraft;
+          paths.value = waitingPaths;
+        }
         return;
       }
     } else if (active.value) {
@@ -867,7 +1006,7 @@ function watchRun(value: AgentRun) {
   live.value = true;
   closeStream();
   void present(value).catch(showRunError);
-  syncStream();
+  if (agentBusy(value)) syncStream();
 }
 
 function closeStream() {
@@ -910,10 +1049,88 @@ function showRunError(error: unknown) {
     error instanceof Error ? error.message : "Session command failed.";
 }
 
-async function send() {
+// The draft as sent: the text, then the attached paths.
+function outgoing() {
+  const files = [
+    ...new Set([...paths.value, ...quotes.value.flatMap((quote) => (quote.image ? [quote.image] : []))]),
+  ];
+  const context = quotes.value.map(quoteText).join("\n\n");
+  const text = context ? (draft.value.trim() ? `${draft.value}\n\n${context}` : context) : draft.value;
+  return files.length
+    ? `${text}\n\nLocal attachments:\n${files.map((path) => JSON.stringify(path)).join("\n")}`
+    : text;
+}
+function clearSent() {
+  draft.value = "";
+  paths.value = [];
+  quotes.value = [];
+  mention.value = null;
+}
+// While a run works, a message waits in its queue (first: interrupt and send
+// it next; "steer": Claude takes it between tool calls of the working turn).
+async function queueDraft(first: boolean | "steer" = false) {
+  const value = run.value;
+  if (!value || value.status !== "running" || !hasDraft.value || queuePending.value) return;
+  const ticket = revision;
+  const message = outgoing();
+  queuePending.value = true;
+  runError.value = "";
+  try {
+    const updated = await agentRequest<(AgentRun & { steerError?: string }) | null>("queue", {
+      id: value.id,
+      message,
+      ...(first === "steer" ? { steer: true } : first ? { first: true } : {}),
+    });
+    if (ticket !== revision) return;
+    if (outgoing() === message) clearSent();
+    if (updated && run.value?.id === updated.id) {
+      run.value.queued = updated.queued;
+      run.value.steered = updated.steered;
+    }
+    if (updated?.steerError) showNotice(`Queued instead: ${updated.steerError}`);
+  } catch (error) {
+    if (ticket === revision) showRunError(error);
+  } finally {
+    queuePending.value = false;
+  }
+}
+async function queueCommand(operation: "unqueue" | "queue-now" | "steer", item: AgentQueued) {
+  const value = run.value;
+  if (!value || queuePending.value) return false;
+  const ticket = revision;
+  queuePending.value = true;
+  try {
+    const updated = await agentRequest<AgentRun>(operation, { id: value.id, queueId: item.id });
+    if (ticket !== revision) return false;
+    if (updated.id !== value.id) {
+      // A run that had ended started the message itself.
+      if (run.value) run.value.queued = [];
+      watchRun(updated);
+    } else if (run.value?.id === updated.id) {
+      run.value.queued = updated.queued;
+      run.value.steered = updated.steered;
+    }
+    return true;
+  } catch (error) {
+    if (ticket === revision) showRunError(error);
+    return false;
+  } finally {
+    queuePending.value = false;
+  }
+}
+// Edit takes the message back into the composer.
+async function editQueued(item: AgentQueued) {
+  if (!(await queueCommand("unqueue", item))) return;
+  draft.value = draft.value.trim() ? `${draft.value}\n${item.text}` : item.text;
+  await nextTick();
+  composer.value?.focus({ preventScroll: true });
+}
+const queueLine = (text: string) => text.trim().split(/\r?\n/, 1)[0]!.slice(0, 240);
+async function send(messageOverride?: string) {
+  if (agentBusy(run.value) && !sending.value) return queueDraft();
   if (
     busy.value ||
-    !draft.value.trim() ||
+    !(messageOverride || hasDraft.value) ||
     !(selected.value || newProvider.value)
   )
     return;
@@ -925,14 +1142,13 @@ async function send() {
   sending.value = true;
   runError.value = "";
   try {
-    const message = paths.value.length
-      ? `${draft.value}\n\nLocal attachments:\n${paths.value.map((path) => JSON.stringify(path)).join("\n")}`
-      : draft.value;
+    const message = messageOverride ?? outgoing();
     const chosen = {
       ...(model.value ? { model: model.value } : {}),
       ...(effort.value ? { effort: effort.value } : {}),
       ...(editMode.value ? { mode: editMode.value } : {}),
-      ...(forking.value && !newProvider.value ? { fork: true } : {}),
+      ...(!messageOverride && forking.value && !newProvider.value ? { fork: true } : {}),
+      ...(!messageOverride && rewindAt.value && !newProvider.value ? { resumeAt: rewindAt.value.resumeAt } : {}),
     };
     const result = await agentRequest<AgentRun>("start", {
       message,
@@ -941,10 +1157,11 @@ async function send() {
         : { key: active.value, ...chosen },
     });
     if (ticket !== revision) return;
-    draft.value = "";
-    paths.value = [];
-    mention.value = null;
-    forking.value = false;
+    if (!messageOverride) {
+      clearSent();
+      forking.value = false;
+      rewindAt.value = null;
+    }
     closeBrowser();
     watchRun(result);
   } catch (error) {
@@ -954,10 +1171,259 @@ async function send() {
   }
 }
 
+// While a Claude turn works, Ctrl+Enter steers it and Ctrl+Shift+Enter stops
+// it and sends next. Codex reads its message once, so Ctrl+Enter interrupts.
 function onEnter(event: KeyboardEvent) {
-  if (event.shiftKey || event.isComposing) return;
+  if (event.isComposing) return;
+  const ctrl = event.ctrlKey || event.metaKey;
+  const running = run.value?.status === "running";
+  if (event.shiftKey && !(ctrl && running)) return;
   event.preventDefault();
+  if (ctrl && running) {
+    void queueDraft(run.value!.provider === "claude" && !event.shiftKey ? "steer" : true);
+    return;
+  }
   void send();
+}
+/* ---------- context from other apps, sessions and files ---------- */
+const composerHandle: ComposerHandle = {
+  element: () => root.value,
+  addQuote(quote) {
+    quotes.value = [...quotes.value.filter((item) => item.id !== quote.id), quote].slice(-8);
+    void focusComposer();
+  },
+};
+const quoteLine = (quote: AgentQuote) =>
+  quote.text.trim().split(/\r?\n/).find((line) => line.trim())?.slice(0, 160) ||
+  (quote.image ? "Picture" : "");
+function removeQuote(id: string) {
+  quotes.value = quotes.value.filter((quote) => quote.id !== id);
+}
+// Files dragged from Orvane's File Explorer, or from Windows, become chips.
+function draggingFiles(event: DragEvent) {
+  const types = event.dataTransfer?.types ?? [];
+  return types.includes(DRAG_MIME) || types.includes("Files");
+}
+function dragOver(event: DragEvent) {
+  if (!draggingFiles(event)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  event.dataTransfer!.dropEffect = "copy";
+  dropping.value = true;
+}
+function dragLeave(event: DragEvent) {
+  if (!dock.value?.contains(event.relatedTarget as Node | null)) dropping.value = false;
+}
+function dropFiles(event: DragEvent) {
+  dropping.value = false;
+  const data = event.dataTransfer;
+  if (!data || !draggingFiles(event)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  let dropped: string[] = [];
+  try {
+    const parsed = data.types.includes(DRAG_MIME) ? JSON.parse(data.getData(DRAG_MIME)) : null;
+    if (Array.isArray(parsed?.paths)) dropped = parsed.paths.filter((path: unknown) => typeof path === "string");
+  } catch {
+    /* Drag data from somewhere else. */
+  }
+  if (!dropped.length) {
+    const desktop = (window as unknown as { orvaneDesktop?: { pathForFile?(file: File): string } }).orvaneDesktop;
+    dropped = [...data.files].map((file) => desktop?.pathForFile?.(file) ?? "").filter(Boolean);
+  }
+  if (!dropped.length) return;
+  paths.value = [...new Set([...paths.value, ...dropped])].slice(0, 20);
+  void focusComposer();
+}
+// "@" also lists other sessions; picking one adds its latest reply.
+const mentionSessions = computed<MentionSession[]>(() =>
+  sessions.value
+    .filter((session) => session.key !== active.value)
+    .slice(0, 60)
+    .map((session) => ({
+      key: session.key,
+      title: session.title,
+      provider: session.provider ?? "claude",
+      project: session.project,
+    })),
+);
+async function pickMentionSession(session: MentionSession) {
+  const field = composer.value;
+  const found = mention.value;
+  if (field && found) {
+    draft.value = draft.value.slice(0, found.start) + draft.value.slice(field.selectionStart);
+    mention.value = null;
+    await nextTick();
+    field.focus({ preventScroll: true });
+    field.setSelectionRange(found.start, found.start);
+  }
+  try {
+    const data = await agentRequest<AgentSessionRead>("read", { key: session.key });
+    const reply = [...data.messages].reverse().find((message) => message.role !== "user" && message.text);
+    composerHandle.addQuote({
+      id: `session:${session.key}`,
+      kind: "session",
+      source: session.title,
+      detail: `${agentNames[session.provider as AgentProvider] ?? session.provider} in ${projectName(session.project)}, session ${data.session.sessionId}`,
+      text: reply?.text ?? "",
+    });
+  } catch (cause) {
+    showRunError(cause);
+  }
+}
+function openSnapshot() {
+  if (!(selected.value || newProvider.value) || snapshotBusy.value) return;
+  mention.value = null;
+  slash.value = null;
+  snapshotOpen.value = true;
+}
+function closeSnapshot() {
+  snapshotOpen.value = false;
+  void focusComposer();
+}
+async function takeSnapshot(appId: string, picture: boolean) {
+  snapshotOpen.value = false;
+  snapshotBusy.value = true;
+  try {
+    composerHandle.addQuote(await snapshotApp(appId, picture));
+  } catch (cause) {
+    showRunError(cause);
+  } finally {
+    snapshotBusy.value = false;
+  }
+}
+
+/* ---------- suggested next message ---------- */
+function toggleSuggest() {
+  harness.settings.suggest = !harness.settings.suggest;
+  if (!harness.settings.suggest) suggestion.value = "";
+  showNotice(harness.settings.suggest ? "Suggested next message on" : "Suggested next message off");
+}
+watch(draft, (text) => {
+  if (text) suggestion.value = "";
+});
+watch(
+  () => (run.value ? `${run.value.id}:${run.value.status}` : ""),
+  async (now, before) => {
+    const value = run.value;
+    const [id, status] = now.split(":");
+    if (!value || status !== "completed" || !before || before.split(":")[0] !== id) return;
+    if (!["running", "stopping"].includes(before.split(":")[1]!) || !harness.settings.suggest) return;
+    const reply =
+      value.text || [...messages.value].reverse().find((message) => message.role !== "user" && message.text)?.text || "";
+    if (!reply.trim() || draft.value.trim()) return;
+    const ticket = revision;
+    try {
+      const { text } = await agentRequest<{ text: string }>("suggest", {
+        message: value.message.slice(0, 12000),
+        reply: reply.slice(-40000),
+      });
+      if (ticket === revision && run.value?.id === id && !draft.value && harness.settings.suggest)
+        suggestion.value = text.trim();
+    } catch {
+      /* No suggestion this time. */
+    }
+  },
+);
+
+/* ---------- checkpoints and rewind ---------- */
+const sameText = (text: string) => text.replace(/\s+/g, " ").trim().slice(0, 200);
+// The user message each checkpoint was taken before.
+const checkpointOf = computed(() => {
+  const found = new Map<string, SessionCheckpoint>();
+  const used = new Set<string>();
+  for (const checkpoint of checkpoints.value) {
+    const want = sameText(checkpoint.message);
+    const at = Date.parse(checkpoint.at);
+    const match = messages.value.find(
+      (message) =>
+        message.role === "user" &&
+        !used.has(message.id) &&
+        sameText(message.text) === want &&
+        !(Date.parse(message.at) < at - 120_000),
+    );
+    if (!match) continue;
+    used.add(match.id);
+    found.set(match.id, checkpoint);
+  }
+  return found;
+});
+async function loadCheckpoints() {
+  const session = selected.value;
+  if (!session) {
+    checkpoints.value = [];
+    return;
+  }
+  try {
+    const data = await agentRequest<{ checkpoints: SessionCheckpoint[] }>("checkpoints", {
+      sessionId: session.sessionId,
+    });
+    if (selected.value?.sessionId === session.sessionId)
+      checkpoints.value = [...data.checkpoints].sort((a, b) => a.at.localeCompare(b.at));
+  } catch {
+    checkpoints.value = [];
+  }
+}
+watch(
+  () => [selected.value?.sessionId ?? "", run.value && !agentBusy(run.value) ? run.value.id : ""] as const,
+  () => void loadCheckpoints(),
+  { immediate: true },
+);
+function rewindLatest() {
+  const latest = [...checkpointOf.value.values()].sort((a, b) => b.at.localeCompare(a.at))[0];
+  if (latest && !busy.value) rewinding.value = latest;
+  else if (!latest) showNotice("No checkpoints in this session yet.");
+}
+async function restoreCheckpoint(mode: RewindMode) {
+  const checkpoint = rewinding.value;
+  const session = selected.value;
+  if (!checkpoint || !session || busy.value || rewindBusy.value) return;
+  const kind = session.provider ?? "claude";
+  const messageId = [...checkpointOf.value].find(([, value]) => value === checkpoint)?.[0];
+  const index = messages.value.findIndex((message) => message.id === messageId);
+  const original = index >= 0 ? messages.value[index]!.text : checkpoint.message;
+  if (mode !== "files" && index === 0 && before.value) {
+    showRunError(Error("Load earlier messages first, then rewind."));
+    return;
+  }
+  rewindBusy.value = true;
+  try {
+    let restored = -1;
+    if (mode !== "chat") {
+      const result = await agentRequest<{ files: unknown[] }>("checkpoint-restore", {
+        sessionId: session.sessionId,
+        commit: checkpoint.commit,
+        provider: kind,
+      });
+      restored = result.files.length;
+    }
+    rewinding.value = null;
+    if (mode !== "files" && kind === "claude") {
+      const previous = index > 0 ? messages.value[index - 1] : undefined;
+      if (previous) {
+        rewindAt.value = { resumeAt: previous.lastId ?? previous.id, message: original };
+        draft.value = original;
+      } else {
+        // Before the first message: a new session in the same folder.
+        const project = session.project;
+        back();
+        newProvider.value = "claude";
+        folder.value = project;
+        draft.value = original;
+      }
+    }
+    const files = restored < 0 ? "" : `Restored ${restored} file${restored === 1 ? "" : "s"}. `;
+    showNotice(mode === "files" ? `${files}The current files were saved as a checkpoint first.` : `${files}Edit the message and send to continue from there.`);
+    await focusComposer();
+  } catch (cause) {
+    showRunError(cause);
+  } finally {
+    rewindBusy.value = false;
+  }
+}
+function closeRewind() {
+  rewinding.value = null;
+  void focusComposer();
 }
 function leaveComposer(event: KeyboardEvent) {
   if (event.isComposing) return;
@@ -1009,6 +1475,13 @@ async function read(older = false, includeRun = false) {
   }
   visuals.value = data.visuals;
   warnings.value = data.warnings;
+  if (!older && data.context) {
+    const current = run.value?.context ?? sessionContext.value;
+    sessionContext.value = data.context.estimatedWindow && current && !current.estimatedWindow &&
+      data.context.model === current.model
+      ? { ...data.context, window: current.window, estimatedWindow: false }
+      : data.context;
+  }
   error.value = "";
   if (expanded.value)
     expanded.value =
@@ -1016,6 +1489,7 @@ async function read(older = false, includeRun = false) {
   if (data.run && agentBusy(data.run)) watchRun(data.run);
   else if (data.run) {
     run.value = data.run;
+    markSeen(data.run.id);
     if (data.run.error) showRunError(data.run.error);
   }
   await nextTick();
@@ -1026,11 +1500,12 @@ async function read(older = false, includeRun = false) {
 }
 async function select(key: string) {
   if (sending.value || (newProvider.value && busy.value)) return;
+  schedulesOpen.value = false;
   resetComposer();
   newProvider.value = undefined;
   const selectedGeneration = ++generation;
   active.value = key;
-  props.block.value = JSON.stringify({ active: key });
+  saveBlock();
   messages.value = [];
   visuals.value = [];
   expanded.value = null;
@@ -1068,6 +1543,7 @@ async function poll() {
       if (ticks++ % 3 === 0) {
         const restoring = ticks === 1 && first && !!active.value;
         await list();
+        if (!props.pane) await loadSchedules();
         if (restoring && active.value && !loading.value)
           await select(active.value);
       }
@@ -1092,10 +1568,11 @@ async function refresh() {
   }
 }
 function back() {
+  schedulesOpen.value = false;
   resetComposer();
   generation++;
   active.value = "";
-  props.block.value = "";
+  saveBlock();
   expanded.value = null;
   newProvider.value = undefined;
   messages.value = [];
@@ -1104,7 +1581,260 @@ function back() {
   before.value = null;
   loading.value = false;
 }
-const unregister = registerCommands(`agent-sessions:${props.block.id}`, () => [
+async function loadSchedules() {
+  if (schedulesLoading.value) return;
+  schedulesLoading.value = true;
+  const previous = schedules.value;
+  try {
+    const data = await agentRequest<{ schedules: AgentSchedule[] }>("schedules");
+    if (schedules.value === previous) schedules.value = data.schedules;
+  } catch (cause) {
+    if (schedulesOpen.value) error.value = cause instanceof Error ? cause.message : "Scheduled prompts could not be loaded.";
+  } finally {
+    schedulesLoading.value = false;
+  }
+}
+async function showSchedules() {
+  if (expanded.value) await collapse();
+  schedulesOpen.value = true;
+  void loadSchedules();
+  await nextTick();
+  schedulesPane.value?.focus();
+}
+function closeSchedules() {
+  schedulesOpen.value = false;
+  void nextTick(() => scheduleButton.value?.focus({ preventScroll: true }));
+}
+async function openScheduledSession(id: string, kind: AgentProvider) {
+  try {
+    await list();
+    const session = sessions.value.find((item) => item.sessionId === id && (item.provider ?? "claude") === kind);
+    if (!session) throw Error("The session transcript is not available yet.");
+    await select(session.key);
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : "The session could not be opened.";
+  }
+}
+/* ---------- split panes (host only) ---------- */
+const splitOn = computed(() => tiles.value.root.type === "split");
+function saveBlock() {
+  if (props.pane) return;
+  const split = splitOn.value;
+  props.block.value =
+    active.value || split
+      ? JSON.stringify({
+          ...(active.value ? { active: active.value } : {}),
+          ...(split ? { tiles: tiles.value } : {}),
+        })
+      : "";
+}
+const shownKey = computed(() =>
+  tiles.value.focus === HOST ? active.value : tiles.value.panes[tiles.value.focus]?.key ?? "",
+);
+function paneProp(id: string) {
+  return { id, ...tiles.value.panes[id], nonce: paneNonces.value[id] ?? 0 };
+}
+function paneState(id: string, state: PaneSession) {
+  if (!(id in tiles.value.panes)) return;
+  tiles.value.panes[id] = state;
+  saveBlock();
+}
+function openInPane(id: string, session: PaneSession) {
+  tiles.value.panes[id] = session;
+  paneNonces.value[id] = (paneNonces.value[id] ?? 0) + 1;
+  saveBlock();
+}
+/** Provider and folder of what a pane shows, for a new session beside it. */
+function paneOrigin(id: string): PaneSession {
+  const pane: PaneSession =
+    id === HOST
+      ? { key: active.value || undefined, provider: newProvider.value, folder: folder.value || undefined }
+      : tiles.value.panes[id] ?? {};
+  const session = pane.key ? sessions.value.find((s) => s.key === pane.key) : undefined;
+  return {
+    provider: session ? session.provider ?? "claude" : pane.provider ?? provider.value,
+    folder: session?.project || pane.folder,
+  };
+}
+// Like a Terminal split: the new pane starts a session with the same
+// provider and folder as the focused one, unless it is given a session.
+function splitPane(dir: "row" | "column" | "auto", open?: PaneSession) {
+  const from = tiles.value.focus;
+  if (dir === "auto") {
+    const rect = tileView.value?.rects().get(from);
+    dir = rect && rect.h > rect.w ? "column" : "row";
+  }
+  const id = tileId("pane");
+  tiles.value.panes[id] = open ?? paneOrigin(from);
+  paneNonces.value[id] = 1;
+  tiles.value.root = replaceLeaf(tiles.value.root, from, splitTiles(dir, leaf(from), leaf(id)))!;
+  tiles.value.focus = id;
+  saveBlock();
+}
+function closePane(id: string) {
+  const ids = leaves(tiles.value.root);
+  if (ids.length < 2 || !ids.includes(id)) return;
+  const rects = tileView.value?.rects();
+  const gone = rects?.get(id);
+  const nearest = (candidates: string[]) =>
+    candidates.sort((a, b) => {
+      const ra = rects?.get(a),
+        rb = rects?.get(b);
+      if (!gone || !ra || !rb) return 0;
+      const d = (r: typeof ra) => Math.hypot(r.x + r.w / 2 - gone.x - gone.w / 2, r.y + r.h / 2 - gone.y - gone.h / 2);
+      return d(ra) - d(rb);
+    })[0]!;
+  if (id === HOST) {
+    // The host draws its own pane, so it takes over the nearest pane's
+    // session and place.
+    if (sending.value || (newProvider.value && busy.value)) return;
+    const other = nearest(ids.filter((x) => x !== HOST));
+    const session = tiles.value.panes[other] ?? {};
+    tiles.value.root = replaceLeaf(replaceLeaf(tiles.value.root, HOST, null)!, other, leaf(HOST))!;
+    delete tiles.value.panes[other];
+    tiles.value.focus = HOST;
+    if (session.key) void select(session.key).then(focusComposer);
+    else if (session.provider) {
+      void openNew(session.provider).then(() => {
+        if (session.folder) folder.value = session.folder;
+      });
+    } else back();
+  } else {
+    tiles.value.root = replaceLeaf(tiles.value.root, id, null)!;
+    delete tiles.value.panes[id];
+    if (tiles.value.focus === id) tiles.value.focus = nearest(leaves(tiles.value.root));
+  }
+  saveBlock();
+}
+function openFromList(key: string, event?: MouseEvent) {
+  if (props.pane) return select(key);
+  if (event && (event.ctrlKey || event.metaKey)) return splitPane("auto", { key });
+  // Already open in a pane: go there.
+  if (splitOn.value) {
+    const open = active.value === key
+      ? HOST
+      : Object.keys(tiles.value.panes).find((id) => tiles.value.panes[id]!.key === key);
+    if (open) {
+      tiles.value.focus = open;
+      return;
+    }
+  }
+  const at = tiles.value.focus;
+  if (!splitOn.value || at === HOST) return select(key);
+  openInPane(at, { key });
+}
+function newInFocused(kind: AgentProvider) {
+  const at = tiles.value.focus;
+  if (!splitOn.value || at === HOST) return openNew(kind);
+  openInPane(at, { provider: kind, folder: paneOrigin(at).folder });
+}
+if (props.pane) {
+  watch([active, newProvider, folder], () =>
+    emit(
+      "pane-state",
+      active.value ? { key: active.value } : { provider: newProvider.value, folder: folder.value || undefined },
+    ),
+  );
+  watch(
+    () => props.pane?.nonce,
+    () => {
+      const pane = props.pane;
+      if (!pane) return;
+      if (pane.key) {
+        if (pane.key !== active.value || !messages.value.length) void select(pane.key).then(focusComposer);
+        else void focusComposer();
+      } else if (pane.provider) {
+        void openNew(pane.provider).then(() => {
+          if (pane.folder) folder.value = pane.folder;
+        });
+      }
+    },
+    { immediate: !!props.pane.nonce, flush: "post" },
+  );
+}
+// With split panes, Ctrl+K lists the focused pane's session commands only.
+const sessionCommandsOn = () =>
+  props.pane ? !!props.focused : !splitOn.value || tiles.value.focus === HOST;
+const unregister = registerCommands(`agent-sessions:${props.block.id}${props.pane ? `:${props.pane.id}` : ""}`, () => [
+  ...(props.pane
+    ? []
+    : [
+        {
+          id: `agent-split-right:${props.block.id}`,
+          title: "Split session right",
+          icon: "agent-sessions",
+          hint: "Alt+Shift+=",
+          blockId: props.block.id,
+          run: () => splitPane("row"),
+        },
+        {
+          id: `agent-split-down:${props.block.id}`,
+          title: "Split session down",
+          icon: "agent-sessions",
+          hint: "Alt+Shift+-",
+          blockId: props.block.id,
+          run: () => splitPane("column"),
+        },
+        ...(splitOn.value
+          ? [{
+              id: `agent-split-close:${props.block.id}`,
+              title: "Close session pane",
+              icon: "close",
+              hint: "Ctrl+Shift+W",
+              blockId: props.block.id,
+              run: () => closePane(tiles.value.focus),
+            }]
+          : []),
+      ]),
+  ...(sessionCommandsOn() ? sessionCommands() : []),
+]);
+function sessionCommands() { return [
+  {
+    id: `agent-schedules:${props.block.id}`,
+    title: "Show scheduled prompts",
+    icon: "clock",
+    blockId: props.block.id,
+    run: showSchedules,
+  },
+  ...(contextNow.value && !schedulesOpen.value
+    ? [{
+        id: `agent-context:${props.block.id}`,
+        title: "Show context usage",
+        icon: "agent-sessions" as const,
+        blockId: props.block.id,
+        run: () => contextRing.value?.toggle(),
+      }]
+    : []),
+  ...(selected.value || newProvider.value
+    ? [{
+        id: `agent-snapshot:${props.block.id}`,
+        title: "Snapshot an app into the message",
+        icon: "image" as const,
+        hint: "Ctrl+Alt+S",
+        blockId: props.block.id,
+        run: async () => {
+          await focusComposer();
+          openSnapshot();
+        },
+      }]
+    : []),
+  ...(checkpointOf.value.size && !busy.value
+    ? [{
+        id: `agent-rewind:${props.block.id}`,
+        title: "Rewind to the last checkpoint",
+        icon: "undo" as const,
+        hint: "Ctrl+Alt+Z",
+        blockId: props.block.id,
+        run: rewindLatest,
+      }]
+    : []),
+  {
+    id: `agent-suggest:${props.block.id}`,
+    title: harness.settings.suggest ? "Turn off suggested next message" : "Turn on suggested next message",
+    icon: "text",
+    blockId: props.block.id,
+    run: toggleSuggest,
+  },
   {
     id: `agent-send:${props.block.id}`,
     title: "Send to session…",
@@ -1135,7 +1865,7 @@ const unregister = registerCommands(`agent-sessions:${props.block.id}`, () => [
         },
       ]
     : []),
-  ...(provider.value === "claude" && selected.value
+  ...(provider.value === "claude" && selected.value && !busy.value
     ? [
         {
           id: `agent-fork:${props.block.id}`,
@@ -1153,8 +1883,10 @@ const unregister = registerCommands(`agent-sessions:${props.block.id}`, () => [
     blockId: props.block.id,
     run: () => openNew(kind),
   })),
-]);
+]; }
+let unregisterComposer = () => {};
 onMounted(() => {
+  unregisterComposer = registerComposer(composerHandle);
   document.addEventListener("visibilitychange", syncStream);
   document.addEventListener("pointerdown", outsideMenu, true);
   window.addEventListener("orvane:guest-pointer-down", outsideMenu);
@@ -1191,7 +1923,7 @@ watch(
   { flush: "post" },
 );
 watch(
-  () => agentOpenRequests.get(props.block.id),
+  () => (props.pane ? undefined : agentOpenRequests.get(props.block.id)),
   (request) => {
     if (!request) return;
     agentOpenRequests.delete(props.block.id);
@@ -1215,6 +1947,7 @@ onBeforeUnmount(() => {
   dockSize?.disconnect();
   clearInterval(clock);
   unregister();
+  unregisterComposer();
   resetComposer();
   visibility?.disconnect();
   stopped = true;
@@ -1223,8 +1956,8 @@ onBeforeUnmount(() => {
 });
 </script>
 <template>
-  <div ref="root" class="agent-sessions-app" @keydown="appKey">
-    <header class="cs-toolbar">
+  <div ref="root" class="agent-sessions-app" :class="{ 'cs-pane-mode': pane }" @keydown="appKey">
+    <header v-if="!pane" class="cs-toolbar">
       <span class="cs-title"
         ><Icon name="agent-sessions" :size="16" /><span>Agent sessions</span></span
       >
@@ -1233,7 +1966,7 @@ onBeforeUnmount(() => {
         class="cs-btn"
         title="New Claude Code session"
         :disabled="sending || (!!newProvider && busy)"
-        @click="openNew('claude')"
+        @click="newInFocused('claude')"
       >
         <Icon name="plus" :size="14" />Claude
       </button>
@@ -1242,10 +1975,11 @@ onBeforeUnmount(() => {
         class="cs-btn"
         title="New Codex session"
         :disabled="sending || (!!newProvider && busy)"
-        @click="openNew('codex')"
+        @click="newInFocused('codex')"
       >
         <Icon name="plus" :size="14" />Codex
       </button>
+      <ActivityBell @open="openRecent" />
       <button
         class="cs-btn cs-icon cs-ghost"
         type="button"
@@ -1263,11 +1997,18 @@ onBeforeUnmount(() => {
     <div
       class="cs-layout"
       :class="{
-        'cs-has-selection': active || newProvider,
+        'cs-has-selection': active || newProvider || schedulesOpen,
         'cs-focus': expanded,
+        'cs-scheduled-layout': schedulesOpen,
+        'cs-pane-layout': pane,
       }"
     >
-      <nav v-show="!expanded" class="cs-sidebar" aria-label="Agent sessions">
+      <nav v-if="!pane" v-show="!expanded" class="cs-sidebar" aria-label="Agent sessions">
+        <button ref="scheduleButton" type="button" class="cs-schedule-nav"
+          :aria-current="schedulesOpen ? 'page' : undefined"
+          @click="schedulesOpen ? closeSchedules() : showSchedules()">
+          <Icon name="clock" :size="14" />Scheduled <span>{{ schedules.length }}</span>
+        </button>
         <label class="cs-search"
           ><Icon name="search" :size="14" /><input
             ref="searchInput"
@@ -1310,10 +2051,10 @@ onBeforeUnmount(() => {
               :key="s.key"
               type="button"
               class="cs-session"
-              :class="{ selected: active === s.key }"
-              :aria-current="active === s.key ? 'true' : undefined"
+              :class="{ selected: shownKey === s.key }"
+              :aria-current="shownKey === s.key ? 'true' : undefined"
               :disabled="sending || (!!newProvider && busy)"
-              @click="select(s.key)"
+              @click="openFromList(s.key, $event)"
             >
               <strong :title="s.title">{{ s.title }}</strong
               ><time :datetime="new Date(s.updatedAt).toISOString()">{{
@@ -1340,6 +2081,28 @@ onBeforeUnmount(() => {
           </p>
         </div>
       </nav>
+      <section v-if="schedulesOpen && !pane" class="cs-scheduled-view">
+        <button type="button" class="cs-btn cs-ghost cs-scheduled-back" @click="closeSchedules">
+          <Icon name="back" :size="14" />Sessions
+        </button>
+        <ScheduledPrompts ref="schedulesPane" v-model="schedules" :loading="schedulesLoading"
+          :model-options="modelOptionsFor" @load-models="loadModels" @open-session="openScheduledSession" />
+      </section>
+      <AgentTiles
+        v-show="!schedulesOpen"
+        ref="tileView"
+        class="cs-tiles"
+        :class="{ 'cs-tiles-empty': !active && !newProvider && !splitOn }"
+        :root="pane ? paneRoot : tiles.root"
+        :focus="pane ? HOST : tiles.focus"
+        :nested="!!pane"
+        @update:root="(root) => { tiles.root = root; saveBlock(); }"
+        @update:focus="(id) => (tiles.focus = id)"
+        @split="(dir) => splitPane(dir)"
+        @close="closePane"
+      >
+        <template #pane="{ id }">
+          <template v-if="id === HOST">
       <div v-if="active || newProvider" ref="sessionView" class="cs-session-view">
         <header v-show="!expanded" class="cs-session-header">
           <button
@@ -1351,7 +2114,7 @@ onBeforeUnmount(() => {
             <Icon name="back" :size="14" />Sessions
           </button>
           <div class="cs-head-text">
-            <strong>{{
+            <strong data-tile-grip>{{
               newProvider
                 ? `New ${agentNames[newProvider]} session`
                 : selected?.title || "Session"
@@ -1372,6 +2135,7 @@ onBeforeUnmount(() => {
               </template>
             </span>
           </div>
+          <KeepAwake v-if="working" />
           <button
             v-if="selected || (newProvider && run)"
             class="cs-btn cs-open-folder"
@@ -1412,6 +2176,9 @@ onBeforeUnmount(() => {
               </button>
               <button type="button" role="menuitem" @click="menuAction('timeline')">
                 <Icon name="clock" :size="14" /><span>Session timeline</span>
+              </button>
+              <button type="button" role="menuitem" :aria-pressed="harness.settings.suggest" @click="menuAction('suggest')">
+                <Icon :name="harness.settings.suggest ? 'check' : 'text'" :size="14" /><span>Suggest next message</span>
               </button>
               <hr />
               <button type="button" role="menuitem" @click="menuAction('reload')">
@@ -1476,10 +2243,20 @@ onBeforeUnmount(() => {
                     m.role === "user" ? "You" : agentNames[provider]
                   }}</strong
                   ><time>{{ time(m.at) }}</time>
+                  <button
+                    v-if="m.role === 'user' && checkpointOf.get(m.id)"
+                    type="button"
+                    class="cs-rewind"
+                    :disabled="busy"
+                    title="Rewind to before this message (Ctrl+Alt+Z for the latest)"
+                    @click="rewinding = checkpointOf.get(m.id)!"
+                  >
+                    <Icon name="undo" :size="12" /><span>Checkpoint</span>
+                  </button>
                   <MessageActions
                     v-if="m.text"
                     :user="m.role === 'user'"
-                    :can-fork="provider === 'claude' && !!selected"
+                  :can-fork="provider === 'claude' && !!selected && !busy"
                     @action="messageAction($event, m.text)"
                   />
                 </div>
@@ -1511,6 +2288,12 @@ onBeforeUnmount(() => {
                 <div class="cs-message-meta"><strong>You</strong></div>
                 <ChatMarkdown class="cs-message-text" :text="run.message" />
               </article>
+              <template v-if="live && run?.steered?.length">
+                <article v-for="item in run.steered" :key="item.at" class="cs-message cs-user cs-steered">
+                  <div class="cs-message-meta"><strong>You</strong><span class="cs-steer-tag">mid-turn</span></div>
+                  <ChatMarkdown class="cs-message-text" :text="item.text" />
+                </article>
+              </template>
               <ThinkingTrail
                 v-if="working && run"
                 :key="'trail:' + run.id"
@@ -1540,6 +2323,30 @@ onBeforeUnmount(() => {
                 :key="run.id"
                 :items="run.activities"
               />
+              <section v-if="run?.queued?.length" class="cs-queue" aria-label="Queued follow-ups">
+                <header>
+                  <strong>Then</strong>
+                  <span>{{ working ? "sent when this run ends" : run.status === "failed" ? "run failed" : run.status === "stopped" ? "run stopped" : "waiting to send" }}</span>
+                  <span class="cs-queue-count">{{ run.queued.length }} queued</span>
+                </header>
+                <ol aria-label="Queued messages">
+                  <li v-for="(item, index) in run.queued" :key="item.id">
+                    <span class="cs-queue-number" aria-hidden="true">{{ index + 1 }}</span>
+                    <span class="cs-queue-text" :title="item.text">{{ queueLine(item.text) }}</span>
+                    <button
+                      v-if="run.provider === 'claude' && run.status === 'running'"
+                      type="button"
+                      class="cs-btn cs-ghost"
+                      :disabled="queuePending"
+                      title="Give it to the working turn now, between tool calls"
+                      @click="queueCommand('steer', item)"
+                    >Steer</button>
+                    <button type="button" class="cs-btn cs-ghost" :disabled="queuePending" @click="editQueued(item)">Edit</button>
+                    <button type="button" class="cs-btn cs-ghost" :disabled="queuePending" @click="queueCommand('queue-now', item)">Send now</button>
+                    <button type="button" class="cs-btn cs-ghost" :disabled="queuePending" @click="queueCommand('unqueue', item)">Remove</button>
+                  </li>
+                </ol>
+              </section>
               <FilesChanged
                 v-if="run && !working"
                 :key="'files:' + run.id"
@@ -1598,7 +2405,12 @@ onBeforeUnmount(() => {
           v-if="!expanded && (newProvider || selected)"
           ref="dock"
           class="cs-compose"
-          @submit.prevent="send"
+          :class="{ 'cs-dropping': dropping }"
+          @submit.prevent="send()"
+          @dragenter="dragOver"
+          @dragover="dragOver"
+          @dragleave="dragLeave"
+          @drop="dropFiles"
         >
           <!-- Outside the dock, which scrolls and would clip it. -->
           <div v-if="slash" class="cs-picker-anchor">
@@ -1615,8 +2427,13 @@ onBeforeUnmount(() => {
               ref="picker"
               :query="mention.query"
               :base="selected?.project || run?.folder || undefined"
+              :sessions="mentionSessions"
               @pick="pickMention"
+              @pick-session="pickMentionSession"
             />
+          </div>
+          <div v-if="snapshotOpen" class="cs-picker-anchor">
+            <SnapshotPicker @pick="takeSnapshot" @close="closeSnapshot" />
           </div>
           <div class="cs-dock">
             <div v-if="newProvider" class="cs-folder cs-card">
@@ -1682,6 +2499,17 @@ onBeforeUnmount(() => {
                 </button>
               </div>
             </div>
+            <RewindCard
+              v-if="rewinding && selected"
+              :key="rewinding.commit"
+              :checkpoint="rewinding"
+              :session-id="selected.sessionId"
+              :provider="selected.provider ?? 'claude'"
+              :can-chat="(selected.provider ?? 'claude') === 'claude'"
+              :busy="busy || rewindBusy"
+              @restore="restoreCheckpoint"
+              @close="closeRewind"
+            />
             <div
               v-for="permission in run?.permissions"
               :key="permission.id"
@@ -1757,18 +2585,39 @@ onBeforeUnmount(() => {
               <Icon name="git" :size="12" />The next message starts a new session branched from this one.
               <button type="button" class="cs-btn cs-ghost cs-small" @click="forking = false">Cancel</button>
             </p>
+            <p v-if="rewindAt" class="cs-notice cs-forking" role="status">
+              <Icon name="undo" :size="12" />The next message continues from before this message, as a new branch of the session.
+              <button type="button" class="cs-btn cs-ghost cs-small" @click="rewindAt = null">Cancel</button>
+            </p>
             <p v-if="runError" class="cs-run-error cs-card" role="alert">
               {{ runError }}
             </p>
             <div class="agent-composer cs-composer">
+              <p v-if="dropping" class="cs-drop-hint" aria-hidden="true">Drop to attach</p>
+              <ul v-if="quotes.length" class="cs-quotes" aria-label="Context sent with the message">
+                <li v-for="quote in quotes" :key="quote.id" :class="quote.kind">
+                  <Icon
+                    :name="quote.kind === 'session' ? 'agent-sessions' : quote.kind === 'snapshot' ? 'image' : 'text'"
+                    :size="12"
+                  />
+                  <span class="cs-quote-source">{{ quote.kind === "session" ? "@" : "" }}{{ quote.source }}</span>
+                  <span class="cs-quote-text" :title="quote.text">{{ quoteLine(quote) }}</span>
+                  <span v-if="quote.image" class="cs-quote-tag">picture</span>
+                  <button type="button" :aria-label="`Remove ${quote.source}`" @click="removeQuote(quote.id)">
+                    <Icon name="close" :size="12" />
+                  </button>
+                </li>
+              </ul>
               <textarea
                 ref="composer"
                 v-model="draft"
                 aria-label="Message"
-                placeholder="Write a message…"
+                :class="{ 'cs-suggesting': suggestion }"
+                :placeholder="suggestion || 'Write a message…'"
                 rows="2"
                 maxlength="12000"
-                aria-keyshortcuts="Enter Shift+Enter Escape @ / Shift+Tab"
+                aria-keyshortcuts="Enter Shift+Enter Control+Enter Control+Shift+Enter Escape @ / Shift+Tab Control+Alt+S Control+Alt+Z"
+                @focus="touchComposer(composerHandle)"
                 @keydown="composerKey"
                 @input="readMention"
                 @click="readMention"
@@ -1785,6 +2634,20 @@ onBeforeUnmount(() => {
                 >
                   <Icon name="attachment" :size="13" />Add context <kbd>@</kbd>
                 </button>
+                <button
+                  type="button"
+                  class="cs-btn cs-ghost cs-small"
+                  :aria-expanded="snapshotOpen"
+                  :disabled="snapshotBusy"
+                  title="Snapshot an app (Ctrl+Alt+S)"
+                  @pointerdown.prevent
+                  @click="openSnapshot"
+                >
+                  <Icon name="image" :size="13" />{{ snapshotBusy ? "Capturing…" : "Snapshot" }}
+                </button>
+                <span v-if="suggestion && !draft" class="cs-suggest-hint"
+                  ><kbd>Tab</kbd> use suggestion <kbd>Esc</kbd> dismiss</span
+                >
                 <span v-for="path in paths" :key="path" class="cs-attachment" :title="path"
                   ><Icon
                     :name="/\.[\w-]{1,8}$/.test(path) ? 'file' : 'folder'"
@@ -1840,6 +2703,7 @@ onBeforeUnmount(() => {
                   aria-label="Model"
                   :options="modelOptions"
                   search-label="Find a model"
+                  popover-class="select-fixed-search"
                   trigger-icon="cpu"
                   prefer-above
                   :disabled="busy"
@@ -1868,7 +2732,7 @@ onBeforeUnmount(() => {
                       ? "Waiting for approval"
                       : run?.status === "stopping"
                         ? "Stopping…"
-                        : "Running"
+                        : "Running · Enter queues"
                   }}</span
                 >
                 <span
@@ -1880,25 +2744,31 @@ onBeforeUnmount(() => {
                 <span v-else class="cs-status" :title="agentPermissions[provider]">{{
                   agentPermissions[provider]
                 }}</span>
-                <button
-                  v-if="busy"
-                  type="button"
-                  class="cs-btn cs-stop"
-                  :disabled="!agentBusy(run) || run?.status === 'stopping'"
-                  @click="runCommand('stop')"
+                <ContextRing
+                  v-if="!schedulesOpen"
+                  ref="contextRing"
+                  :context="contextNow"
+                  :ring="!busy"
+                  :can-compact="provider === 'claude' && !!selected && !busy"
+                  :can-fork="provider === 'claude' && !!selected && !busy"
+                  @compact="send('/compact')"
+                  @fork="startFork"
                 >
-                  Stop
-                </button>
-                <button
-                  v-else
-                  type="submit"
-                  class="cs-btn cs-primary cs-send"
-                  aria-label="Send"
-                  title="Send"
-                  :disabled="!draft.trim() || (!!newProvider && !folder.trim())"
-                >
-                  <Icon name="up" :size="16" />
-                </button>
+                  <div v-if="busy" class="cs-run-actions">
+                    <button type="button" class="cs-btn cs-stop"
+                      :disabled="run?.status !== 'running'" @click="runCommand('stop')">Stop</button>
+                    <button v-if="run?.status === 'running' && hasDraft" type="button"
+                      class="cs-btn cs-primary" :disabled="queuePending"
+                      :title="run?.provider === 'claude'
+                        ? 'Enter to queue · Ctrl+Enter to steer now · Ctrl+Shift+Enter to stop and send · Alt+↑ to edit'
+                        : 'Enter to queue · Ctrl+Enter to interrupt · Alt+↑ to edit'"
+                      @click="queueDraft()"><Icon name="list" :size="14" />Queue</button>
+                  </div>
+                  <button v-else type="submit" class="cs-btn cs-primary cs-send"
+                    aria-label="Send" title="Send" :disabled="!hasDraft || (!!newProvider && !folder.trim())">
+                    <Icon name="up" :size="16" />
+                  </button>
+                </ContextRing>
               </div>
             </div>
           </div>
@@ -1909,6 +2779,16 @@ onBeforeUnmount(() => {
           >Choose a session or start a new one</strong
         >
       </div>
+          </template>
+          <AgentSessions
+            v-else
+            :block="block"
+            :pane="paneProp(id)"
+            :focused="tiles.focus === id"
+            @pane-state="paneState(id, $event)"
+          />
+        </template>
+      </AgentTiles>
     </div>
   </div>
 </template>
@@ -2020,8 +2900,13 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
 }
-.cs-layout.cs-focus {
+.cs-layout.cs-focus,
+.cs-layout.cs-pane-layout {
   grid-template-columns: minmax(0, 1fr);
+}
+.cs-tiles {
+  min-width: 0;
+  min-height: 0;
 }
 .cs-sidebar {
   display: flex;
@@ -2029,6 +2914,57 @@ onBeforeUnmount(() => {
   min-height: 0;
   border-right: 1px solid var(--cs-line);
 }
+.cs-schedule-nav {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 30px;
+  margin: 8px 10px 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #455968;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cs-schedule-nav:hover, .cs-schedule-nav[aria-current] { background: #e4edf2; color: #273f50; }
+.cs-schedule-nav svg { color: #6f8998; }
+.cs-schedule-nav span { margin-left: auto; font: 11px "Cascadia Code", Consolas, monospace; color: #657b89; }
+.cs-scheduled-view { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.cs-scheduled-view > .scheduled { flex: 1; }
+.agent-sessions-app .cs-scheduled-back { display: none; }
+.cs-run-actions { display: flex; align-items: center; gap: 6px; }
+.cs-queue {
+  position: relative;
+  margin-left: 26px;
+  padding: 9px 11px 9px 12px;
+  border: 1px dashed #b9cbd6;
+  border-radius: 10px;
+  background: #f2f6f8;
+}
+.cs-queue::before {
+  position: absolute;
+  top: -12px;
+  left: -17px;
+  width: 16px;
+  height: 26px;
+  border-left: 1px solid #b9cbd6;
+  border-bottom: 1px solid #b9cbd6;
+  border-bottom-left-radius: 8px;
+  content: "";
+  pointer-events: none;
+}
+.cs-queue header { display: flex; align-items: baseline; gap: 7px; color: #657b89; font-size: 11px; }
+.cs-queue header strong { text-transform: uppercase; letter-spacing: .04em; font-size: 10.5px; font-weight: 600; }
+.cs-queue-count { margin-left: auto; }
+.cs-queue ol { display: grid; gap: 4px; margin: 6px 0 0; padding: 0; list-style: none; }
+.cs-queue li { display: flex; align-items: center; gap: 4px; min-height: 26px; padding: 3px 6px; border-radius: 6px; }
+.cs-queue li:hover, .cs-queue li:focus-within { background: #e4edf2; }
+.cs-queue-number { margin-right: 4px; color: #657b89; font: 11px "Cascadia Code", Consolas, monospace; }
+.cs-queue-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #273f50; }
+.cs-queue .cs-btn { flex: none; height: 22px; padding: 0 5px; font-size: 11px; }
 .cs-search {
   flex: none;
   display: flex;
@@ -2711,6 +3647,114 @@ onBeforeUnmount(() => {
   padding: 0 20px 14px;
   pointer-events: none;
 }
+.cs-rewind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: #7a8f9b;
+  font-size: 11px;
+}
+.cs-rewind:hover:not(:disabled) {
+  border-color: var(--cs-line2);
+  background: var(--cs-hover);
+  color: #385d76;
+}
+.cs-rewind:disabled {
+  opacity: 0.5;
+}
+.cs-steer-tag {
+  color: #7a8f9b;
+  font-size: 11px;
+}
+.cs-compose.cs-dropping .cs-composer {
+  border-color: #6f8998;
+  box-shadow: 0 0 0 3px #6f899826;
+}
+.cs-drop-hint {
+  margin: 0;
+  padding: 4px 10px 0;
+  color: #385d76;
+  font-size: 11.5px;
+}
+.cs-quotes {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 6px 8px 0;
+  list-style: none;
+}
+.cs-quotes li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 24px;
+  padding: 0 4px 0 8px;
+  border-left: 2px solid #9fb7c5;
+  border-radius: 0 5px 5px 0;
+  background: #eef3f6;
+  font-size: 11.5px;
+}
+.cs-quotes li.session {
+  border-left-color: #6f8998;
+}
+.cs-quotes li :deep(svg) {
+  flex: none;
+  color: #6f8998;
+}
+.cs-quote-source {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  color: #273f50;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cs-quote-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: #5d7381;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cs-quote-tag {
+  flex: none;
+  color: #7a8f9b;
+  font-size: 10.5px;
+}
+.cs-quotes button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: #7a8f9b;
+}
+.cs-quotes button:hover {
+  background: #dfe8ed;
+}
+.cs-composer textarea.cs-suggesting::placeholder {
+  color: #8fa3ae;
+  font-style: italic;
+}
+.cs-suggest-hint {
+  color: #8296a2;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.cs-suggest-hint kbd {
+  margin: 0 2px;
+}
 .cs-picker-anchor {
   position: absolute;
   top: 0;
@@ -3073,10 +4117,16 @@ onBeforeUnmount(() => {
   .cs-has-selection .cs-sidebar {
     display: none;
   }
+  .agent-sessions-app .cs-scheduled-back {
+    display: inline-flex;
+    align-self: flex-start;
+    margin: 8px 10px 0;
+  }
   .cs-sidebar {
     border-right: 0;
   }
-  .cs-welcome {
+  .cs-welcome,
+  .cs-tiles-empty {
     display: none;
   }
   .agent-sessions-app .cs-back {

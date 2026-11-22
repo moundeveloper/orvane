@@ -4,6 +4,10 @@ import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { parseWorkspace } from "../src/validation.ts";
 import type { Workspace } from "../src/model.ts";
+import { captureRewind, describeRewind, type RewindEntry, type RewindState } from "../src/canvasRewind.ts";
+
+const rewindLimit = 160;
+const rewindAge = 7 * 24 * 60 * 60_000;
 
 export class StorageError extends Error {
   constructor(
@@ -43,6 +47,10 @@ export class LocalDatabase {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id = 1), data TEXT NOT NULL, revision INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS snapshots (id INTEGER PRIMARY KEY, data TEXT NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS canvas_rewind (
+        revision INTEGER PRIMARY KEY, at INTEGER NOT NULL, author TEXT NOT NULL,
+        closed INTEGER NOT NULL, description TEXT NOT NULL, state TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS preferences (id TEXT PRIMARY KEY, value INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS lease (id INTEGER PRIMARY KEY CHECK(id = 1), owner TEXT NOT NULL, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS git_workspaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL, path_key TEXT NOT NULL UNIQUE);
@@ -295,6 +303,7 @@ export class LocalDatabase {
               Date.now(),
             );
         const revision = previous.revision + 1;
+        this.recordRewind(previous.data, data, revision, reason);
         this.db
           .prepare(
             "INSERT INTO workspace (id, data, revision, last_writer) VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET data=excluded.data, revision=excluded.revision, last_writer=excluded.last_writer",
@@ -317,6 +326,35 @@ export class LocalDatabase {
       .get() as
       { id: number; data: string; reason: string; at: number } | undefined;
     return row ? { ...row, data: parseWorkspace(JSON.parse(row.data)) } : null;
+  }
+  private recordRewind(previous: Workspace | null, data: Workspace, revision: number, reason?: string) {
+    const after = captureRewind(data);
+    const now = Date.now();
+    const insert = this.db.prepare(
+      "INSERT OR IGNORE INTO canvas_rewind (revision, at, author, closed, description, state) VALUES (?, ?, ?, ?, ?, ?)",
+    );
+    const encoded = JSON.stringify(after);
+    if (previous) {
+      const before = captureRewind(previous);
+      const old = JSON.stringify(before);
+      if (old === encoded) return;
+      const hasHistory = this.db.prepare("SELECT 1 FROM canvas_rewind WHERE at >= ? LIMIT 1").get(now - rewindAge);
+      if (!hasHistory) insert.run(revision - 1, now - 1, "user", 0, "Before this change", old);
+      const change = describeRewind(before, after);
+      const author = reason?.startsWith("Before MCP ") || reason?.startsWith("Before offline MCP ") ? "mcp" : "user";
+      insert.run(revision, now, author, Number(change.closed), reason === "Before canvas rewind" ? "Restored canvas arrangement" : change.description, encoded);
+    } else {
+      insert.run(revision, now, "user", 0, "First saved arrangement", encoded);
+    }
+    this.db.prepare(
+      "DELETE FROM canvas_rewind WHERE at < ? OR revision NOT IN (SELECT revision FROM canvas_rewind ORDER BY revision DESC LIMIT ?)",
+    ).run(now - rewindAge, rewindLimit);
+  }
+  rewind(): RewindEntry[] {
+    const rows = this.db.prepare(
+      "SELECT revision, at, author, closed, description, state FROM canvas_rewind WHERE at >= ? ORDER BY revision",
+    ).all(Date.now() - rewindAge) as (Omit<RewindEntry, "closed" | "state"> & { closed: number; state: string })[];
+    return rows.map((row) => ({ ...row, closed: !!row.closed, state: JSON.parse(row.state) as RewindState }));
   }
   learned(id: string) {
     return !!this.db

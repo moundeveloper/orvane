@@ -38,11 +38,16 @@ Quotes are the owner's own words (typos kept out). Newest last. Add to this file
 - Session search field "so cramped height wise that the icon barely fits": controls must never shrink below their height.
 - `@` should autocomplete files and folders like Ctrl+K, Tab makes it a context block.
 - "Open folder" must open Orvane's own File Explorer, not Windows'. File names in replies should be clickable.
+- Split chats: a visible grip in the middle "breaks off the immersion". Mocks must keep the current Agent Sessions chat look. Divider-only variants (hover seam, open gap, shared header) were called "sloppy", without smooth animation. The owner asked whether they followed the Terminal reflow and Hyprland look and feel. Picked **Hyprland tiles** (UI Maker `agent-session-workspace` r4, saved as v2). It uses 10px gaps, 10px corners and a 2px border that fades to a steel-blue gradient on focus, with no drawn divider. New chats pop in from 87%. Everything reflows at once with easeOutQuint over 480ms; chats keep their state while they move. Lesson: when the owner names a reference such as Terminal reflow or Hyprland, study it (the code, the real config) before drawing.
 
 ## Board ideas rounds (research → Lab)
 
 - After the Pinterest research and two Lab rounds (7 Agent sessions ideas, 6 workspace ideas): "overall I like the ideas you came up with for the UI and features" and had them built. This is the reference quality bar: `examples/thinking-trail.html` ... `examples/run-plan.html`.
 - Lab tab strip overflowing under the Pick button "looks ugly": wrap "in a cool way". Nothing may run out of bounds.
+- Round 3 workspace references accepted: [Notes text toolbar](https://www.pinterest.com/pin/688980443038284912/), [canvas time rail](https://www.pinterest.com/pin/688980443021846560/), [task properties](https://www.pinterest.com/pin/688980443038314073/) and [file details](https://www.pinterest.com/pin/688980443012828073/).
+- Round 3 implementation picks: Notes Rewrite and Canvas Rewind. The owner asked for clearer intent in App Details and explanations in UI Maker. Use each Lab variant’s About field to explain where the feature appears and how the example works.
+- The owner disliked the rectangle around the Canvas Rewind time rail. Show keyboard focus on the playhead itself.
+- The owner passed on Canvas Map, Command Results, and Deploy Watch because they did not find those concepts useful.
 
 ## General
 

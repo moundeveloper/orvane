@@ -109,6 +109,7 @@ import PasswordsPanel from "./PasswordsPanel.vue";
 import { importImageData } from "../imageDrop";
 import { addWorkbenchWidget, REFRESH_BROWSER_CLIP, workbenchEditable, type BrowserClipRequest, type ClipRect } from "../workbenchWidgets";
 import { CANCEL_PICK, PICK_ELEMENT, readPicked, readRect, readSize, runInPage } from "../liveClip";
+import { registerAppText } from "../appText";
 import { registerBrowserAgentHost, userOwns, type AgentAccess } from "../browserAgent";
 
 const props = defineProps<{ block: Block; editing: boolean }>();
@@ -913,6 +914,30 @@ onBeforeUnmount(() => {
   stopPrompt?.();
   stopAutoLogin?.();
 });
+// The page's selection, text and picture for Agent sessions.
+let stopAppText: (() => void) | undefined;
+const activeView = () => webviews.get(state.value.active);
+onMounted(() => {
+  if (!root.value) return;
+  stopAppText = registerAppText(root.value, {
+    selection: async () => {
+      const view = activeView();
+      return view ? String((await runInPage(view, "String(getSelection())").catch(() => "")) ?? "") : "";
+    },
+    text: async () => {
+      const view = activeView();
+      return view
+        ? String((await runInPage(view, "document.body ? document.body.innerText.slice(0, 20000) : ''").catch(() => "")) ?? "")
+        : "";
+    },
+    picture: async () => {
+      const view = activeView();
+      return view && desktop?.capturePage ? (await desktop.capturePage(view.getWebContentsId(), "visible")) || "" : "";
+    },
+    detail: () => activeTab.value.url,
+  });
+});
+onBeforeUnmount(() => stopAppText?.());
 // Ctrl+K palette: commands, and opening a page from browser history.
 const stopCommands = registerCommands(`browser:${props.block.id}`, () => [
   { id: `browser-tab:${props.block.id}`, title: "New browser tab", icon: "plus", blockId: props.block.id, keywords: "web", run: () => addTab() },
@@ -3375,6 +3400,9 @@ function shortcut(name: string) {
   if (name === "space-down" || name === "space-up")
     return void window.dispatchEvent(new CustomEvent("orvane:space", { detail: name === "space-down" }));
   // Orvane's Ctrl+K search and Ctrl+Shift+P commands, pressed inside a page.
+  // Ctrl+Shift+L in a page: its selection goes to the agent session composer.
+  if (name === "send-selection")
+    return void window.dispatchEvent(new CustomEvent("orvane:send-selection", { detail: root.value }));
   if (name === "palette" || name === "commands" || name === "agent")
     return void window.dispatchEvent(new CustomEvent("orvane:palette", { detail: name === "palette" ? "" : name === "commands" ? ">" : "agent" }));
   if (name === "google-sign-in") say("Continue sign-in on the site in your system browser.");

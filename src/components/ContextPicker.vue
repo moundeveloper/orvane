@@ -5,8 +5,15 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import Icon from "./Icon.vue";
 import { api, type FileEntry } from "./files/explorer";
 
-const props = defineProps<{ query: string; base?: string }>();
-const emit = defineEmits<{ pick: [entry: FileEntry] }>();
+// `sessions`: other agent sessions that can be mentioned, newest first.
+export interface MentionSession {
+  key: string;
+  title: string;
+  provider: string;
+  project: string;
+}
+const props = defineProps<{ query: string; base?: string; sessions?: MentionSession[] }>();
+const emit = defineEmits<{ pick: [entry: FileEntry]; "pick-session": [session: MentionSession] }>();
 
 const items = ref<FileEntry[]>([]);
 const active = ref(0);
@@ -18,6 +25,16 @@ let ticket = 0;
 
 const absolute = (text: string) => /^(?:[a-z]:[\\/]|\\\\)/i.test(text);
 const parentOf = (path: string) => path.replace(/[\\/][^\\/]*$/, "") || path;
+// Sessions whose title matches come before files; the bare "@" shows the newest three.
+const sessionRows = computed(() => {
+  const query = props.query.toLowerCase();
+  if (!props.sessions?.length || absolute(props.query)) return [];
+  const found = query
+    ? props.sessions.filter((session) => session.title.toLowerCase().includes(query))
+    : props.sessions;
+  return found.slice(0, query ? 5 : 3);
+});
+const total = computed(() => sessionRows.value.length + items.value.length);
 const byKind = (a: FileEntry, b: FileEntry) =>
   Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name);
 
@@ -98,18 +115,23 @@ const empty = computed(() =>
 );
 
 function move(step: number) {
-  if (!items.value.length) return;
-  active.value = (active.value + step + items.value.length) % items.value.length;
+  if (!total.value) return;
+  active.value = (active.value + step + total.value) % total.value;
   list.value
     ?.querySelector(`[data-index="${active.value}"]`)
     ?.scrollIntoView({ block: "nearest" });
 }
 function pick(index = active.value) {
-  const entry = items.value[index];
+  const session = sessionRows.value[index];
+  if (session) {
+    emit("pick-session", session);
+    return true;
+  }
+  const entry = items.value[index - sessionRows.value.length];
   if (entry) emit("pick", entry);
   return Boolean(entry);
 }
-defineExpose({ move, pick, hasItems: computed(() => items.value.length > 0) });
+defineExpose({ move, pick, hasItems: computed(() => total.value > 0) });
 </script>
 
 <template>
@@ -119,23 +141,44 @@ defineExpose({ move, pick, hasItems: computed(() => items.value.length > 0) });
       <span class="keys"><kbd>Tab</kbd> add</span>
     </div>
     <div ref="list" class="context-picker-list">
+      <template v-if="sessionRows.length">
+        <p class="context-picker-group">Sessions</p>
+        <button
+          v-for="(session, index) in sessionRows"
+          :key="session.key"
+          type="button"
+          role="option"
+          tabindex="-1"
+          class="session"
+          :data-index="index"
+          :aria-selected="index === active"
+          :title="session.project"
+          @pointerenter="active = index"
+          @click="pick(index)"
+        >
+          <Icon name="agent-sessions" :size="14" />
+          <span class="name">{{ session.title }}</span>
+          <span class="where">{{ session.provider === "codex" ? "Codex" : "Claude" }} · {{ session.project.split(/[\\/]/).filter(Boolean).at(-1) }}</span>
+        </button>
+        <p class="context-picker-group">Files and folders</p>
+      </template>
       <button
         v-for="(entry, index) in items"
         :key="entry.path"
         type="button"
         role="option"
         tabindex="-1"
-        :data-index="index"
-        :aria-selected="index === active"
+        :data-index="index + sessionRows.length"
+        :aria-selected="index + sessionRows.length === active"
         :title="entry.path"
-        @pointerenter="active = index"
-        @click="pick(index)"
+        @pointerenter="active = index + sessionRows.length"
+        @click="pick(index + sessionRows.length)"
       >
         <Icon :name="entry.dir ? 'folder' : 'file'" :size="14" />
         <span class="name">{{ entry.name }}</span>
         <span class="where">{{ where(entry) }}</span>
       </button>
-      <p v-if="!items.length" class="context-picker-empty">{{ empty }}</p>
+      <p v-if="!total" class="context-picker-empty">{{ empty }}</p>
     </div>
   </div>
 </template>
@@ -229,6 +272,15 @@ defineExpose({ move, pick, hasItems: computed(() => items.value.length > 0) });
   text-align: left;
   color: #8296a2;
   font-size: 11.5px;
+}
+.context-picker-group {
+  margin: 0;
+  padding: 6px 8px 2px;
+  color: #8296a2;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 .context-picker-empty {
   margin: 0;

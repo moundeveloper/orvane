@@ -11,6 +11,7 @@ import {
   Menu,
   nativeImage,
   Notification,
+  powerSaveBlocker,
   screen,
   session,
   shell,
@@ -133,7 +134,7 @@ const CANVAS_GESTURES = `(() => {
       return;
     } else if (mod && !event.altKey) {
       if (key === "tab") name = event.shiftKey ? "tab-back" : "tab-next";
-      else if (event.shiftKey) name = ({ a: "search", c: "copy-url", t: "reopen-tab", p: "commands", k: "agent" })[key];
+      else if (event.shiftKey) name = ({ a: "search", c: "copy-url", t: "reopen-tab", p: "commands", k: "agent", l: "send-selection" })[key];
       else if (/^[1-9]$/.test(key)) name = "tab-" + key;
       else name = ({ k: "palette", l: "address", t: "new-tab", w: "close-tab", b: "library",
         o: "promote-peek", [String.fromCharCode(92)]: "sidebar" })[key];
@@ -1016,6 +1017,36 @@ ipcMain.handle("orvane:notify", (event, data) => {
   notification.on("close", forget);
   shownNotifications.add(notification);
   notification.show();
+});
+// Agent sessions: Windows does not sleep while a turn runs. The screen can
+// still turn off and lock.
+let keepAwakeId = -1;
+ipcMain.handle("orvane:keep-awake", (event, on) => {
+  if (!isOrvane(event.senderFrame?.url || "")) return false;
+  if (on && keepAwakeId < 0) keepAwakeId = powerSaveBlocker.start("prevent-app-suspension");
+  else if (!on && keepAwakeId >= 0) {
+    powerSaveBlocker.stop(keepAwakeId);
+    keepAwakeId = -1;
+  }
+  return keepAwakeId >= 0 && powerSaveBlocker.isStarted(keepAwakeId);
+});
+app.on("will-quit", () => {
+  if (keepAwakeId >= 0) powerSaveBlocker.stop(keepAwakeId);
+});
+// A picture of part of Orvane's own window (an app on the canvas), for an
+// agent snapshot. Browser pages use orvane:page-capture instead.
+ipcMain.handle("orvane:window-capture", async (event, rect) => {
+  if (!isOrvane(event.senderFrame?.url || "")) return "";
+  const area = rect && ["x", "y", "width", "height"].every((key) => Number.isFinite(rect[key]))
+    ? {
+        x: Math.max(0, Math.round(rect.x)),
+        y: Math.max(0, Math.round(rect.y)),
+        width: Math.max(1, Math.round(rect.width)),
+        height: Math.max(1, Math.round(rect.height)),
+      }
+    : undefined;
+  const image = await (area ? event.sender.capturePage(area) : event.sender.capturePage());
+  return image.isEmpty() ? "" : image.toDataURL();
 });
 ipcMain.handle("orvane:window-close", (event) => {
   workspaceWindow(event)?.close();

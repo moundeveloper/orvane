@@ -26,7 +26,8 @@ const names: Record<AgentEffort, string> = {
 const trigger = ref<HTMLButtonElement>();
 const popover = ref<HTMLElement>();
 const slider = ref<HTMLElement>();
-const { open, style, show, close } = usePopover(trigger, popover, 132);
+// Opens above the pill, like the model list beside it.
+const { open, style, show, close } = usePopover(trigger, popover, 132, { preferAbove: true });
 
 const modes = computed(() => agentEditModes[props.provider]);
 // Unset means what the CLI does today: Claude asks first, Codex auto-accepts.
@@ -102,8 +103,11 @@ defineExpose({ cycleMode });
   <button
     type="button"
     class="cm-pill"
+    :class="{ 'cm-full': currentMode === 'full' }"
     :aria-label="`Edits: ${agentEditModeNames[currentMode]}`"
-    title="Change how edits are handled (Shift+Tab)"
+    :title="currentMode === 'full'
+      ? 'Full access: runs anything without asking, outside any sandbox (Shift+Tab to change)'
+      : 'Change how edits are handled (Shift+Tab)'"
     aria-keyshortcuts="Shift+Tab"
     :disabled="disabled || modes.length < 2"
     @click="cycleMode"
@@ -181,6 +185,10 @@ defineExpose({ cycleMode });
   font-size: 12px;
   white-space: nowrap;
   cursor: pointer;
+}
+.cm-pill.cm-full,
+.cm-pill.cm-full b {
+  color: #b08a4a;
 }
 .cm-pill b {
   font-weight: 500;

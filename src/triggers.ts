@@ -24,9 +24,10 @@ export interface Trigger {
 
 export const MISSED_TRIGGER_MS = 24 * 60 * 60 * 1000;
 const MINUTE = 60_000;
+type TriggerTiming = Pick<Trigger, "schedule" | "createdAt" | "lastRun" | "enabled">;
 
 /** The latest scheduled moment at or before now, or null if none yet. */
-export function latestOccurrence(trigger: Trigger, now: number): number | null {
+export function latestOccurrence(trigger: TriggerTiming, now: number): number | null {
   const s = trigger.schedule;
   if (s.kind === "interval") {
     const every = s.minutes * MINUTE;
@@ -45,7 +46,7 @@ export function latestOccurrence(trigger: Trigger, now: number): number | null {
 }
 
 /** Whether the trigger should run now, and whether the due run is too old. */
-export function triggerDue(trigger: Trigger, now: number) {
+export function triggerDue(trigger: TriggerTiming, now: number) {
   if (!trigger.enabled) return { due: false, stale: false };
   const at = latestOccurrence(trigger, now);
   if (at === null || at <= (trigger.lastRun ?? trigger.createdAt))
@@ -54,7 +55,7 @@ export function triggerDue(trigger: Trigger, now: number) {
 }
 
 /** The next scheduled moment after now (for display), or null if paused. */
-export function nextOccurrence(trigger: Trigger, now: number): number | null {
+export function nextOccurrence(trigger: TriggerTiming, now: number): number | null {
   if (!trigger.enabled) return null;
   const s = trigger.schedule;
   if (s.kind === "interval") {

@@ -12,6 +12,7 @@ import {
 } from "../src/exposition.ts";
 import { z } from "zod";
 import { stepInput, stepOutput } from "./step-details.ts";
+import { claudeContext, codexContext, type AgentContext } from "../src/agentSessions.ts";
 
 const keySchema = z.string().min(1).max(1000);
 const readSchema = z.object({
@@ -43,6 +44,8 @@ type Cache = {
   messages: AgentMessage[];
   ids: Set<string>;
   warnings: Set<string>;
+  /** Context use after the newest reply that reported it. */
+  context?: AgentContext;
   pending?: Promise<void>;
 };
 const canonical = (p: string) =>
@@ -283,6 +286,11 @@ export class SessionTranscripts {
     }
     if (this.provider === "codex") {
       const item = d?.payload;
+      if (d?.type === "event_msg" && item?.type === "token_count") {
+        const context = codexContext(item.info);
+        if (context) cache.context = context;
+        return;
+      }
       const userMessage = codexUserMessage(d);
       if (userMessage) {
         d = {
@@ -378,6 +386,10 @@ export class SessionTranscripts {
       d.isSidechain
     )
       return;
+    if (d.type === "assistant" && this.provider !== "codex") {
+      const context = claudeContext(d.message.usage, d.message.model);
+      if (context) cache.context = context;
+    }
     const content = d.message.content,
       text = this.text(content),
       tools: AgentMessage["tools"] = [],
@@ -414,6 +426,7 @@ export class SessionTranscripts {
     const last = cache.messages.at(-1);
     if (!text && d.type === "assistant" && last?.role === "assistant") {
       last.tools.push(...tools.filter((tool) => !last.tools.some((item) => item.id === tool.id)));
+      if (this.provider !== "codex") last.lastId = id;
       return;
     }
     cache.messages.push({
@@ -557,6 +570,7 @@ export class SessionTranscripts {
       before: start ? cache.messages[start]!.id : null,
       warnings: [...cache.warnings],
       visuals: this.visuals(key),
+      context: cache.context ?? null,
     };
   }
   visuals(key: string): VisualRecord[] {

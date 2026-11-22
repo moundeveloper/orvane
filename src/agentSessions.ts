@@ -1,3 +1,5 @@
+import type { TriggerSchedule } from "./triggers.ts";
+
 export type AgentProvider = "claude" | "codex";
 
 export const agentNames = { claude: "Claude Code", codex: "Codex" };
@@ -11,17 +13,39 @@ export const agentPermissions = {
 export const agentEfforts = ["low", "medium", "high", "max"] as const;
 export type AgentEffort = (typeof agentEfforts)[number];
 /** How edits are handled: ask before each, accept them, or only plan. */
-export type AgentEditMode = "ask" | "auto" | "plan";
+// "full": no approvals and no sandbox (Claude bypassPermissions, Codex danger-full-access).
+export type AgentEditMode = "ask" | "auto" | "plan" | "full";
 export const agentEditModes: Record<AgentProvider, AgentEditMode[]> = {
   // Codex runs without approval prompts, so it can't ask first.
-  claude: ["ask", "auto", "plan"],
-  codex: ["auto", "plan"],
+  claude: ["ask", "auto", "plan", "full"],
+  codex: ["auto", "plan", "full"],
 };
 export const agentEditModeNames: Record<AgentEditMode, string> = {
   ask: "Ask first",
   auto: "Auto-accept",
   plan: "Plan only",
+  full: "Full access",
 };
+
+export interface AgentSchedule {
+  id: string;
+  prompt: string;
+  provider: AgentProvider;
+  folder: string;
+  model?: string;
+  effort?: AgentEffort;
+  mode?: AgentEditMode;
+  schedule: TriggerSchedule;
+  enabled: boolean;
+  createdAt: number;
+  lastOccurrence?: number;
+  lastRun?: number;
+  lastRunId?: string;
+  lastStatus?: AgentRun["status"];
+  lastSessionId?: string;
+  lastSessionProvider?: AgentProvider;
+  lastError?: string;
+}
 
 export interface AgentActivity {
   id: string;
@@ -35,6 +59,69 @@ export interface AgentActivity {
   output?: string;
   startedAt?: number;
   endedAt?: number;
+}
+
+/** How full the session's context window was after the latest reply. */
+export interface AgentContext {
+  /** Tokens in the context: earlier turns, what this turn added, the reply. */
+  used: number;
+  window: number;
+  estimatedWindow?: boolean;
+  /** Earlier context read back from the cache. */
+  cached: number;
+  /** New input this turn (uncached and newly cached). */
+  added: number;
+  /** The latest reply. */
+  output: number;
+  model?: string;
+}
+
+const tokens = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
+
+/** Claude's per-message usage. Result events can replace the estimated window. */
+export function claudeContext(usage: unknown, model?: unknown, chosen?: string): AgentContext | undefined {
+  if (!usage || typeof usage !== "object") return;
+  const u = usage as Record<string, unknown>;
+  const cached = tokens(u.cache_read_input_tokens);
+  const added = tokens(u.input_tokens) + tokens(u.cache_creation_input_tokens);
+  const output = tokens(u.output_tokens);
+  const used = cached + added + output;
+  if (!used) return;
+  const name = typeof model === "string" ? model.slice(0, 120) : undefined;
+  const extended = /\[1m\]|claude-(?:fable\b|sonnet-5\b|haiku-5-5\b|opus-(?:4-[789]|5)\b)/i;
+  const large = extended.test(chosen ?? "") || extended.test(name ?? "") || used > 200_000;
+  return {
+    used, window: large ? 1_000_000 : 200_000, estimatedWindow: true,
+    cached, added, output, ...(name ? { model: name } : {}),
+  };
+}
+
+/** Codex's token_count event: the last request's usage and the model's window. */
+export function codexContext(info: unknown): AgentContext | undefined {
+  if (!info || typeof info !== "object") return;
+  const i = info as { last_token_usage?: Record<string, unknown>; model_context_window?: unknown };
+  const last = i.last_token_usage;
+  const window = tokens(i.model_context_window);
+  if (!last || !window) return;
+  const input = tokens(last.input_tokens);
+  const cached = Math.min(tokens(last.cached_input_tokens), input);
+  const output = tokens(last.output_tokens);
+  const used = tokens(last.total_tokens) || input + output;
+  if (!used) return;
+  return { used, window, cached, added: input - cached, output };
+}
+
+/** A message waiting for the running turn to end. */
+export interface AgentQueued {
+  id: string;
+  text: string;
+}
+
+/** The project's files saved just before a turn started (Orvane's own shadow Git). */
+export interface AgentCheckpoint {
+  commit: string;
+  at: string;
 }
 
 export interface AgentRun {
@@ -54,6 +141,19 @@ export interface AgentRun {
   status: "running" | "stopping" | "completed" | "failed" | "stopped";
   error?: string;
   permissions: { id: string; tool: string; input: string }[];
+  /** Context use reported while the run works (Claude streams it). */
+  context?: AgentContext;
+  /** Messages sent in order once this run completes. */
+  queued?: AgentQueued[];
+  /** The run that took over the queue when this one ended. */
+  next?: string;
+  /** Messages that reached the agent mid-turn (Claude only). */
+  steered?: { text: string; at: string }[];
+  checkpoint?: AgentCheckpoint;
+  /** Resume Claude at this transcript message (a rewound chat). */
+  resumeAt?: string;
+  startedAt?: number;
+  endedAt?: number;
 }
 
 export const agentBusy = (run?: AgentRun | null) =>
@@ -65,7 +165,20 @@ export type AgentRunSummary = Pick<
 > & {
   title: string;
   awaitingApproval: boolean;
+  /** The first approval the run waits for. */
+  approval?: { id: string; tool: string; detail: string };
+  startedAt?: number;
+  endedAt?: number;
 };
+/** One line describing what an approval request would do. */
+export function approvalDetail(input: string) {
+  try {
+    const value = JSON.parse(input) as Record<string, unknown>;
+    const first = value.command ?? value.file_path ?? value.path ?? value.url ?? value.pattern;
+    if (typeof first === "string") return first.split("\n", 1)[0]!.slice(0, 160);
+  } catch {}
+  return input.replace(/\s+/g, " ").slice(0, 160);
+}
 export function summarizeAgentRun(run: AgentRun): AgentRunSummary {
   return {
     id: run.id,
@@ -75,5 +188,16 @@ export function summarizeAgentRun(run: AgentRun): AgentRunSummary {
     sessionId: run.sessionId,
     title: run.message.trim().split("\n", 1)[0]!.slice(0, 90),
     awaitingApproval: run.permissions.length > 0,
+    ...(run.permissions[0]
+      ? {
+          approval: {
+            id: run.permissions[0].id,
+            tool: run.permissions[0].tool,
+            detail: approvalDetail(run.permissions[0].input),
+          },
+        }
+      : {}),
+    ...(run.startedAt ? { startedAt: run.startedAt } : {}),
+    ...(run.endedAt ? { endedAt: run.endedAt } : {}),
   };
 }

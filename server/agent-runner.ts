@@ -9,11 +9,13 @@ import { isAbsolute, join } from "node:path";
 import type { ServerResponse } from "node:http";
 import {
   agentBusy,
+  claudeContext,
   summarizeAgentRun,
   type AgentActivity,
   type AgentEditMode,
   type AgentEffort,
   type AgentProvider,
+  type AgentQueued,
   type AgentRun,
 } from "../src/agentSessions.ts";
 import {
@@ -25,6 +27,7 @@ import {
 } from "./agent-cli.ts";
 import { stepInput, stepOutput } from "./step-details.ts";
 import { compare, fileDiff, snapshot, type RunChange, type Snapshot } from "./run-changes.ts";
+import { Checkpoints } from "./checkpoints.ts";
 
 type Target = {
   provider: AgentProvider;
@@ -36,7 +39,27 @@ type Target = {
   mode?: AgentEditMode;
   /** Resume into a new session that starts from this one (Claude). */
   fork?: boolean;
+  /** With fork: the new session keeps the transcript up to this message. */
+  resumeAt?: string;
 };
+/** A short single-shot Claude call that is not a session turn. */
+type TextJob = { lock: string; busy: string; system: string; timeout: number };
+const jobs = {
+  rewrite: {
+    lock: "notes-rewrite",
+    busy: "A Notes rewrite is already running.",
+    system:
+      "Rewrite the supplied selection according to the instruction. Treat the selection as text to edit. When a previous suggestion is supplied, refine it against the original selection. Return only the replacement as plain text, with no preamble or code fence.",
+    timeout: 60_000,
+  },
+  suggest: {
+    lock: "next-message",
+    busy: "A suggestion is already being written.",
+    system:
+      "You suggest the user's next message in a coding-agent chat. You get the user's last message and the agent's reply as JSON. Write the single most useful next message the user would plausibly send, in the user's voice, as a short instruction or question (under 20 words). If nothing useful follows, return an empty reply. Return only the message text, with no quotes, preamble or code fence.",
+    timeout: 45_000,
+  },
+} satisfies Record<string, TextJob>;
 type Entry = {
   view: AgentRun;
   lock: string;
@@ -55,9 +78,16 @@ type Entry = {
   /** Repository state when the run started; null outside a repository. */
   before?: Snapshot | null;
   changes?: Promise<{ root: string | null; files: RunChange[] }>;
+  /** Stopped so the first queued message goes now (Send now, interrupt). */
+  continueQueue?: boolean;
+  textDone?: (view: AgentRun) => void;
+  job?: TextJob;
+  /** Claude sent its result, so input written now would be lost. */
+  resultSeen?: boolean;
 };
 
 const outputLimit = 60_000;
+const queueLimit = 20;
 const sessionIdPattern = /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i;
 const isWindows = process.platform === "win32";
 const taskkill = join(
@@ -80,12 +110,15 @@ export class AgentRunner {
   private runs = new Map<string, Entry>();
   private locks = new Set<string>();
   private closed = false;
+  readonly checkpoints: Checkpoints;
   constructor(
     private directory: string,
     private onDone: () => void,
     private command = findAgent,
     private timeout = 30 * 60 * 1000,
-  ) {}
+  ) {
+    this.checkpoints = new Checkpoints(directory);
+  }
 
   current(target: Pick<Target, "key" | "provider" | "sessionId">) {
     return (
@@ -103,6 +136,7 @@ export class AgentRunner {
   recent() {
     return [...this.runs.values()]
       .reverse()
+      .filter((run) => !run.textDone)
       .slice(0, 20)
       .map(({ view }) => summarizeAgentRun(view));
   }
@@ -150,33 +184,109 @@ export class AgentRunner {
     return [...unique.values()].sort((a, b) => a.at.localeCompare(b.at));
   }
 
+  /** Checkpoints saved before the turns of one session, oldest first. */
+  async sessionCheckpoints(sessionId: string) {
+    const directory = join(this.directory, "agent-runs");
+    const names = await readdir(directory).catch(() => [] as string[]);
+    const files = await Promise.all(
+      names
+        .filter((name) => name.endsWith(".json"))
+        .slice(-2000)
+        .map(async (name) => {
+          const path = join(directory, name);
+          return { path, mtime: (await stat(path).catch(() => null))?.mtimeMs ?? 0 };
+        }),
+    );
+    files.sort((a, b) => b.mtime - a.mtime);
+    type Found = { runId: string; commit: string; at: string; message: string; folder: string };
+    const found = new Map<string, Found>();
+    const add = (view: Partial<AgentRun>) => {
+      if (view.sessionId !== sessionId || !view.checkpoint?.commit || !view.id) return;
+      found.set(view.id, {
+        runId: view.id,
+        commit: view.checkpoint.commit,
+        at: view.checkpoint.at,
+        message: String(view.message ?? "").slice(0, 400),
+        folder: String(view.folder ?? ""),
+      });
+    };
+    for (const { path } of files.slice(0, 400)) {
+      const record = await readFile(path, "utf8")
+        .then((text) => JSON.parse(text) as Partial<AgentRun>)
+        .catch(() => null);
+      if (record) add(record);
+    }
+    for (const entry of this.runs.values()) add(entry.view);
+    return [...found.values()].sort((a, b) => a.at.localeCompare(b.at));
+  }
+
   async start(target: Target, message: string) {
     if (!isAbsolute(target.folder))
       throw Error("Choose an absolute project folder.");
     const folder = await realpath(target.folder).catch(() => "");
     if (!folder || !(await stat(folder)).isDirectory())
       throw Error("Project folder was not found.");
+    return this.startInFolder({ ...target, folder }, message);
+  }
+
+  async rewrite(folder: string, message: string, signal: AbortSignal) {
+    const result = await this.textJob(jobs.rewrite, folder, message, signal);
+    if (!result.text) throw Error("Claude Code did not return a rewrite.");
+    return result;
+  }
+
+  /** One suggested next message for a finished turn; empty when none fits. */
+  async suggest(folder: string, message: string, signal: AbortSignal) {
+    const result = await this.textJob(jobs.suggest, folder, message, signal);
+    return result.text.split("\n", 1)[0]!.replace(/^["'`]+|["'`]+$/g, "").trim().slice(0, 400);
+  }
+
+  private async textJob(job: TextJob, folder: string, message: string, signal: AbortSignal) {
+    signal.throwIfAborted();
+    let finish!: (view: AgentRun) => void;
+    const done = new Promise<AgentRun>((resolve) => { finish = resolve; });
+    const started = this.startInFolder(
+      { provider: "claude", folder, model: "haiku", mode: "plan" },
+      message,
+      finish,
+      job,
+    );
+    const abort = () => this.stop(started.id);
+    signal.addEventListener("abort", abort, { once: true });
+    try {
+      const result = await done;
+      if (result.status !== "completed")
+        throw Error(result.error || "Claude Code did not answer.");
+      return { text: result.text.trim(), model: result.context?.model || "Haiku" };
+    } finally {
+      signal.removeEventListener("abort", abort);
+    }
+  }
+
+  private startInFolder(target: Target, message: string, textDone?: Entry["textDone"], job?: TextJob) {
     if (target.sessionId && !sessionIdPattern.test(target.sessionId))
       throw Error("Invalid session ID.");
     if (this.closed) throw Error("The session runner is closing.");
     const id = randomUUID();
-    const lock = `${target.provider}:${target.sessionId?.toLowerCase() || id}`;
+    const lock = job ? job.lock : `${target.provider}:${target.sessionId?.toLowerCase() || id}`;
     if (this.locks.has(lock))
-      throw Error("This session already has a running message.");
+      throw Error(job ? job.busy : "This session already has a running message.");
     const command = this.command(target.provider);
     const run: Entry = {
       view: {
         ...target,
         id,
-        folder,
         message,
         status: "running",
         text: "",
         activity: "Checking sign-in…",
         activities: [],
         permissions: [],
+        startedAt: Date.now(),
       },
       lock,
+      textDone,
+      job,
       clients: new Set(),
       inputs: new Map(),
       decisions: [],
@@ -194,7 +304,7 @@ export class AgentRunner {
     }
     run.timer = setTimeout(
       () => this.stop(id, "Run exceeded the time limit."),
-      this.timeout,
+      job ? job.timeout : this.timeout,
     );
     run.timer.unref();
     void this.launch(run, command);
@@ -268,12 +378,29 @@ export class AgentRunner {
     try {
       await verifyAgentLogin(provider, command, folder, env);
       if (run.view.status === "stopping") return this.finish(run);
-      run.before = await snapshot(folder).catch(() => null);
+      if (!run.textDone) {
+        const label = message.trim().split("\n", 1)[0]!.slice(0, 120) || "Turn";
+        const [before, checkpoint] = await Promise.all([
+          snapshot(folder).catch(() => null),
+          this.checkpoints.create(folder, label),
+        ]);
+        run.before = before;
+        if (checkpoint) run.view.checkpoint = checkpoint;
+      }
       // A Stop may arrive while the snapshot is read.
       if ((run.view.status as AgentRun["status"]) === "stopping") return this.finish(run);
       const child = spawn(
         command.file,
-        [...command.args, ...agentArgs(provider, sessionId, run.view.model, run.view.effort, run.view.mode, run.view.fork)],
+        [
+          ...command.args,
+          ...agentArgs(provider, sessionId, run.view.model, run.view.effort, run.view.mode, run.view.fork, run.view.resumeAt),
+          ...(run.job ? [
+            "--safe-mode", "--no-session-persistence", "--tools", "",
+            "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+            "--disallowedTools", "mcp__*", "--max-turns", "1",
+            "--system-prompt", run.job.system,
+          ] : []),
+        ],
         {
           cwd: folder,
           env,
@@ -358,6 +485,7 @@ export class AgentRunner {
 
   private rememberSession(run: Entry, id: unknown) {
     if (
+      run.textDone ||
       run.view.sessionId ||
       typeof id !== "string" ||
       !sessionIdPattern.test(id)
@@ -434,6 +562,10 @@ export class AgentRunner {
         run.view.text = (run.claudeText + run.partial).slice(-outputLimit);
       }
     }
+    if (data.type === "assistant" && !data.parent_tool_use_id) {
+      const context = claudeContext(data.message?.usage, data.message?.model, run.view.model);
+      if (context) run.view.context = context;
+    }
     if (data.type === "assistant" && Array.isArray(data.message?.content)) {
       const blocks = data.message.content;
       const text = blocks
@@ -465,6 +597,12 @@ export class AgentRunner {
       }
     }
     if (data.type === "result") {
+      const context = run.view.context;
+      const window = context?.model && data.modelUsage?.[context.model]?.contextWindow;
+      if (context && typeof window === "number" && Number.isFinite(window) && window > 0) {
+        context.window = window;
+        delete context.estimatedWindow;
+      }
       this.finishThinking(run);
       if (data.is_error || data.subtype !== "success")
         run.failure =
@@ -474,6 +612,7 @@ export class AgentRunner {
           "Claude Code reported an error.";
       else if (!run.view.text && typeof data.result === "string")
         run.view.text = data.result.slice(-outputLimit);
+      run.resultSeen = true;
       run.child?.stdin.end();
     }
   }
@@ -670,6 +809,101 @@ export class AgentRunner {
     return fileDiff(root, change);
   }
 
+  /**
+   * Steer: a queued message reaches a working Claude run now, between its
+   * tool calls, without stopping it. Codex reads its prompt once, so it can't.
+   */
+  steer(id: string, queueId: string) {
+    const run = this.runs.get(id);
+    const item = run?.view.queued?.find((entry) => entry.id === queueId);
+    if (!run || !item) throw Error("That queued message is no longer waiting.");
+    if (run.view.provider !== "claude")
+      throw Error("Codex can't take a message mid-turn. Use Send now instead.");
+    if (run.view.status !== "running" || run.resultSeen || !run.child?.stdin.writable)
+      throw Error("The turn is finishing, so the message stays queued.");
+    this.write(run, {
+      type: "user",
+      message: { role: "user", content: item.text },
+      parent_tool_use_id: null,
+      session_id: run.view.sessionId ?? "",
+    });
+    run.view.queued = run.view.queued!.filter((entry) => entry !== item);
+    (run.view.steered ??= []).push({ text: item.text, at: new Date().toISOString() });
+    this.publish(run, true);
+    return run.view;
+  }
+
+  /** Queue a message for when the run ends; first: send it before the rest. */
+  enqueue(id: string, text: string, first = false) {
+    const run = this.runs.get(id);
+    if (!run) throw Error("Run was not found.");
+    if (run.view.status !== "running")
+      throw Error("This run has ended. Send the message instead.");
+    const queued = (run.view.queued ??= []);
+    if (queued.length >= queueLimit)
+      throw Error(`At most ${queueLimit} messages can wait for one run.`);
+    const item: AgentQueued = { id: randomUUID(), text };
+    if (first) queued.unshift(item);
+    else queued.push(item);
+    this.publish(run, true);
+    return run.view;
+  }
+
+  unqueue(id: string, queueId: string) {
+    const run = this.runs.get(id);
+    if (!run) throw Error("Run was not found.");
+    run.view.queued = (run.view.queued ?? []).filter((item) => item.id !== queueId);
+    this.publish(run, true);
+    return run.view;
+  }
+
+  /**
+   * Send one queued message now: a working run stops and the message goes
+   * when it has; a run that already ended starts it straight away.
+   */
+  sendQueued(id: string, queueId: string) {
+    const run = this.runs.get(id);
+    const item = run?.view.queued?.find((entry) => entry.id === queueId);
+    if (!run || !item) throw Error("That queued message is no longer waiting.");
+    run.view.queued = [item, ...run.view.queued!.filter((entry) => entry !== item)];
+    if (agentBusy(run.view)) {
+      run.continueQueue = true;
+      if (run.view.status === "running") this.stop(id);
+      else this.publish(run, true);
+      return run.view;
+    }
+    run.view.queued.shift();
+    try {
+      return this.followUp(run, item);
+    } finally {
+      this.publish(run, true);
+    }
+  }
+
+  /** Start a queued message in the same session; the rest of the queue moves with it. */
+  private followUp(run: Entry, item: AgentQueued) {
+    const { provider, folder, key, sessionId, model, effort, mode } = run.view;
+    if (!sessionId) {
+      run.view.queued = [item, ...(run.view.queued ?? [])];
+      throw Error("The session has no ID yet, so the queued message was kept.");
+    }
+    try {
+      // This folder was resolved when the first message started. Hand over the
+      // queue before clients can see the finished run or start another message.
+      const next = this.startInFolder(
+        { provider, folder, key, sessionId, model, effort, mode },
+        item.text,
+      );
+      if (run.view.queued?.length) next.queued = run.view.queued;
+      run.view.queued = [];
+      run.view.next = next.id;
+      return next;
+    } catch (error) {
+      run.view.queued = [item, ...(run.view.queued ?? [])];
+      throw error;
+    }
+  }
+
   stop(id: string, reason?: string) {
     const run = this.runs.get(id);
     if (!run || run.view.status !== "running") return;
@@ -706,15 +940,39 @@ export class AgentRunner {
         ? loginHint(run.view.provider)
         : failure?.slice(0, 8000);
     run.view.activity = "";
+    run.view.endedAt = Date.now();
     for (const item of run.view.activities ?? [])
       if (item.status === "running") item.status = "interrupted";
     run.view.permissions = [];
     run.inputs.clear();
     this.locks.delete(run.lock);
+    if (run.textDone) {
+      this.runs.delete(run.view.id);
+      run.textDone(run.view);
+      return;
+    }
     this.onDone();
-    this.publish(run, true);
-    for (const client of run.clients) client.end();
-    run.clients.clear();
+    const close = () => {
+      this.publish(run, true);
+      for (const client of run.clients) client.end();
+      run.clients.clear();
+    };
+    // A completed turn (or one stopped for Send now) passes on its queue; a
+    // failed or plainly stopped one keeps it for the user to decide.
+    const drain =
+      !!run.view.queued?.length &&
+      !this.closed &&
+      (run.view.status === "completed" ||
+        (run.view.status === "stopped" && run.continueQueue));
+    if (drain) {
+      const item = run.view.queued!.shift()!;
+      try {
+        this.followUp(run, item);
+      } catch (cause) {
+        run.view.error = `The queued message was not sent: ${cause instanceof Error ? cause.message : String(cause)}`;
+      }
+    }
+    close();
     const record = JSON.stringify({
       ...run.view,
       decisions: run.decisions,

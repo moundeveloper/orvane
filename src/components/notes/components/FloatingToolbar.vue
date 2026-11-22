@@ -1,11 +1,51 @@
 <script setup lang="ts">
 import { useNotesPortal } from "../portal";
-import { onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef } from "vue";
+import { agentRequest } from "../../../exposition";
+import Icon from "../../Icon.vue";
 
 const props = defineProps<{ editorRoot?: HTMLElement }>();
+const emit = defineEmits<{ beforeRewrite: [] }>();
 const pos = ref<{ x: number; y: number } | null>(null);
 const portal = useNotesPortal();
 let savedRange: Range | null = null;
+const toolbar = ref<HTMLElement>();
+const card = ref<HTMLElement>();
+const askInput = ref<HTMLInputElement>();
+const ask = ref("");
+const instructions = {
+  Shorten: "Make the selection more concise while preserving its meaning and specifics.",
+  Expand: "Explain the selection more clearly and fully without inventing facts.",
+  Fix: "Fix spelling, grammar and punctuation while preserving meaning and tone.",
+  Ask: "",
+};
+type RewriteAction = keyof typeof instructions;
+type RewriteTarget = { range: Range; block: HTMLElement; html: string; text: string; x: number; y: number };
+const target = shallowRef<RewriteTarget>();
+const action = ref<RewriteAction>("Shorten");
+let lastAction: RewriteAction = "Shorten";
+let lastRequest: { instruction: string; previous?: string } | undefined;
+let controller: AbortController | undefined;
+const pending = ref(false);
+const rewriteError = ref("");
+const result = ref<{ text: string; model: string; seconds: number }>();
+const wordCount = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
+const toolbarStyle = computed(() => {
+  if (!pos.value) return {};
+  const view = portal.viewport();
+  const width = toolbar.value?.offsetWidth ?? 420;
+  const left = Math.max(view.left + width / 2 + 8, Math.min(view.right - width / 2 - 8, pos.value.x));
+  return { left: left + "px", top: pos.value.y + "px" };
+});
+const cardStyle = computed(() => {
+  if (!target.value) return {};
+  const view = portal.viewport();
+  const width = Math.min(435, Math.max(150, view.right - view.left - 16));
+  const left = Math.max(view.left + 8, Math.min(target.value.x, view.right - width - 8));
+  const height = card.value?.offsetHeight ?? 170;
+  const top = Math.max(view.top + 8, Math.min(target.value.y, view.bottom - height - 8));
+  return { left: left + "px", top: top + "px", width: width + "px" };
+});
 
 const active = reactive({
   bold: false,
@@ -73,10 +113,12 @@ function update() {
   ) {
     pos.value = null;
     savedRange = null;
+    canRewrite.value = false;
     return;
   }
   const rect = sel.getRangeAt(0).getBoundingClientRect();
   savedRange = sel.getRangeAt(0).cloneRange();
+  updateRewriteSelection();
   syncActive();
   const anchor = portal.local(rect.left + rect.width / 2, rect.top);
   pos.value = {
@@ -226,18 +268,159 @@ function onSelChange() {
   requestAnimationFrame(update);
 }
 
-onMounted(() => document.addEventListener("selectionchange", onSelChange));
-onBeforeUnmount(() =>
-  document.removeEventListener("selectionchange", onSelChange),
-);
+function sameBlock(range: Range) {
+  const host = range.commonAncestorContainer;
+  const element = host instanceof Element ? host : host.parentElement;
+  const block = element?.closest<HTMLElement>('.block-content[contenteditable="true"]');
+  return block && props.editorRoot?.contains(block) ? block : undefined;
+}
+const canRewrite = ref(false);
+function updateRewriteSelection() {
+  canRewrite.value = !!savedRange && !!sameBlock(savedRange) &&
+    savedRange.toString().trim().length <= 8_000;
+}
+
+function dismiss(restore = false) {
+  const current = target.value;
+  controller?.abort();
+  controller = undefined;
+  target.value = undefined;
+  pending.value = false;
+  result.value = undefined;
+  rewriteError.value = "";
+  ask.value = "";
+  lastRequest = undefined;
+  if (restore && current && sameBlock(current.range) === current.block && current.html === current.block.innerHTML) {
+    current.block.focus({ preventScroll: true });
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(current.range);
+  }
+}
+
+async function requestRewrite(instruction: string, previous?: string) {
+  const current = target.value;
+  if (!current || pending.value) return;
+  const request = new AbortController();
+  controller = request;
+  lastRequest = { instruction, previous };
+  pending.value = true;
+  rewriteError.value = "";
+  const started = performance.now();
+  try {
+    const replacement = await agentRequest<{ text: string; model: string }>(
+      "notes-rewrite", { selection: current.text, instruction, previous }, request.signal,
+    );
+    if (controller !== request) return;
+    result.value = { ...replacement, seconds: Math.max(1, Math.round((performance.now() - started) / 1000)) };
+  } catch (cause) {
+    if (controller === request)
+      rewriteError.value = cause instanceof Error ? cause.message : "The rewrite failed.";
+  } finally {
+    if (controller === request) {
+      pending.value = false;
+      controller = undefined;
+    }
+  }
+}
+function startRewrite(rewrite: RewriteAction) {
+  if (pending.value) return;
+  const range = savedRange?.cloneRange();
+  const block = range && sameBlock(range);
+  const text = range?.toString().trim();
+  if (!range || !block || !text || text.length > 8_000) return;
+  dismiss();
+  const rect = range.getBoundingClientRect();
+  const anchor = portal.local(rect.left, rect.bottom);
+  target.value = { range, block, text, html: block.innerHTML, x: anchor.x, y: anchor.y + 9 };
+  action.value = lastAction = rewrite;
+  if (rewrite === "Ask") void nextTick(() => askInput.value?.focus({ preventScroll: true }));
+  else void requestRewrite(instructions[rewrite]);
+}
+function retry() {
+  if (lastRequest) void requestRewrite(lastRequest.instruction, lastRequest.previous);
+}
+function submitAsk() {
+  const instruction = ask.value.trim();
+  if (!instruction || pending.value) return;
+  ask.value = "";
+  void requestRewrite(instruction, result.value?.text);
+}
+function applyRewrite() {
+  const current = target.value;
+  const replacement = result.value?.text;
+  if (!current || !replacement || pending.value) return;
+  const { range, block, html } = current;
+  if (sameBlock(range) !== block || block.innerHTML !== html || range.toString().trim() !== current.text) {
+    rewriteError.value = "The selected text changed. Select it again to rewrite it.";
+    return;
+  }
+  emit("beforeRewrite");
+  block.focus({ preventScroll: true });
+  const fragment = document.createDocumentFragment();
+  replacement.split(/\r?\n/).forEach((line, index) => {
+    if (index) fragment.append(document.createElement("br"));
+    fragment.append(document.createTextNode(line));
+  });
+  const end = fragment.lastChild!;
+  range.deleteContents();
+  range.insertNode(fragment);
+  const caret = document.createRange();
+  caret.setStartAfter(end);
+  caret.collapse(true);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(caret);
+  block.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertReplacementText" }));
+  dismiss();
+}
+function onRewriteKey(event: KeyboardEvent) {
+  if (event.isComposing || event.defaultPrevented || !(event.target instanceof Node)) return;
+  const inEditor = props.editorRoot?.contains(event.target);
+  const inCard = card.value?.contains(event.target);
+  if (!inEditor && !inCard && !toolbar.value?.contains(event.target)) return;
+  const key = event.key.toLowerCase();
+  if ((event.ctrlKey || event.metaKey) && key === "/" && inEditor) {
+    update();
+    if (!canRewrite.value) return;
+    startRewrite(lastAction);
+  } else if (!target.value || event.ctrlKey || event.metaKey || event.altKey) return;
+  else if (key === "escape") dismiss(true);
+  else if (key === "tab" && inEditor && !event.shiftKey && result.value && !pending.value) applyRewrite();
+  else if (key === "r" && lastRequest && !pending.value && (inEditor || event.target === card.value)) retry();
+  else return;
+  event.preventDefault();
+  event.stopPropagation();
+}
+function outside(event: PointerEvent) {
+  if (!target.value || !(event.target instanceof Node)) return;
+  if (!toolbar.value?.contains(event.target) && !card.value?.contains(event.target)) dismiss();
+}
+const guestDown = () => { if (target.value) dismiss(); };
+onMounted(() => {
+  document.addEventListener("selectionchange", onSelChange);
+  document.addEventListener("keydown", onRewriteKey, true);
+  document.addEventListener("pointerdown", outside, true);
+  window.addEventListener("orvane:guest-pointer-down", guestDown);
+});
+onBeforeUnmount(() => {
+  document.removeEventListener("selectionchange", onSelChange);
+  document.removeEventListener("keydown", onRewriteKey, true);
+  document.removeEventListener("pointerdown", outside, true);
+  window.removeEventListener("orvane:guest-pointer-down", guestDown);
+  controller?.abort();
+});
 </script>
 
 <template>
   <Teleport :to="portal.target.value ?? 'body'">
     <div
       v-if="pos"
+      ref="toolbar"
       class="ftb notes-portal"
-      :style="{ left: pos.x + 'px', top: pos.y + 'px' }"
+      role="toolbar"
+      aria-label="Text formatting and rewrite"
+      :style="toolbarStyle"
       @mousedown.prevent
     >
       <button
@@ -286,7 +469,35 @@ onBeforeUnmount(() =>
       <button aria-label="Link" :class="{ active: active.link }" @click="link">
         🔗
       </button>
+      <template v-if="canRewrite">
+        <span class="rewrite-divider" aria-hidden="true" />
+        <button v-for="kind in (['Shorten', 'Expand', 'Fix', 'Ask'] as const)" :key="kind"
+          type="button" class="rewrite-action" :class="{ active: target && action === kind }"
+          :disabled="pending"
+          :title="`${kind} selected text · Ctrl+/`" @click="startRewrite(kind)">
+          {{ kind === "Ask" ? "Ask…" : kind }}
+        </button>
+      </template>
     </div>
+    <section v-if="target" ref="card" class="rewrite-card notes-portal" :style="cardStyle" tabindex="-1" aria-label="Rewrite suggestion">
+      <header>
+        <strong>{{ action === "Shorten" ? "Shorter" : action === "Expand" ? "Expanded" : action === "Fix" ? "Corrected" : "Rewrite" }}</strong>
+        <span v-if="result">{{ wordCount(target.text) }} → {{ wordCount(result.text) }} words</span>
+        <span v-if="result" class="rewrite-model">{{ result.model }} · {{ result.seconds }} s</span>
+        <button type="button" class="rewrite-close" aria-label="Keep original" title="Keep original (Esc)" @click="dismiss(true)"><Icon name="close" :size="13" /></button>
+      </header>
+      <p v-if="pending" role="status" class="rewrite-status">Rewriting…</p>
+      <p v-if="rewriteError" role="alert" class="rewrite-error">{{ rewriteError }}</p>
+      <p v-if="result" class="rewrite-text">{{ result.text }}</p>
+      <footer>
+        <button v-if="result" type="button" :disabled="pending" @click="applyRewrite"><kbd>Tab</kbd> Replace</button>
+        <button v-if="lastRequest" type="button" :disabled="pending" @click="retry"><kbd>R</kbd> Try again</button>
+        <form @submit.prevent="submitAsk">
+          <input ref="askInput" v-model="ask" aria-label="Rewrite instruction" :placeholder="result ? 'Make it a numbered step…' : 'How should it change?'" maxlength="1500" />
+          <button type="submit" aria-label="Send rewrite instruction" :disabled="pending || !ask.trim()"><Icon name="up" :size="14" /></button>
+        </form>
+      </footer>
+    </section>
   </Teleport>
 </template>
 
@@ -318,4 +529,41 @@ onBeforeUnmount(() =>
 .mono {
   font-family: monospace;
 }
+.rewrite-divider { width: 1px; margin: 4px; background: #e3eaee; }
+.ftb .rewrite-action { font-size: 12px; color: #273f50; white-space: nowrap; }
+.rewrite-card {
+  position: fixed;
+  z-index: 801;
+  max-height: 310px;
+  overflow: auto;
+  border: 1px solid #cfe0d4;
+  border-radius: 10px;
+  background: #f4f8f5;
+  color: #455968;
+  box-shadow: 0 1px 2px #263f5512, 0 5px 16px #263f551e;
+  font-size: 12px;
+}
+.rewrite-card header, .rewrite-card footer, .rewrite-card form {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+}
+.rewrite-card header, .rewrite-card footer { padding: 4px 8px 4px 10px; }
+.rewrite-card header { border-bottom: 1px solid #dfeadf; }
+.rewrite-card footer { border-top: 1px solid #dfeadf; flex-wrap: wrap; }
+.rewrite-card header strong { color: #365d45; }
+.rewrite-model { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rewrite-close { margin-left: auto; }
+.rewrite-model + .rewrite-close { margin-left: 0; }
+.rewrite-text, .rewrite-error, .rewrite-status { margin: 0; padding: 9px 11px; }
+.rewrite-text { white-space: pre-wrap; overflow-wrap: anywhere; color: #273f50; font-size: 13px; }
+.rewrite-error { color: #8b4b3e; }
+.rewrite-card button { display: inline-flex; gap: 4px; align-items: center; padding: 3px 5px; border-radius: 5px; white-space: nowrap; }
+.rewrite-card button:hover { background: #e3efe6; }
+.rewrite-card button:disabled { opacity: .5; }
+.rewrite-card form { flex: 1 1 146px; min-width: 0; }
+.rewrite-card input { flex: 1; min-width: 0; padding: 4px 6px; border: 1px solid #d3dee5; border-radius: 5px; color: #273f50; background: #fbfcfd; font: inherit; }
+.rewrite-card kbd { font: 10px "Cascadia Code", Consolas, monospace; padding: 1px 3px; border: 1px solid #ccdcd0; border-radius: 3px; }
+.rewrite-card :focus-visible, .ftb :focus-visible { outline: 2px solid #6f8998; outline-offset: 1px; }
 </style>

@@ -54,6 +54,20 @@ If only a few get built, these give the most for what already exists:
 
 Quick wins (S): #6, #10, #13, #18, #34, #45, #58.
 
+### Interactive concepts in UI Maker
+
+**Orvane experiments / Try it on the canvas** has three interactive prototypes.
+
+- **Clip History** compares a pinned page region with an earlier capture. Reuse the existing clip capture and retain matching bounds locally. [Storybook visual testing](https://storybook.js.org/tutorials/visual-testing-handbook/)
+- **Page Notes** attaches a note to a specific passage. Use the quoted text and surrounding words to find it again after a page update. [Hypothesis annotations](https://web.hypothes.is/help/annotation-basics/)
+- **Layout Preview** lets you approve individual window moves before applying a proposed arrangement. Reuse saved layout geometry, Rewind placeholders, and workspace revision checks. [Photoshop layer comps](https://helpx.adobe.com/photoshop/desktop/create-manage-layers/create-layer-compositions/create-and-manage-layer-comps.html)
+
+The owner passed on the three prototypes in **Orvane workflow ideas / High-impact workflows**.
+
+- **Canvas Map** shows groups and the area currently in view. Pick a window to jump there on a crowded canvas. Use existing app bounds, groups and camera actions. [Miro board navigation](https://help.miro.com/hc/en-us/articles/360017731053-Using-Miro-with-a-mouse-trackpad-or-touchscreen)
+- **Command Results** pairs finished commands with output, duration and exit status. Bring a command back to the prompt to inspect or edit it. The terminal needs shell integration to detect command boundaries. [Warp terminal blocks](https://docs.warp.dev/terminal/blocks/block-basics)
+- **Deploy Watch** puts recent execution logs alongside a SuiteCloud deploy receipt. Filter by script and time to investigate runtime errors after deployment. Reuse Orvane's existing deploy and account-verified log reader. [NetSuite monitoring](https://docs.oracle.com/en/cloud/saas/netsuite/ns-online-help/subsect_1014180019.html)
+
 ---
 
 ## Canvas and navigation

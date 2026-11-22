@@ -26,6 +26,10 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
   },
   /** A system notification (calendar reminders); clicking it opens the app. */
   notify: (notification) => ipcRenderer.invoke("orvane:notify", notification),
+  /** Keep Windows from sleeping while an agent turn runs. */
+  keepAwake: (on) => ipcRenderer.invoke("orvane:keep-awake", Boolean(on)),
+  /** A PNG data URL of part of Orvane's window (CSS pixels of the page). */
+  captureWindow: (rect) => ipcRenderer.invoke("orvane:window-capture", rect),
   onNotificationClick(callback) {
     const listener = (_event, appId) => callback(appId);
     ipcRenderer.on("orvane:notification-click", listener);

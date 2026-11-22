@@ -53,6 +53,10 @@ test("the AI opens, drives and hands back a Browser tab", async ({}, info) => {
     args: ["electron/main.mjs"],
     env: { ...env, ORVANE_PORT: "5232", ORVANE_USER_DATA: info.outputPath("profile") },
   });
+  // Main-process output: a statement body must not first fail as an expression.
+  let mainLog = "";
+  app.process().stderr?.on("data", (data) => (mainLog += String(data)));
+  app.process().stdout?.on("data", (data) => (mainLog += String(data)));
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [resolve("server/launch.mjs")],
@@ -112,6 +116,8 @@ test("the AI opens, drives and hands back a Browser tab", async ({}, info) => {
     expect((await call("browser_act", { tabId, action: "eval", expression: "document.querySelector('#name').value" })).value).toBe("Grace");
     // A body with return also works.
     expect((await call("browser_act", { tabId, action: "eval", expression: "const a = 2; return a * 21;" })).value).toBe(42);
+    expect((await call("browser_act", { tabId, action: "eval", expression: "if (true) return 'body';" })).value).toBe("body");
+    expect(mainLog).not.toMatch(/orvane:page-run.*SyntaxError/);
 
     // Hover waits until a menu that opens late is in place.
     await call("browser_act", { tabId, action: "hover", text: "Menu" });

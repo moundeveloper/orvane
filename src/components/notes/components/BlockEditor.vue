@@ -3,12 +3,10 @@ import { useNotesPortal } from "../portal";
 import DOMPurify from "dompurify";
 import {
   computed,
-  inject,
   nextTick,
   onBeforeUnmount,
   onMounted,
   ref,
-  type ComputedRef,
 } from "vue";
 import { useNotesWorkspace } from "../stores/workspace";
 import type { Block, BlockType } from "../types";
@@ -19,9 +17,9 @@ import SlashMenu from "./SlashMenu.vue";
 import FloatingToolbar from "./FloatingToolbar.vue";
 
 const ws = useNotesWorkspace();
-const tabFocused = inject<ComputedRef<boolean>>("notesTabFocused");
 
 const editorEl = ref<HTMLElement>();
+const undoVersion = ref(0);
 const focusRequest = ref<{ id: string; at: "start" | "end" } | null>(null);
 const slashState = ref<{
   blockId: string;
@@ -738,6 +736,8 @@ function selectionContent(): HTMLElement | null {
 }
 
 function onEditorKeydown(e: KeyboardEvent) {
+  handleEditorShortcuts(e);
+  if (e.defaultPrevented) return;
   if ((e.target as HTMLElement).closest(".block-content")) return;
   const content = selectionContent();
   if (!content) return;
@@ -828,12 +828,13 @@ async function onPasteImage(blockId: string, dataUrl: string) {
   await ws.insertBlock(index, image);
 }
 
-// ---- global undo/redo ----
+// ---- editor shortcuts ----
 
-function onKeydown(e: KeyboardEvent) {
-  if (tabFocused && !tabFocused.value) return;
+function handleEditorShortcuts(e: KeyboardEvent) {
+  if (e.defaultPrevented || e.isComposing || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
   if (e.key === "Escape" && selectedIds.value.length) {
     selectedIds.value = [];
+    e.preventDefault();
     return;
   }
   if (
@@ -848,22 +849,26 @@ function onKeydown(e: KeyboardEvent) {
   if (!mod) return;
   if (e.key.toLowerCase() === "z" && !e.shiftKey) {
     e.preventDefault();
-    ws.undo();
+    if (ws.undoStack.length) {
+      void ws.undo();
+      undoVersion.value++;
+    }
   } else if (
     (e.key.toLowerCase() === "z" && e.shiftKey) ||
     e.key.toLowerCase() === "y"
   ) {
     e.preventDefault();
-    ws.redo();
+    if (ws.redoStack.length) {
+      void ws.redo();
+      undoVersion.value++;
+    }
   }
 }
 
 onMounted(async () => {
-  window.addEventListener("keydown", onKeydown);
   if (ws.blocks.length === 0 && ws.currentPageId) await focusFirstBlock();
 });
 onBeforeUnmount(() => {
-  window.removeEventListener("keydown", onKeydown);
   stopSelectionDrag();
   stopTextSelectionTracking();
   resetDragState();
@@ -893,6 +898,7 @@ onBeforeUnmount(() => {
       :block="block"
       :index="index"
       :focus-request="focusRequest"
+      :undo-version="undoVersion"
       :drop-target="dropTarget?.index === index ? dropTarget.side : null"
       :selected="selectedIds.includes(block.id)"
       :multi-selected="selectedIds.length > 1 && selectedIds.includes(block.id)"
@@ -938,7 +944,7 @@ onBeforeUnmount(() => {
       @pick="onSlashPick"
       @close="slashState = null"
     />
-    <FloatingToolbar :editor-root="editorEl" />
+    <FloatingToolbar :editor-root="editorEl" @before-rewrite="ws.snapshot()" />
   </div>
 </template>
 

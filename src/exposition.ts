@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AgentRun } from "./agentSessions.ts";
+import type { AgentContext, AgentRun } from "./agentSessions.ts";
 const text = z.string().min(1).max(2000);
 const id = z.string().min(1).max(200);
 const base = { id, title: text, detail: z.boolean().optional() };
@@ -206,9 +206,13 @@ export interface AgentMessage {
   at: string;
   tools: AgentToolCall[];
   truncated: boolean;
+  /** The last transcript record merged into this message (Claude). */
+  lastId?: string;
 }
 export interface AgentSessionRead {
   run?: AgentRun | null;
+  /** Context use after the newest reply that reported it. */
+  context?: AgentContext | null;
   session: AgentSession;
   messages: AgentMessage[];
   before: string | null;
@@ -218,11 +222,13 @@ export interface AgentSessionRead {
 export async function agentRequest<T>(
   operation: string,
   args: unknown = {},
+  signal?: AbortSignal,
 ): Promise<T> {
   const response = await fetch(`/__orvane/agents/${operation}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(args),
+    signal,
   });
   const data = await response.json();
   if (!response.ok)

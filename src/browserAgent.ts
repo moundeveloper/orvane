@@ -6,6 +6,7 @@
 // the user presses Take control, which also withdraws access.
 import {
   evalScript,
+  readsAsBody,
   focusForFillScript,
   locateScript,
   presentScript,
@@ -404,10 +405,11 @@ async function act(args: Record<string, unknown>) {
       const expression = str(args, "expression");
       if (!expression) throw Error("eval needs expression.");
       let value: unknown;
+      const body = readsAsBody(expression);
       try {
-        value = await run(id, evalScript(expression));
+        value = await run(id, evalScript(expression, body === true));
       } catch (error) {
-        if (!/SyntaxError|Unexpected/.test(String(error))) throw error;
+        if (body !== null || !/SyntaxError|Unexpected/.test(String(error))) throw error;
         value = await run(id, evalScript(expression, true));
       }
       return args.screenshot ? { value, ...(await screenshot(id, deadline)) } : { value };

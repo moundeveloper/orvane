@@ -3,6 +3,7 @@ import {
   mkdir,
   readFile,
   readdir,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
@@ -243,6 +244,206 @@ async function openApp(page: Page) {
   await expect(app).toBeVisible({ timeout: 30_000 });
   return app;
 }
+
+test("queued follow-ups drain in order and keep the Codex session", async ({ page, context }, info) => {
+  test.setTimeout(90_000);
+  const { directory, project } = await fixture(context);
+  const app = await openApp(page);
+  await app.getByRole("button", { name: "Codex", exact: true }).click();
+  await app.getByRole("textbox", { name: "Project folder" }).fill(project);
+  const composer = app.getByRole("textbox", { name: "Message", exact: true });
+  await composer.fill("Survey the launcher workflow for follow-ups");
+  await composer.press("Enter");
+  await expect(app.getByRole("region", { name: "Run steps" }).getByText("Thinking", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await composer.fill("First queued message");
+  await composer.press("Enter");
+  const queue = app.getByRole("region", { name: "Queued follow-ups" });
+  await expect(queue.getByText("First queued message")).toBeVisible();
+  await expect(composer).toHaveValue("");
+  await composer.fill("Draft to edit");
+  await composer.press("Enter");
+  await expect(queue.getByText("Draft to edit")).toBeVisible();
+  await expect(composer).toHaveValue("");
+  await composer.press("Alt+ArrowUp");
+  await expect(composer).toHaveValue("Draft to edit");
+  await composer.fill("Second queued message");
+  await app.getByRole("button", { name: "Queue", exact: true }).click();
+  await expect(queue.getByRole("listitem")).toHaveCount(2);
+  await page.screenshot({ path: info.outputPath("queued-followups.png") });
+  await writeFile(join(directory, "finish-launcher"), "");
+  const chat = app.getByLabel("Session conversation");
+  await expect(chat.locator(".cs-message").getByText("Second queued message", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(app.getByRole("button", { name: "Send", exact: true })).toBeVisible();
+  const inputs = (await readFile(join(directory, "inputs.jsonl"), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+  expect(inputs.map((input) => input.message)).toEqual([
+    "Survey the launcher workflow for follow-ups", "First queued message", "Second queued message",
+  ]);
+  for (const input of inputs.slice(1))
+    expect(input.args).toEqual(expect.arrayContaining(["resume", codexId]));
+
+  await unlink(join(directory, "finish-launcher"));
+  await composer.fill("Survey the launcher workflow before interrupt");
+  await composer.press("Enter");
+  await expect(app.getByRole("region", { name: "Run steps" }).getByText("orvane / workspace_status")).toBeVisible({ timeout: 15_000 });
+  await composer.fill("Interrupt and continue");
+  await composer.press("Control+Enter");
+  await expect(chat.locator(".cs-message").getByText("Interrupt and continue", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(app.getByRole("button", { name: "Send", exact: true })).toBeVisible();
+  const resumed = (await readFile(join(directory, "inputs.jsonl"), "utf8")).trim().split("\n").map((line) => JSON.parse(line)).at(-1);
+  expect(resumed.message).toBe("Interrupt and continue");
+  expect(resumed.args).toEqual(expect.arrayContaining(["resume", codexId]));
+});
+
+test("sessions split into Hyprland-style tiles that resize, swap, close and persist", async ({ page, context }, info) => {
+  test.setTimeout(90_000);
+  await fixture(context);
+  const host = await openApp(page);
+  const tiles = host.locator(".cs-tiles").first();
+  // Top-level tiles only: a pane runs its own single-tile layout inside.
+  const top = ":scope > .agent-tiles-layer > ";
+  const tile = tiles.locator(top + ".agent-tile");
+  const box = async (locator: ReturnType<Page["locator"]>) => (await locator.boundingBox())!;
+
+  // One session: no gaps, no frame, nothing changes from the plain view.
+  await host.getByRole("button", { name: /Existing Claude project/ }).click();
+  await expect(tile).toHaveCount(1);
+  await expect(tile).toHaveCSS("border-radius", "0px");
+  expect(await box(tile)).toEqual(await box(tiles));
+  const hostTile = tiles.locator(top + ".agent-tile[data-tile=host]");
+  const reading = hostTile.getByRole("status").filter({ hasText: "Reading session" });
+  await expect(reading).toHaveCount(0, { timeout: 15_000 });
+
+  // Alt+Shift+= splits right with a new session in the same provider and folder.
+  await host.getByRole("textbox", { name: "Message", exact: true }).first().press("Alt+Shift+Equal");
+  await expect(tile).toHaveCount(2);
+  // The first session stays loaded beside the new pane.
+  await expect(reading).toHaveCount(0, { timeout: 15_000 });
+  const pane = tiles.locator(top + ".agent-tile:not([data-tile=host])");
+  await expect(pane.getByRole("textbox", { name: "Project folder" })).toBeFocused();
+  await expect(pane.locator(".cs-session-header strong").first()).toHaveText("New Claude Code session");
+  await expect(tiles.locator(":scope > .agent-tiles-frames > .agent-tile-frame.focused")).toHaveCount(1);
+  await page.waitForTimeout(600);
+  // CSS pixels: the canvas may be zoomed.
+  const css = (locator: ReturnType<Page["locator"]>) =>
+    locator.evaluate((e: HTMLElement) => ({ x: e.offsetLeft, w: e.offsetWidth }));
+  const left = await css(hostTile),
+    right = await css(pane);
+  expect(left.x).toBe(10);
+  expect(right.x - (left.x + left.w)).toBe(10);
+  expect(Math.abs(left.w - right.w)).toBeLessThan(2);
+  await page.screenshot({ path: info.outputPath("agent-split.png") });
+
+  // The gap resizes: drag, then double-click and Enter put it back to even.
+  const gap = host.getByRole("separator", { name: "Resize session panes" });
+  const g = await box(gap);
+  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(g.x + g.width / 2 + 120, g.y + g.height / 2, { steps: 6 });
+  await page.mouse.up();
+  expect(Number(await gap.getAttribute("aria-valuenow"))).toBeGreaterThan(55);
+  await gap.dblclick();
+  await expect(gap).toHaveAttribute("aria-valuenow", "50");
+  await gap.focus();
+  await gap.press("ArrowLeft");
+  await expect(gap).toHaveAttribute("aria-valuenow", "45");
+  await gap.press("Enter");
+  await expect(gap).toHaveAttribute("aria-valuenow", "50");
+
+  // Alt+arrows move focus, Alt+Shift+arrows swap panes.
+  await pane.getByRole("textbox", { name: "Project folder" }).press("Alt+ArrowLeft");
+  await expect(hostTile).toHaveClass(/focused/);
+  await page.keyboard.press("Alt+Shift+ArrowRight");
+  await page.waitForTimeout(600);
+  expect((await box(hostTile)).x).toBeGreaterThan((await box(pane)).x);
+
+  // Dragging a pane by its title onto another pane's edge moves it there.
+  const grip = await box(pane.locator("[data-tile-grip]").first());
+  const target = await box(hostTile);
+  await page.mouse.move(grip.x + 20, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + 60, grip.y + 40, { steps: 4 });
+  await page.mouse.move(target.x + target.width - 30, target.y + target.height / 2, { steps: 10 });
+  await expect(host.locator(".agent-tile-drop")).toBeVisible();
+  await page.mouse.up();
+  await page.waitForTimeout(600);
+  expect((await box(pane)).x).toBeGreaterThan((await box(hostTile)).x);
+  await pane.getByRole("textbox", { name: "Project folder" }).press("Alt+Shift+ArrowLeft");
+  await page.waitForTimeout(600);
+  expect((await box(hostTile)).x).toBeGreaterThan((await box(pane)).x);
+
+  // The layout survives a reload.
+  await page.waitForTimeout(400);
+  await page.reload();
+  await expect(tile).toHaveCount(2, { timeout: 30_000 });
+  await expect(hostTile.locator(".cs-session-header strong").first()).toHaveText(/Existing Claude project/);
+  expect((await box(hostTile)).x).toBeGreaterThan((await box(pane)).x);
+
+  // Ctrl+Shift+W closes the focused pane; the other fills the app again.
+  await pane.getByRole("textbox", { name: "Project folder" }).click();
+  await expect(pane).toHaveClass(/focused/);
+  await page.keyboard.press("Control+Shift+W");
+  await expect(tile).toHaveCount(1);
+  await page.waitForTimeout(600);
+  expect(await box(tile)).toEqual(await box(tiles));
+  await expect(hostTile.locator(".cs-session-header strong").first()).toHaveText(/Existing Claude project/);
+});
+
+test("context ring shows the latest Codex transcript usage", async ({ page, context }, info) => {
+  test.setTimeout(90_000);
+  const { project } = await fixture(context);
+  const app = await openApp(page);
+  await app.getByRole("button", { name: "Codex", exact: true }).click();
+  await app.getByRole("textbox", { name: "Project folder" }).fill(project);
+  const composer = app.getByRole("textbox", { name: "Message", exact: true });
+  await composer.fill("Check context usage");
+  await composer.press("Enter");
+  const ring = app.getByRole("button", { name: "Context 50% used" });
+  await expect(ring).toBeVisible({ timeout: 20_000 });
+  await ring.click();
+  const detail = page.getByRole("dialog", { name: "Context used" });
+  await expect(detail.getByText("100k of 200k")).toBeVisible();
+  await expect(detail.getByText("60k", { exact: true })).toBeVisible();
+  const panel = (await detail.boundingBox())!;
+  const trigger = (await ring.boundingBox())!;
+  expect(panel.x + panel.width).toBeLessThanOrEqual(page.viewportSize()!.width - 7);
+  expect(panel.y + panel.height).toBeLessThanOrEqual(trigger.y);
+  await page.screenshot({ path: info.outputPath("context-ring.png") });
+  await detail.press("Escape");
+  await expect(ring).toBeFocused();
+});
+
+test("scheduled prompts can be created, paused, run and reopened", async ({ page, context }, info) => {
+  test.setTimeout(90_000);
+  const { directory, project } = await fixture(context);
+  const app = await openApp(page);
+  await page.keyboard.press("Control+k");
+  const palette = page.getByRole("combobox");
+  await palette.fill("show scheduled prompts");
+  await expect(page.getByRole("option", { name: "Show scheduled prompts" })).toBeVisible();
+  await palette.press("Enter");
+  const scheduled = app.getByRole("region", { name: "Scheduled prompts" });
+  await scheduled.getByRole("button", { name: /^New/ }).click();
+  await scheduled.getByRole("textbox", { name: "Prompt", exact: true }).fill("Summarize the latest repo changes");
+  await scheduled.getByRole("textbox", { name: "Project folder" }).fill(project);
+  await scheduled.getByRole("combobox", { name: "Provider" }).click();
+  await page.getByRole("option", { name: "Codex", exact: true }).click();
+  await scheduled.getByRole("textbox", { name: "Prompt", exact: true }).press("Control+Enter");
+  await expect(scheduled.getByRole("button", { name: /Summarize the latest repo changes/ })).toHaveAttribute("aria-expanded", "true");
+  await scheduled.getByRole("button", { name: /^Pause/ }).click();
+  await expect(scheduled.getByRole("heading", { name: "Paused" })).toBeVisible();
+  await scheduled.getByRole("button", { name: /^Resume/ }).click();
+  await expect(scheduled.getByRole("button", { name: /^Pause/ })).toBeEnabled();
+  await page.screenshot({ path: info.outputPath("scheduled-prompts.png") });
+  await scheduled.getByRole("button", { name: /^Run now/ }).click();
+  const openSession = scheduled.getByRole("button", { name: "Open session" });
+  await expect(openSession).toBeVisible({ timeout: 20_000 });
+  const input = JSON.parse((await readFile(join(directory, "inputs.jsonl"), "utf8")).trim());
+  expect(input.message).toBe("Summarize the latest repo changes");
+  expect(input.args).toContain("exec");
+  expect(input.args).not.toContain("resume");
+  await openSession.click();
+  await expect(app.getByLabel("Session conversation").getByText("Codex started")).toBeVisible();
+});
 
 test("starts and resumes Codex from the sessions app and Ctrl+K", async ({
   page,
@@ -555,6 +756,9 @@ test("effort and edit mode map onto each CLI's flags", () => {
   expect(agentArgs("claude").join(" ")).not.toContain("--effort");
   const codex = agentArgs("codex", undefined, undefined, "low", "auto");
   expect(codex).toEqual(expect.arrayContaining(["workspace-write", 'model_reasoning_effort="low"']));
+  // Full access: no approvals and no sandbox in either CLI.
+  expect(agentArgs("claude", undefined, undefined, undefined, "full").join(" ")).toContain("--permission-mode bypassPermissions");
+  expect(agentArgs("codex", undefined, undefined, undefined, "full")).toEqual(expect.arrayContaining(["-s", "danger-full-access"]));
 });
 
 test("streams Claude, routes both decisions and stops the process tree", async ({

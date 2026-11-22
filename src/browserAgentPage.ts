@@ -269,6 +269,26 @@ export function evalScript(expression: string, asBody = false) {
   return `${run}.then((value) => { try { return JSON.parse(JSON.stringify(value ?? null)); } catch { return String(value); } })`;
 }
 
+/** Whether the code reads as a statement body rather than an expression.
+ * Only compiled here in Orvane's window, never run, so the page is sent the
+ * right form first and the main process logs no SyntaxError. Null when the
+ * window can't compile code; the caller then tries both forms. */
+export function readsAsBody(expression: string): boolean | null {
+  try {
+    new Function(`return (async () => (\n${expression}\n))()`);
+    return false;
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) return null;
+  }
+  try {
+    new Function(`return (async () => {\n${expression}\n})()`);
+    return true;
+  } catch {
+    // Neither form parses: the page reports the error.
+    return false;
+  }
+}
+
 /** Resolves once the page stops changing (no DOM mutation for quietMs), or
  * after maxMs on pages that never settle: hover menus and popups that a
  * hover or click opens are then in place. */

@@ -28,6 +28,8 @@ const props = defineProps<{
   teleportTo?: HTMLElement;
   preferAbove?: boolean;
   triggerIcon?: string;
+  /** Extra class on the open list, e.g. "select-fixed-search". */
+  popoverClass?: string;
 }>();
 const emit = defineEmits<{ "update:modelValue": [value: T]; change: [] }>();
 const attrs = useAttrs(),
@@ -288,6 +290,7 @@ onBeforeUnmount(() => {
       v-if="open"
       ref="menu"
       class="select-popover"
+      :class="popoverClass"
       v-motion="{ kind: 'popover' }"
       :style="inline ? undefined : position"
       @pointerdown.stop

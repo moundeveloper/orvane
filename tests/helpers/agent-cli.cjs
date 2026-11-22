@@ -97,6 +97,13 @@ if (args[1] === "status") {
           role: "assistant",
           content: [{ type: "output_text", text: response }],
         });
+        wrap("event_msg", {
+          type: "token_count",
+          info: {
+            model_context_window: 200_000,
+            last_token_usage: { input_tokens: 95_000, cached_input_tokens: 60_000, output_tokens: 5_000 },
+          },
+        });
         emit({
           type: "item.completed",
           item: { type: "agent_message", text: response },
@@ -146,6 +153,16 @@ if (args[1] === "status") {
         message,
         folder: process.cwd(),
       });
+      if (args.includes("--no-session-persistence")) {
+        const input = JSON.parse(message);
+        const text = input.previous ? "1. Import the record." : "Import the record before deploying.";
+        emit({
+          type: "assistant",
+          message: { model: "claude-haiku-fixture", usage: { input_tokens: 10 }, content: [{ type: "text", text }] },
+        });
+        emit({ type: "result", subtype: "success", result: text });
+        return;
+      }
       if (message === "Wait for Stop") {
         const descendant = spawn(
           process.execPath,

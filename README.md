@@ -252,6 +252,33 @@ Home provides a searchable app menu for Scripts, File Cabinet and SuiteQL, prefe
 
 Use **Workspace options → Create Agent sessions** to open local Claude Code and Codex conversations. Claude sessions can also show interactive explanations. Run `scripts/install-orvane-exposition.ps1` to register the unified `orvane` connector and install the personal skill. Restart Claude Desktop and reopen your local Code session afterward. See [the integration guide](server/EXPOSITION.md) for the visual data contract.
 
+### Split session panes
+
+Agent sessions can show several conversations at once as tiles.
+
+- **Alt+Shift+D** splits the focused pane along its longer side. **Alt+Shift+=** splits it to the right and **Alt+Shift+-** splits it downwards.
+- The new pane starts a session with the same provider and folder.
+- **Ctrl+click** a session in the list to open it in a new pane. A plain click opens it in the focused pane, or switches to the pane that already shows it.
+- **Alt+arrows** move focus between panes. **Alt+Shift+arrows** swap the focused pane with its neighbour.
+- **Ctrl+Shift+W** closes the focused pane. The session stays in the list.
+- Drag a pane by its title to move it. The other panes make room as you drag.
+- Drag the gap between panes to resize them. Double-click the gap, or focus it and press Enter, for an even split.
+
+The layout is saved with the app. With one pane the view has no gaps or border.
+
+### Context, steering, activity and checkpoints
+
+- **Drop files**: drag files from Orvane's File Explorer, or from Windows, onto the composer. They become attachment chips.
+- **Mention a session**: type **@** to list other sessions above files. Picking one adds that session's latest reply as context.
+- **Send a selection**: select text in any app and press **Ctrl+Shift+L**. The composer you used last receives it as a quote. In a Browser page, the selection comes from the page.
+- **App snapshot**: **Ctrl+Alt+S** in the composer, or the **Snapshot** button, lists canvas apps. Number keys or Enter pick one, and Tab switches between **Picture and text** and **Text only**. The picture is saved under `.orvane/agent-attachments` and attached by path. It needs the desktop app and the app fully in view; the Browser uses its own page capture.
+- **Steer**: while a Claude turn works, **Ctrl+Enter** gives the message to the turn now, between tool calls. **Ctrl+Shift+Enter** stops the turn and sends the message next. Queued messages also have a **Steer** button. Codex reads its message only once, so Ctrl+Enter still stops and sends next there.
+- **Activity**: the bell in the toolbar (**Ctrl+Alt+U** from anywhere) lists runs waiting for approval, running, and finished but unread. You can approve or deny from the list. When Orvane is in the background, Windows notifications say when a run needs approval, finishes or fails; clicking one opens the run. Turn alerts off in the bell's footer or with Ctrl+K.
+- **Edits**: the **Edits** pill (or **Shift+Tab** in the composer) cycles how edits are handled: Ask first (Claude only), Auto-accept, Plan only and **Full access**. Full access runs anything without asking and outside any sandbox: Claude's `bypassPermissions` mode and Codex's `danger-full-access` sandbox, which also allows network use. The pill turns amber while it is on.
+- **Keep the PC awake**: while any turn runs, Windows does not go to sleep (the screen can still turn off). Waiting for an approval lets it sleep. The **Keeping PC awake** pill in the session header switches it off.
+- **Suggested next message**: after a turn ends, a short suggestion shows in the empty composer. **Tab** takes it and **Esc** dismisses it. Turn it off in the session's **More** menu or with Ctrl+K.
+- **Checkpoints**: before each turn Orvane saves the project's files in a separate Git repository under `.orvane/checkpoints`. The project's own Git is not touched; drive roots and the home folder are skipped. A **Checkpoint** button on your message, or **Ctrl+Alt+Z** for the latest, shows what changed since. Then **Enter** restores files and chat, **C** the chat only and **F** the files only. The current files are saved as a new checkpoint first. Restoring the chat puts your message back in the composer, and the next send continues the Claude session from that point as a new branch. Codex can restore files only.
+
 ### Send messages to Claude Code and Codex
 
 Press **Ctrl+Shift+K** or click **AI** to open the launcher. Choose a provider and model, then type your task. The working folder defaults to `Orvane/Surveying` in your home directory. Set `ORVANE_SURVEYING_DIR` to use another absolute path. The folder picker also shows recent folders and folders from File Explorer. Attach local paths from the launcher when the task needs them. Use Ctrl+K to find a session by title or project, then press Enter to reopen its composer. The Agent sessions dock indicator and **Recent runs** list show progress and requests waiting for approval.
