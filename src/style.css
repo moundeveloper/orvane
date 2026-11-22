@@ -2266,6 +2266,36 @@ kbd {
   padding: 14px 48px 14px 18px;
   border-bottom: 1px solid var(--line);
 }
+.action-studio-views {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  padding: 2px;
+  border-radius: 7px;
+  background: #e8eff3;
+}
+.action-studio-views button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #5d7381;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.action-studio-views button[aria-pressed="true"] {
+  background: #fbfcfd;
+  color: #273f50;
+  box-shadow: 0 1px 2px #263f5512;
+}
+.action-studio-timeline {
+  grid-column: 1 / -1;
+}
 .action-studio-header h1 {
   font-size: 14px;
   margin: 0;

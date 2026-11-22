@@ -89,17 +89,23 @@ test("desktop inbox keeps clipboard captures and moves them into Orvane", async 
       .getByRole("button", { name: "Workspace inbox", exact: true })
       .click();
     await expect(inbox.getByRole("listitem")).toHaveCount(3);
-    await inbox
-      .getByRole("listitem")
-      .filter({ hasText: url })
-      .getByRole("button", { name: "Sticky note" })
-      .click();
-    await inbox
-      .getByRole("listitem")
-      .filter({ hasText: "Review the release notes" })
-      .getByRole("button", { name: "Calendar today" })
-      .click();
+    // Triage: pick a row, then act with its button or its key.
+    await inbox.getByRole("listitem").filter({ hasText: "release-notes" }).getByRole("button").first().click();
+    await expect(inbox.getByText(url, { exact: true })).toBeVisible();
+    await inbox.getByRole("button", { name: "Sticky note" }).click();
+    await expect(inbox.getByRole("listitem")).toHaveCount(2);
+    await inbox.getByRole("listitem").filter({ hasText: "Review the release notes" }).getByRole("button").first().click();
+    await page.keyboard.press("c");
+    await expect(inbox.getByRole("listitem")).toHaveCount(1);
+    await expect(inbox.getByText("1 to sort")).toBeVisible();
+    await expect(inbox.getByText("2 sorted today")).toBeVisible();
     await inbox.getByRole("button", { name: "Place on canvas" }).click();
+    await expect(inbox.getByText("No captures yet.")).toBeVisible();
+    await inbox.getByRole("textbox", { name: "New capture" }).fill("Plan the inbox page\nSecond line");
+    await inbox.getByRole("button", { name: "Save capture" }).click();
+    await inbox.getByRole("listitem").getByRole("button").first().click();
+    await page.keyboard.press("s");
+    await expect(inbox.getByRole("status")).toHaveText("Sent to Notes.");
     await expect(inbox.getByText("No captures yet.")).toBeVisible();
     await inbox.getByRole("button", { name: "Close inbox" }).click();
     await expect(page.locator(".board-note")).toContainText(url);

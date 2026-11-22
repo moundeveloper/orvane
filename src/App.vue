@@ -21,6 +21,7 @@ import { parseWorkspace, referenceIssues } from "./validation";
 import { mergeWorkspace } from "./imports";
 import { executeGraph } from "./flow";
 import AppSurface from "./components/AppSurface.vue";
+import DockActionMenu, { type DockAction } from "./components/DockActionMenu.vue";
 import AppTooltip from "./components/AppTooltip.vue";
 import { exampleApps, upgradeExampleApps } from "./examples";
 import { runIsolated } from "./sandbox";
@@ -38,7 +39,9 @@ import { OPEN_EVENT, registerCommands, type OpenRequest } from "./commands";
 import { ACTIVATE_EVENT, BROWSER_SHORTCUT, canvasScroll } from "./canvasScroll";
 import { dayKey, dueAt, formatDay, readCalendar, type CalendarItem } from "./calendar";
 import { captureLink, CAPTURE_TEXT_LIMIT, INBOX_LIMIT, type ClipboardCapture, type InboxCapture } from "./inbox";
-import WorkspaceInbox from "./components/WorkspaceInbox.vue";
+import WorkspaceInbox, { type CaptureDestination } from "./components/WorkspaceInbox.vue";
+import { sendToNotes } from "./agentMessageNotes";
+import { addRun, type AutomationRun, type RunSource } from "./automationRuns";
 import { netSuiteCanvas, querySource, readRecordPreview, RECORD_PREVIEW_MIME, type RecordPreviewLink, type SuiteQLSelection } from "./netsuiteCanvas";
 import { WORKBENCH_WIDGET, workbenchEditable, type WorkbenchKind } from "./workbenchWidgets";
 import { DRAG_MIME } from "./components/files/explorer";
@@ -156,6 +159,7 @@ const ActionStudio = defineAsyncComponent({
 });
 const actionStudio = ref(false),
   studioActionId = ref(""),
+  studioView = ref<"actions" | "timeline">("actions"),
   studioWheelEntry = ref(""),
   actionNotice = ref("");
 watch(
@@ -178,7 +182,8 @@ const appViews: Record<
   string,
   { openView: (view: "settings" | "graph", target: string) => void }
 > = {};
-function openActionStudio(id = "", entryId = "", trigger?: HTMLElement) {
+function openActionStudio(id = "", entryId = "", trigger?: HTMLElement, view: "actions" | "timeline" = "actions") {
+  studioView.value = view;
   const bounds = trigger?.getBoundingClientRect();
   studioOrigin.value = bounds
     ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }
@@ -1209,7 +1214,6 @@ watch([ready, pendingInboxShortcut], ([loaded, pending]) => {
 });
 onBeforeUnmount(() => stopInboxCapture?.());
 
-type CaptureDestination = "note" | "calendar" | "image" | "discard";
 async function moveCapture(capture: InboxCapture, destination: CaptureDestination) {
   if (inboxBusy.value || !canChangeInbox.value || !workspace.inbox?.includes(capture)) return;
   inboxBusy.value = true;
@@ -1233,6 +1237,10 @@ async function moveCapture(capture: InboxCapture, destination: CaptureDestinatio
         if (workspace.apps.length >= 300) throw Error("The workspace has reached its app limit.");
         createGitViewer("calendar", JSON.stringify(data));
       }
+    } else if (destination === "notes" && capture.kind === "text") {
+      const title = capture.value.trim().split(/\r?\n/, 1)[0]!.slice(0, 120) || "Inbox capture";
+      await sendToNotes(title, capture.value);
+      if (!workspace.inbox?.includes(capture)) return;
     } else if (destination === "image" && capture.kind === "image") {
       const size = await imageWidgetSize(capture.value);
       if (!canChangeInbox.value || !workspace.inbox?.includes(capture)) return;
@@ -1246,6 +1254,7 @@ async function moveCapture(capture: InboxCapture, destination: CaptureDestinatio
     workspace.inbox = workspace.inbox?.filter((item) => item.id !== capture.id);
     inboxMessage.value = {
       note: "Moved to a sticky note.",
+      notes: "Sent to Notes.",
       calendar: "Added to Calendar for today.",
       image: "Placed on the canvas.",
       discard: "Capture discarded.",
@@ -1372,7 +1381,10 @@ async function runTrigger(trigger: Trigger, at = Date.now()) {
   const workflow = workspace.actions?.find((a) => a.id === trigger.workflowId);
   try {
     if (!workflow) throw Error(`Workflow ${trigger.workflowId} no longer exists.`);
-    const result = await executeWorkspaceAction(workflow.id, trigger.inputs);
+    const result = await executeWorkspaceAction(workflow.id, trigger.inputs, 0, [], "", {
+      source: "trigger",
+      triggerId: trigger.id,
+    });
     delete trigger.lastError;
     return { trigger: trigger.name, workflow: workflow.name, result };
   } catch (error) {
@@ -1442,6 +1454,7 @@ const stopCanvasCommands = registerCommands("canvas", () => {
   return [
     { id: "custom-tools", title: "Custom tools", icon: "code", detail: "Workspace", keywords: "mcp agent tools chain code", run: openCustomTools },
     { id: "workspace-inbox", title: "Open workspace inbox", icon: "archive", detail: "Workspace", keywords: "capture clipboard screenshot", run: openInbox },
+    { id: "automation-timeline", title: "Automation timeline", icon: "clock", detail: "Action library", keywords: "workflow trigger runs history schedule failed", run: () => openActionStudio("", "", undefined, "timeline") },
     ...(writable ? [
       { id: "agent-launcher", title: "Open AI launcher", icon: "ai", hint: "Ctrl+Shift+K", keywords: "new task agent Codex Claude prompt", run: openAgentLauncher },
       { id: "folder-compare", title: "Compare two folders", icon: "columns", detail: "Canvas", run: () => placeWorkbench("folder-compare", {}) },
@@ -2989,7 +3002,7 @@ function openDockContext(app: CanvasApp, event: Event) {
   const target = event.currentTarget as HTMLElement;
   const tab = target.getBoundingClientRect();
   const bar = target.closest(".dock")?.getBoundingClientRect();
-  const width = 140;
+  const width = 250;
   dockContextAt.value = {
     left: `${Math.min(Math.max(8, tab.left + tab.width / 2 - width / 2), innerWidth - width - 8)}px`,
     right: "auto",
@@ -3074,6 +3087,22 @@ function retireApp(deleted: boolean) {
   if (active.value === managedApp.value.id) active.value = "";
   status.value = `${managedApp.value.name || "App"} ${deleted ? "moved to trash" : "archived"}. Restore it from Workspace; its data and connections are kept.`;
   managedApp.value = undefined;
+}
+function dockAction(app: CanvasApp, action: DockAction) {
+  if (!canEdit.value || importBusy.value) return;
+  dockContext.value = undefined;
+  if (action.kind === "rename" || action.kind === "manage") {
+    manage(app);
+    if (action.kind === "rename") nextTick(() => managementName.value?.select());
+  } else if (action.kind === "duplicate") duplicate(app);
+  else if (action.kind === "group") {
+    app.groupId = action.groupId;
+    const group = workspace.groups?.find((item) => item.id === action.groupId);
+    status.value = group ? `${app.name || "App"} moved to ${group.name}.` : `${app.name || "App"} removed from its group.`;
+  } else {
+    managedApp.value = app;
+    retireApp(action.kind === "trash");
+  }
 }
 function duplicate(a: CanvasApp) {
   if (!canEdit.value || importBusy.value) return;
@@ -3318,7 +3347,43 @@ async function executeFlow(
     app.id === "__workspace__",
   );
 }
-async function executeWorkspaceAction(
+// Workflows running now, shown live on the automation timeline; finished
+// top-level runs go into workspace.runs (src/automationRuns.ts).
+const liveRuns = ref<Omit<AutomationRun, "end" | "error">[]>([]);
+async function trackRun<T>(workflowId: string, run: { source: RunSource; triggerId?: string }, work: () => Promise<T>) {
+  const entry = {
+    id: uid(),
+    workflowId,
+    source: run.source,
+    ...(run.triggerId ? { triggerId: run.triggerId } : {}),
+    start: Date.now(),
+  };
+  liveRuns.value = [...liveRuns.value, entry];
+  let error: string | undefined;
+  try {
+    return await work();
+  } catch (failure) {
+    error = failure instanceof Error ? failure.message : String(failure);
+    throw failure;
+  } finally {
+    liveRuns.value = liveRuns.value.filter((r) => r.id !== entry.id);
+    if (canEdit.value)
+      workspace.runs = addRun(workspace.runs, { ...entry, end: Date.now(), ...(error ? { error: error.slice(0, 2000) } : {}) });
+  }
+}
+/** Runs an Action-library workflow; a top-level run is recorded for the timeline. */
+function executeWorkspaceAction(
+  id: string,
+  bindings: Record<string, string>,
+  depth = 0,
+  callPath: string[] = [],
+  initial = "",
+  run: { source: RunSource; triggerId?: string } = { source: "button" },
+): Promise<string> {
+  if (callPath.length) return runWorkspaceAction(id, bindings, depth, callPath, initial);
+  return trackRun(id, run, () => runWorkspaceAction(id, bindings, depth, callPath, initial));
+}
+async function runWorkspaceAction(
   id: string,
   bindings: Record<string, string>,
   depth = 0,
@@ -3387,7 +3452,7 @@ async function runWheelAction(id: string, bindings: Record<string, string>) {
   activeExecutions.value++;
   actionNotice.value = "";
   try {
-    await executeWorkspaceAction(id, bindings);
+    await executeWorkspaceAction(id, bindings, 0, [], "", { source: "manual" });
     if (!actionNotice.value) actionNotice.value = "Action completed.";
   } catch (error) {
     actionNotice.value =
@@ -3782,7 +3847,7 @@ async function runForMcp(request: RunRequest) {
     if (request.kind === "workflow") {
       const workflow = workspace.actions?.find((a) => a.id === request.workflowId);
       if (!workflow) throw Error(`Workflow ${request.workflowId} does not exist. Call workflow_list.`);
-      const result = await executeWorkspaceAction(workflow.id, request.inputs);
+      const result = await executeWorkspaceAction(workflow.id, request.inputs, 0, [], "", { source: "ai" });
       return { workflow: workflow.name, result, message: actionNotice.value };
     }
     const app = apps.value.find((a) => a.id === request.appId);
@@ -4076,6 +4141,8 @@ onBeforeUnmount(() => {
     <ActionStudio
       v-if="actionStudio"
       :workspace="workspace"
+      :live-runs="liveRuns"
+      :initial-view="studioView"
       :initial-id="studioActionId"
       :create-on-open="!!studioWheelEntry && !studioActionId"
       :writable="canEdit && !importBusy"
@@ -5274,32 +5341,15 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </section>
-    <section
+    <DockActionMenu
       v-if="dockContext && canEdit"
-      class="dock-context floating-panel"
+      :key="dockContext.id"
       :style="dockContextAt"
-      aria-label="App quick actions"
-      @pointerdown.stop
-    >
-      <button
-        class="subtle-button"
-        @click="
-          manage(dockContext);
-          nextTick(() => managementName?.focus());
-        "
-      >
-        Rename
-      </button>
-      <button class="subtle-button" @click="duplicate(dockContext)">
-        Duplicate
-      </button>
-      <button class="subtle-button" @click="manage(dockContext)">
-        Manage app
-      </button>
-      <button class="subtle-button" @click="dockContext = undefined">
-        Close
-      </button>
-    </section>
+      :app="dockContext"
+      :groups="workspace.groups || []"
+      @action="dockAction(dockContext, $event)"
+      @close="dockContext = undefined"
+    />
     <section
       v-if="managedApp && canEdit"
       class="management-panel floating-panel"
@@ -5416,10 +5466,10 @@ onBeforeUnmount(() => {
       ><button
         ref="searchButton"
         class="icon-button dock-action"
-        :class="{ selected: panel === 'search' }"
-        aria-label="Find an app"
-        title="Find an app"
-        @click="showSearch"
+        :class="{ selected: palette !== null }"
+        aria-label="Search and commands"
+        title="Search and commands (Ctrl+K)"
+        @click="palette === null ? openPalette('') : (palette = null)"
       >
         <Icon name="search" :size="17" /></button
       ><button

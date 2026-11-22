@@ -194,6 +194,20 @@ const schema = z.object({
     .max(50)
     .optional(),
   activeLayout: z.string().optional(),
+  runs: z
+    .array(
+      z.object({
+        id,
+        workflowId: id,
+        source: z.enum(["trigger", "manual", "button", "ai"]),
+        triggerId: id.optional(),
+        start: number,
+        end: number,
+        error: z.string().max(2000).optional(),
+      }),
+    )
+    .max(400)
+    .optional(),
   triggers: z
     .array(
       z.object({

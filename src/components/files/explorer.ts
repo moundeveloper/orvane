@@ -16,7 +16,7 @@ export type PaneState = {
   path: string;
   back: string[];
   forward: string[];
-  view: "list" | "grid";
+  view: "list" | "grid" | "cards";
   sort: Sort;
   preview: boolean;
 };
@@ -274,4 +274,60 @@ export function watchFolder(dir: string, listener: (names: string[]) => void) {
       watchers.delete(key);
     }
   };
+}
+
+// Folder card summaries for the Cards view, shared by every pane so a folder
+// seen before shows its card at once while it is re-read.
+export type FolderCard = {
+  count: number;
+  badge: string;
+  newest: number;
+  sheets: { name: string; path: string; mtime?: number; text?: string; image?: boolean }[];
+  /** The folder's modified time when this card was read (client side). */
+  stamp?: number;
+};
+export const folderCardCache = new Map<string, FolderCard>();
+export function rememberFolderCard(path: string, card: FolderCard) {
+  folderCardCache.delete(path);
+  folderCardCache.set(path, card);
+  if (folderCardCache.size > 600) folderCardCache.delete(folderCardCache.keys().next().value!);
+}
+// Card pictures: each image is fetched once, shrunk to card size and kept as
+// a blob URL, so cards that scroll back into view or re-render after a
+// refresh draw at once instead of downloading the full image again.
+const THUMB_W = 340;
+const thumbs = new Map<string, Promise<string>>();
+export const thumbKey = (path: string, mtime = 0) => path + "|" + mtime;
+export function cardThumb(path: string, mtime: number | undefined, token: string) {
+  const key = thumbKey(path, mtime);
+  let made = thumbs.get(key);
+  if (made) {
+    thumbs.delete(key);
+    thumbs.set(key, made);
+    return made;
+  }
+  made = (async () => {
+    const response = await fetch(rawUrl(path, token));
+    if (!response.ok) throw new Error("Could not read " + path);
+    const blob = await response.blob();
+    try {
+      const bitmap = await createImageBitmap(blob);
+      const scale = Math.min(1, THUMB_W / bitmap.width);
+      const canvas = new OffscreenCanvas(Math.max(1, Math.round(bitmap.width * scale)), Math.max(1, Math.round(bitmap.height * scale)));
+      canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close();
+      return URL.createObjectURL(await canvas.convertToBlob({ type: "image/webp", quality: 0.85 }));
+    } catch {
+      // SVG and other formats the bitmap decoder skips: show the file itself.
+      return URL.createObjectURL(blob);
+    }
+  })();
+  made.catch(() => thumbs.delete(key));
+  thumbs.set(key, made);
+  if (thumbs.size > 400) {
+    const [oldKey, old] = thumbs.entries().next().value!;
+    thumbs.delete(oldKey);
+    void old.then((url) => URL.revokeObjectURL(url), () => undefined);
+  }
+  return made;
 }

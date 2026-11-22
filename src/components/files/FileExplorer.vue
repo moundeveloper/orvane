@@ -66,7 +66,7 @@ function makePane(path: string, from?: Partial<PaneState>): PaneState {
     // History survives reloads; only the most recent steps are kept.
     back: strings(from?.back).slice(-30),
     forward: strings(from?.forward).slice(-30),
-    view: from?.view === "grid" ? "grid" : "list",
+    view: from?.view === "grid" || from?.view === "cards" ? from.view : "list",
     sort:
       from?.sort && ["name", "mtime", "type", "size"].includes(from.sort.key)
         ? { key: from.sort.key, dir: from.sort.dir === -1 ? -1 : 1 }

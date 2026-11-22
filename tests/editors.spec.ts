@@ -728,7 +728,7 @@ test("app name releases focus on canvas, other apps and dock without losing the 
   await page.getByRole("button", { name: "Workspace options" }).click();
   await expect(name).not.toBeFocused();
   await name.click();
-  await page.getByRole("button", { name: "Find an app", exact: true }).click();
+  await page.getByRole("button", { name: "Search and commands", exact: true }).click();
   await expect(name).not.toBeFocused();
 });
 

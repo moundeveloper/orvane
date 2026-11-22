@@ -20,9 +20,7 @@ for (const reducedMotion of [false, true]) {
         (el as HTMLElement).offsetWidth,
         (el as HTMLElement).offsetHeight,
       ]);
-      await page
-        .getByRole("button", { name: "Find an app", exact: true })
-        .click();
+      await page.keyboard.press("k");
       const input = page.getByRole("textbox", {
         name: "Search apps",
         exact: true,
@@ -62,7 +60,7 @@ test("search arrow keys move the selection and enter opens the selected app", as
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Find an app", exact: true }).click();
+  await page.keyboard.press("k");
   const input = page.getByRole("textbox", { name: "Search apps", exact: true });
   const results = page.locator(".search-results button");
   const count = await results.count();
@@ -132,7 +130,7 @@ test("global popovers and each app menu close on outside pointerdown", async ({
 }) => {
   await page.goto("/");
   const field = page.getByRole("textbox", { name: "New task", exact: true });
-  for (const name of ["Find an app", "Canvas guide", "Workspace options"]) {
+  for (const name of ["Canvas guide", "Workspace options"]) {
     await page.getByRole("button", { name, exact: true }).click();
     await expect(
       page.locator(".search-panel,.guide-panel,.workspace-panel"),
@@ -171,12 +169,9 @@ test("search animates from the dock icon for mouse and shortcut; fields have no 
   page,
 }) => {
   await page.goto("/");
+  // The dock button opens Ctrl+K now; the K shortcut still opens this panel.
   for (const shortcut of [false, true]) {
-    if (shortcut) await page.keyboard.press("k");
-    else
-      await page
-        .getByRole("button", { name: "Find an app", exact: true })
-        .click();
+    await page.keyboard.press("k");
     const search = page.locator(".search-panel");
     await expect(search).toBeVisible();
     await expect(search).not.toHaveClass(/search-reveal-enter-active/);
@@ -187,7 +182,7 @@ test("search animates from the dock icon for mouse and shortcut; fields have no 
       return { x: r.x + x!, y: r.y + y! };
     });
     const button = (await page
-      .getByRole("button", { name: "Find an app", exact: true })
+      .getByRole("button", { name: "Search and commands", exact: true })
       .boundingBox())!;
     expect(Math.abs(origin.x - button.x - button.width / 2)).toBeLessThan(2);
     expect(Math.abs(origin.y - button.y - button.height / 2)).toBeLessThan(2);

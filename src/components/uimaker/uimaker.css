@@ -265,12 +265,20 @@
 .uimaker .lab-tabs { flex: 0 1 auto; min-width: 0; flex-wrap: wrap; }
 .uimaker .lab-tabs button { white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
 .uimaker .lab-won { width: 5px; height: 5px; border-radius: 50%; background: var(--um-green); }
+/* The selected variant's explanation sits at the bottom of the rounds panel. */
+.uimaker .lab-about { display: flex; flex-direction: column; gap: 6px; flex: none; min-width: 0; margin-top: auto; padding: 10px 4px 0; border-top: 1px solid var(--um-line); font-size: 12px; line-height: 1.55; }
+.uimaker .lab-about header { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.uimaker .lab-about h3 { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uimaker .lab-about .btn { flex: none; }
+.uimaker .lab-about p { max-height: 45vh; margin: 0; overflow: auto; white-space: pre-line; color: var(--um-ink); }
+.uimaker .lab-about.folded p { max-height: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .uimaker .lab-stage { position: relative; flex: 1; min-height: 0; background: var(--um-canvas); }
 .uimaker .lab-stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--um-card); }
 .uimaker .lab-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--um-dim); }
 /* In the Lab the side panel shows only the rounds. */
 .uimaker .right.lab-side > :not(.lab-rounds) { display: none !important; }
 .uimaker .lab-rounds { display: flex; flex-direction: column; min-height: 0; padding: 12px 10px; gap: 6px; overflow-y: auto; }
+.uimaker .right.lab-side > .lab-rounds { flex: 1; }
 .uimaker .lab-rounds h3 { margin: 0 4px 2px; font-size: 11px; font-weight: 500; color: var(--um-dim); }
 .uimaker .lab-rounds nav { display: flex; flex-direction: column; gap: 2px; }
 .uimaker .lab-round { display: flex; flex-direction: column; gap: 2px; padding: 7px 8px; border-radius: 7px; text-align: left; }

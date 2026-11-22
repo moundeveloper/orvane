@@ -297,7 +297,7 @@ export function registerUiMakerTools(
     "uimaker_lab_round",
     {
       description:
-        "UI Maker Lab (uimaker_lab_* tools) shows design variants side by side. When the user wants options, redesigns or a new design to compare: start a round with uimaker_lab_round (a short title of what you are working on, kind redesign or new), then write each variant with uimaker_lab_write as one self-contained HTML page that shows only the working design on a plain stage: no headings, descriptions, captions or explanatory text, and labels of 1-3 words. Write the first variant whole; make the others by forking it with `from` plus exact edits instead of resending the page. Check with uimaker_lab_view. Make several variants per round when asked to compare. Rework a variant with edits on it, not a new round; start a new round only for a new question. The user picks in the editor, or tells you and you call uimaker_lab_pick, which saves the winner as the next iteration. This tool: start a lab round on a UI Maker component: a set of variants of one idea shown side by side as tabs in UI Maker's Lab mode. It becomes the open round (an earlier open round closes). Then add variants with uimaker_lab_write.",
+        "UI Maker Lab (uimaker_lab_* tools) shows design variants side by side. When the user wants options, redesigns or a new design to compare: start a round with uimaker_lab_round (a short title of what you are working on, kind redesign or new), then write each variant with uimaker_lab_write as one self-contained HTML page that shows only the working design on a plain stage: no headings, descriptions, captions or explanatory text, and labels of 1-3 words. Put the explanation of each variant (what it is, how it works, what building it would take) in uimaker_lab_write's `about`, which the Lab shows under the tabs. Write the first variant whole; make the others by forking it with `from` plus exact edits instead of resending the page. Check with uimaker_lab_view. Make several variants per round when asked to compare. Rework a variant with edits on it, not a new round; start a new round only for a new question. The user picks in the editor, or tells you and you call uimaker_lab_pick, which saves the winner as the next iteration. This tool: start a lab round on a UI Maker component: a set of variants of one idea shown side by side as tabs in UI Maker's Lab mode. It becomes the open round (an earlier open round closes). Then add variants with uimaker_lab_write.",
       inputSchema: {
         component,
         title: z.string().min(1).max(60).describe("What this round works on, a few words (e.g. 'Wheel center handoff')"),
@@ -320,6 +320,11 @@ export function registerUiMakerTools(
         component,
         variant: variantId,
         label: z.string().max(24).optional().describe("Tab label, 1-3 words; defaults to the existing label or the ID"),
+        about: z
+          .string()
+          .max(2000)
+          .optional()
+          .describe("Plain explanation shown in the Lab under the tabs: what the variant is, what it changes or adds, how it works and what building it would take. Keep the page itself free of explanatory text; put it here. Omit to keep the current one, empty to clear."),
         html: z.string().min(1).max(2_000_000).optional().describe("Complete self-contained HTML page (inline <style> and <script>, no build step)"),
         from: z.string().max(80).optional().describe("Variant ID to start from when forking with edits"),
         edits: z

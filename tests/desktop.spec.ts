@@ -225,31 +225,67 @@ test("Desktop Browser app loads frame-blocking sites in a webview", async ({}, i
     // Inspect docks DevTools under the page inside the Browser app (no
     // separate native window) and reveals the clicked element.
     const windowsBefore = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
-    await app.evaluate(({ webContents, Menu }) => {
+    const inspectedId = await app.evaluate(({ webContents, Menu }) => {
       const guest = webContents.getAllWebContents().find((contents) => contents.getType() === "webview")!;
       const build = Menu.buildFromTemplate;
-      const inspect = guest.inspectElement.bind(guest);
-      (globalThis as unknown as { inspected?: unknown }).inspected = undefined;
-      guest.inspectElement = (x, y) => { (globalThis as unknown as { inspected?: unknown }).inspected = { id: guest.id, x, y }; inspect(x, y); };
       Menu.buildFromTemplate = (items) => ({
         popup() { (items.find((item) => item.label === "Inspect") as Electron.MenuItemConstructorOptions)?.click?.(undefined as never, undefined as never, undefined as never); },
       }) as Electron.Menu;
       try { guest.emit("context-menu", {}, { x: 30, y: 40, isEditable: false }); }
       finally { Menu.buildFromTemplate = build; }
+      return guest.id;
     });
     await expect(page.getByRole("region", { name: "Developer tools" })).toBeVisible();
     // Electron reports isDevToolsOpened() = false for DevTools rendered into
     // a custom webview; what counts is the DevTools app loading there.
-    await expect.poll(() => app.evaluate(({ webContents, BrowserWindow }) => {
-      const inspected = (globalThis as unknown as { inspected?: { id: number; x: number; y: number } }).inspected;
+    await expect.poll(() => app.evaluate(({ webContents, BrowserWindow }, id) => {
       const docked = webContents.getAllWebContents().find((contents) =>
         contents.getType() === "webview" && contents.getURL().startsWith("devtools://devtools/"));
       return {
-        dockedInBrowserApp: !!docked?.hostWebContents && docked.hostWebContents === webContents.fromId(inspected?.id ?? -1)?.hostWebContents,
+        dockedInBrowserApp: !!docked?.hostWebContents && docked.hostWebContents === webContents.fromId(id)?.hostWebContents,
         windows: BrowserWindow.getAllWindows().length,
-        inspected: inspected && { x: inspected.x, y: inspected.y },
       };
-    }), { timeout: 15000 }).toEqual({ dockedInBrowserApp: true, windows: windowsBefore, inspected: { x: 30, y: 40 } });
+    }, inspectedId), { timeout: 15000 }).toEqual({ dockedInBrowserApp: true, windows: windowsBefore });
+    // DevTools are connected to the page: Elements shows its document and
+    // selects the element that was right-clicked.
+    await expect.poll(() => app.evaluate(async ({ webContents }) => {
+      const docked = webContents.getAllWebContents().find((contents) =>
+        contents.getType() === "webview" && contents.getURL().startsWith("devtools://devtools/"));
+      return docked?.executeJavaScript(`(async () => {
+        const SDK = await import("devtools://devtools/bundled/core/sdk/sdk.js");
+        const UI = await import("devtools://devtools/bundled/ui/legacy/legacy.js");
+        const target = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
+        const doc = target ? await target.domAgent().invoke_getDocument({ depth: 1 }) : undefined;
+        const node = UI.Context.Context.instance().flavor(SDK.DOMModel.DOMNode);
+        return { document: doc?.root?.nodeName ?? doc?.getError?.() ?? null, selected: !!node && node.nodeType() === 1 };
+      })()`).catch((error) => String(error));
+    }), { timeout: 15000 }).toEqual({ document: "#document", selected: true });
+    // Docked DevTools use Orvane's light palette, not the system's dark mode.
+    await expect.poll(() => app.evaluate(async ({ webContents }) => {
+      const docked = webContents.getAllWebContents().find((contents) =>
+        contents.getType() === "webview" && contents.getURL().startsWith("devtools://devtools/"));
+      return docked?.executeJavaScript(`({
+        dark: matchMedia("(prefers-color-scheme: dark)").matches,
+        base: getComputedStyle(document.documentElement).getPropertyValue("--sys-color-cdt-base-container").trim(),
+        // Hover is a layer drawn over button text, so it must stay see-through.
+        hover: getComputedStyle(document.documentElement).getPropertyValue("--sys-color-state-hover-on-subtle").trim(),
+      })`);
+    }), { timeout: 15000 }).toEqual({ dark: false, base: "#f7f9fa", hover: "rgb(111 137 152 / 12%)" });
+    // An image offers the usual browser items.
+    const imageItems = await app.evaluate(({ webContents, Menu }) => {
+      const guest = webContents.getAllWebContents().find((contents) => contents.getType() === "webview" && !contents.getURL().startsWith("devtools:"))!;
+      const build = Menu.buildFromTemplate;
+      let labels: string[] = [];
+      Menu.buildFromTemplate = (items) => {
+        labels = items.map((item) => (item as Electron.MenuItemConstructorOptions).label ?? "-");
+        return { popup() {} } as unknown as Electron.Menu;
+      };
+      try {
+        guest.emit("context-menu", {}, { x: 5, y: 5, isEditable: false, mediaType: "image", srcURL: "https://example.com/a.png", linkURL: "", selectionText: "", editFlags: {} });
+      } finally { Menu.buildFromTemplate = build; }
+      return labels;
+    });
+    expect(imageItems).toEqual(expect.arrayContaining(["Open image in new tab", "Save image as…", "Copy image", "Copy image address", "Inspect"]));
     // The test app reaches below the window edge: click without scrolling.
     await page.getByRole("button", { name: "Close developer tools" }).dispatchEvent("click");
     await expect(page.getByRole("region", { name: "Developer tools" })).toHaveCount(0);

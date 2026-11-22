@@ -1,6 +1,8 @@
 <script setup lang="ts">
 // Peek: a quick look at a file in a panel over the folder, styled after the
-// Browser's Peek View. Arrow keys step through the folder's files.
+// Browser's Peek View. Up and Down step through the folder's files, from
+// anywhere in Peek (the panel, a playing video, the side rail); Left and
+// Right stay with the content, such as seeking in a video.
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import Icon from "../Icon.vue";
 import FileViewer from "./FileViewer.vue";
@@ -23,19 +25,19 @@ const folder = computed(() => props.entry.path.slice(0, Math.max(0, props.entry.
 // ---- Keyboard and actions ----
 function keydown(event: KeyboardEvent) {
   event.stopPropagation();
-  if ((event.target as Element).closest(".cm-panels input, input, textarea")) return;
+  const target = event.target as Element;
+  if (target.closest(".cm-panels input, input, textarea")) return;
   const key = event.key;
+  // A focused rail button keeps its own Enter and Space.
+  if ((key === "Enter" || key === " ") && target.closest("button")) return;
   if (key === "Escape" || key === " ") {
     event.preventDefault();
     emit("close");
-  } else if (key === "ArrowRight" || key === "ArrowDown" || key === "PageDown") {
-    if ((event.target as Element).closest(".cm-editor, .peek-sheet-body, video, audio")) return;
+  } else if (key === "ArrowDown" || key === "PageDown" || key === "ArrowUp" || key === "PageUp") {
+    // Text and tables scroll with these keys; a video or audio player does not.
+    if (target.closest(".cm-editor, .peek-sheet-body")) return;
     event.preventDefault();
-    emit("step", 1);
-  } else if (key === "ArrowLeft" || key === "ArrowUp" || key === "PageUp") {
-    if ((event.target as Element).closest(".cm-editor, .peek-sheet-body, video, audio")) return;
-    event.preventDefault();
-    emit("step", -1);
+    emit("step", key === "ArrowDown" || key === "PageDown" ? 1 : -1);
   } else if (key === "Enter") {
     event.preventDefault();
     openDefault();
@@ -65,15 +67,15 @@ watch(() => props.entry.path, () => void nextTick(() => {
     </div>
     <FileViewer :path="entry.path" :token="ctx.token" :revision="entry.mtime" />
   </div>
-  <div class="peek-rail" role="toolbar" aria-label="Peek">
+  <div class="peek-rail" role="toolbar" aria-label="Peek" tabindex="-1" @keydown="keydown">
     <button type="button" aria-label="Close Peek" title="Close (Esc or Space)" @click="emit('close')">
       <Icon name="close" :size="15" />
     </button>
     <span class="peek-rail-line"></span>
-    <button type="button" aria-label="Previous file" title="Previous (←)" :disabled="total < 2" @click="emit('step', -1)">
+    <button type="button" aria-label="Previous file" title="Previous (↑)" :disabled="total < 2" @click="emit('step', -1)">
       <Icon name="up" :size="15" />
     </button>
-    <button type="button" aria-label="Next file" title="Next (→)" :disabled="total < 2" @click="emit('step', 1)">
+    <button type="button" aria-label="Next file" title="Next (↓)" :disabled="total < 2" @click="emit('step', 1)">
       <Icon name="up" :size="15" class="flip" />
     </button>
     <span class="peek-rail-line"></span>

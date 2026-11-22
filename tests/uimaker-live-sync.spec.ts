@@ -14,7 +14,9 @@ async function openUiMaker(p: Page, name: string) {
   await p.getByRole("button", { name: "Workspace options" }).click();
   await p.getByRole("button", { name: "Create UI Maker" }).click();
   const app = p.locator(".canvas-app").last();
-  await p.locator(".help").waitFor();
+  // On a fresh dev server the first UI Maker compiles its editor on demand,
+  // which takes about 9s, longer than the 8s default above.
+  await p.locator(".help").waitFor({ timeout: 30_000 });
   await p.locator(".help").dispatchEvent("pointerdown");
   await app.getByTitle("New component").click();
   await app.getByLabel("New component name").fill(name);
@@ -27,7 +29,7 @@ async function openUiMaker(p: Page, name: string) {
 }
 
 test("UI Maker shows a component added from outside the editor without a reload", async ({ page: p }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(120_000);
   const { app, post } = await openUiMaker(p, "Card");
   const list = app.getByRole("navigation", { name: "Components" }).locator(".nav-item");
   await expect(list).toHaveCount(1);
@@ -48,11 +50,14 @@ test("UI Maker shows a component added from outside the editor without a reload"
   await app.getByTitle("New component").click();
   await app.getByLabel("New component name").fill("Third");
   await app.getByLabel("New component name").press("Enter");
-  await expect.poll(async () => (await post("state", {})).state.components.map((c: { name: string }) => c.name)).toEqual(["Card", "Wheel", "Third"]);
+  // Creating a component and saving it can take longer than 5s on a cold dev server.
+  await expect
+    .poll(async () => (await post("state", {})).state.components.map((c: { name: string }) => c.name), { timeout: 15_000 })
+    .toEqual(["Card", "Wheel", "Third"]);
 });
 
 test("UI Maker takes an artboard size set from outside, without undoing its own size changes", async ({ page: p }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(120_000);
   const { app, post } = await openUiMaker(p, "Card");
   const width = app.getByRole("spinbutton", { name: "Artboard width" });
   const height = app.getByRole("spinbutton", { name: "Artboard height" });

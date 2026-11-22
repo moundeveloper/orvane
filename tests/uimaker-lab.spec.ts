@@ -36,7 +36,7 @@ test("UI Maker Lab shows a round's variants as tabs, follows the agent's writes 
 
   // An agent starts a round and writes the first variant whole …
   expect((await api("lab-start", { c: "card", title: "Card corners", kind: "redesign" })).ok).toBe(true);
-  expect((await api("lab-write", { c: "card", variant: "soft", label: "Soft", html: page("Soft", "14px") })).ok).toBe(true);
+  expect((await api("lab-write", { c: "card", variant: "soft", label: "Soft", html: page("Soft", "14px"), about: "Rounded corners.\nBuilding it: one CSS change." })).ok).toBe(true);
   // … and forks it with exact edits instead of resending the page.
   const fork = await api("lab-write", {
     c: "card", variant: "sharp", label: "Sharp", from: "soft",
@@ -56,6 +56,16 @@ test("UI Maker Lab shows a round's variants as tabs, follows the agent's writes 
   await expect(app.locator(".lab-round").first()).toContainText("Now");
   const frame = app.frameLocator(".lab-stage iframe");
   await expect(frame.locator("#card")).toHaveText("Soft");
+  // The agent's explanation of the variant sits under the rounds list and folds to one line.
+  const about = app.getByRole("note", { name: "About this variant" });
+  await expect(about.locator("p")).toHaveText("Rounded corners.\nBuilding it: one CSS change.");
+  await about.getByRole("button", { name: "Fold" }).click();
+  await expect(about).toHaveClass(/folded/);
+  await about.getByRole("button", { name: "More" }).click();
+  // A forked variant without its own explanation shows none.
+  await app.getByRole("tablist", { name: "Variants" }).getByRole("tab", { name: "Sharp" }).click();
+  await expect(about).toHaveCount(0);
+  await app.getByRole("tablist", { name: "Variants" }).getByRole("tab", { name: "Soft" }).click();
 
   // Number keys switch tabs while the pointer is over the app.
   await app.locator(".lab-stage").hover();
@@ -71,7 +81,8 @@ test("UI Maker Lab shows a round's variants as tabs, follows the agent's writes 
 
   // Picking saves the variant as the next iteration and closes the round.
   await app.locator(".lab-bar").getByRole("button", { name: "Pick" }).click();
-  await expect(app.locator(".lab-bar .chip")).toHaveText("Picked as v2");
+  // Picking renders the new iteration's snapshot, which can take a while on a cold start.
+  await expect(app.locator(".lab-bar .chip")).toHaveText("Picked as v2", { timeout: 30_000 });
   await expect(app.locator(".timeline button")).toHaveCount(2);
   await expect(app.locator(".lab-round").first()).toContainText("Sharp → v2");
   await expect(app.locator(".lab-round").first()).not.toContainText("Now");

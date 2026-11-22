@@ -282,7 +282,7 @@ test("small-screen creation and search are usable", async ({ page }) => {
   await page.getByRole("button", { name: "Increase Counter" }).click();
   await expect(page.locator("output")).toHaveText("1");
   await page.screenshot({ path: "artifacts/app-mobile.png" });
-  await page.getByRole("button", { name: "Find an app", exact: true }).click();
+  await page.keyboard.press("k");
   await page.getByRole("textbox", { name: "Search apps" }).fill("Pocket");
   await expect(page.locator(".search-results button")).toHaveCount(1);
   await page.getByRole("textbox", { name: "Search apps" }).press("Enter");
@@ -498,6 +498,43 @@ test("dock quick actions open right above the right-clicked tab", async ({
     const dock = (await page.locator(".dock").boundingBox())!;
     expect(Math.round(dock.y - (m.y + m.height))).toBe(8);
     if (index === 1) await page.screenshot({ path: "artifacts/dock-quick-actions.png" });
-    await menu.getByRole("button", { name: "Close", exact: true }).click();
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
   }
+});
+
+test("the dock menu searches its actions and runs them by key", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Create app", exact: true }).click();
+  const tab = page.locator(".dock-tab").first();
+  const name = (await tab.textContent())!.trim();
+  await tab.click({ button: "right" });
+  const menu = page.getByRole("region", { name: "App quick actions" });
+  const search = menu.getByRole("textbox", { name: "Search actions" });
+  await expect(search).toBeFocused();
+  await search.fill("dup");
+  await expect(menu.getByRole("menuitem")).toHaveText(["DuplicateCtrl D"]);
+  await page.screenshot({ path: test.info().outputPath("dock-actions.png") });
+  await search.press("Enter");
+  await expect(menu).toHaveCount(0);
+  await expect(page.locator(".dock-tab")).toHaveCount(2);
+  // Ctrl+D duplicates while the menu is open.
+  await page.locator(".dock-tab").first().click({ button: "right" });
+  await page.keyboard.press("Control+d");
+  await expect(page.locator(".dock-tab")).toHaveCount(3);
+  // F2 opens Manage app with the name selected.
+  await page.locator(".dock-tab").first().click({ button: "right" });
+  await page.keyboard.press("F2");
+  await expect(page.getByRole("dialog", { name: "Manage app" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  // An outside press closes the menu.
+  await page.locator(".dock-tab").first().click({ button: "right" });
+  await expect(menu).toBeVisible();
+  await page.mouse.click(40, 300);
+  await expect(menu).toHaveCount(0);
+  // Archive takes the app off the dock.
+  await page.locator(".dock-tab").first().click({ button: "right" });
+  await menu.getByRole("menuitem", { name: "Archive" }).click();
+  await expect(page.locator(".dock-tab")).toHaveCount(2);
+  expect(name).toBeTruthy();
 });

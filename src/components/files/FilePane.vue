@@ -12,12 +12,18 @@ import {
   iconOf,
   isImage,
   label,
+  folderCardCache,
+  cardThumb,
+  thumbKey,
+  rawUrl,
+  rememberFolderCard,
   samePath,
   sortEntries,
   toneOf,
   typeName,
   watchFolder,
   type ExplorerContext,
+  type FolderCard,
   type FileEntry,
   type MenuItem,
   type PaneState,
@@ -40,6 +46,8 @@ async function load(quiet = false) {
   const seq = ++loadSeq,
     path = p.path;
   if (!quiet) loading.value = true;
+  // A refresh the user asked for reads the folder cards again too.
+  if (!quiet) for (const path of folderCardCache.keys()) forced.add(path);
   try {
     const data = await api<{ path: string; parent: string | null; entries: FileEntry[]; truncated: boolean }>("list", { path });
     if (seq !== loadSeq) return;
@@ -607,19 +615,25 @@ function keydown(event: KeyboardEvent) {
     return void load();
   }
   if (typing) return;
-  const cols = columns.value;
+  const at = shown.value.findIndex((e) => e.path === cursor.value);
+  const inCards = p.view === "cards" && at >= 0 && at < folderCount.value;
+  const cols = inCards ? cardColumns.value : columns.value;
+  // From the last row of cards, Down goes to the first file; from the first
+  // file, Up goes back to the last card.
+  const down = inCards && at + cols >= folderCount.value ? Math.max(1, folderCount.value - at) : cols;
+  const up = p.view === "cards" && at === folderCount.value && at > 0 ? 1 : cols;
   const handled = () => event.preventDefault();
   if (event.altKey && key === "ArrowLeft") (handled(), goBack());
   else if (event.altKey && key === "ArrowRight") (handled(), goForward());
   else if ((event.altKey && key === "ArrowUp") || key === "Backspace") (handled(), goUp());
-  else if (key === "ArrowDown") (handled(), move(cols, event.shiftKey));
-  else if (key === "ArrowUp") (handled(), move(-cols, event.shiftKey));
+  else if (key === "ArrowDown") (handled(), move(down, event.shiftKey));
+  else if (key === "ArrowUp") (handled(), move(-up, event.shiftKey));
   else if (key === "ArrowRight" && cols > 1) (handled(), move(1, event.shiftKey));
   else if (key === "ArrowLeft" && cols > 1) (handled(), move(-1, event.shiftKey));
   else if (key === "Home") (handled(), move(-Infinity, event.shiftKey));
   else if (key === "End") (handled(), move(Infinity, event.shiftKey));
-  else if (key === "PageDown") (handled(), move(cols * pageRows(), event.shiftKey));
-  else if (key === "PageUp") (handled(), move(-cols * pageRows(), event.shiftKey));
+  else if (key === "PageDown") (handled(), move((inCards ? cols : columns.value) * pageRows(), event.shiftKey));
+  else if (key === "PageUp") (handled(), move(-(inCards ? cols : columns.value) * pageRows(), event.shiftKey));
   else if (key === "Enter") (handled(), openSelection());
   else if (key === " " && !ctrl) (handled(), peek());
   else if (key === "F2") (handled(), selection.value.length > 1 ? batchRename() : startRename());
@@ -671,25 +685,65 @@ const viewHeight = ref(400);
 const viewWidth = ref(600);
 const ROW = 28,
   TILE_H = 96,
-  TILE_W = 104;
+  TILE_W = 104,
+  CARD_H = 212,
+  CARD_W = 184,
+  LABEL_H = 30;
 const columns = computed(() => (p.view === "grid" ? Math.max(1, Math.floor((viewWidth.value - 16) / TILE_W)) : 1));
 const rowHeight = computed(() => (p.view === "grid" ? TILE_H : ROW));
-const rowCount = computed(() => Math.ceil(shown.value.length / columns.value));
-const range = computed(() => {
-  const h = rowHeight.value;
-  const start = Math.max(0, Math.floor(scrollTop.value / h) - 6);
-  const end = Math.min(rowCount.value, Math.ceil((scrollTop.value + viewHeight.value) / h) + 6);
-  return { start, end };
-});
+// Cards view: folders as cards on top, then the files as plain rows.
+const cardColumns = computed(() => Math.max(1, Math.floor((viewWidth.value - 24) / CARD_W)));
+const folderCount = computed(() => (p.view === "cards" ? shown.value.filter((e) => e.dir).length : 0));
+const cardRows = computed(() => Math.ceil(folderCount.value / cardColumns.value));
+const filesTop = computed(
+  () => cardRows.value * CARD_H + (folderCount.value && shown.value.length > folderCount.value ? LABEL_H : 0),
+);
+const totalHeight = computed(() =>
+  p.view === "cards"
+    ? filesTop.value + (shown.value.length - folderCount.value) * ROW
+    : Math.ceil(shown.value.length / columns.value) * rowHeight.value,
+);
+type Row = { key: string; top: number; height: number; items: FileEntry[]; cards?: boolean; label?: string };
 const rows = computed(() => {
-  const out: { index: number; items: FileEntry[] }[] = [];
-  const cols = columns.value,
-    list = shown.value;
-  for (let r = range.value.start; r < range.value.end; r++) out.push({ index: r, items: list.slice(r * cols, r * cols + cols) });
+  const out: Row[] = [];
+  const list = shown.value,
+    top = scrollTop.value,
+    bottom = top + viewHeight.value;
+  if (p.view !== "cards") {
+    const h = rowHeight.value,
+      cols = columns.value,
+      count = Math.ceil(list.length / cols);
+    const start = Math.max(0, Math.floor(top / h) - 6),
+      end = Math.min(count, Math.ceil(bottom / h) + 6);
+    for (let r = start; r < end; r++) out.push({ key: "r" + r, top: r * h, height: h, items: list.slice(r * cols, r * cols + cols) });
+    return out;
+  }
+  const cols = cardColumns.value,
+    folders = folderCount.value;
+  const start = Math.max(0, Math.floor(top / CARD_H) - 1),
+    end = Math.min(cardRows.value, Math.ceil(bottom / CARD_H) + 1);
+  for (let r = start; r < end; r++)
+    out.push({ key: "c" + r, top: r * CARD_H, height: CARD_H, items: list.slice(r * cols, Math.min(folders, r * cols + cols)), cards: true });
+  const base = filesTop.value,
+    files = list.length - folders;
+  if (base > cardRows.value * CARD_H && base > top - LABEL_H && cardRows.value * CARD_H < bottom)
+    out.push({ key: "label", top: cardRows.value * CARD_H, height: LABEL_H, items: [], label: "Files" });
+  const first = Math.max(0, Math.floor((top - base) / ROW) - 6),
+    last = Math.min(files, Math.ceil((bottom - base) / ROW) + 6);
+  for (let r = first; r < last; r++) out.push({ key: "f" + r, top: base + r * ROW, height: ROW, items: [list[folders + r]!] });
   return out;
 });
+// Where an item sits, for scrolling it into view.
+function placeOf(index: number) {
+  if (p.view !== "cards") {
+    const h = rowHeight.value;
+    return { top: Math.floor(index / columns.value) * h, height: h };
+  }
+  if (index < folderCount.value) return { top: Math.floor(index / cardColumns.value) * CARD_H, height: CARD_H };
+  return { top: filesTop.value + (index - folderCount.value) * ROW, height: ROW };
+}
 function pageRows() {
-  return Math.max(1, Math.floor(viewHeight.value / rowHeight.value) - 1);
+  return Math.max(1, Math.floor(viewHeight.value / (p.view === "cards" ? ROW : rowHeight.value)) - 1);
 }
 function scrollTo(top: number) {
   scrollTop.value = top;
@@ -698,8 +752,7 @@ function scrollTo(top: number) {
 function reveal(path: string) {
   const index = shown.value.findIndex((e) => e.path === path);
   if (index < 0 || !body.value) return;
-  const h = rowHeight.value,
-    top = Math.floor(index / columns.value) * h;
+  const { top, height: h } = placeOf(index);
   if (top < body.value.scrollTop) scrollTo(top);
   else if (top + h > body.value.scrollTop + viewHeight.value) scrollTo(top + h - viewHeight.value);
 }
@@ -724,11 +777,114 @@ onBeforeUnmount(() => {
   observer?.disconnect();
   cancelAnimationFrame(frame);
   clearTimeout(typedTimer);
+  clearTimeout(cardsTimer);
 });
 watch(
   () => p.view,
   () => void nextTick(() => cursor.value && reveal(cursor.value)),
 );
+
+// ---- Folder cards -----------------------------------------------------------
+const cards = shallowRef(new Map<string, FolderCard>());
+// Cards already read (in any pane) show at once. A card is read again only
+// when its folder's modified time changed, or on a refresh the user asked
+// for (F5, opening a folder); quiet reloads (focus, live updates) reuse it.
+// Reads go in small batches so the first cards fill in quickly.
+const forced = new Set<string>();
+const reading = new Set<string>();
+const thumbs = shallowRef(new Map<string, string>());
+function showThumbs(card: FolderCard) {
+  for (const sheet of card.sheets) {
+    if (!sheet.image) continue;
+    const key = thumbKey(sheet.path, sheet.mtime);
+    if (thumbs.value.has(key)) continue;
+    void cardThumb(sheet.path, sheet.mtime, props.ctx.token).then(
+      (url) => {
+        if (thumbs.value.get(key) === url) return;
+        const next = new Map(thumbs.value);
+        next.set(key, url);
+        thumbs.value = next;
+      },
+      () => undefined,
+    );
+  }
+}
+const thumbOf = (sheet: { path: string; mtime?: number }) => thumbs.value.get(thumbKey(sheet.path, sheet.mtime));
+let cardsTimer = 0;
+const visibleCards = () =>
+  p.view === "cards" && props.visible ? rows.value.flatMap((row) => (row.cards ? row.items.map((e) => e.path) : [])) : [];
+function syncCards() {
+  clearTimeout(cardsTimer);
+  const paths = visibleCards();
+  const stampOf = new Map(shown.value.map((e) => [e.path, e.mtime]));
+  let next: Map<string, FolderCard> | undefined;
+  for (const path of paths) {
+    const cached = folderCardCache.get(path);
+    if (cached && cards.value.get(path) !== cached) (next ??= new Map(cards.value)).set(path, cached);
+  }
+  if (next) cards.value = next;
+  for (const path of paths) {
+    const card = cards.value.get(path);
+    if (card) showThumbs(card);
+  }
+  const missing = paths.filter((path) => {
+    if (reading.has(path)) return false;
+    const card = cards.value.get(path);
+    return !card || forced.has(path) || card.stamp !== stampOf.get(path);
+  });
+  if (!missing.length) return;
+  // Nothing to show yet: read now. Only refreshing: wait for scrolling to settle.
+  const blank = missing.some((path) => !cards.value.has(path));
+  cardsTimer = window.setTimeout(() => void readCards(missing), blank ? 0 : 150);
+}
+async function readCards(paths: string[]) {
+  for (let at = 0; at < paths.length; at += 6) {
+    const batch = paths.slice(at, at + 6);
+    for (const path of batch) reading.add(path);
+    try {
+      const data = await api<Record<string, FolderCard>>("folder-cards", { paths: batch });
+      const next = new Map(cards.value);
+      const stampOf = new Map(shown.value.map((e) => [e.path, e.mtime]));
+      for (const [path, read] of Object.entries(data)) {
+        const card = { ...read, stamp: stampOf.get(path) };
+        rememberFolderCard(path, card);
+        forced.delete(path);
+        next.set(path, card);
+        showThumbs(card);
+      }
+      cards.value = next;
+    } catch {
+    } finally {
+      for (const path of batch) reading.delete(path);
+    }
+  }
+}
+watch(visibleCards, syncCards);
+// A reload keeps the cards on screen; changed folders are read again.
+watch(entries, () => void nextTick(syncCards));
+const ago = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+function edited(ms: number) {
+  if (!ms) return "";
+  const minutes = Math.round((Date.now() - ms) / 60000);
+  if (minutes < 1) return "edited just now";
+  if (minutes < 60) return "edited " + ago.format(-minutes, "minute");
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return "edited " + ago.format(-hours, "hour");
+  const days = Math.round(hours / 24);
+  return "edited " + (days < 30 ? ago.format(-days, "day") : formatDate(ms));
+}
+function cardMeta(entry: FileEntry) {
+  const card = cards.value.get(entry.path);
+  if (!card) return "";
+  if (!card.count) return "No files yet";
+  const names = card.sheets.slice(0, 2).map((sheet) => sheet.name);
+  return card.count.toLocaleString() + (card.count === 1 ? " item" : " items") + (names.length ? " · " + names.join(", ") : "");
+}
+// Oldest of the three at the back, newest in front.
+function sheetsOf(entry: FileEntry) {
+  const sheets = cards.value.get(entry.path)?.sheets ?? [];
+  return sheets.map((sheet, index) => ({ ...sheet, slot: "s" + (index + 1) })).reverse();
+}
 
 // ---- Preview ----------------------------------------------------------------
 type Preview = {
@@ -804,7 +960,7 @@ function togglePreview() {
   p.preview = !p.preview;
   emit("changed");
 }
-function setView(view: "list" | "grid") {
+function setView(view: PaneState["view"]) {
   p.view = view;
   emit("changed");
 }
@@ -967,7 +1123,9 @@ const relative = (entry: FileEntry) => {
         <button aria-label="Details view" title="Details" :aria-pressed="pane.view === 'list'" @click="setView('list')">
           <Icon name="list" :size="13" /></button
         ><button aria-label="Icons view" title="Icons" :aria-pressed="pane.view === 'grid'" @click="setView('grid')">
-          <Icon name="app" :size="13" />
+          <Icon name="app" :size="13" /></button
+        ><button aria-label="Folder cards view" title="Folder cards" :aria-pressed="pane.view === 'cards'" @click="setView('cards')">
+          <Icon name="layers" :size="13" />
         </button>
       </div>
       <button aria-label="Preview pane" title="Preview pane" :aria-pressed="pane.preview" @click="togglePreview">
@@ -1015,19 +1173,21 @@ const relative = (entry: FileEntry) => {
           <p v-else-if="!loading && !shown.length" class="fx-empty">
             {{ results ? "No matches." : filter ? "Nothing matches the filter." : "This folder is empty." }}
           </p>
-          <div class="fx-spacer-row" :style="{ height: rowCount * rowHeight + 'px' }">
+          <div class="fx-spacer-row" :style="{ height: totalHeight + 'px' }">
             <div
               v-for="row in rows"
-              :key="row.index"
+              :key="row.key"
               class="fx-row"
-              :style="{ transform: `translateY(${row.index * rowHeight}px)`, height: rowHeight + 'px' }"
+              :class="{ 'fx-card-row': row.cards, 'fx-section': row.label }"
+              :style="{ transform: `translateY(${row.top}px)`, height: row.height + 'px' }"
             >
+              <template v-if="row.label">{{ row.label }}</template>
               <div
                 v-for="entry in row.items"
                 :key="entry.path"
                 class="fx-item"
                 :class="[
-                  pane.view === 'list' ? 'fx-cols' : 'fx-tile',
+                  row.cards ? 'fx-card' : pane.view === 'grid' ? 'fx-tile' : 'fx-cols',
                   {
                     search: !!results,
                     selected: selected.has(entry.path),
@@ -1050,6 +1210,20 @@ const relative = (entry: FileEntry) => {
                 @dragleave="dropTarget === entry.path && (dropTarget = '')"
                 @drop="entry.dir && drop($event, entry.path)"
               >
+                <div v-if="row.cards" class="fx-stack" aria-hidden="true">
+                  <i class="fx-back" />
+                  <span v-for="sheet in sheetsOf(entry)" :key="sheet.path" class="fx-sheet" :class="sheet.slot">
+                    <template v-if="sheet.image"><img v-if="thumbOf(sheet)" :src="thumbOf(sheet)" alt="" /></template>
+                    <template v-else>{{ sheet.text || sheet.name }}</template>
+                  </span>
+                  <span v-if="cards.get(entry.path) && !sheetsOf(entry).length" class="fx-sheet s1 fx-sheet-empty">{{
+                    cards.get(entry.path)?.count ? "Folders only" : "Empty"
+                  }}</span>
+                  <span class="fx-front">
+                    <span>{{ edited(cards.get(entry.path)?.newest || entry.mtime) }}</span>
+                    <b v-if="cards.get(entry.path)?.badge">{{ cards.get(entry.path)?.badge }}</b>
+                  </span>
+                </div>
                 <span class="fx-name">
                   <Icon :name="iconOf(entry)" :size="pane.view === 'grid' ? 34 : 15" :class="toneOf(entry)" />
                   <input
@@ -1075,7 +1249,8 @@ const relative = (entry: FileEntry) => {
                   >
                   <Icon v-if="entry.link" name="link" :size="10" class="fx-link" />
                 </span>
-                <template v-if="pane.view === 'list'">
+                <small v-if="row.cards" class="fx-card-meta">{{ cardMeta(entry) }}</small>
+                <template v-if="pane.view === 'list' || (pane.view === 'cards' && !row.cards)">
                   <span v-if="results" class="fx-dim">{{ relative(entry) }}</span>
                   <span class="fx-dim">{{ formatDate(entry.mtime) }}</span>
                   <span class="fx-dim">{{ typeName(entry) }}</span>
@@ -1481,6 +1656,168 @@ button:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #8798a3;
+}
+.fx-body.cards .fx-card-row {
+  gap: 0;
+  padding: 0 12px;
+}
+.fx-body.cards .fx-spacer-row {
+  margin-top: 10px;
+}
+.fx-section {
+  align-items: flex-end;
+  padding: 0 14px 6px;
+  color: #8ea1ac;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.fx-card {
+  width: 184px;
+  height: 202px;
+  padding: 6px 8px;
+  border-radius: 9px;
+}
+.fx-item.fx-card:hover,
+.fx-item.fx-card.selected {
+  background: transparent;
+}
+.fx-item.fx-card.cursor {
+  box-shadow: none;
+}
+.fx-stack {
+  position: relative;
+  height: 140px;
+  margin: 8px 0;
+}
+.fx-back {
+  position: absolute;
+  inset: 0;
+  border-radius: 9px;
+  background: #dfe7ec;
+}
+.fx-back::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -7px;
+  width: 44%;
+  height: 14px;
+  border-radius: 7px 7px 0 0;
+  background: #dfe7ec;
+}
+.fx-sheet {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 20px;
+  height: 80px;
+  overflow: hidden;
+  padding: 8px;
+  border: 1px solid #e1e8ec;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 1px 2px #263f5510;
+  color: #93a4ae;
+  font: 9.5px/1.45 "Cascadia Code", Consolas, monospace;
+  white-space: pre;
+  transition: transform 160ms ease-out;
+}
+.fx-sheet img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.fx-sheet.s3 {
+  top: 6px;
+  left: 8px;
+  right: 30px;
+  transform: rotate(-4deg);
+}
+.fx-sheet.s2 {
+  top: 10px;
+  left: 30px;
+  right: 8px;
+  transform: rotate(3.5deg);
+}
+.fx-sheet-empty {
+  display: grid;
+  place-items: center;
+  color: #b3c2ca;
+  font-family: inherit;
+}
+.fx-card:hover .fx-sheet.s3 {
+  transform: rotate(-6deg) translateY(-6px);
+}
+.fx-card:hover .fx-sheet.s2 {
+  transform: rotate(5deg) translateY(-4px);
+}
+.fx-front {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  height: 56px;
+  padding: 9px 11px;
+  border: 1px solid #dbe4ea;
+  border-radius: 9px;
+  background: linear-gradient(#eef3f6f2, #e6edf1f7);
+  backdrop-filter: blur(3px);
+  color: #8296a2;
+  font-size: 11px;
+}
+.fx-front b {
+  padding: 0 5px;
+  border: 1px solid #dce5ea;
+  border-radius: 4px;
+  background: #f7f9fa;
+  color: #5d7381;
+  font: 500 10.5px "Cascadia Code", Consolas, monospace;
+}
+.fx-card.selected .fx-front {
+  border-color: #9fb6c3;
+  box-shadow: 0 0 0 3px #6f89981a;
+}
+.fx-card.cursor .fx-front {
+  border-color: #8ca7b5;
+}
+.fx-card.drop .fx-back,
+.fx-card.drop .fx-back::before {
+  background: #d3e6ef;
+}
+.fx-card .fx-name {
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: #273f50;
+}
+.fx-card .fx-name > svg {
+  display: none;
+}
+.fx-card-meta {
+  display: block;
+  overflow: hidden;
+  color: #8296a2;
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fx-sheet {
+    transition: none;
+  }
+  .fx-card:hover .fx-sheet.s3 {
+    transform: rotate(-4deg);
+  }
+  .fx-card:hover .fx-sheet.s2 {
+    transform: rotate(3.5deg);
+  }
 }
 .fx-tile {
   width: 104px;

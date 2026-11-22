@@ -153,6 +153,8 @@ export interface Workspace {
   /** Scheduled runs of Action-library workflows (see triggers.ts). */
   triggers?: import("./triggers").Trigger[];
   inbox?: import("./inbox").InboxCapture[];
+  /** Finished workflow runs for the automation timeline (see automationRuns.ts). */
+  runs?: import("./automationRuns").AutomationRun[];
 }
 // Whiteboard items drawn on the canvas itself, in canvas coordinates.
 // An arrow end attached to an app or sticky note follows it; x/y is where

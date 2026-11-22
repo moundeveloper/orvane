@@ -83,9 +83,7 @@ for (const reduced of [false, true])
     await page.getByRole("button", { name: "Large app", exact: true }).click();
     await fits(page, "large");
     expect(await zoom(page)).toBeLessThan(smallZoom);
-    await page
-      .getByRole("button", { name: "Find an app", exact: true })
-      .click();
+    await page.keyboard.press("k");
     await page
       .getByRole("textbox", { name: "Search apps", exact: true })
       .fill("Wide app");

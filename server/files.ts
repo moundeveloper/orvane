@@ -128,6 +128,7 @@ export type FileEntry = {
 const LIST_LIMIT = 50_000;
 const TEXT_LIMIT = 2_000_000;
 const IMAGE_LIMIT = 12_000_000;
+const CARD_IMAGE_LIMIT = 4_000_000;
 const IMAGE_TYPES: Record<string, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -255,6 +256,42 @@ async function preview(path: string) {
   } finally {
     await handle.close();
   }
+}
+// A folder card's summary for the Cards view: how many items it holds, a
+// Git or SuiteCloud badge, and its three newest files with a short text
+// sample (or a flag that the file is an image the page can load itself).
+// Folders are skipped without a stat, and the files are stat'ed in parallel.
+async function folderCard(path: string) {
+  const dirents = await readdir(path, { withFileTypes: true }).catch(() => []);
+  const lower = new Set(dirents.map((d) => d.name.toLowerCase()));
+  const badge = lower.has(".git") ? "git" : lower.has("suitecloud.config.js") || lower.has("manifest.xml") ? "SDF" : "";
+  const names = dirents
+    .filter((d) => !d.name.startsWith(".") && !d.isDirectory())
+    .slice(0, 400)
+    .map((d) => d.name);
+  const found = await Promise.all(names.map((name) => entry(path, name)));
+  const files = found.filter((item): item is FileEntry => !!item && !item.dir);
+  files.sort((a, b) => b.mtime - a.mtime);
+  const sheets = await Promise.all(
+    files.slice(0, 3).map(async (file) => {
+      const ext = extname(file.name).toLowerCase();
+      // Big pictures would be slow to draw as a thumbnail; their name stands in.
+      if (IMAGE_TYPES[ext] && file.size <= CARD_IMAGE_LIMIT) return { name: file.name, path: file.path, mtime: file.mtime, image: true };
+      if (IMAGE_TYPES[ext]) return { name: file.name, path: file.path, text: "" };
+      let text = "";
+      const handle = await open(file.path, constants.O_RDONLY).catch(() => undefined);
+      if (handle)
+        try {
+          const buffer = Buffer.alloc(Math.min(file.size, 400));
+          await handle.read(buffer, 0, buffer.length, 0);
+          if (!buffer.includes(0)) text = buffer.toString("utf8").split(/\r?\n/).slice(0, 4).join("\n");
+        } finally {
+          await handle.close();
+        }
+      return { name: file.name, path: file.path, text };
+    }),
+  );
+  return { count: dirents.length, badge, newest: files[0]?.mtime ?? 0, sheets };
 }
 async function unique(dir: string, name: string) {
   const { name: stem, ext } = parse(name);
@@ -531,6 +568,11 @@ export function createFilesService(directory: string) {
         if (!current || RANK[value]! > RANK[current]!) entries[child] = value;
       }
       return { repo: true, root: status.root, entries };
+    },
+    "folder-cards": async (a) => {
+      const results: Record<string, Awaited<ReturnType<typeof folderCard>>> = {};
+      await Promise.all(paths(a.paths).slice(0, 60).map(async (path) => (results[path] = await folderCard(path))));
+      return results;
     },
     "folder-size": async (a) => {
       const deadline = Date.now() + 8000;

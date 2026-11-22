@@ -40,7 +40,8 @@ interface Tweak { id: string; c: string; v: number; selector: string; prop: stri
 export interface UiState { name?: string; components: Component[]; notes: Note[]; strokes: Stroke[]; tweaks: Tweak[] }
 export interface Version { n: number; mtime: number; response: { summary?: string; notes?: Record<string, string>; lab?: { round: string; variant: string } } | null }
 export type LabKind = "redesign" | "new";
-export interface LabVariant { id: string; label: string; at: number; mtime?: number }
+/** about: the agent's plain explanation of the variant, shown in the Lab under the tabs. */
+export interface LabVariant { id: string; label: string; at: number; about?: string; mtime?: number }
 export interface LabRound {
   id: string; title: string; kind: LabKind; base: number | null;
   status: "open" | "picked" | "closed"; picked?: string; pickedAs?: number; at: number; variants: LabVariant[];
@@ -313,7 +314,7 @@ export class UiMakerService {
   /** Writes a variant: whole HTML, or exact find/replace edits applied to an
    * existing variant (`from`, default the variant itself). Returns its size. */
   async labWrite(c: string, input: {
-    variant: string; label?: string; round?: string; html?: string; from?: string; edits?: LabEdit[];
+    variant: string; label?: string; about?: string; round?: string; html?: string; from?: string; edits?: LabEdit[];
   }) {
     const round = await this.labRound(c, input.round);
     if (round.status !== "open") throw Error(`Round "${round.id}" is ${round.status}; start a new round to add variants.`);
@@ -334,8 +335,12 @@ export class UiMakerService {
     if (!html.trim()) throw Error("The variant HTML is empty.");
     const label = (input.label ?? existing?.label ?? input.variant).trim().slice(0, 24);
     await fsp.writeFile(path.join(this.labDir(c, round.id), `${input.variant}.html`), html);
-    if (existing) existing.label = label;
-    else round.variants.push({ id: input.variant, label, at: Date.now() });
+    const about = input.about === undefined ? existing?.about : input.about.trim().slice(0, 2000) || undefined;
+    if (existing) {
+      existing.label = label;
+      if (about) existing.about = about;
+      else delete existing.about;
+    } else round.variants.push({ id: input.variant, label, at: Date.now(), ...(about ? { about } : {}) });
     await this.saveRound(c, round);
     return { round: round.id, variant: input.variant, label, bytes: Buffer.byteLength(html) };
   }

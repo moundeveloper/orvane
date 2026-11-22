@@ -11,6 +11,8 @@ import {
 import Icon from "./Icon.vue";
 import CustomSelect from "./CustomSelect.vue";
 import TriggerList from "./TriggerList.vue";
+import AutomationTimeline from "./AutomationTimeline.vue";
+import type { AutomationRun } from "../automationRuns";
 import { removeWorkspaceAction } from "../automation";
 const NodeGraph = defineAsyncComponent(() => import("./NodeGraph.vue"));
 const props = defineProps<{
@@ -22,6 +24,8 @@ const props = defineProps<{
   running: boolean;
   openingFrom?: { x: number; y: number; width: number; height: number };
   runTrigger?: (id: string) => Promise<unknown>;
+  liveRuns?: Omit<AutomationRun, "end" | "error">[];
+  initialView?: "actions" | "timeline";
 }>();
 const triggerCount = (id: string) =>
   props.workspace.triggers?.filter((t) => t.workflowId === id).length ?? 0;
@@ -31,6 +35,13 @@ const emit = defineEmits<{
   run: [id: string, inputs: Record<string, string>];
 }>();
 const selected = ref(props.initialId || props.workspace.actions?.[0]?.id || "");
+// Actions (sidebar and graph) or the automation timeline across the panel.
+const view = ref<"actions" | "timeline">(props.initialView ?? "actions");
+function openFromTimeline(id: string) {
+  if (!props.workspace.actions?.some((a) => a.id === id)) return;
+  selected.value = id;
+  view.value = "actions";
+}
 const action = computed(() =>
   props.workspace.actions?.find((a) => a.id === selected.value),
 );
@@ -270,6 +281,12 @@ function groupNodes(ids: string[]) {
           Build once. Run from a wheel slot or an app button.
         </p>
       </div>
+      <div class="action-studio-views" role="group" aria-label="Show">
+        <button type="button" :aria-pressed="view === 'actions'" @click="view = 'actions'">Actions</button>
+        <button type="button" :aria-pressed="view === 'timeline'" @click="view = 'timeline'">
+          <Icon name="clock" :size="12" />Timeline
+        </button>
+      </div>
       <button
         class="icon-button action-studio-close"
         aria-label="Close action library"
@@ -278,7 +295,14 @@ function groupNodes(ids: string[]) {
         <Icon name="close" />
       </button>
     </header>
-    <aside class="action-studio-sidebar">
+    <AutomationTimeline
+      v-if="view === 'timeline'"
+      class="action-studio-timeline"
+      :workspace="workspace"
+      :live-runs="liveRuns ?? []"
+      @open="openFromTimeline"
+    />
+    <aside v-show="view === 'actions'" class="action-studio-sidebar">
       <div class="workspace-action-row">
         <button class="subtle-button" :disabled="!writable" @click="create()">
           <Icon name="plus" :size="13" />New action</button
@@ -383,7 +407,7 @@ function groupNodes(ids: string[]) {
         {{ error || notice }}
       </p>
     </aside>
-    <div class="action-studio-graph" :inert="!writable">
+    <div v-show="view === 'actions'" class="action-studio-graph" :inert="!writable">
       <NodeGraph
         v-if="source"
         :key="source.id"

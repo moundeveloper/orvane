@@ -19,6 +19,9 @@ import {
   webFrameMain,
 } from "electron";
 import { spawn } from "node:child_process";
+import { createServer } from "node:http";
+import { randomBytes } from "node:crypto";
+import { WebSocketServer } from "ws";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -461,6 +464,16 @@ function secure() {
           { label: "Open link as Split", click: () => contents.hostWebContents?.send("orvane:guest-input", { from: contents.id, kind: "split", url: params.linkURL }) },
           { label: "Open link in new tab", click: () => contents.hostWebContents?.send("orvane:open-tab", { from: contents.id, url: params.linkURL, background: true }) },
           { label: "Copy link address", click: () => clipboard.writeText(params.linkURL) },
+          { label: "Save link as…", click: () => contents.downloadURL(params.linkURL) },
+          { type: "separator" },
+        );
+        // Images, video and audio get the usual browser items.
+        const media = { image: "image", video: "video", audio: "audio" }[params.mediaType];
+        if (media && web(params.srcURL) && !isOrvane(params.srcURL)) items.push(
+          { label: `Open ${media} in new tab`, click: () => contents.hostWebContents?.send("orvane:open-tab", { from: contents.id, url: params.srcURL, background: true }) },
+          { label: `Save ${media} as…`, click: () => contents.downloadURL(params.srcURL) },
+          ...(media === "image" ? [{ label: "Copy image", click: () => contents.copyImageAt(params.x, params.y) }] : []),
+          { label: `Copy ${media} address`, click: () => clipboard.writeText(params.srcURL) },
           { type: "separator" },
         );
         if (params.isEditable) items.push(
@@ -1057,25 +1070,176 @@ ipcMain.handle("orvane:inbox-clipboard", (event) => {
   return text ? { kind: "text", value: text } : null;
 });
 
-// Docked DevTools: render a Browser page's DevTools into the DevTools
-// <webview> the same Orvane window placed under it, then show the element.
-ipcMain.handle("orvane:page-devtools", (event, id, devtoolsId, x, y) => {
+// Docked DevTools follow Orvane's light palette instead of the system's dark
+// mode: the frontend is told it runs in a light scheme, and its colour tokens
+// and scrollbars are set to Orvane's.
+const DEVTOOLS_CSS = `:root, :root.theme-with-dark-background {
+  --sys-color-cdt-base: #f1f5f8 !important;
+  --sys-color-cdt-base-container: #f7f9fa !important;
+  --sys-color-surface: #f7f9fa !important;
+  --sys-color-surface1: #f3f6f8 !important;
+  --sys-color-surface2: #eef3f6 !important;
+  --sys-color-surface3: #e9eff2 !important;
+  --sys-color-surface4: #e4ebef !important;
+  --sys-color-surface5: #dfe7ec !important;
+  --sys-color-header-container: #eef3f6 !important;
+  --sys-color-header-container-highlight: #e7eef2 !important;
+  --sys-color-neutral-container: #e8eff3 !important;
+  --sys-color-on-surface: #273f50 !important;
+  --sys-color-on-surface-subtle: #5d7381 !important;
+  --sys-color-token-subtle: #8296a2 !important;
+  --sys-color-primary: #4f6c7c !important;
+  --sys-color-primary-bright: #6f8998 !important;
+  --sys-color-tonal-container: #dfe9ef !important;
+  --sys-color-on-tonal-container: #273f50 !important;
+  --sys-color-divider: #e3eaee !important;
+  --sys-color-neutral-outline: #cfdbe2 !important;
+  /* Hover and selection are drawn as layers over the content: keep them translucent. */
+  --sys-color-state-hover-on-subtle: rgb(111 137 152 / 12%) !important;
+  --sys-color-state-hover-on-prominent: rgb(255 255 255 / 12%) !important;
+  --sys-color-state-ripple-primary: rgb(111 137 152 / 22%) !important;
+  --sys-color-state-focus-select: rgb(111 137 152 / 22%) !important;
+  --sys-color-state-on-header-hover: rgb(111 137 152 / 14%) !important;
+  --sys-color-state-header-hover: #dfe9ef !important;
+  --sys-color-tonal-outline: #b9cbd6 !important;
+}
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+::-webkit-scrollbar-thumb { background: #bacbd5; border-radius: 3px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }`;
+const themedDevtools = new WeakSet();
+function themeDevtools(devtools) {
+  if (themedDevtools.has(devtools)) return;
+  themedDevtools.add(devtools);
+  try {
+    if (!devtools.debugger.isAttached()) devtools.debugger.attach("1.3");
+    void devtools.debugger.sendCommand("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-color-scheme", value: "light" }],
+    }).catch(() => undefined);
+  } catch {}
+  devtools.on("dom-ready", () => void devtools.insertCSS(DEVTOOLS_CSS).catch(() => undefined));
+}
+// Docked DevTools: a Browser page's DevTools run in the DevTools <webview>
+// the same Orvane window placed under it.
+//
+// Electron's setDevToolsWebContents() leaves DevTools rendered into a
+// <webview> without its connection to the page (tested on Electron 44, 45
+// and 46: the Elements panel stays empty). So Orvane connects them itself:
+// the DevTools app is opened in remote mode (?ws=) against a WebSocket on
+// 127.0.0.1, behind a random one-use token, that relays the DevTools
+// protocol to the page through guest.debugger.
+const devtoolsLinks = new Map(); // guest id -> link
+let devtoolsServer;
+function devtoolsBridge() {
+  devtoolsServer ??= new Promise((resolve, reject) => {
+    const http = createServer((_request, response) => response.writeHead(404).end());
+    const sockets = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 * 1024 });
+    http.on("upgrade", (request, socket, head) => {
+      const link = [...devtoolsLinks.values()].find((item) => request.url === "/" + item.token);
+      // Only the DevTools app Orvane opened, once per token.
+      if (!link || link.socket || request.headers.origin !== "devtools://devtools") return socket.destroy();
+      sockets.handleUpgrade(request, socket, head, (ws) => connectDevtools(link, ws));
+    });
+    http.once("error", reject);
+    http.listen(0, "127.0.0.1", () => resolve(http.address().port));
+  });
+  return devtoolsServer;
+}
+function connectDevtools(link, ws) {
+  const { guest } = link;
+  if (guest.isDestroyed()) return ws.close();
+  link.socket = ws;
+  // The page shown in DevTools runs; a paused off-screen page resumes.
+  resumeGuest(guest);
+  try {
+    if (!guest.debugger.isAttached()) guest.debugger.attach("1.3");
+  } catch {
+    return ws.close();
+  }
+  const send = (message) => ws.readyState === ws.OPEN && ws.send(JSON.stringify(message));
+  const onMessage = (_event, method, params, sessionId) => send(sessionId ? { method, params, sessionId } : { method, params });
+  const onDetach = () => ws.close();
+  guest.debugger.on("message", onMessage);
+  guest.debugger.on("detach", onDetach);
+  link.detach = () => {
+    guest.debugger.removeListener("message", onMessage);
+    guest.debugger.removeListener("detach", onDetach);
+  };
+  let revealed = false;
+  ws.on("message", async (data) => {
+    let request;
+    try { request = JSON.parse(String(data)); } catch { return; }
+    const { id, method, params, sessionId } = request;
+    const reply = sessionId ? { id, sessionId } : { id };
+    try {
+      const result = await guest.debugger.sendCommand(method, params ?? {}, sessionId);
+      send({ ...reply, result: result ?? {} });
+    } catch (error) {
+      send({ ...reply, error: { code: -32000, message: String(error?.message ?? error) } });
+    }
+    // The page's document is in DevTools: show the element that was right-clicked.
+    if (!revealed && method === "DOM.getDocument" && !sessionId) {
+      revealed = true;
+      void revealDevtoolsElement(link);
+    }
+  });
+  ws.on("close", () => closeDevtoolsLink(guest.id));
+}
+async function revealDevtoolsElement(link) {
+  const at = link.point;
+  link.point = undefined;
+  if (!at || !link.socket || link.guest.isDestroyed()) return;
+  try {
+    const zoom = link.guest.getZoomFactor() || 1;
+    const { backendNodeId } = await link.guest.debugger.sendCommand("DOM.getNodeForLocation", {
+      x: Math.round(at.x / zoom),
+      y: Math.round(at.y / zoom),
+      includeUserAgentShadowDOM: false,
+    });
+    if (backendNodeId && link.socket.readyState === link.socket.OPEN)
+      link.socket.send(JSON.stringify({ method: "Overlay.inspectNodeRequested", params: { backendNodeId } }));
+  } catch {}
+}
+function closeDevtoolsLink(guestId) {
+  const link = devtoolsLinks.get(guestId);
+  if (!link) return;
+  devtoolsLinks.delete(guestId);
+  link.detach?.();
+  if (link.socket && link.socket.readyState <= link.socket.OPEN) link.socket.close();
+  if (!link.guest.isDestroyed() && link.socket) {
+    try { link.guest.debugger.detach(); } catch {}
+  }
+}
+ipcMain.handle("orvane:page-devtools", async (event, id, devtoolsId, x, y) => {
   const guest = ownGuest(event, id);
   const devtools = typeof devtoolsId === "number" ? webContents.fromId(devtoolsId) : undefined;
   if (!guest || isDevtoolsGuest(guest) || !devtools || devtools.isDestroyed() ||
       devtools.getType() !== "webview" || devtools.hostWebContents !== event.sender || !isDevtoolsGuest(devtools)) return false;
-  // Already docked there: only reveal the element. A DevTools webview takes
-  // DevTools once, before anything else loads in it.
-  if (!guest.isDevToolsOpened()) {
-    guest.setDevToolsWebContents(devtools);
-    guest.openDevTools();
+  const point = Number.isFinite(x) && Number.isFinite(y) ? { x, y } : undefined;
+  const open = devtoolsLinks.get(guest.id);
+  // Already docked there: only reveal the element.
+  if (open && open.devtools === devtools) {
+    open.point = point;
+    void revealDevtoolsElement(open);
+    return true;
   }
-  if (Number.isFinite(x) && Number.isFinite(y)) guest.inspectElement(Math.round(x), Math.round(y));
+  closeDevtoolsLink(guest.id);
+  // Another page's DevTools in the same view, or a page another debugger owns.
+  for (const [other, link] of devtoolsLinks) if (link.devtools === devtools) closeDevtoolsLink(other);
+  if (guest.debugger.isAttached() && !pausedGuests.has(guest.id)) return false;
+  const port = await devtoolsBridge();
+  const link = { guest, devtools, token: randomBytes(24).toString("hex"), point };
+  devtoolsLinks.set(guest.id, link);
+  const forget = () => { if (devtoolsLinks.get(guest.id) === link) closeDevtoolsLink(guest.id); };
+  guest.once("destroyed", forget);
+  devtools.once("destroyed", forget);
+  themeDevtools(devtools);
+  await devtools.loadURL(`devtools://devtools/bundled/devtools_app.html?ws=127.0.0.1:${port}/${link.token}`).catch(() => undefined);
   return true;
 });
 ipcMain.handle("orvane:page-devtools-close", (event, id) => {
   const guest = ownGuest(event, id);
-  if (guest?.isDevToolsOpened()) guest.closeDevTools();
+  if (guest) closeDevtoolsLink(guest.id);
 });
 
 /** F11 toggles full screen (kept for next launch), also inside Browser pages. */

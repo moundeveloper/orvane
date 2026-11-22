@@ -378,28 +378,31 @@ onMounted(() => {
   justify-content: center;
   align-items: flex-start;
   padding-top: 12vh;
-  background: rgb(79 104 121 / 12%);
-  animation: cp-fade 0.14s ease;
+  background: rgb(79 104 121 / 8%);
+  backdrop-filter: blur(2px);
+  animation: cp-fade 0.18s ease-out;
 }
 .cp {
   display: flex;
   flex-direction: column;
   width: min(640px, calc(100vw - 32px));
   max-height: 70vh;
-  border-radius: 10px;
-  background: #f7f9fa;
+  border: 1px solid rgb(255 255 255 / 70%);
+  border-radius: 12px;
+  background: rgb(247 249 250 / 82%);
+  backdrop-filter: blur(18px) saturate(1.2);
   box-shadow:
     0 24px 60px rgb(39 63 78 / 22%),
     0 4px 14px rgb(39 63 78 / 10%);
   overflow: hidden;
-  animation: cp-in 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: cp-in 0.18s ease-out;
 }
 .cp-input {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 12px 14px;
-  border-bottom: 1px solid #e2eaee;
+  border-bottom: 1px solid rgb(206 218 225 / 70%);
   color: #718591;
 }
 .cp-input input {
@@ -449,7 +452,7 @@ kbd {
   text-align: left;
 }
 .cp-item.active {
-  background: #dce9f0;
+  background: rgb(204 222 232 / 75%);
   color: #2f4856;
 }
 .cp-title {
@@ -482,7 +485,7 @@ kbd {
   display: flex;
   gap: 14px;
   padding: 6px 14px;
-  border-top: 1px solid #e2eaee;
+  border-top: 1px solid rgb(206 218 225 / 70%);
   color: #8798a3;
   font-size: 11px;
 }
@@ -510,7 +513,7 @@ kbd {
 @keyframes cp-in {
   from {
     opacity: 0;
-    transform: translateY(-6px) scale(0.99);
+    transform: translateY(4px);
   }
 }
 @media (prefers-reduced-motion: reduce) {
