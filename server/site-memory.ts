@@ -57,6 +57,8 @@ export interface Flow extends Health {
   steps: FlowStep[];
   source: Source;
   approved: boolean;
+  /** Generated from this approved test plan. */
+  plan?: string;
   updatedAt: number;
 }
 export interface SiteMemory {
@@ -64,11 +66,36 @@ export interface SiteMemory {
   routes: Route[];
   notes: Note[];
   flows: Flow[];
+  plans?: TestPlan[];
 }
+/** One test case of a plan, in plain words; the AI generates its steps
+ * after the user approved the plan. */
+export interface PlanCase {
+  name: string;
+  useCase: string;
+  description: string;
+  status: "planned" | "generated" | "fails now";
+  note?: string;
+}
+/** Test cases the AI proposed for a site. The user approves the whole plan
+ * once (Browser → Memory → Test plans); then the AI may turn each case into
+ * a test (a flow saved approved, marked with the plan) without asking again. */
+export interface TestPlan {
+  id: string;
+  title: string;
+  goal: string;
+  cases: PlanCase[];
+  status: "pending" | "approved" | "rejected";
+  createdAt: number;
+  decidedAt?: number;
+}
+/** Clicks whose target holds one of these words change data; a generated
+ * test may do them only when its approved case names the word. */
+export const RISKY_WORDS = ["save", "submit", "approve", "reject", "delete", "remove", "void", "cancel", "pay", "send", "post", "close", "deploy"];
 
 const LIMITS = { routes: 60, notes: 40, flows: 30, note: 300, description: 200, steps: 30, params: 10 };
 export const FLOW_ACTIONS = new Set([
-  "navigate", "click", "hover", "fill", "select", "type", "press", "scroll", "wait", "read", "eval",
+  "navigate", "click", "hover", "fill", "select", "type", "press", "scroll", "wait", "read", "eval", "expect",
 ]);
 const NAME = /^[\p{L}\p{N}][\p{L}\p{N} _.-]{0,59}$/u;
 const PARAM = /^[A-Za-z_]\w{0,29}$/;
@@ -168,6 +195,18 @@ function guardFlow(input: { name: string; description: string; params?: string[]
       } else if (typeof value === "number" || typeof value === "boolean") out[key] = value;
       else throw Error(`${at}: ${key} must be text, a number or true/false.`);
     }
+    if (out.action === "expect") {
+      const checks = ["equals", "contains", "matches", "urlContains", "gone"].filter((k) => k in out);
+      if (checks.length > 1) throw Error(`${at}: expect checks one thing: equals, contains, matches, urlContains or gone.`);
+      if (typeof out.matches === "string")
+        try {
+          new RegExp(out.matches);
+        } catch {
+          throw Error(`${at}: matches is not a valid regular expression.`);
+        }
+      if (out.gone === true && typeof out.selector !== "string" && typeof out.text !== "string")
+        throw Error(`${at}: expect gone needs selector or text.`);
+    }
     if (out.action === "navigate") {
       if (typeof out.url === "string") throw Error(`${at}: navigate in a flow uses route (a saved route name) or path (same site), never a full address.`);
       if (typeof out.path === "string") out.path = guardPath(out.path);
@@ -201,11 +240,11 @@ export class SiteMemoryStore {
   }
   read(site: string): SiteMemory {
     const saved = this.database().appData(`site-memory:${site}`) as Partial<SiteMemory> | undefined;
-    return { site, routes: saved?.routes ?? [], notes: saved?.notes ?? [], flows: saved?.flows ?? [] };
+    return { site, routes: saved?.routes ?? [], notes: saved?.notes ?? [], flows: saved?.flows ?? [], plans: saved?.plans ?? [] };
   }
   private write(memory: SiteMemory) {
     const sites = new Set((this.database().appData("site-memory:sites") as string[] | undefined) ?? []);
-    const empty = !memory.routes.length && !memory.notes.length && !memory.flows.length;
+    const empty = !memory.routes.length && !memory.notes.length && !memory.flows.length && !memory.plans?.length;
     if (empty) sites.delete(memory.site);
     else sites.add(memory.site);
     this.database().saveAppData(`site-memory:${memory.site}`, memory);
@@ -220,8 +259,10 @@ export class SiteMemoryStore {
         routes: m.routes.length,
         notes: m.notes.length,
         flows: m.flows.length,
+        plans: m.plans?.length ?? 0,
         unreviewed:
-          m.routes.filter((r) => !r.reviewed && !r.disabled).length + m.notes.filter((n) => !n.reviewed && !n.disabled).length + m.flows.filter((f) => !f.approved && !f.disabled).length,
+          m.routes.filter((r) => !r.reviewed && !r.disabled).length + m.notes.filter((n) => !n.reviewed && !n.disabled).length + m.flows.filter((f) => !f.approved && !f.disabled).length +
+          (m.plans ?? []).filter((p) => p.status === "pending").length,
       };
     });
   }
@@ -342,6 +383,107 @@ export class SiteMemoryStore {
     this.write(memory);
   }
 
+  // ---- Test plans ----
+
+  /** The AI proposes test cases; they wait for the user's one approval. */
+  savePlan(site: string, input: { title: string; goal: string; cases: { name: string; useCase: string; description: string }[] }) {
+    const memory = this.read(site);
+    const plans = memory.plans ?? [];
+    const title = guardText(input.title, site, "Title", 80);
+    const goal = guardText(input.goal, site, "Goal", 400);
+    if (!Array.isArray(input.cases) || !input.cases.length || input.cases.length > LIMITS.flows)
+      throw Error(`A plan has 1-${LIMITS.flows} cases.`);
+    const names = new Set<string>();
+    const cases = input.cases.map((c, i) => {
+      const name = String(c?.name ?? "").trim();
+      if (!NAME.test(name)) throw Error(`Case ${i + 1}: a name is 1-60 letters, numbers, spaces, dots, dashes or underscores.`);
+      if (names.has(name.toLowerCase())) throw Error(`Case ${i + 1}: "${name}" is already in the plan.`);
+      names.add(name.toLowerCase());
+      return {
+        name,
+        useCase: guardText(String(c.useCase ?? ""), site, `Case ${i + 1} use case`, 60),
+        description: guardText(String(c.description ?? ""), site, `Case ${i + 1} description`, LIMITS.description),
+        status: "planned" as const,
+      };
+    });
+    if (plans.filter((p) => p.status === "pending").length >= 3)
+      throw Error("Three plans already wait for the user's approval on this site. Ask the user to decide on them first.");
+    const plan: TestPlan = { id: `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, title, goal, cases, status: "pending", createdAt: Date.now() };
+    memory.plans = [plan, ...plans].slice(0, 10);
+    this.write(memory);
+    return plan;
+  }
+  /** User only (the Browser panel): approve or reject a whole plan. */
+  decidePlan(site: string, id: string, approve: boolean) {
+    const memory = this.read(site);
+    const plan = memory.plans?.find((p) => p.id === id);
+    if (!plan) throw Error(`No test plan ${id} on ${site}.`);
+    plan.status = approve ? "approved" : "rejected";
+    plan.decidedAt = Date.now();
+    if (!approve)
+      // Tests generated from a withdrawn plan stop running.
+      for (const flow of memory.flows) if (flow.plan === id) flow.approved = false;
+    return this.write(memory);
+  }
+  removePlan(site: string, id: string) {
+    const memory = this.read(site);
+    const before = memory.plans?.length ?? 0;
+    memory.plans = (memory.plans ?? []).filter((p) => p.id !== id);
+    if (memory.plans.length === before) throw Error(`No test plan ${id} on ${site}.`);
+    for (const flow of memory.flows) if (flow.plan === id) flow.approved = false;
+    return this.write(memory);
+  }
+  plan(site: string, id: string) {
+    const plan = this.read(site).plans?.find((p) => p.id === id);
+    if (!plan) throw Error(`No test plan ${id} on ${site}. flow_tests plans lists them.`);
+    return plan;
+  }
+  /** Checks a generated case's steps against its approved plan; returns the
+   * flow it would save. Throws when the plan is not approved or a step goes
+   * beyond what the case says. */
+  planFlow(site: string, planId: string, caseName: string, input: { params?: string[]; steps: unknown[] }) {
+    const plan = this.plan(site, planId);
+    if (plan.status !== "approved")
+      throw Error(plan.status === "pending"
+        ? `Plan "${plan.title}" waits for the user's approval (Browser → Memory → Test plans).`
+        : `The user rejected plan "${plan.title}".`);
+    const item = plan.cases.find((c) => c.name.toLowerCase() === caseName.toLowerCase());
+    if (!item) throw Error(`Plan "${plan.title}" has no case "${caseName}". Its cases: ${plan.cases.map((c) => c.name).join("; ")}.`);
+    const flow = guardFlow({ name: item.name, description: item.description, params: input.params, steps: input.steps }, site, true);
+    const said = `${item.name} ${item.useCase} ${item.description}`.toLowerCase();
+    for (const [i, step] of flow.steps.entries()) {
+      if (step.action === "eval") throw Error(`Step ${i + 1}: generated tests can't run eval. Use read and expect, or ask the user for a hand-made flow.`);
+      if (step.action !== "click" && step.action !== "press") continue;
+      const target = `${step.text ?? ""} ${step.selector ?? ""}`.toLowerCase();
+      const word = RISKY_WORDS.find((w) => new RegExp(`\\b${w}`).test(target) && !new RegExp(`\\b${w}`).test(said));
+      if (word)
+        throw Error(`Step ${i + 1} would ${word} something ("${String(step.text ?? step.selector ?? step.key)}"), which case "${item.name}" doesn't say it does. Only actions the approved case describes may change data.`);
+    }
+    for (const step of flow.steps)
+      if (step.action === "navigate" && typeof step.route === "string" && !this.read(site).routes.some((r) => r.name.toLowerCase() === String(step.route).toLowerCase()))
+        throw Error(`The test uses route "${step.route}", which ${site} does not have. Save the route first.`);
+    if (!flow.steps.some((s) => s.action === "expect")) throw Error(`A test needs at least one expect step that checks what case "${item.name}" promises.`);
+    return { plan, item, flow };
+  }
+  /** Saves a generated case as a runnable test (approved through its plan). */
+  savePlanFlow(site: string, planId: string, caseName: string, input: { params?: string[]; steps: unknown[] }, outcome: { failsNow?: string }) {
+    const { flow, item } = this.planFlow(site, planId, caseName, input);
+    const memory = this.read(site);
+    const old = memory.flows.find((f) => f.name.toLowerCase() === flow.name.toLowerCase());
+    if (old && old.plan !== planId) throw Error(`A flow named "${flow.name}" already exists and is not from this plan. Rename the case.`);
+    if (old?.disabled) throw Error(`The user turned off "${old.name}"; leave it.`);
+    if (!old && memory.flows.length >= LIMITS.flows) throw Error(`A site keeps at most ${LIMITS.flows} flows.`);
+    const saved: Flow = { ...flow, source: "ai", approved: true, plan: planId, updatedAt: Date.now() };
+    memory.flows = old ? memory.flows.map((f) => (f === old ? saved : f)) : [...memory.flows, saved];
+    const plan = memory.plans!.find((p) => p.id === planId)!;
+    const entry = plan.cases.find((c) => c.name === item.name)!;
+    entry.status = outcome.failsNow ? "fails now" : "generated";
+    if (outcome.failsNow) entry.note = outcome.failsNow.slice(0, 200);
+    else delete entry.note;
+    this.write(memory);
+    return { flow: saved, case: entry };
+  }
+
   /** What the AI sees for a site: data, labelled, never instructions. */
   forAgent(site: string) {
     const all = this.read(site);
@@ -364,8 +506,12 @@ export class SiteMemoryStore {
       flows: memory.flows.map((f) => ({
         name: f.name, description: f.description, params: f.params,
         ...(f.approved ? { approved: true } : { approved: false, waiting: "The user must approve this flow in the Browser (Site memory) before it can run." }),
+        ...(f.plan ? { plan: f.plan } : {}),
         ...health(f),
       })),
+      ...(all.plans?.length
+        ? { testPlans: all.plans.map((p) => ({ id: p.id, title: p.title, status: p.status, cases: p.cases.map((c) => ({ name: c.name, status: c.status })) })) }
+        : {}),
     };
   }
 }

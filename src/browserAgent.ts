@@ -614,6 +614,7 @@ function recordRegionsScript(specs: unknown[]) {
       r = { x: b.left, y: b.top, width: b.width, height: b.height };
     } else if (s.width && s.height) r = { x: s.x || 0, y: s.y || 0, width: s.width, height: s.height };
     else { el = document.body; r = { x: 0, y: 0, width: vw, height: vh }; }
+    if (s.noText) el = null;
     const x0 = Math.max(0, r.x), y0 = Math.max(0, r.y);
     const x1 = Math.min(vw, r.x + r.width), y1 = Math.min(vh, r.y + r.height);
     const name = s.name || s.selector || (s.width ? "area " + (i + 1) : "page");
@@ -640,7 +641,10 @@ function recordRegionsScript(specs: unknown[]) {
 
 async function recordStart(tabId: string, args: Record<string, unknown>) {
   const { id } = await controlled(tabId);
-  const specs = Array.isArray(args.regions) && args.regions.length ? args.regions.slice(0, 4) : [{}];
+  const specs = (Array.isArray(args.regions) && args.regions.length ? args.regions.slice(0, 4) : [{}]).map((spec) =>
+    // flow_tests films whole flows: no text sampling on long recordings.
+    args.logText === false && spec && typeof spec === "object" ? { ...spec, noText: true } : spec,
+  );
   const setup = await run<{ error?: string; regions: RecordRegion[]; viewport: { width: number; height: number } }>(
     id,
     recordRegionsScript(specs),

@@ -14,8 +14,9 @@ import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs
 import { join } from "node:path";
 import { nativeImage } from "electron";
 
-const MAX_MS = 30_000;
-const MAX_FRAMES = 600;
+// browser_record asks for 30 s at most; flow_tests films a whole flow.
+const MAX_MS = 120_000;
+const MAX_FRAMES = 900;
 const KEEP_RECORDINGS = 12;
 /** A recording nobody stopped is dropped this long after it ended. */
 const FORGET_MS = 120_000;

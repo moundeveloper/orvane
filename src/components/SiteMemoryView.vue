@@ -10,11 +10,16 @@ import Icon from "./Icon.vue";
 interface Health { disabled?: boolean; lastOk?: number; lastFail?: number; failures?: number; failNote?: string }
 interface Route extends Health { name: string; path: string; description?: string; source: "ai" | "user"; reviewed: boolean; learnedOn?: string; updatedAt: number }
 interface Note extends Health { id: string; text: string; source: "ai" | "user"; reviewed: boolean; learnedOn?: string; updatedAt: number }
-interface Flow extends Health { name: string; description: string; params: string[]; steps: Record<string, unknown>[]; source: "ai" | "user"; approved: boolean; updatedAt: number }
-interface Memory { site: string; routes: Route[]; notes: Note[]; flows: Flow[] }
+interface Flow extends Health { name: string; description: string; params: string[]; steps: Record<string, unknown>[]; source: "ai" | "user"; approved: boolean; plan?: string; updatedAt: number }
+interface PlanCase { name: string; useCase: string; description: string; status: "planned" | "generated" | "fails now"; note?: string }
+interface TestPlan { id: string; title: string; goal: string; cases: PlanCase[]; status: "pending" | "approved" | "rejected"; createdAt: number; decidedAt?: number }
+interface Memory { site: string; routes: Route[]; notes: Note[]; flows: Flow[]; plans?: TestPlan[] }
 type Kind = "route" | "note" | "flow";
+type Tab = Kind | "plan";
 
 const props = defineProps<{ currentUrl?: string }>();
+/** Everything waiting for the owner (the header badge). */
+const emit = defineEmits<{ count: [number] }>();
 
 async function api<T>(body: Record<string, unknown>): Promise<T> {
   const response = await fetch("/__orvane/site-memory", {
@@ -39,7 +44,7 @@ const memories = ref<Memory[]>([]);
 const loaded = ref(false);
 const error = ref("");
 const query = ref("");
-const tab = ref<Kind>("route");
+const tab = ref<Tab>("route");
 /** Sites to show; none chosen shows every site. */
 const chosen = ref(new Set<string>());
 function toggleSite(name: string) {
@@ -48,11 +53,16 @@ function toggleSite(name: string) {
   else next.add(name);
   chosen.value = next;
 }
+let opened = false;
 async function refresh() {
   try {
     const sites = await api<{ site: string }[]>({ action: "sites" });
     memories.value = await Promise.all(sites.map(({ site }) => api<Memory>({ action: "read", site })));
     error.value = "";
+    emit("count", memories.value.reduce((n, m) => n + pending(m), 0));
+    // Open on the plans when one waits for approval.
+    if (!opened && memories.value.some((m) => m.plans?.some((p) => p.status === "pending"))) tab.value = "plan";
+    opened = true;
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e);
   } finally {
@@ -88,17 +98,61 @@ const shown = computed(() => {
       routes: m.routes.filter((r) => matches(m.site, r.name, r.path, r.description)),
       notes: m.notes.filter((n) => matches(m.site, n.text)),
       flows: m.flows.filter((f) => matches(m.site, f.name, f.description, JSON.stringify(f.steps))),
+      plans: (m.plans ?? []).filter((p) => matches(m.site, p.title, p.goal, ...p.cases.map((c) => `${c.name} ${c.description}`))),
     }))
-    .filter((m) => !searching || m.routes.length + m.notes.length + m.flows.length);
+    .filter((m) => !searching || m.routes.length + m.notes.length + m.flows.length + m.plans.length);
 });
 const entries = (m: { routes: Route[]; notes: Note[]; flows: Flow[] }) =>
   tab.value === "route" ? m.routes : tab.value === "note" ? m.notes : m.flows;
-const count = (kind: Kind) =>
-  shown.value.reduce((n, m) => n + (kind === "route" ? m.routes : kind === "note" ? m.notes : m.flows).length, 0);
+const count = (kind: Tab) =>
+  shown.value.reduce((n, m) => n + (kind === "route" ? m.routes : kind === "note" ? m.notes : kind === "flow" ? m.flows : m.plans).length, 0);
 const pending = (m: Memory) =>
   m.routes.filter((r) => !r.reviewed && !r.disabled).length +
   m.notes.filter((n) => !n.reviewed && !n.disabled).length +
-  m.flows.filter((f) => !f.approved && !f.disabled).length;
+  m.flows.filter((f) => !f.approved && !f.disabled).length +
+  (m.plans ?? []).filter((p) => p.status === "pending").length;
+const waiting = (kind: Tab) =>
+  memories.value.reduce(
+    (n, m) =>
+      n +
+      (kind === "route" ? m.routes.filter((r) => !r.reviewed && !r.disabled).length
+        : kind === "note" ? m.notes.filter((x) => !x.reviewed && !x.disabled).length
+          : kind === "flow" ? m.flows.filter((f) => !f.approved && !f.disabled).length
+            : (m.plans ?? []).filter((p) => p.status === "pending").length),
+    0,
+  );
+/** A plan's cases grouped by use case, in order. */
+const byUseCase = (plan: TestPlan) => {
+  const groups: { useCase: string; cases: PlanCase[] }[] = [];
+  for (const c of plan.cases) {
+    const group = groups.find((g) => g.useCase === c.useCase);
+    if (group) group.cases.push(c);
+    else groups.push({ useCase: c.useCase, cases: [c] });
+  }
+  return groups;
+};
+async function decidePlan(siteName: string, id: string, value: boolean) {
+  try {
+    await api({ action: "decide-plan", site: siteName, id, value });
+    await refresh();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  }
+}
+async function removePlan(siteName: string, id: string) {
+  const key = `plan:${siteName}:${id}`;
+  if (confirming.value !== key) {
+    confirming.value = key;
+    return;
+  }
+  confirming.value = "";
+  try {
+    await api({ action: "remove-plan", site: siteName, id });
+    await refresh();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  }
+}
 
 // ---- Editing ----
 const editing = ref<{ kind: Kind; site: string; key?: string } | null>(null);
@@ -106,6 +160,7 @@ const form = ref({ name: "", path: "", description: "", text: "", params: "", st
 const formError = ref("");
 const firstField = ref<HTMLInputElement | HTMLTextAreaElement>();
 function startNew(siteName: string) {
+  if (tab.value === "plan") return;
   editing.value = { kind: tab.value, site: siteName };
   form.value = {
     name: "", path: "", description: "", text: "", params: "",
@@ -179,10 +234,11 @@ const stepLine = (step: Record<string, unknown>) =>
     .map(String)
     .join(" ")
     .slice(0, 120);
-const kinds: { kind: Kind; label: string }[] = [
+const kinds: { kind: Tab; label: string }[] = [
   { kind: "route", label: "Routes" },
   { kind: "note", label: "Notes" },
   { kind: "flow", label: "Flows" },
+  { kind: "plan", label: "Test plans" },
 ];
 </script>
 
@@ -232,7 +288,11 @@ const kinds: { kind: Kind; label: string }[] = [
         :aria-pressed="tab === k.kind"
         @click="tab = k.kind; editing = null"
       >
-        {{ k.label }} · {{ count(k.kind) }}
+        {{ k.label }} · {{ count(k.kind) }}<span
+          v-if="waiting(k.kind)"
+          class="memory-count"
+          :aria-label="`${waiting(k.kind)} to approve`"
+        >{{ waiting(k.kind) }}</span>
       </button>
     </div>
 
@@ -246,7 +306,7 @@ const kinds: { kind: Kind; label: string }[] = [
         <span class="memory-group-name">{{ m.site }}</span>
         <span v-if="m.site === currentSite" class="memory-here">this tab</span>
         <button
-          v-if="!(editing && editing.site === m.site && !editing.key)"
+          v-if="tab !== 'plan' && !(editing && editing.site === m.site && !editing.key)"
           type="button"
           class="memory-add"
           :aria-label="`New ${tab} for ${m.site}`"
@@ -290,7 +350,47 @@ const kinds: { kind: Kind; label: string }[] = [
         </div>
       </form>
 
-      <p v-if="!entries(m).length && !(editing && editing.site === m.site)" class="memory-empty">
+      <template v-if="tab === 'plan'">
+        <p v-if="!m.plans.length" class="memory-empty">
+          {{ query.trim() ? "Nothing matches here." : "No test plans yet. Ask an AI to test this site." }}
+        </p>
+        <article v-for="plan in m.plans" :key="plan.id" class="memory-plan" :class="plan.status" :aria-label="plan.title">
+          <div class="memory-title">
+            <strong>{{ plan.title }}</strong>
+            <span v-if="plan.status === 'pending'" class="memory-badge warn">Needs approval</span>
+            <span v-else-if="plan.status === 'approved'" class="memory-badge">Approved</span>
+            <span v-else class="memory-badge bad">Rejected</span>
+          </div>
+          <span class="memory-sub">{{ plan.goal }}</span>
+          <div v-for="group in byUseCase(plan)" :key="group.useCase" class="memory-plan-group">
+            <span class="memory-plan-use">{{ group.useCase }} · {{ group.cases.length }}</span>
+            <ul>
+              <li v-for="c in group.cases" :key="c.name">
+                <span class="memory-plan-dot" :class="c.status === 'generated' ? 'ok' : c.status === 'fails now' ? 'bad' : ''"
+                  :title="c.status"></span>
+                <span><strong>{{ c.name }}</strong> {{ c.description }}<template v-if="c.note"> · <em>{{ c.note }}</em></template></span>
+              </li>
+            </ul>
+          </div>
+          <span class="memory-sub">
+            {{ plan.cases.length }} cases · proposed {{ day(plan.createdAt) }}
+            <template v-if="plan.status === 'approved'"> · {{ plan.cases.filter((c) => c.status !== 'planned').length }} turned into tests</template>
+          </span>
+          <div class="memory-actions">
+            <button v-if="plan.status !== 'approved'" type="button" class="memory-primary" @click="decidePlan(m.site, plan.id, true)">
+              Approve plan
+            </button>
+            <button v-if="plan.status !== 'rejected'" type="button" @click="decidePlan(m.site, plan.id, false)">
+              {{ plan.status === "approved" ? "Withdraw" : "Reject" }}
+            </button>
+            <button type="button" :class="{ danger: confirming === `plan:${m.site}:${plan.id}` }"
+              @click="removePlan(m.site, plan.id)" @blur="confirming === `plan:${m.site}:${plan.id}` && (confirming = '')">
+              {{ confirming === `plan:${m.site}:${plan.id}` ? "Click again to delete" : "Delete" }}
+            </button>
+          </div>
+        </article>
+      </template>
+      <p v-else-if="!entries(m).length && !(editing && editing.site === m.site)" class="memory-empty">
         {{ query.trim() ? "Nothing matches here." : `No ${tab}s yet.` }}
       </p>
       <ul v-else class="memory-list">
@@ -304,6 +404,7 @@ const kinds: { kind: Kind; label: string }[] = [
                 >{{ 'approved' in entry ? "Needs approval" : "Unreviewed" }}</span
               >
               <span v-if="entry.failures" class="memory-badge bad" :title="entry.failNote">Broken</span>
+              <span v-if="'plan' in entry && entry.plan" class="memory-badge">From a test plan</span>
             </div>
             <code v-if="'path' in entry">{{ entry.path }}</code>
             <span v-if="'description' in entry && entry.description" class="memory-sub">{{ entry.description }}</span>
@@ -320,21 +421,21 @@ const kinds: { kind: Kind; label: string }[] = [
               type="button"
               class="memory-approve"
               :aria-label="`Approve ${'name' in entry ? entry.name : 'note'}`"
-              @click="act('approve', tab, m.site, keyOf(entry))"
+              @click="act('approve', tab as Kind, m.site, keyOf(entry))"
             ><Icon name="check" :size="12" />Approve</button>
           </div>
           <div class="memory-buttons">
             <button type="button" class="memory-icon" :aria-label="`Edit ${'name' in entry ? entry.name : 'note'}`" data-tip="Edit"
-              @click="startEdit(tab, m.site, entry)"><Icon name="edit" :size="13" /></button>
+              @click="startEdit(tab as Kind, m.site, entry)"><Icon name="edit" :size="13" /></button>
             <button type="button" class="memory-icon"
               :aria-label="entry.disabled ? `Turn on ${'name' in entry ? entry.name : 'note'}` : `Turn off ${'name' in entry ? entry.name : 'note'}`"
               :aria-pressed="!entry.disabled"
               :data-tip="entry.disabled ? 'Turn on' : 'Turn off'"
-              @click="act('disable', tab, m.site, keyOf(entry), !entry.disabled)"><Icon :name="entry.disabled ? 'eye' : 'mute'" :size="13" /></button>
+              @click="act('disable', tab as Kind, m.site, keyOf(entry), !entry.disabled)"><Icon :name="entry.disabled ? 'eye' : 'mute'" :size="13" /></button>
             <button type="button" class="memory-icon" :class="{ danger: confirming === `${tab}:${m.site}:${keyOf(entry)}` }"
               :aria-label="confirming === `${tab}:${m.site}:${keyOf(entry)}` ? 'Click again to delete' : `Delete ${'name' in entry ? entry.name : 'note'}`"
               :data-tip="confirming === `${tab}:${m.site}:${keyOf(entry)}` ? 'Click again to delete' : 'Delete'"
-              @click="act('remove', tab, m.site, keyOf(entry))"
+              @click="act('remove', tab as Kind, m.site, keyOf(entry))"
               @blur="confirming === `${tab}:${m.site}:${keyOf(entry)}` && (confirming = '')"><Icon name="trash" :size="13" /></button>
           </div>
         </li>
@@ -643,7 +744,68 @@ const kinds: { kind: Kind; label: string }[] = [
   background: var(--hover);
   color: var(--ink);
 }
-.memory-icon.danger {
+.memory-icon.danger,
+.memory-actions .danger {
   color: #9a4b45;
+}
+.memory-tabs .memory-count {
+  display: inline-block;
+  margin-left: 5px;
+}
+.memory-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.memory-plan.pending {
+  border-color: #e7d9bd;
+  background: #fcfaf5;
+}
+.memory-plan.rejected {
+  opacity: 0.6;
+}
+.memory-plan-group ul {
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.memory-plan-group li {
+  display: grid;
+  grid-template-columns: 10px 1fr;
+  gap: 6px;
+  align-items: baseline;
+  padding: 2px 0;
+  color: var(--sub);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.memory-plan-group strong {
+  color: var(--ink);
+  font-weight: 550;
+}
+.memory-plan-use {
+  color: #7a8f9b;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.memory-plan-dot {
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid #b5c3cc;
+  border-radius: 50%;
+}
+.memory-plan-dot.ok {
+  border-color: #4f7d5f;
+  background: #4f7d5f;
+}
+.memory-plan-dot.bad {
+  border-color: #a0624f;
+  background: #a0624f;
 }
 </style>

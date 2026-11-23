@@ -328,6 +328,9 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   max-height: calc(100dvh - 144px);
   overflow: auto;
 }
+.site-memory-panel {
+  width: 400px;
+}
 .groups-panel > .field-help {
   font-size: 11px;
 }

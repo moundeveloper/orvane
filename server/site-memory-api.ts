@@ -27,6 +27,9 @@ const requestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("remove"), site, kind, key: z.string().max(60) }).strict(),
   z.object({ action: z.literal("approve"), site, kind, key: z.string().max(60), value: z.boolean().default(true) }).strict(),
   z.object({ action: z.literal("disable"), site, kind, key: z.string().max(60), value: z.boolean() }).strict(),
+  z.object({ action: z.literal("decide-plan"), site, id: z.string().max(40), value: z.boolean() }).strict(),
+  z.object({ action: z.literal("remove-plan"), site, id: z.string().max(40) }).strict(),
+  z.object({ action: z.literal("pending") }).strict(),
 ]);
 
 export function siteMemoryApi(directory: string): Plugin {
@@ -85,6 +88,10 @@ export function siteMemoryApi(directory: string): Plugin {
         : r.action === "save-flow" ? store.saveFlow(r.site, "user", r)
         : r.action === "remove" ? store.remove(r.site, r.kind, r.key)
         : r.action === "approve" ? store.approve(r.site, r.kind, r.key, r.value)
+        : r.action === "decide-plan" ? store.decidePlan(r.site, r.id, r.value)
+        : r.action === "remove-plan" ? store.removePlan(r.site, r.id)
+        // Everything waiting for the user, for the header badge.
+        : r.action === "pending" ? { count: store.sites().reduce((n, s) => n + s.unreviewed, 0) }
         : store.setDisabled(r.site, r.kind, r.key, r.value);
       reply(200, data);
     } catch (error) {
