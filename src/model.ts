@@ -24,6 +24,7 @@ export type Kind =
   | "image"
   | "file"
   | "calendar"
+  | "flow-tests"
   | "terminal";
 export type ActionKind =
   | "add-item"
@@ -323,6 +324,11 @@ export const kinds: { kind: Kind; name: string; description: string }[] = [
     description: "Dated items and reminders",
   },
   {
+    kind: "flow-tests",
+    name: "Test runs",
+    description: "Site tests, live run map and recorded replays",
+  },
+  {
     kind: "terminal",
     name: "Terminal",
     description: "Live shells (cmd, PowerShell, WSL…) in tabs and split panes",
@@ -358,6 +364,7 @@ export function makeBlock(kind: Kind): Block {
       image: "Image",
       file: "File",
       calendar: "Calendar",
+      "flow-tests": "Test runs",
       terminal: "Terminal",
     }[kind],
     value: "",

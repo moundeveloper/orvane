@@ -49,6 +49,7 @@ const kind = z.enum([
   "image",
   "file",
   "calendar",
+  "flow-tests",
   "terminal",
 ]);
 const componentPatch = z
@@ -330,7 +331,7 @@ export const runSchema = z.discriminatedUnion("kind", [
       kind: z.literal("browser"),
       op: z.enum([
         "tabs", "open", "group", "take", "release", "close", "act", "snapshot", "screenshot",
-        "record-start", "record-status", "record-stop",
+        "record-start", "record-status", "record-stop", "progress",
         "netsuite-environments", "netsuite-open",
       ]),
       args: z.record(z.string(), z.unknown()).default({}),

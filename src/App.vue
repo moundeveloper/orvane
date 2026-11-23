@@ -16,7 +16,7 @@ import { WorkspaceStorage, LEGACY_STORAGE } from "./storage";
 import { trackWorkspace } from "./workspaceTracking";
 import { connectMcpBridge, type BridgeRequest } from "./mcpBridge";
 import { applyCommands, duplicateApp, type RunRequest } from "./automation";
-import { runBrowserAgent } from "./browserAgent";
+import { runBrowserAgent, setBrowserAgentContext } from "./browserAgent";
 import { parseWorkspace, referenceIssues } from "./validation";
 import { mergeWorkspace } from "./imports";
 import { executeGraph } from "./flow";
@@ -28,6 +28,8 @@ import { runIsolated } from "./sandbox";
 import Icon from "./components/Icon.vue";
 import MemoryPanel from "./components/MemoryPanel.vue";
 import SiteMemoryView from "./components/SiteMemoryView.vue";
+import SessionChat from "./components/SessionChat.vue";
+import SessionList from "./components/SessionList.vue";
 import CustomSelect from "./components/CustomSelect.vue";
 import CustomNumber from "./components/CustomNumber.vue";
 import { migrateGroups, groupBounds } from "./groups";
@@ -461,7 +463,10 @@ function focusArea() {
   const bottom = Math.max(top + 200, (dock?.top ?? viewport.height - 70) - margin);
   // Leave the Board tools rail on the left uncovered.
   const left = rail && rail.width ? rail.right + margin : margin;
-  return { x: left, y: top, width: Math.max(200, viewport.width - left - margin), height: bottom - top };
+  // Leave the pinned side chat uncovered.
+  const side = document.querySelector(".side-chat")?.getBoundingClientRect();
+  const right = side && side.width ? viewport.width - side.left + margin : margin;
+  return { x: left, y: top, width: Math.max(200, viewport.width - left - right), height: bottom - top };
 }
 /** Point the camera so the focused app's corner sits at the focus area's. */
 function placeFocus() {
@@ -469,9 +474,12 @@ function placeFocus() {
   const app = f && workspace.apps.find((a) => a.id === f.id);
   if (!f || !app) return;
   f.rect = focusArea();
-  camera.zoom = 1;
-  camera.x = f.rect.x - app.x;
-  camera.y = f.rect.y - app.y;
+  // Keep the zoom the app was being read at: focus gives it the window, it
+  // does not make its content bigger or smaller.
+  const zoom = Math.min(2, Math.max(0.5, f.camera.zoom || 1));
+  camera.zoom = zoom;
+  camera.x = f.rect.x - app.x * zoom;
+  camera.y = f.rect.y - app.y * zoom;
 }
 function enterFocus(app: CanvasApp) {
   if (focused.value?.id === app.id) return exitFocus();
@@ -993,6 +1001,7 @@ const toolApps = {
   certificates: { name: "Certificate manager", icon: "key" },
   files: { name: "File Explorer", icon: "folder-open" },
   calendar: { name: "Calendar", icon: "calendar", width: 780, height: 520 },
+  "flow-tests": { name: "Test runs", icon: "video", width: 1040, height: 620 },
   terminal: { name: "Terminal", icon: "terminal", width: 940, height: 560 },
 };
 function createGitViewer(kind: keyof typeof toolApps = "git", value?: string) {
@@ -1044,6 +1053,71 @@ function createGitViewer(kind: keyof typeof toolApps = "git", value?: string) {
 // ---- Command palette (Ctrl+K) ----
 const palette = ref<string | null>(null);
 const agentLauncher = ref(false);
+// ---- Side chat: one agent session pinned to the right of the window ----
+const SIDE_KEY = "orvane.side-chat.v1";
+const sideSaved = (() => {
+  try {
+    return JSON.parse(localStorage.getItem(SIDE_KEY) ?? "{}") as { key?: string; open?: boolean };
+  } catch {
+    return {};
+  }
+})();
+/** The session pinned last (kept when unpinned, for Ctrl+Shift+J). */
+const sideSession = ref(sideSaved.key ?? "");
+const sideOpen = ref(!!(sideSaved.open && sideSaved.key));
+const sideSwitching = ref(false);
+watch([sideSession, sideOpen], () => {
+  try {
+    localStorage.setItem(SIDE_KEY, JSON.stringify({ key: sideSession.value, open: sideOpen.value }));
+  } catch {
+    /* only a convenience */
+  }
+  if (focused.value) void nextTick(placeFocus);
+});
+const sideTitle = ref("");
+watch(
+  sideSession,
+  async (key) => {
+    sideTitle.value = "";
+    if (!key) return;
+    try {
+      const { sessions } = await agentRequest<{ sessions: { key: string; title: string; provider?: string }[] }>("sessions");
+      const session = sessions.find((s) => s.key === key);
+      if (sideSession.value === key) sideTitle.value = session?.title || "Untitled session";
+    } catch {
+      /* the chat shows its own errors */
+    }
+  },
+  { immediate: true },
+);
+/** The switcher closes on a click outside it (in the panel or anywhere else). */
+function closeSideSwitch(event: Event) {
+  const target = event.target as Element | null;
+  if (sideSwitching.value && !target?.closest(".side-chat-list,.side-chat-switch")) sideSwitching.value = false;
+}
+function outsideSideSwitch(event: PointerEvent) {
+  if (!(event.target as Element | null)?.closest(".side-chat")) sideSwitching.value = false;
+}
+watch(sideSwitching, (open) => {
+  if (open) document.addEventListener("pointerdown", outsideSideSwitch, true);
+  else document.removeEventListener("pointerdown", outsideSideSwitch, true);
+});
+window.addEventListener("orvane:guest-pointer-down", () => (sideSwitching.value = false));
+function pinSession(key: string) {
+  sideSession.value = key;
+  sideOpen.value = true;
+  agentLauncher.value = false;
+  sideSwitching.value = false;
+}
+function toggleSideChat() {
+  if (sideOpen.value) sideOpen.value = false;
+  else if (sideSession.value) sideOpen.value = true;
+  else {
+    // Nothing pinned yet: pick a session in the launcher.
+    agentLauncher.value = true;
+    status.value = "Pick a session in the launcher's Sessions tab, then pin it.";
+  }
+}
 const agentStarting = ref(false);
 const agentDockButton = ref<HTMLElement>();
 const agentPopovers = ref<HTMLElement>();
@@ -1140,6 +1214,13 @@ function paletteKeys(e: KeyboardEvent) {
     e.preventDefault();
     e.stopPropagation();
     toggleAgentLauncher();
+    return;
+  }
+  // Ctrl+Shift+J: pin or unpin the side chat (the last session pinned).
+  if (key === "j" && e.shiftKey) {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleSideChat();
     return;
   }
   const commands = key === "p" && e.shiftKey;
@@ -1604,6 +1685,7 @@ const stopCanvasCommands = registerCommands("canvas", () => {
     ["projects", "folder"],
     ["netsuite", "globe"],
     ["calendar", "calendar"],
+    ["flow-tests", "video"],
     ["terminal", "terminal"],
   ];
   return [
@@ -3938,7 +4020,9 @@ async function executeMcp(request: BridgeRequest, revision: string) {
 const runtimeErrors = reactive<Record<string, string>>({});
 /** MCP browser_* tools: AI control of Browser tabs (src/browserAgent.ts). */
 function browserForMcp(request: Extract<RunRequest, { kind: "browser" }>) {
-  return runBrowserAgent(request, {
+  return runBrowserAgent(request, browserAgentContext);
+}
+const browserAgentContext: Parameters<typeof runBrowserAgent>[1] = {
     browserBlocks(appId) {
       const first = focused.value?.id;
       return liveApps.value
@@ -3951,8 +4035,9 @@ function browserForMcp(request: Extract<RunRequest, { kind: "browser" }>) {
         );
     },
     mount: (appId) => mountedApps.add(appId),
-  });
-}
+};
+// The Test runs app drives Browser tabs itself through the same operations.
+setBrowserAgentContext(browserAgentContext);
 /** MCP: run a workflow, or press/submit/toggle a component, exactly as a
  * person would in this window. Errors are returned, never retried. */
 async function runForMcp(request: RunRequest) {
@@ -4304,8 +4389,32 @@ onBeforeUnmount(() => {
         @close="agentLauncher = false"
         @starting="agentStarting = $event"
         @started="openAgentSession({ run: $event }); agentLauncher = false"
+        @pin="pinSession"
+        @open="openAgentSession({ key: $event }); agentLauncher = false"
       />
     </Transition>
+    <aside v-if="sideOpen && sideSession" class="side-chat workspace-frost" aria-label="Pinned AI session" @pointerdown.stop="closeSideSwitch($event)" @keydown.esc="sideSwitching && ($event.stopPropagation(), (sideSwitching = false))">
+      <header class="side-chat-head">
+        <button
+          type="button"
+          class="side-chat-switch"
+          aria-label="Switch session"
+          :aria-expanded="sideSwitching"
+          @click="sideSwitching = !sideSwitching"
+        >
+          <Icon name="ai" :size="14" /><span>{{ sideTitle || "Session" }}</span><Icon name="down" :size="12" />
+        </button>
+        <span class="side-chat-space"></span>
+        <button type="button" class="side-chat-button" aria-label="Open in Agent sessions" data-tip="Open in Agent sessions"
+          @click="openAgentSession({ key: sideSession })"><Icon name="external" :size="14" /></button>
+        <button type="button" class="side-chat-button active" aria-label="Unpin side chat" data-tip="Unpin · Ctrl+Shift+J"
+          @click="sideOpen = false"><Icon name="pin" :size="14" /></button>
+      </header>
+      <div v-if="sideSwitching" class="side-chat-list select-popover">
+        <SessionList :current="sideSession" @pick="pinSession($event.key)" />
+      </div>
+      <SessionChat :session-key="sideSession" place="side" />
+    </aside>
     <div ref="agentPopovers" class="agent-launcher-popovers" />
     <CustomToolsPanel v-if="customToolsOpen" @close="customToolsOpen = false" />
     <ActionStudio
@@ -4755,8 +4864,8 @@ onBeforeUnmount(() => {
         :style="{
           left: app.x + 'px',
           top: app.y + 'px',
-          width: (focused?.id === app.id ? focused.rect.width : app.width) + 'px',
-          height: (focused?.id === app.id ? focused.rect.height : app.height) + 'px',
+          width: (focused?.id === app.id ? focused.rect.width / camera.zoom : app.width) + 'px',
+          height: (focused?.id === app.id ? focused.rect.height / camera.zoom : app.height) + 'px',
           zIndex: focused?.id === app.id ? stack.length + 4 : (stackLevel('app', app.id) ?? 1),
         }"
         @pointerdown.stop="pointerDown($event, app)"
@@ -5113,6 +5222,13 @@ onBeforeUnmount(() => {
         @click="createGitViewer('calendar')"
       >
         <Icon name="calendar" :size="14" />Create Calendar
+      </button>
+      <button
+        class="subtle-button"
+        :disabled="!canEdit || importBusy"
+        @click="createGitViewer('flow-tests')"
+      >
+        <Icon name="video" :size="14" />Create Test runs
       </button>
       <button
         class="subtle-button"

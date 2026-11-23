@@ -21,6 +21,7 @@
 import { join } from "node:path";
 import { getDomain } from "tldts";
 import { LocalDatabase } from "./database.ts";
+import { FLOW_ACTIONS, fillPath, type FlowStep } from "../src/flowRunner.ts";
 
 export type Source = "ai" | "user";
 export interface Health {
@@ -49,7 +50,7 @@ export interface Note {
   learnedOn?: string;
   updatedAt: number;
 }
-export type FlowStep = Record<string, string | number | boolean> & { action: string };
+export type { FlowStep };
 export interface Flow extends Health {
   name: string;
   description: string;
@@ -94,9 +95,8 @@ export interface TestPlan {
 export const RISKY_WORDS = ["save", "submit", "approve", "reject", "delete", "remove", "void", "cancel", "pay", "send", "post", "close", "deploy"];
 
 const LIMITS = { routes: 60, notes: 40, flows: 30, note: 300, description: 200, steps: 30, params: 10 };
-export const FLOW_ACTIONS = new Set([
-  "navigate", "click", "hover", "fill", "select", "type", "press", "scroll", "wait", "read", "eval", "expect",
-]);
+// The step actions and {param} filling are shared with the flow runner.
+export { FLOW_ACTIONS, fillPath };
 const NAME = /^[\p{L}\p{N}][\p{L}\p{N} _.-]{0,59}$/u;
 const PARAM = /^[A-Za-z_]\w{0,29}$/;
 
@@ -151,14 +151,6 @@ function guardPath(path: string) {
   if (!value.startsWith("/") || value.startsWith("//") || /[\s\\]/.test(value) || value.length > 500)
     throw Error('A route is a path on the same site, like "/app/bundler/bundlelist.nl?type=S" (no host, no spaces).');
   return value;
-}
-/** Fills {param} placeholders (URL-encoded); every one must be given. */
-export function fillPath(path: string, params: Record<string, string> = {}) {
-  return path.replace(/\{(\w+)\}/g, (_, name: string) => {
-    const value = params[name];
-    if (value === undefined || value === "") throw Error(`The route needs the parameter "${name}".`);
-    return encodeURIComponent(value);
-  });
 }
 const placeholders = (value: string) => [...value.matchAll(/\{(\w+)\}/g)].map((m) => m[1]!);
 

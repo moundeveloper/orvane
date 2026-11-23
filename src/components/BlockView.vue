@@ -22,6 +22,7 @@ const BrowserView = defineAsyncComponent(() => import("./BrowserView.vue"));
 const ImageBlock = defineAsyncComponent(() => import("./ImageBlock.vue"));
 const FileBlock = defineAsyncComponent(() => import("./FileBlock.vue"));
 const CalendarView = defineAsyncComponent(() => import("./CalendarView.vue"));
+const FlowTestsView = defineAsyncComponent(() => import("./FlowTestsView.vue"));
 const TerminalView = defineAsyncComponent(() => import("./terminal/TerminalView.vue"));
 const FileExplorer = defineAsyncComponent(
   () => import("./files/FileExplorer.vue"),
@@ -178,6 +179,7 @@ const sandboxDocument = (code: string) => {
     <TestResults v-else-if="block.kind === 'test-results'" :block="block" />
     <FileExplorer v-else-if="block.kind === 'files'" :block="block" />
     <CalendarView v-else-if="block.kind === 'calendar'" :block="block" />
+    <FlowTestsView v-else-if="block.kind === 'flow-tests'" :block="block" />
     <TerminalView v-else-if="block.kind === 'terminal'" :block="block" />
     <ImageBlock
       v-else-if="block.kind === 'image'"

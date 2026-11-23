@@ -81,6 +81,7 @@ const block: z.ZodType<Block> = z.lazy(() =>
       "image",
       "file",
       "calendar",
+      "flow-tests",
       "terminal",
     ]),
     label: z.string(),

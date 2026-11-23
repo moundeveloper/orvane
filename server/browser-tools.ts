@@ -9,18 +9,13 @@
 // reference data; flows run only once the user approved them.
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { fillPath, FLOW_ACTIONS, siteOf, SiteMemoryStore } from "./site-memory.ts";
+import { fillPath, siteOf, SiteMemoryStore } from "./site-memory.ts";
+import { routeProblem, runFlow as sharedRunFlow, type FlowContext, type FlowDef, type StepEvent } from "../src/flowRunner.ts";
+export type { FlowRun } from "../src/flowRunner.ts";
 import { registerFlowTests } from "./flow-tests.ts";
 
 type LiveRun = (run: Record<string, unknown>, sessionId?: string) => Promise<unknown>;
 type Data = Record<string, unknown>;
-export interface FlowRun {
-  ok: boolean;
-  steps: { step: number; action: string; startedAt: number; ms: number; ok: boolean }[];
-  outputs: Data[];
-  page?: unknown;
-  failed?: { step: number; action: string; definition: Record<string, unknown>; error: string; at: number };
-}
 
 const session = z
   .string()
@@ -29,23 +24,6 @@ const session = z
 const tabId = z.string().min(1).describe("Tab ID from browser_open or browser_tabs.");
 const params = z.record(z.string(), z.string()).optional();
 
-/** The page is not where the route meant to go (a redirect to sign-in or
- * home), or it shows an error page. */
-function routeProblem(expected: string, page: { url?: string; title?: string } | undefined) {
-  if (!page?.url) return "the page did not load";
-  let landed: URL, wanted: URL;
-  try {
-    landed = new URL(page.url);
-    wanted = new URL(expected, landed.origin);
-  } catch {
-    return "the address is not valid";
-  }
-  if (landed.pathname.replace(/\/$/, "") !== wanted.pathname.replace(/\/$/, ""))
-    return `it landed on ${landed.pathname} instead of ${wanted.pathname}`;
-  if (/\b(404|not found|error|page (is )?not available|access denied|sign in|log ?in)\b/i.test(page.title ?? ""))
-    return `the page title is "${String(page.title).slice(0, 80)}"`;
-  return "";
-}
 
 export function registerBrowserTools(server: McpServer, liveRun: LiveRun, dataDirectory: string) {
   const memory = new SiteMemoryStore(dataDirectory);
@@ -472,50 +450,16 @@ export function registerBrowserTools(server: McpServer, liveRun: LiveRun, dataDi
       if (!values[param]) throw Error(`Flow "${flow.name}" needs the parameter "${param}".`);
     return flow;
   };
+  /** How a flow reaches this tab's page and saved routes, for the flow runner. */
+  const flowContext = (site: string, sessionId?: string): FlowContext => ({
+    request: (op, args) => request(op, args, sessionId),
+    navigateRoute: (tab, route, values) => goToRoute({ tabId: tab, route, params: values }, sessionId),
+    record: (name, error) => memory.record(site, "flow", name, error),
+  });
   /** Runs a flow's steps in order, stopping at the first failure, and records
-   * the flow's health. Each step's start time is kept for recordings. */
-  const runFlow = async (
-    tab: string,
-    site: string,
-    flow: ReturnType<typeof memory.flow>,
-    values: Record<string, string>,
-    sessionId?: string,
-  ): Promise<FlowRun> => {
-    const fill = (value: string) => value.replace(/\{(\w+)\}/g, (_, p: string) => values[p] ?? "");
-    const outputs: Data[] = [];
-    const steps: FlowRun["steps"] = [];
-    let last: Data = {};
-    for (const [index, step] of flow.steps.entries()) {
-      const startedAt = Date.now();
-      try {
-        if (!FLOW_ACTIONS.has(step.action)) throw Error("unknown action");
-        const args: Data = { tabId: tab };
-        for (const [key, value] of Object.entries(step)) args[key] = typeof value === "string" && key !== "path" && key !== "route" ? fill(value) : value;
-        if (step.action === "navigate" && typeof step.route === "string") {
-          last = await goToRoute({ tabId: tab, route: step.route, params: values }, sessionId);
-          if (last.routeCheck !== "ok") throw Error(String(last.routeCheck));
-        } else if (step.action === "expect") {
-          const checked = await expectStep(request, args, sessionId);
-          if (checked.actual !== undefined) outputs.push({ step: index + 1, expect: true, actual: checked.actual });
-        } else {
-          if (step.action === "navigate") {
-            args.url = fillPath(String(step.path), values);
-            delete args.path;
-          }
-          last = await request("act", args, sessionId);
-          if (step.action === "read" || step.action === "eval") outputs.push({ step: index + 1, ...last });
-        }
-        steps.push({ step: index + 1, action: step.action, startedAt, ms: Date.now() - startedAt, ok: true });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        steps.push({ step: index + 1, action: step.action, startedAt, ms: Date.now() - startedAt, ok: false });
-        memory.record(site, "flow", flow.name, `step ${index + 1} (${step.action}): ${message}`);
-        return { ok: false, steps, outputs, page: last.page, failed: { step: index + 1, action: step.action, definition: step, error: message, at: startedAt } };
-      }
-    }
-    memory.record(site, "flow", flow.name);
-    return { ok: true, steps, outputs, page: last.page };
-  };
+   * the flow's health (src/flowRunner.ts). */
+  const runFlow = (tab: string, site: string, flow: FlowDef, values: Record<string, string>, sessionId?: string, onStep?: (event: StepEvent) => void) =>
+    sharedRunFlow(flowContext(site, sessionId), tab, flow, values, onStep);
 
   server.registerTool(
     "browser_flow",
@@ -546,52 +490,8 @@ export function registerBrowserTools(server: McpServer, liveRun: LiveRun, dataDi
     siteOfTab,
     runnableFlow,
     runFlow,
+    flowContext,
   });
 
   return () => memory.close();
-}
-
-/** One expect step: polls the page until the check holds or time runs out. */
-async function expectStep(
-  request: (op: string, args: Data, sessionId?: string) => Promise<Data>,
-  args: Data,
-  sessionId?: string,
-) {
-  const timeout = Math.min(11_000, Math.max(0, Number(args.timeoutMs ?? 5000)));
-  const until = Date.now() + timeout;
-  const target = { ...(args.selector ? { selector: args.selector } : {}), ...(args.text ? { text: args.text } : {}) };
-  const what = args.selector ? `${args.selector}` : args.text ? `"${args.text}"` : "the page";
-  const clip = (value: string) => (value.length > 200 ? `${value.slice(0, 200)}…` : value);
-  let problem = "";
-  for (;;) {
-    try {
-      if (args.gone === true) {
-        await request("act", { tabId: args.tabId, action: "wait", ...target, gone: true, timeoutMs: Math.max(200, until - Date.now()) }, sessionId);
-        return { ok: true };
-      }
-      if (typeof args.urlContains === "string") {
-        const { value } = await request("act", { tabId: args.tabId, action: "eval", expression: "location.href" }, sessionId);
-        if (String(value).includes(args.urlContains)) return { ok: true, actual: value };
-        problem = `expected the address to contain "${args.urlContains}", got ${String(value)}`;
-      } else {
-        const read = await request("act", { tabId: args.tabId, action: "read", ...target, maxLength: 5000, timeoutMs: 600 }, sessionId);
-        const actual = String(read.text ?? "").replace(/\s+/g, " ").trim();
-        const pass =
-          typeof args.equals === "string" ? actual === args.equals.trim()
-            : typeof args.contains === "string" ? actual.includes(args.contains)
-              : typeof args.matches === "string" ? new RegExp(args.matches).test(actual)
-                : true;
-        if (pass) return { ok: true, actual: clip(actual) };
-        const wanted = typeof args.equals === "string" ? `to be "${args.equals}"`
-          : typeof args.contains === "string" ? `to contain "${args.contains}"`
-            : `to match /${args.matches}/`;
-        problem = `expected ${what} ${wanted}, got ${actual ? `"${clip(actual)}"` : "empty"}`;
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      problem = args.gone === true ? `expected ${what} to disappear: ${message}` : `${what} was not found: ${message}`;
-    }
-    if (Date.now() >= until) throw Error(problem);
-    await new Promise((done) => setTimeout(done, 250));
-  }
 }

@@ -111,6 +111,7 @@ import { addWorkbenchWidget, REFRESH_BROWSER_CLIP, workbenchEditable, type Brows
 import { CANCEL_PICK, PICK_ELEMENT, readPicked, readRect, readSize, runInPage } from "../liveClip";
 import { registerAppText } from "../appText";
 import { registerBrowserAgentHost, userOwns, type AgentAccess } from "../browserAgent";
+import { liveRuns } from "../flowTestsLive";
 
 const props = defineProps<{ block: Block; editing: boolean }>();
 const canPinClip = inject(workbenchEditable);
@@ -1178,6 +1179,26 @@ function leaveFrame(event: Event) {
 // "granted": the AI may take the tab; "controlled": it is working in it, so
 // the page wears the AI border and takes no input from the user until the
 // AI releases it or the user takes control (which withdraws access).
+// Test runs in a tab (src/flowTestsLive.ts): the REC pill and step trail.
+const testRunOf = (id: string) => liveRuns[id];
+const testFlowOf = (id: string) => {
+  const run = liveRuns[id];
+  return run?.flows.find((f) => f.status === "running") ?? [...(run?.flows ?? [])].reverse().find((f) => f.steps.length);
+};
+const testIndexOf = (id: string) => {
+  const run = liveRuns[id];
+  const flow = testFlowOf(id);
+  return run && flow ? run.flows.indexOf(flow) + 1 : 0;
+};
+const testNow = ref(Date.now());
+const testTimer = setInterval(() => {
+  if (Object.keys(liveRuns).length) testNow.value = Date.now();
+}, 1000);
+onBeforeUnmount(() => clearInterval(testTimer));
+const testClock = (startedAt: string) => {
+  const s = Math.max(0, Math.round((testNow.value - Date.parse(startedAt)) / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+};
 const aiAccess = reactive<Record<string, AgentAccess>>({});
 const aiLocked = (id: string) => aiAccess[id] === "controlled";
 function setAiAccess(tabId: string, access: AgentAccess | undefined) {
@@ -4431,6 +4452,31 @@ function browserWheel(event: WheelEvent) {
           </div>
         </Transition>
       </template>
+      <!-- A test run in this tab (Test runs app or flow_tests): REC and the step trail. -->
+      <template v-for="tab in visiblePanes" :key="`test-${tab.id}`">
+        <div v-if="testRunOf(tab.id)" class="browser-test-run" :class="paneClass(tab.id)">
+          <span v-if="testRunOf(tab.id)!.status === 'running' && testRunOf(tab.id)!.recording" class="test-rec" role="status">
+            <i></i>REC <time>{{ testClock(testRunOf(tab.id)!.startedAt) }}</time>
+          </span>
+          <div class="test-trail" role="status" :aria-label="`Test run: ${testFlowOf(tab.id)?.name ?? ''}`">
+            <div class="test-trail-head">
+              <strong>{{ testFlowOf(tab.id)?.name ?? "Test run" }}</strong>
+              <span>{{ testRunOf(tab.id)!.status === "done" ? "finished" : `test ${testIndexOf(tab.id)} of ${testRunOf(tab.id)!.flows.length}` }}</span>
+            </div>
+            <div
+              v-for="s in (testFlowOf(tab.id)?.steps ?? []).slice(-6)"
+              :key="s.step"
+              class="test-step"
+              :class="s.ok === undefined ? 'now' : s.ok ? 'done' : 'bad'"
+            >
+              <svg v-if="s.ok" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" /></svg>
+              <svg v-else-if="s.ok === false" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+              <span v-else class="test-now"></span>
+              <span>{{ s.label }}</span>
+            </div>
+          </div>
+        </div>
+      </template>
       <div
         v-if="splitPair"
         class="split-chrome"
@@ -5012,6 +5058,126 @@ function browserWheel(event: WheelEvent) {
 .ai-lock-take:hover,
 .ai-lock-take:focus-visible {
   background: #5f7988;
+}
+/* A test run in the tab: REC pill top right, step trail on frost glass. */
+.browser-test-run {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+.test-rec {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 24px;
+  padding: 0 9px 0 8px;
+  border-radius: 7px;
+  background: #f6e6e1;
+  color: #7b3b2d;
+  font-size: 11.5px;
+  font-weight: 550;
+  box-shadow: 0 4px 12px rgb(38 63 85 / 10%);
+}
+.test-rec i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #c25b4a;
+  animation: test-blink 1.6s ease-in-out infinite;
+}
+.test-rec time {
+  font: 11px "Cascadia Code", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+@keyframes test-blink {
+  50% { opacity: 0.35; }
+}
+.test-trail {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  width: 290px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgb(247 250 252 / 80%);
+  backdrop-filter: blur(10px) saturate(120%);
+  border: 1px solid #ffffffa3;
+  box-shadow: 0 1px 2px #263f5514, 0 12px 30px #263f5526;
+  font-size: 12px;
+  color: #455968;
+}
+.test-trail-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.test-trail-head strong {
+  overflow: hidden;
+  color: #273f50;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.test-trail-head span {
+  flex: none;
+  color: #8296a2;
+  font-size: 11.5px;
+}
+.test-step {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  gap: 8px;
+  align-items: center;
+  height: 24px;
+}
+.test-step > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.test-step svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.test-step.done {
+  color: #5d7381;
+}
+.test-step.done svg {
+  stroke: #4f7d5f;
+}
+.test-step.bad {
+  color: #a0624f;
+}
+.test-step.bad svg {
+  stroke: #a0624f;
+}
+.test-step.now {
+  color: #365f78;
+  font-weight: 550;
+}
+.test-now {
+  width: 8px;
+  height: 8px;
+  margin-left: 2px;
+  border-radius: 50%;
+  background: #365f78;
+  box-shadow: 0 0 0 3px #365f781a;
+  animation: test-blink 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .test-rec i,
+  .test-now {
+    animation: none;
+  }
 }
 .ai-lock-enter-active,
 .ai-lock-leave-active {

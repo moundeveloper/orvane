@@ -61,6 +61,22 @@ export function pickKeyframes(count, difference, threshold, max) {
   return picked;
 }
 
+/** A page capture on white: pages without a background are transparent,
+ * which JPEG turns black. Chromium bitmaps are premultiplied BGRA. */
+function onWhite(image) {
+  const size = image.getSize();
+  const pixels = Buffer.from(image.toBitmap());
+  for (let i = 0; i < pixels.length; i += 4) {
+    const gap = 255 - pixels[i + 3];
+    if (!gap) continue;
+    pixels[i] = Math.min(255, pixels[i] + gap);
+    pixels[i + 1] = Math.min(255, pixels[i + 1] + gap);
+    pixels[i + 2] = Math.min(255, pixels[i + 2] + gap);
+    pixels[i + 3] = 255;
+  }
+  return nativeImage.createFromBitmap(pixels, size);
+}
+
 const clamp = (n, low, high) => Math.min(high, Math.max(low, n));
 const number = (value, fallback, low, high) =>
   typeof value === "number" && Number.isFinite(value) ? clamp(value, low, high) : fallback;
@@ -71,6 +87,9 @@ const number = (value, fallback, low, high) =>
 export function setupPageRecorder({ folder, isPaused }) {
   /** @type {Map<string, any>} */
   const recordings = new Map();
+  /** A page's screencast still being stopped: the next recording waits for it,
+   * or the old session's detach would end the new one. */
+  const stopping = new Map();
   const root = join(folder, "recordings");
 
   function finishCollecting(rec, reason) {
@@ -99,6 +118,7 @@ export function setupPageRecorder({ folder, isPaused }) {
 
   async function startScreencast(guest, rec) {
     const debug = guest.debugger;
+    await stopping.get(guest.id);
     let owned = false;
     if (!debug.isAttached()) {
       debug.attach("1.3");
@@ -117,13 +137,21 @@ export function setupPageRecorder({ folder, isPaused }) {
       debug.removeListener("message", onMessage);
       debug.removeListener("detach", onDetach);
       if (guest.isDestroyed() || !debug.isAttached()) return;
-      void debug.sendCommand("Page.stopScreencast", {}).catch(() => undefined).finally(() => {
+      const done = (async () => {
+        await debug.sendCommand("Emulation.setDefaultBackgroundColorOverride", {}).catch(() => undefined);
+        await debug.sendCommand("Page.stopScreencast", {}).catch(() => undefined);
         if (owned && !guest.isDestroyed() && debug.isAttached()) {
           try { debug.detach(); } catch {}
         }
+      })();
+      stopping.set(guest.id, done);
+      void done.finally(() => {
+        if (stopping.get(guest.id) === done) stopping.delete(guest.id);
       });
     };
     try {
+      // Pages without a background would come out black in JPEG.
+      await debug.sendCommand("Emulation.setDefaultBackgroundColorOverride", { color: { r: 255, g: 255, b: 255, a: 1 } }).catch(() => undefined);
       await debug.sendCommand("Page.startScreencast", {
         format: "jpeg",
         quality: 75,
@@ -148,7 +176,7 @@ export function setupPageRecorder({ folder, isPaused }) {
         if (!image.isEmpty()) {
           const { width } = image.getSize();
           const scaled = width > rec.maxWidth ? image.resize({ width: rec.maxWidth }) : image;
-          addFrame(rec, scaled.toJPEG(75), Date.now());
+          addFrame(rec, onWhite(scaled).toJPEG(75), Date.now());
         }
       } catch {
         // A navigation in between; the next tick tries again.
@@ -231,7 +259,10 @@ export function setupPageRecorder({ folder, isPaused }) {
     if (!rec.frames.length && !guest.isDestroyed()) {
       try {
         const image = await guest.capturePage();
-        if (!image.isEmpty()) rec.frames.push({ t: Date.now(), data: image.toJPEG(75) });
+        if (!image.isEmpty()) {
+          const { width } = image.getSize();
+          rec.frames.push({ t: Date.now(), data: onWhite(width > rec.maxWidth ? image.resize({ width: rec.maxWidth }) : image).toJPEG(75) });
+        }
       } catch {}
     }
     const frames = rec.frames;

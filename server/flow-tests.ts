@@ -7,49 +7,23 @@
 // and says what was fixed, what still fails and what newly broke; history
 // lists past runs. Runs are kept in <data>/flow-tests (the newest 30).
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import type { FlowRun } from "./browser-tools.ts";
 import type { Flow, SiteMemoryStore } from "./site-memory.ts";
+import { FlowTestStore } from "./flow-test-store.ts";
+import {
+  compareRuns, netSuiteProduction, newRunId, playFlows,
+  type FlowContext, type FlowRun, type FlowResult, type LiveRun, type StepEvent, type TestRun,
+} from "../src/flowRunner.ts";
+export { compareRuns, netSuiteProduction };
+export type { FlowResult, LiveRun, TestRun };
 
 type Data = Record<string, unknown>;
 type Request = (op: string, args: Data, sessionId?: string) => Promise<Data>;
 type Image = { data: string; mimeType: string };
 
-export interface FlowResult {
-  name: string;
-  params?: Record<string, string>;
-  status: "passed" | "failed" | "skipped";
-  reason?: string;
-  durationMs: number;
-  steps: { step: number; action: string; atMs: number; ms: number; ok: boolean }[];
-  failed?: { step: number; action: string; definition: Data; error: string; atMs: number };
-  page?: { url?: string; title?: string; text?: string };
-  recording?: { folder?: string; frames: number; durationMs: number; warning?: string };
-  files?: { screenshot?: string; sheet?: string };
-}
-export interface TestRun {
-  runId: string;
-  site: string;
-  startedAt: string;
-  durationMs: number;
-  flows: FlowResult[];
-  previousRunId?: string;
-}
 
-const KEEP_RUNS = 30;
-const RECORD_MS = 120_000;
-
-/** A NetSuite production account (sandboxes are 123-sb1, release previews 123-rp). */
-export function netSuiteProduction(url: string) {
-  try {
-    return /^\d+\.app\.netsuite\.com$/i.test(new URL(url).hostname);
-  } catch {
-    return false;
-  }
-}
 const PRODUCTION =
   "This tab is on a NetSuite production account. Exploring and generated tests only run on sandboxes and release previews: open the sandbox (browser_netsuite_environments) and work there.";
 
@@ -78,21 +52,6 @@ const buttons = [...new Set([...document.querySelectorAll("button, input[type=su
 const headings = [...document.querySelectorAll("h1, h2")].map((h) => strip(h.innerText).slice(0, 80)).filter(Boolean).slice(0, 8);
 return { url: location.href, title: document.title, headings, fields, buttons, links: links.slice(0, 300) };`;
 
-/** What happened to each flow between two runs. */
-export function compareRuns(before: TestRun | undefined, after: TestRun) {
-  if (!before) return undefined;
-  return after.flows.map((flow) => {
-    const old = before.flows.find((f) => f.name === flow.name);
-    const change =
-      !old || old.status === "skipped" ? (flow.status === "passed" ? "passing" : flow.status === "failed" ? "failing" : "skipped")
-        : old.status === "failed" && flow.status === "passed" ? "fixed"
-          : old.status === "failed" && flow.status === "failed" ? "still failing"
-            : old.status === "passed" && flow.status === "failed" ? "new failure"
-              : flow.status === "passed" ? "passing" : "skipped";
-    return { flow: flow.name, before: old?.status ?? "not run", after: flow.status, change };
-  });
-}
-
 /** Flows that count as tests: approved, on, with at least one expect step. */
 export function testFlows(flows: Flow[]) {
   return flows.filter((f) => f.approved && !f.disabled && f.steps.some((s) => s.action === "expect"));
@@ -108,128 +67,48 @@ export function registerFlowTests(
     guarded: (run: () => Promise<Data>) => Promise<any>;
     siteOfTab: (id: string, sessionId?: string) => Promise<{ site: string; url: string }>;
     runnableFlow: (site: string, name: string, values: Record<string, string>) => Flow;
-    runFlow: (tab: string, site: string, flow: Flow, values: Record<string, string>, sessionId?: string) => Promise<FlowRun>;
+    runFlow: (tab: string, site: string, flow: Flow, values: Record<string, string>, sessionId?: string, onStep?: (event: StepEvent) => void) => Promise<FlowRun>;
+    flowContext: (site: string, sessionId?: string) => FlowContext;
   },
 ) {
-  const { dataDirectory, memory, request, guarded, siteOfTab, runnableFlow, runFlow } = deps;
-  const root = join(dataDirectory, "flow-tests");
-  const index = join(root, "runs.json");
+  const { dataDirectory, memory, request, guarded, siteOfTab, runnableFlow, runFlow, flowContext } = deps;
+  const store = new FlowTestStore(dataDirectory);
+  const root = store.root;
   const busy = new Set<string>();
-
-  const loadRuns = (): TestRun[] => {
-    try {
-      return JSON.parse(readFileSync(index, "utf8")) as TestRun[];
-    } catch {
-      return [];
-    }
-  };
-  const saveRun = (run: TestRun) => {
-    mkdirSync(root, { recursive: true });
-    const runs = [run, ...loadRuns().filter((r) => r.runId !== run.runId)];
-    for (const old of runs.slice(KEEP_RUNS)) rmSync(join(root, old.runId), { recursive: true, force: true });
-    writeFileSync(index, JSON.stringify(runs.slice(0, KEEP_RUNS), null, 2));
-  };
-  const findRun = (runId?: string) => {
-    const runs = loadRuns();
-    const run = runId ? runs.find((r) => r.runId === runId) : runs[0];
-    if (!run) throw Error(runId ? `No test run ${runId} (flow_tests history lists them).` : "No test runs yet. Start one with flow_tests run.");
-    return run;
-  };
+  const loadRuns = () => store.runs();
+  const findRun = (runId?: string) => store.find(runId);
   const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-  /** Plays one flow, filmed, and keeps the evidence of a failure. */
-  async function playFlow(tab: string, site: string, runId: string, n: number, name: string, values: Record<string, string>, record: boolean, sessionId?: string): Promise<FlowResult> {
-    let flow: Flow;
-    try {
-      flow = runnableFlow(site, name, values);
-    } catch (error) {
-      return { name, params: values, status: "skipped", reason: message(error), durationMs: 0, steps: [] };
-    }
-    let recording: { recordingId: string; startedAt: number } | undefined;
-    let recordWarning: string | undefined;
-    if (record)
-      try {
-        recording = (await request("record-start", { tabId: tab, fps: 6, maxMs: RECORD_MS, logText: false }, sessionId)) as typeof recording;
-      } catch (error) {
-        recordWarning = `Not recorded: ${message(error)}`;
-      }
-    const started = Date.now();
-    const zero = recording?.startedAt ?? started;
-    const done = await runFlow(tab, site, flow, values, sessionId);
-    const result: FlowResult = {
-      name: flow.name,
-      ...(Object.keys(values).length ? { params: values } : {}),
-      status: done.ok ? "passed" : "failed",
-      durationMs: Date.now() - started,
-      steps: done.steps.map(({ startedAt, ...step }) => ({ ...step, atMs: Math.max(0, startedAt - zero) })),
-    };
-    const folder = join(root, runId);
-    const file = (suffix: string) => `${String(n).padStart(2, "0")}-${suffix}`;
-    if (done.failed) {
-      const failedStep = done.steps[done.steps.length - 1];
-      result.failed = {
-        step: done.failed.step,
-        action: done.failed.action,
-        definition: done.failed.definition,
-        error: done.failed.error,
-        atMs: Math.max(0, done.failed.at + (failedStep?.ms ?? 0) - zero),
-      };
-      // The page as the failure left it.
-      try {
-        const look = await request("snapshot", { tabId: tab, maxElements: 10, textLength: 1500 }, sessionId);
-        result.page = { url: look.url as string, title: look.title as string, text: String(look.text ?? "").slice(0, 1500) };
-      } catch {}
-      try {
-        const shot = await request("screenshot", { tabId: tab }, sessionId);
-        if (typeof shot.image === "string") {
-          mkdirSync(folder, { recursive: true });
-          writeFileSync(join(folder, file("failure.jpg")), Buffer.from(shot.image, "base64"));
-          result.files = { ...result.files, screenshot: join(folder, file("failure.jpg")) };
-        }
-      } catch {}
-    }
-    if (recording)
-      try {
-        const stopped = await request("record-stop", { tabId: tab, recordingId: recording.recordingId, maxKeyframes: 12 }, sessionId);
-        result.recording = { folder: stopped.folder as string | undefined, frames: Number(stopped.frames ?? 0), durationMs: Number(stopped.durationMs ?? 0) };
-        if (stopped.ended === "time limit") result.recording.warning = `The recording covers the first ${RECORD_MS / 1000} s.`;
-        const sheet = (stopped.images as Image[] | undefined)?.[0];
-        if (sheet) {
-          mkdirSync(folder, { recursive: true });
-          writeFileSync(join(folder, file("keyframes.jpg")), Buffer.from(sheet.data, "base64"));
-          result.files = { ...result.files, sheet: join(folder, file("keyframes.jpg")) };
-        }
-      } catch (error) {
-        recordWarning = `Recording lost: ${message(error)}`;
-      }
-    if (recordWarning) result.recording = { frames: 0, durationMs: 0, ...result.recording, warning: recordWarning };
-    return result;
-  }
-
+  /** Plays flows as tests in the tab (src/flowRunner.ts playFlows), keeps the
+  * run, and shows its progress in the window (Test runs app, Browser overlay). */
   async function play(tab: string, names: string[], params: Record<string, Record<string, string>>, record: boolean, previousRunId: string | undefined, sessionId?: string) {
     const { site, url } = await siteOfTab(tab, sessionId);
     // Generated tests were checked on a sandbox; never let them loose on production.
     const production = netSuiteProduction(url);
     if (busy.has(tab)) throw Error("Tests are already running in this tab.");
     busy.add(tab);
-    const runId = `${new Date().toISOString().replace(/[-:]/g, "").replace(/\..*/, "")}-${randomUUID().slice(0, 4)}`;
-    const startedAt = Date.now();
-    const flows: FlowResult[] = [];
     try {
-      for (const [n, name] of names.entries()) {
-        const saved = memory.read(site).flows.find((f) => f.name.toLowerCase() === name.toLowerCase());
-        if (production && saved?.plan) {
-          flows.push({ name, status: "skipped", reason: "A generated test does not run on a NetSuite production account.", durationMs: 0, steps: [] });
-          continue;
-        }
-        flows.push(await playFlow(tab, site, runId, n + 1, name, params[name] ?? {}, record, sessionId));
-      }
+      const run = await playFlows(
+        {
+          ...flowContext(site, sessionId),
+          flow: (name, values) => runnableFlow(site, name, values),
+          skip: (name) =>
+            production && memory.read(site).flows.find((f) => f.name.toLowerCase() === name.toLowerCase())?.plan
+              ? "A generated test does not run on a NetSuite production account."
+              : undefined,
+          saveImage: async (runId, file, data) => store.saveImage(runId, file, data),
+          live: (live) => {
+            store.writeLive(live);
+            void request("progress", { tabId: tab, live }, sessionId).catch(() => undefined);
+          },
+        },
+        { tab, site, runId: newRunId(), names, params, record, previousRunId, by: "ai" },
+      );
+      store.saveRun(run);
+      return run;
     } finally {
       busy.delete(tab);
     }
-    const run: TestRun = { runId, site, startedAt: new Date(startedAt).toISOString(), durationMs: Date.now() - startedAt, flows, ...(previousRunId ? { previousRunId } : {}) };
-    saveRun(run);
-    return run;
   }
 
   /** The short form of a run for the AI, with failure screenshots. */

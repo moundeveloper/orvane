@@ -25,6 +25,9 @@ import {
 } from "./files/explorer";
 import CustomSelect from "./CustomSelect.vue";
 import Icon from "./Icon.vue";
+import SessionChat from "./SessionChat.vue";
+import SessionList from "./SessionList.vue";
+import type { AgentSession } from "../exposition";
 
 const props = defineProps<{
   apps: CanvasApp[];
@@ -33,9 +36,22 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   close: [];
+  /** Dock this session's chat on the right side of the window. */
+  pin: [key: string];
+  /** Open this session in an Agent sessions app. */
+  open: [key: string];
   started: [run: AgentRun];
   starting: [active: boolean];
 }>();
+/** New task starts a session; Sessions picks one and chats with it here. */
+const mode = ref<"new" | "sessions">("new");
+const chosen = ref<AgentSession | null>(null);
+const list = ref<{ key(event: KeyboardEvent): void }>();
+watch(mode, async (value) => {
+  await nextTick();
+  if (value === "sessions" && !chosen.value) (panel.value?.querySelector(".session-list") as HTMLElement | null)?.focus();
+  if (value === "new") prompt.value?.focus({ preventScroll: true });
+});
 const preferencesKey = "orvane.agent-launcher.v1";
 type Preferences = {
   provider?: AgentProvider;
@@ -345,7 +361,23 @@ onBeforeUnmount(() => {
     @drop.prevent="drop"
   >
     <header>
-      <Icon name="ai" :size="16" /><strong>New AI task</strong>
+      <Icon name="ai" :size="16" />
+      <div class="launcher-tabs" role="tablist" aria-label="AI launcher">
+        <button type="button" role="tab" :aria-selected="mode === 'new'" @click="mode = 'new'">New task</button>
+        <button type="button" role="tab" :aria-selected="mode === 'sessions'" @click="mode = 'sessions'">Sessions</button>
+      </div>
+      <span class="launcher-space"></span>
+      <template v-if="mode === 'sessions' && chosen">
+        <button type="button" aria-label="Back to sessions" data-tip="All sessions" @click="chosen = null">
+          <Icon name="back" :size="14" />
+        </button>
+        <button type="button" aria-label="Pin to side" data-tip="Pin to side · Ctrl+Shift+P" @click="emit('pin', chosen.key)">
+          <Icon name="pin" :size="14" />
+        </button>
+        <button type="button" aria-label="Open in Agent sessions" data-tip="Open in Agent sessions" @click="emit('open', chosen.key)">
+          <Icon name="external" :size="14" />
+        </button>
+      </template>
       <button
         type="button"
         aria-label="Close AI launcher"
@@ -355,7 +387,11 @@ onBeforeUnmount(() => {
         <Icon name="close" :size="15" />
       </button>
     </header>
-    <form @submit.prevent="start">
+    <div v-if="mode === 'sessions'" class="launcher-sessions">
+      <SessionChat v-if="chosen" :session-key="chosen.key" place="launcher" />
+      <SessionList v-else ref="list" @pick="chosen = $event" />
+    </div>
+    <form v-else @submit.prevent="start">
       <div class="agent-composer">
         <textarea
           ref="prompt"
@@ -580,6 +616,35 @@ header {
 header strong {
   flex: 1;
   font-weight: 600;
+}
+.launcher-space {
+  flex: 1;
+}
+.launcher-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: #e8eff3;
+}
+.launcher-tabs button {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 5px;
+  color: #5d7381;
+  font-size: 12px;
+}
+.launcher-tabs button[aria-selected="true"] {
+  background: #fbfcfd;
+  box-shadow: 0 1px 2px #263f5512;
+  color: #273f50;
+}
+.launcher-sessions {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: min(520px, 62dvh);
+  overflow: auto;
 }
 form {
   display: grid;

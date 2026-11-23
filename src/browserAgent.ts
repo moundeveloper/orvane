@@ -17,6 +17,19 @@ import {
   snapshotScript,
   type AgentTarget,
 } from "./browserAgentPage";
+import { setLiveRun } from "./flowTestsLive";
+import type { LiveRun } from "./flowRunner";
+
+/** The window's own browser operations (the Test runs app runs tests
+ * without an AI): App.vue registers how to find Browser apps. */
+let appContext: Parameters<typeof runBrowserAgent>[1] | undefined;
+export function setBrowserAgentContext(context: Parameters<typeof runBrowserAgent>[1]) {
+  appContext = context;
+}
+export function browserRequest(op: BrowserRequest["op"], args: Record<string, unknown>) {
+  if (!appContext) throw Error("The Browser is not ready yet.");
+  return runBrowserAgent({ kind: "browser", op, args }, appContext) as Promise<Record<string, unknown>>;
+}
 
 export type AgentAccess = "granted" | "controlled";
 /** Why the AI opened a tab: "task" is its own scratch tab (it closes it when
@@ -114,7 +127,7 @@ export type BrowserRequest = {
   kind: "browser";
   op:
     | "tabs" | "open" | "group" | "take" | "release" | "close" | "act" | "snapshot" | "screenshot"
-    | "record-start" | "record-status" | "record-stop"
+    | "record-start" | "record-status" | "record-stop" | "progress"
     | "netsuite-environments" | "netsuite-open";
   args: Record<string, unknown>;
 };
@@ -534,6 +547,12 @@ export async function runBrowserAgent(
   }
   const tabId = str(args, "tabId");
   if (!tabId) throw Error("tabId is required.");
+  // A flow_tests run's progress, for the Test runs app and the tab's overlay.
+  if (request.op === "progress") {
+    if (hostOfTab(tabId).access(tabId) !== "controlled") return { shown: false };
+    setLiveRun({ ...(args.live as LiveRun), tabId });
+    return { shown: true };
+  }
   if (request.op === "take" || request.op === "release" || request.op === "close") {
     const host = hostOfTab(tabId);
     const access = host.access(tabId);

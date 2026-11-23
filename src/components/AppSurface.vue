@@ -664,7 +664,7 @@ defineExpose({
           :block="block"
           :added-block-id="addedBlockId"
           :fill-height="
-            (block.kind === 'code' || block.kind === 'claude') &&
+            (block.kind === 'code' || block.kind === 'claude' || block.kind === 'flow-tests') &&
             (block.sizing === 'fill' ||
               (app.blocks.length === 1 && block.sizing !== 'fixed'))
           "

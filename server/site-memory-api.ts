@@ -30,6 +30,8 @@ const requestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("decide-plan"), site, id: z.string().max(40), value: z.boolean() }).strict(),
   z.object({ action: z.literal("remove-plan"), site, id: z.string().max(40) }).strict(),
   z.object({ action: z.literal("pending") }).strict(),
+  // A flow run from the Test runs app: when it last worked or failed.
+  z.object({ action: z.literal("record"), site, name: z.string().max(60), error: z.string().max(400).optional() }).strict(),
 ]);
 
 export function siteMemoryApi(directory: string): Plugin {
@@ -92,6 +94,7 @@ export function siteMemoryApi(directory: string): Plugin {
         : r.action === "remove-plan" ? store.removePlan(r.site, r.id)
         // Everything waiting for the user, for the header badge.
         : r.action === "pending" ? { count: store.sites().reduce((n, s) => n + s.unreviewed, 0) }
+        : r.action === "record" ? (store.record(r.site, "flow", r.name, r.error), { recorded: true })
         : store.setDisabled(r.site, r.kind, r.key, r.value);
       reply(200, data);
     } catch (error) {
