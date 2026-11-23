@@ -1175,12 +1175,13 @@ button:hover {
   position: absolute;
   z-index: 40;
   bottom: var(--dock-bottom);
-  left: 50%;
+  /* Centred in the canvas left of the pinned side chat, when one is pinned. */
+  left: calc((100% - var(--side-reserve, 0px)) / 2);
   transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 5px;
-  max-width: calc(100% - 40px);
+  max-width: calc(100% - var(--side-reserve, 0px) - 40px);
   height: var(--dock-height);
   padding: 7px 9px;
   background: #f5f8fa;

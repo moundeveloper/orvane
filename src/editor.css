@@ -961,7 +961,8 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   background: rgb(0 0 0 / 4%);
 }
 
-/* Side chat: one agent session pinned to the right of the window. */
+/* Side chat: one agent session pinned to the right of the window. The
+   canvas viewport ends left of it (App.vue --side-reserve). */
 .side-chat {
   position: fixed;
   z-index: 200;
@@ -969,43 +970,70 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   right: 12px;
   bottom: 12px;
   display: flex;
-  width: min(400px, calc(100vw - 32px));
+  width: min(384px, calc(100vw - 32px));
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid #ffffffde;
+  border: 1px solid #ffffffa3;
   border-radius: 12px;
   background: rgb(247 250 252 / 86%);
   box-shadow: 0 1px 2px #263f5514, 0 18px 40px #263f5530;
   backdrop-filter: blur(14px) saturate(120%);
+  color: #455968;
+  font-size: 13px;
 }
 .side-chat-head {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 4px;
-  height: 42px;
-  padding: 0 8px;
-  border-bottom: 1px solid #e3eaee;
+  gap: 8px;
+  padding: 10px 12px 10px;
 }
 .side-chat-space {
   flex: 1;
 }
+.side-chat svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .side-chat-switch {
   display: flex;
   min-width: 0;
-  max-width: 280px;
+  max-width: 270px;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   height: 28px;
-  padding: 0 8px;
+  padding: 0 8px 0 4px;
   border-radius: 7px;
   color: #273f50;
-  font-weight: 600;
 }
-.side-chat-switch span {
+.side-chat-switch b {
   overflow: hidden;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.side-chat-switch svg {
+  width: 12px;
+}
+.side-chat-provider {
+  display: grid;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 6px;
+  background: #c2754f;
+  color: #fff;
+  font: 600 10px "Cascadia Code", Consolas, monospace;
+}
+.side-chat-provider.codex {
+  background: #3c4a55;
 }
 .side-chat-switch:hover,
 .side-chat-button:hover {
@@ -1013,8 +1041,8 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
 }
 .side-chat-button {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   place-items: center;
   border-radius: 7px;
   color: #6f8998;
@@ -1022,6 +1050,63 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
 .side-chat-button.active {
   background: #e4edf2;
   color: #365f78;
+}
+.side-chat-keys {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-top: 1px solid #e3eaee;
+  color: #8296a2;
+  font-size: 11.5px;
+}
+.side-chat-keys kbd {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  place-items: center;
+  border: 1px solid #d6e0e6;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: #fbfcfd;
+  color: #5d7381;
+  font: 10.5px/1 "Cascadia Code", Consolas, monospace;
+}
+/* Pinning slides the panel in a few pixels from the right; the switcher fades. */
+.side-chat-enter-active {
+  transition: opacity 180ms ease-out, transform 180ms ease-out;
+}
+.side-chat-leave-active {
+  transition: opacity 130ms ease-in, transform 130ms ease-in;
+}
+.side-chat-enter-from,
+.side-chat-leave-to {
+  opacity: 0;
+  transform: translateX(12px);
+}
+.side-chat-list-enter-active {
+  transition: opacity 140ms ease-out, transform 140ms ease-out;
+}
+.side-chat-list-leave-active {
+  transition: opacity 100ms ease-in;
+}
+.side-chat-list-enter-from {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+.side-chat-list-leave-to {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .side-chat-enter-active,
+  .side-chat-leave-active,
+  .side-chat-list-enter-active,
+  .side-chat-list-leave-active {
+    transition: none;
+  }
 }
 .side-chat-list {
   position: absolute;

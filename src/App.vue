@@ -463,10 +463,8 @@ function focusArea() {
   const bottom = Math.max(top + 200, (dock?.top ?? viewport.height - 70) - margin);
   // Leave the Board tools rail on the left uncovered.
   const left = rail && rail.width ? rail.right + margin : margin;
-  // Leave the pinned side chat uncovered.
-  const side = document.querySelector(".side-chat")?.getBoundingClientRect();
-  const right = side && side.width ? viewport.width - side.left + margin : margin;
-  return { x: left, y: top, width: Math.max(200, viewport.width - left - right), height: bottom - top };
+  // The viewport already ends left of the pinned side chat.
+  return { x: left, y: top, width: Math.max(200, viewport.width - left - margin), height: bottom - top };
 }
 /** Point the camera so the focused app's corner sits at the focus area's. */
 function placeFocus() {
@@ -1066,7 +1064,20 @@ const sideSaved = (() => {
 const sideSession = ref(sideSaved.key ?? "");
 const sideOpen = ref(!!(sideSaved.open && sideSaved.key));
 const sideSwitching = ref(false);
+const sideChat = ref<{ focus(): void }>();
+/** Width the pinned panel takes from the canvas (panel plus its margin). */
+const SIDE_RESERVE = 396;
+const sideReserve = () => (sideOpen.value && sideSession.value && window.innerWidth >= 800 ? SIDE_RESERVE : 0);
+/** The canvas viewport is the window minus the pinned panel, so Home and focus fit what is left. */
+const sideReserved = ref(0);
+function measureViewport() {
+  sideReserved.value = sideReserve();
+  viewport.width = window.innerWidth - sideReserved.value;
+  viewport.height = window.innerHeight;
+}
+measureViewport();
 watch([sideSession, sideOpen], () => {
+  measureViewport();
   try {
     localStorage.setItem(SIDE_KEY, JSON.stringify({ key: sideSession.value, open: sideOpen.value }));
   } catch {
@@ -1075,15 +1086,19 @@ watch([sideSession, sideOpen], () => {
   if (focused.value) void nextTick(placeFocus);
 });
 const sideTitle = ref("");
+const sideProvider = ref("claude");
 watch(
   sideSession,
   async (key) => {
     sideTitle.value = "";
     if (!key) return;
+    sideProvider.value = key.startsWith("codex:") ? "codex" : "claude";
     try {
       const { sessions } = await agentRequest<{ sessions: { key: string; title: string; provider?: string }[] }>("sessions");
       const session = sessions.find((s) => s.key === key);
-      if (sideSession.value === key) sideTitle.value = session?.title || "Untitled session";
+      if (sideSession.value !== key) return;
+      sideTitle.value = session?.title || "Untitled session";
+      if (session?.provider) sideProvider.value = session.provider;
     } catch {
       /* the chat shows its own errors */
     }
@@ -1099,6 +1114,8 @@ function outsideSideSwitch(event: PointerEvent) {
   if (!(event.target as Element | null)?.closest(".side-chat")) sideSwitching.value = false;
 }
 watch(sideSwitching, (open) => {
+  // The switcher opens on its search field.
+  if (open) void nextTick(() => document.querySelector<HTMLInputElement>(".side-chat-list .session-search input")?.focus({ preventScroll: true }));
   if (open) document.addEventListener("pointerdown", outsideSideSwitch, true);
   else document.removeEventListener("pointerdown", outsideSideSwitch, true);
 });
@@ -1109,7 +1126,10 @@ function pinSession(key: string) {
   agentLauncher.value = false;
   sideSwitching.value = false;
 }
+const agentLauncherPanel = ref<{ pinChosen(): boolean }>();
 function toggleSideChat() {
+  // The launcher's Sessions tab pins the chat it shows.
+  if (agentLauncher.value && agentLauncherPanel.value?.pinChosen()) return;
   if (sideOpen.value) sideOpen.value = false;
   else if (sideSession.value) sideOpen.value = true;
   else {
@@ -1221,6 +1241,13 @@ function paletteKeys(e: KeyboardEvent) {
     e.preventDefault();
     e.stopPropagation();
     toggleSideChat();
+    return;
+  }
+  // Ctrl+Shift+A: type in the pinned side chat.
+  if (key === "a" && e.shiftKey && sideOpen.value && sideSession.value) {
+    e.preventDefault();
+    e.stopPropagation();
+    sideChat.value?.focus();
     return;
   }
   const commands = key === "p" && e.shiftKey;
@@ -3238,8 +3265,7 @@ const keyup = (e: KeyboardEvent) => {
   }
 };
 const resize = () => {
-  viewport.width = window.innerWidth;
-  viewport.height = window.innerHeight;
+  measureViewport();
 };
 const managedApp = ref<CanvasApp>();
 const dockContext = ref<CanvasApp>();
@@ -4335,6 +4361,7 @@ onBeforeUnmount(() => {
 <template>
   <main
     class="workspace"
+    :style="{ '--side-reserve': `${sideReserved}px` }"
     :inert="mcpBusy || !ready"
     :data-ready="ready"
     :data-saved="!unsavedChanges"
@@ -4383,6 +4410,7 @@ onBeforeUnmount(() => {
     <Transition name="agent-launcher">
       <AgentLauncher
         v-if="agentLauncher"
+        ref="agentLauncherPanel"
         :apps="workspace.apps"
         :anchor="agentDockButton"
         :popovers="agentPopovers"
@@ -4393,6 +4421,7 @@ onBeforeUnmount(() => {
         @open="openAgentSession({ key: $event }); agentLauncher = false"
       />
     </Transition>
+    <Transition name="side-chat">
     <aside v-if="sideOpen && sideSession" class="side-chat workspace-frost" aria-label="Pinned AI session" @pointerdown.stop="closeSideSwitch($event)" @keydown.esc="sideSwitching && ($event.stopPropagation(), (sideSwitching = false))">
       <header class="side-chat-head">
         <button
@@ -4402,19 +4431,26 @@ onBeforeUnmount(() => {
           :aria-expanded="sideSwitching"
           @click="sideSwitching = !sideSwitching"
         >
-          <Icon name="ai" :size="14" /><span>{{ sideTitle || "Session" }}</span><Icon name="down" :size="12" />
+          <span class="side-chat-provider" :class="sideProvider">{{ sideProvider === "codex" ? "X" : "C" }}</span><b>{{ sideTitle || "Session" }}</b>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
         </button>
         <span class="side-chat-space"></span>
-        <button type="button" class="side-chat-button" aria-label="Open in Agent sessions" data-tip="Open in Agent sessions"
-          @click="openAgentSession({ key: sideSession })"><Icon name="external" :size="14" /></button>
         <button type="button" class="side-chat-button active" aria-label="Unpin side chat" data-tip="Unpin · Ctrl+Shift+J"
-          @click="sideOpen = false"><Icon name="pin" :size="14" /></button>
+          @click="sideOpen = false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 2.5 13.5 6l-2.5 1-2.5 3 .5 2.5L4 7.5 6.5 8l3-2.5z" /><path d="M5.5 10.5 2.5 13.5" /></svg></button>
+        <button type="button" class="side-chat-button" aria-label="Open in Agent sessions" data-tip="Open in Agent sessions"
+          @click="openAgentSession({ key: sideSession })"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 3h4v4M13 3 7.5 8.5M12 9.5V13H3V4h3.5" /></svg></button>
       </header>
-      <div v-if="sideSwitching" class="side-chat-list select-popover">
-        <SessionList :current="sideSession" @pick="pinSession($event.key)" />
-      </div>
-      <SessionChat :session-key="sideSession" place="side" />
+      <Transition name="side-chat-list">
+        <div v-if="sideSwitching" class="side-chat-list select-popover">
+          <SessionList :current="sideSession" @pick="pinSession($event.key)" />
+        </div>
+      </Transition>
+      <SessionChat ref="sideChat" :session-key="sideSession" place="side" />
+      <footer class="side-chat-keys">
+        <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>A</kbd> type here<span class="side-chat-space"></span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>J</kbd> unpin
+      </footer>
     </aside>
+    </Transition>
     <div ref="agentPopovers" class="agent-launcher-popovers" />
     <CustomToolsPanel v-if="customToolsOpen" @close="customToolsOpen = false" />
     <ActionStudio

@@ -45,13 +45,59 @@ const emit = defineEmits<{
 }>();
 /** New task starts a session; Sessions picks one and chats with it here. */
 const mode = ref<"new" | "sessions">("new");
+/** The highlighted session; its chat shows under the list. */
 const chosen = ref<AgentSession | null>(null);
-const list = ref<{ key(event: KeyboardEvent): void }>();
+const sessionCount = ref(0);
+const list = ref<{ key(event: KeyboardEvent): void; focusRows(): void }>();
+/** The session list folded away (remembered), so the chat gets the room. */
+const LIST_KEY = "orvane.agent-launcher.list-collapsed";
+const listCollapsed = ref((() => {
+  try {
+    return localStorage.getItem(LIST_KEY) === "1";
+  } catch {
+    return false;
+  }
+})());
+watch(listCollapsed, (value) => {
+  try {
+    localStorage.setItem(LIST_KEY, value ? "1" : "0");
+  } catch {
+    /* only a convenience */
+  }
+});
+const searchField = () => panel.value?.querySelector<HTMLInputElement>(".session-search input");
+const chat = ref<{ focus(): void }>();
 watch(mode, async (value) => {
   await nextTick();
-  if (value === "sessions" && !chosen.value) (panel.value?.querySelector(".session-list") as HTMLElement | null)?.focus();
+  if (value === "sessions") searchField()?.focus({ preventScroll: true });
   if (value === "new") prompt.value?.focus({ preventScroll: true });
 });
+/** Enter or a click: go to the session's composer. */
+async function openChosen(session: AgentSession) {
+  chosen.value = session;
+  await nextTick();
+  chat.value?.focus();
+}
+/** ↑ ↓ Enter reach the list from anywhere in the launcher but a text field. */
+function sessionsKey(event: KeyboardEvent) {
+  if (mode.value !== "sessions" || event.defaultPrevented) return;
+  const target = event.target as HTMLElement | null;
+  if (target?.closest("textarea, input, button:not(.session-row)")) return;
+  if (target?.closest(".session-list")) return;
+  list.value?.key(event);
+}
+/** Ctrl+Shift+J while the Sessions tab shows a chat pins that chat. */
+function pinChosen() {
+  if (mode.value !== "sessions" || !chosen.value) return false;
+  emit("pin", chosen.value.key);
+  return true;
+}
+defineExpose({ pinChosen });
+/** Esc in the chat's composer returns to the list. */
+function leaveChat() {
+  if (listCollapsed.value) searchField()?.focus({ preventScroll: true });
+  else list.value?.focusRows();
+}
 const preferencesKey = "orvane.agent-launcher.v1";
 type Preferences = {
   provider?: AgentProvider;
@@ -364,18 +410,15 @@ onBeforeUnmount(() => {
       <Icon name="ai" :size="16" />
       <div class="launcher-tabs" role="tablist" aria-label="AI launcher">
         <button type="button" role="tab" :aria-selected="mode === 'new'" @click="mode = 'new'">New task</button>
-        <button type="button" role="tab" :aria-selected="mode === 'sessions'" @click="mode = 'sessions'">Sessions</button>
+        <button type="button" role="tab" :aria-selected="mode === 'sessions'" @click="mode = 'sessions'">Sessions{{ sessionCount ? ` · ${sessionCount}` : "" }}</button>
       </div>
       <span class="launcher-space"></span>
-      <template v-if="mode === 'sessions' && chosen">
-        <button type="button" aria-label="Back to sessions" data-tip="All sessions" @click="chosen = null">
-          <Icon name="back" :size="14" />
+      <template v-if="mode === 'sessions'">
+        <button type="button" class="launcher-icon" aria-label="Pin to side" data-tip="Pin to side · Ctrl+Shift+J" :disabled="!chosen" @click="chosen && emit('pin', chosen.key)">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 2.5 13.5 6l-2.5 1-2.5 3 .5 2.5L4 7.5 6.5 8l3-2.5z" /><path d="M5.5 10.5 2.5 13.5" /></svg>
         </button>
-        <button type="button" aria-label="Pin to side" data-tip="Pin to side · Ctrl+Shift+P" @click="emit('pin', chosen.key)">
-          <Icon name="pin" :size="14" />
-        </button>
-        <button type="button" aria-label="Open in Agent sessions" data-tip="Open in Agent sessions" @click="emit('open', chosen.key)">
-          <Icon name="external" :size="14" />
+        <button type="button" class="launcher-icon" aria-label="Open in Agent sessions" data-tip="Open in Agent sessions" :disabled="!chosen" @click="chosen && emit('open', chosen.key)">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 3h4v4M13 3 7.5 8.5M12 9.5V13H3V4h3.5" /></svg>
         </button>
       </template>
       <button
@@ -387,11 +430,37 @@ onBeforeUnmount(() => {
         <Icon name="close" :size="15" />
       </button>
     </header>
-    <div v-if="mode === 'sessions'" class="launcher-sessions">
-      <SessionChat v-if="chosen" :session-key="chosen.key" place="launcher" />
-      <SessionList v-else ref="list" @pick="chosen = $event" />
+    <div v-show="mode === 'sessions'" class="launcher-sessions" @keydown="sessionsKey">
+      <SessionList
+        ref="list"
+        class="launcher-list"
+        :collapsed="listCollapsed"
+        @select="chosen = $event"
+        @pick="openChosen"
+        @count="sessionCount = $event"
+        @expand="listCollapsed = false"
+      >
+        <template #actions>
+          <button
+            type="button"
+            class="launcher-icon launcher-fold"
+            :class="{ folded: listCollapsed }"
+            :aria-expanded="!listCollapsed"
+            :aria-label="listCollapsed ? 'Show sessions' : 'Hide sessions'"
+            :data-tip="listCollapsed ? 'Show sessions' : 'Hide sessions'"
+            @click="listCollapsed = !listCollapsed"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4" /></svg>
+          </button>
+        </template>
+      </SessionList>
+      <SessionChat v-if="mode === 'sessions' && chosen" ref="chat" class="launcher-chat" :session-key="chosen.key" place="launcher" @leave="leaveChat" />
+      <footer class="launcher-keys">
+        <kbd>↑</kbd><kbd>↓</kbd> session <kbd>Enter</kbd> open <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>J</kbd> pin
+        <span class="launcher-space"></span><kbd>Esc</kbd> close
+      </footer>
     </div>
-    <form v-else @submit.prevent="start">
+    <form v-if="mode === 'new'" @submit.prevent="start">
       <div class="agent-composer">
         <textarea
           ref="prompt"
@@ -628,6 +697,7 @@ header strong {
   background: #e8eff3;
 }
 .launcher-tabs button {
+  border: 0;
   height: 24px;
   padding: 0 10px;
   border-radius: 5px;
@@ -643,8 +713,86 @@ header strong {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  height: min(520px, 62dvh);
-  overflow: auto;
+  height: min(600px, 70dvh);
+}
+.launcher-list {
+  flex: none;
+  max-height: 42%;
+}
+.launcher-list .launcher-icon {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: #6f8998;
+}
+.launcher-list .launcher-icon:hover {
+  background: #e4edf2;
+}
+/* The chevron turns over when the list folds. */
+.launcher-fold svg {
+  transition: transform 160ms ease-out;
+}
+.launcher-fold.folded svg {
+  transform: rotate(180deg);
+}
+.launcher-chat {
+  flex: 1;
+  margin-top: 4px;
+  border-top: 1px solid #e3eaee;
+}
+/* Switching tabs fades the new one in. */
+.launcher-sessions,
+form {
+  animation: launcher-tab-in 150ms ease-out;
+}
+@keyframes launcher-tab-in {
+  from {
+    opacity: 0;
+  }
+}
+header .launcher-icon {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  color: #6f8998;
+}
+header .launcher-icon:hover:not(:disabled) {
+  background: #eef3f6;
+}
+.launcher-icon svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.launcher-keys {
+  flex: none;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-top: 1px solid #e3eaee;
+  color: #8296a2;
+  font-size: 11.5px;
+}
+.launcher-keys kbd {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  place-items: center;
+  border: 1px solid #d6e0e6;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: #fbfcfd;
+  color: #5d7381;
+  font: 10.5px/1 "Cascadia Code", Consolas, monospace;
 }
 form {
   display: grid;
@@ -803,8 +951,13 @@ input:focus-visible {
 }
 @media (prefers-reduced-motion: reduce) {
   .agent-launcher-enter-active,
-  .agent-launcher-leave-active {
+  .agent-launcher-leave-active,
+  .launcher-fold svg {
     transition: none;
+  }
+  .launcher-sessions,
+  form {
+    animation: none;
   }
 }
 </style>

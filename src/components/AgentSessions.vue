@@ -88,7 +88,8 @@ import {
 // the session view, no toolbar or session list. The host keeps the layout.
 const props = defineProps<{
   block: Block;
-  pane?: PaneSession & { id: string; nonce: number };
+  /** quiet: opening a session leaves focus where it is (AI launcher preview). */
+  pane?: PaneSession & { id: string; nonce: number; quiet?: boolean };
   focused?: boolean;
 }>();
 const emit = defineEmits<{ "pane-state": [state: PaneSession] }>();
@@ -1783,8 +1784,10 @@ if (props.pane) {
       const pane = props.pane;
       if (!pane) return;
       if (pane.key) {
-        if (pane.key !== active.value || !messages.value.length) void select(pane.key).then(focusComposer);
-        else void focusComposer();
+        if (pane.key !== active.value || !messages.value.length) void select(pane.key).then(() => {
+          if (!pane.quiet) return focusComposer();
+        });
+        else if (!pane.quiet) void focusComposer();
       } else if (pane.provider) {
         void openNew(pane.provider).then(() => {
           if (pane.folder) folder.value = pane.folder;
