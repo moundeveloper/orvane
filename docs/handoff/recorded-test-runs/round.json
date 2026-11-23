@@ -1,0 +1,34 @@
+{
+  "id": "r1",
+  "title": "Record and replay test runs",
+  "kind": "new",
+  "base": 1,
+  "status": "open",
+  "at": 1795443213621,
+  "variants": [
+    {
+      "id": "replay",
+      "label": "Run replay",
+      "at": 1795443279549,
+      "about": "The run, after it finishes. On the left is the recorded video of the Browser tab while the agent tested the NetSuite SB1 flow. The time bar has one tick per step: green passed, red failed. Clicking a step on the right jumps the video to it. You can also scrub the video, and the matching step lights up. The failing step opens inline with three tabs, Error, Cause and Fix, taken from TestSprite's failure view. \"Send to agent\" opens an Agent session that already has the error, the step, the frame and the file in context. Build: record the webview with CDP Page.startScreencast (Orvane already attaches the debugger to pause guests). Encode the frames to WebM with MediaRecorder on an offscreen canvas. Save under .orvane/recordings. Each browser_act or flow step writes {t, action, ref, result} so the steps stay synced with the video."
+    },
+    {
+      "id": "live",
+      "label": "Live recording",
+      "at": 1795443338467,
+      "about": "During the run. This is the Browser app while an agent tests NetSuite SB1. A REC pill sits in the toolbar on the same centre line as the URL. It shows the elapsed time, and clicking it stops the recording. The agent's pointer is drawn on the page with a small label of what it is doing, so you can follow it like watching someone share their screen. A frost-glass step trail in the corner shows passed steps with the drawn tick, the current step with the DNA loader, and the next steps waiting. Ctrl+Shift+R starts or stops a recording by hand on any tab, even without an agent. Then it is just a screen recording of that page. Build: the same screencast recorder as Run replay. The pointer overlay comes from the ref coordinates that browser_act already resolves before each click or fill. It is drawn in Orvane's layer over the webview, not inside the page, so the page never changes. Recording pauses when the tab is off-screen, as other hidden work already does."
+    },
+    {
+      "id": "suite",
+      "label": "Flow tests",
+      "at": 1795443388898,
+      "about": "Saved flows used as a test list for one NetSuite account. Orvane already saves site flows (browser_memory, a list of steps that the owner approves) and runs them with browser_flow. Here those flows become regression tests. Each row shows its last result and when it ran, and gives every run a recording. The selected failed row opens a filmstrip with one frame per step. Click a frame to open Run replay at that moment. \"Run all on SB1\" (Ctrl+Enter) runs them one after another in a background tab. A trigger can run them every night with the existing automations, and failures land in the Inbox. Build: a \"test\" flag and expected values on flows (an \"expect\" step next to read/eval), plus a runs table in SQLite with paths to the recordings. It is all local. Unlike TestSprite, no tunnel, no credits, and no client data leaves the machine."
+    },
+    {
+      "id": "run-map",
+      "label": "Run map",
+      "at": 1795443769880,
+      "about": "The run map with the loop from TestSprite's CLI demo, where a coding agent runs the tests, reads the failure, fixes the code and reruns until green. In Orvane, the agent is a Claude Code or Codex session in Agent sessions, and it drives Orvane's flow tests through MCP. On the left is the map of NetSuite pages the flows touched. On the right, the session tells the story in the run activity style: it runs 5 flows on SB1 and 1 fails. It pulls the failure (the step, the recorded frame at 0:41 and the cause). It judges it a real bug rather than a flaky test, fixes ctk_cs_so_tax.js:84 with orvane_netsuite_file_write, and reruns. It ends with TestSprite's summary table. The Sales Order page keeps a small \"fixed\" mark so you can see where the loop happened. Clicking a page or the frame chip opens Run replay at that moment. Build: a flow_tests MCP tool (run, failure, rerun) on top of the saved flows and browser_record. The failure bundle is the step, the frame, the text at that moment and the console errors. The file write and logs come from the existing NetSuite tools. The tool names in the transcript are proposals."
+    }
+  ]
+}

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Live recording</title>
+<style>
+:root{--canvas:#e9edf0;--app:#f7f9fa;--raised:#fbfcfd;--strong:#273f50;--text:#455968;--muted:#5d7381;--faint:#8296a2;--accent:#6f8998;--run:#365f78;--link:#385d76;--ok:#4f7d5f;--fail:#a0624f;--line:#e3eaee;--border:#dbe5eb;--pop:#d3dee5;--chip:#e6eef3;--hover:#eef3f6;--mono:"Cascadia Code",Consolas,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font:13px/1.5 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;color:var(--text);background:var(--canvas);display:grid;place-items:center;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ic{width:14px;height:14px}
+kbd{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 4px;border:1px solid #d6e0e6;border-bottom-width:2px;border-radius:4px;background:#fbfcfd;font:10.5px/1 var(--mono);color:var(--muted)}
+.app{width:1000px;height:600px;background:var(--app);border-radius:10px;box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c;display:grid;grid-template-rows:34px 40px 1fr;overflow:hidden}
+.tabs{display:flex;align-items:flex-end;gap:2px;padding:0 10px;border-bottom:1px solid var(--line)}
+.tab{height:28px;padding:0 12px;display:flex;align-items:center;gap:7px;font-size:12px;border-radius:7px 7px 0 0;color:var(--muted)}
+.tab.on{background:var(--raised);color:var(--strong);box-shadow:0 -1px 0 var(--line) inset}
+.tab .dot{width:6px;height:6px;border-radius:50%;background:#c25b4a}
+.tool{display:flex;align-items:center;gap:8px;padding:0 10px}
+.nav{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;color:var(--accent)}
+.nav:hover{background:var(--hover)}
+.url{flex:1;height:28px;border-radius:8px;background:var(--raised);border:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:0 10px;font:12px var(--mono);color:var(--muted)}
+.url b{color:var(--strong);font-weight:500}
+.rec{height:26px;padding:0 9px 0 8px;border-radius:7px;background:#f6e6e1;color:#7b3b2d;display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:550}
+.rec i{width:8px;height:8px;border-radius:50%;background:#c25b4a;animation:blink 1.6s ease-in-out infinite}
+.rec time{font:11.5px var(--mono);font-variant-numeric:tabular-nums}
+@keyframes blink{50%{opacity:.35}}
+.page{position:relative;background:#fff;overflow:hidden}
+.ns-top{height:32px;background:#e8eef2;border-bottom:1px solid #d9e2e8;display:flex;align-items:center;gap:8px;padding:0 14px;font-size:11px;color:#6b7f8c}
+.ns-top i{display:block;width:70px;height:8px;border-radius:4px;background:#cfdae1}
+.ns-body{padding:18px 26px;font-size:12px;color:#3c4f5c}
+.ns-h{display:flex;align-items:center;gap:12px;margin-bottom:2px}
+.ns-h b{font-size:19px;font-weight:600;color:#2c3e4b}
+.ns-btn{height:26px;padding:0 12px;border-radius:5px;border:1px solid #c9d5dc;background:#f4f7f9;font-size:12px;color:#2c3e4b;display:inline-flex;align-items:center}
+.ns-btn.p{background:#4f6f84;border-color:#4f6f84;color:#fff}
+.ns-sub{color:#8a9aa5;font-size:11.5px;margin-bottom:14px}
+.ns-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px 22px;margin-bottom:16px}
+.ns-f label{display:block;font-size:10px;color:#7f909b;text-transform:uppercase;letter-spacing:.03em}
+.ns-f div{height:24px;border-bottom:1px solid #d9e2e8;line-height:24px;color:#2c3e4b}
+.ns-tab{display:flex;gap:18px;border-bottom:1px solid #d9e2e8;font-size:11.5px;color:#7f909b;margin-bottom:6px}
+.ns-tab b{color:#2c3e4b;border-bottom:2px solid #6f8998;padding-bottom:5px;font-weight:600}
+table{border-collapse:collapse;width:100%;font-size:11.5px}
+th{text-align:left;font-weight:600;color:#7f909b;font-size:10px;text-transform:uppercase;letter-spacing:.03em;padding:6px;background:#f1f5f7}
+td{padding:7px 6px;border-bottom:1px solid #edf1f4;color:#2c3e4b}
+.target{outline:2px solid var(--run);outline-offset:2px;border-radius:4px}
+/* agent pointer, drawn by Orvane above the webview */
+.ptr{position:absolute;left:128px;top:76px;pointer-events:none}
+.ptr svg{width:18px;height:18px;fill:var(--run);stroke:#fff;stroke-width:1.4}
+.ptr span{position:absolute;left:16px;top:16px;white-space:nowrap;height:22px;padding:0 8px;border-radius:6px;background:var(--run);color:#fff;font-size:11.5px;display:flex;align-items:center;gap:6px;box-shadow:0 4px 12px #263f5530}
+.ptr span code{font:10.5px var(--mono);opacity:.8}
+/* step trail on frost glass */
+.trail{position:absolute;right:14px;bottom:14px;width:300px;padding:10px 12px;border-radius:10px;background:rgb(247 250 252 / 78%);backdrop-filter:blur(10px) saturate(120%);border:1px solid #ffffffa3;box-shadow:0 1px 2px #263f5514,0 12px 30px #263f5526}
+.th{display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:6px}
+.th b{color:var(--strong);font-weight:600}
+.th span{color:var(--faint);font-size:11.5px}
+.s{display:grid;grid-template-columns:16px 1fr auto;gap:8px;align-items:center;height:26px;font-size:12.5px}
+.s .tm{font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+.s.done{color:var(--muted)}
+.s.now{color:var(--strong);font-weight:550}
+.s.next{color:var(--faint)}
+.tick path{stroke:var(--ok);stroke-dasharray:14;stroke-dashoffset:0}
+.lbl{background:linear-gradient(90deg,var(--run) 0,var(--run) 40%,#b4cad6 50%,var(--run) 60%,var(--run) 100%) 0 0/250% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:sh 1.8s linear infinite}
+@keyframes sh{from{background-position:100% 0}to{background-position:-150% 0}}
+.tf{display:flex;align-items:center;gap:6px;margin-top:6px;padding-top:6px;border-top:1px solid #dfe7ec;color:var(--faint);font-size:11.5px}
+/* DNA loader, compressed for a 16px row */
+.ind{position:relative;display:inline-block;width:16px;height:12px;overflow:hidden}
+.ind span{position:absolute;top:0;bottom:0;width:2px}
+.ind span i{position:absolute;left:.2px;top:5.2px;width:1.6px;height:1.6px;border-radius:50%;background:var(--run);animation:dna-top 1.74s linear infinite;animation-delay:inherit}
+.ind span i+i{animation-name:dna-bottom}
+.ind span b{position:absolute;left:.7px;top:1px;width:.6px;height:10px;background:var(--run);opacity:.35;animation:dna-rung 1.74s linear infinite;animation-delay:inherit}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style></head>
+<body><div class="app">
+  <div class="tabs">
+    <div class="tab on"><span class="dot"></span>Vendor Bill VB-2026-0418</div>
+    <div class="tab">Saved Searches</div>
+    <div class="tab">ctk_ue_vb_ritenuta.js</div>
+  </div>
+  <div class="tool">
+    <button class="nav"><svg class="ic" viewBox="0 0 16 16"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg></button>
+    <button class="nav"><svg class="ic" viewBox="0 0 16 16"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button>
+    <button class="nav"><svg class="ic" viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.5-3.5M13 3v2.5h-2.5"/></svg></button>
+    <div class="url"><svg class="ic" viewBox="0 0 16 16" style="width:12px"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg><span><b>1234567-sb1.app.netsuite.com</b>/app/accounting/transactions/vendbill.nl?id=88214</span></div>
+    <button class="rec" title="Stop recording (Ctrl+Shift+R)"><i></i>REC <time>0:23</time></button>
+  </div>
+  <div class="page">
+    <div class="ns-top"><i></i><i style="width:46px"></i><span style="flex:1"></span><span>Transactions › Payables › Enter Bills</span></div>
+    <div class="ns-body">
+      <div class="ns-h"><b>Bill</b><span class="ns-btn target">Approve</span><span class="ns-btn">Reject</span><span class="ns-btn">Edit</span></div>
+      <div class="ns-sub">VB-2026-0418 · Pending Approval</div>
+      <div class="ns-grid">
+        <div class="ns-f"><label>Vendor</label><div>F0291 Studio Ing. Ferri</div></div>
+        <div class="ns-f"><label>Date</label><div>20/11/2026</div></div>
+        <div class="ns-f"><label>Subsidiary</label><div>Orvane Demo IT</div></div>
+        <div class="ns-f"><label>Amount</label><div>1.220,00</div></div>
+        <div class="ns-f"><label>Ritenuta d'acconto</label><div>200,00 (20%)</div></div>
+        <div class="ns-f"><label>To pay</label><div>1.020,00</div></div>
+      </div>
+      <div class="ns-tab"><b>Expenses</b><span>Items</span><span>Ritenute</span><span>Related Records</span></div>
+      <table>
+        <tr><th>Account</th><th>Amount</th><th>Tax code</th><th>Department</th></tr>
+        <tr><td>6210 Consulenze tecniche</td><td>1.000,00</td><td>IT 22%</td><td>Engineering</td></tr>
+      </table>
+    </div>
+    <div class="ptr"><svg viewBox="0 0 18 18"><path d="M2 2l5.2 13.5 2-5.6 5.6-2z"/></svg><span>Clicking Approve <code>ref e41</code></span></div>
+    <div class="trail">
+      <div class="th"><b>Approve bill with ritenuta</b><span>step 5 of 8</span></div>
+      <div class="s done"><svg class="ic tick" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg><span>Open bill VB-2026-0418</span><span class="tm">0:03</span></div>
+      <div class="s done"><svg class="ic tick" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg><span>Ritenuta is 200,00</span><span class="tm">0:09</span></div>
+      <div class="s done"><svg class="ic tick" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg><span>To pay is 1.020,00</span><span class="tm">0:14</span></div>
+      <div class="s done"><svg class="ic tick" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg><span>Status is Pending Approval</span><span class="tm">0:19</span></div>
+      <div class="s now"><span class="ind"></span><span class="lbl">Click Approve</span><span class="tm">0:23</span></div>
+      <div class="s next"><svg class="ic" viewBox="0 0 16 16" style="color:#b5c3cc"><circle cx="8" cy="8" r="4.5"/></svg><span>Status is Open</span><span class="tm"></span></div>
+      <div class="tf"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>R</kbd> stop <span style="flex:1"></span><kbd>Esc</kbd> hide</div>
+    </div>
+  </div>
+</div>
+<script>
+const curve=[[0,1],[8,.79],[10.3,.51],[12.6,.23],[15,.14],[19.5,.08],[24,.03],[26.4,0],[37,0],[40,.05],[45,.14],[49,.27],[52,.43],[54,.58],[58.6,.73],[63,.79],[70,.87],[79,.91],[93,.96],[97.7,1],[100,1]];
+const A=5,d=1.6;
+const frame=s=>{const grow=1+.25*(1-s)**2;const shut=.22*d*grow;return{off:shut+s*(A-shut),grow}};
+const kf=(n,fn)=>`@keyframes ${n}{${curve.map(([p,s])=>`${p}%{transform:${fn(frame(s))}}`).join('')}}`;
+const st=document.createElement('style');
+st.textContent=kf('dna-top',f=>`translateY(${-f.off.toFixed(2)}px) scale(${f.grow.toFixed(2)})`)+kf('dna-bottom',f=>`translateY(${f.off.toFixed(2)}px) scale(${f.grow.toFixed(2)})`)+kf('dna-rung',f=>`scaleY(${(2*f.off/10).toFixed(3)})`);
+document.head.append(st);
+document.querySelectorAll('.ind').forEach(el=>{for(let k=0;k<4;k++){const s=document.createElement('span');s.style.left=k*4.2+'px';s.style.animationDelay=-((4-k)*1.74/7)+'s';s.innerHTML='<b></b><i></i><i></i>';el.append(s)}});
+</script>
+</body></html>

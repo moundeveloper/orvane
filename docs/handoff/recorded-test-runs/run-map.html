@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Run map</title>
+<style>
+:root{--canvas:#e9edf0;--app:#f7f9fa;--raised:#fbfcfd;--strong:#273f50;--text:#455968;--muted:#5d7381;--faint:#8296a2;--accent:#6f8998;--run:#365f78;--link:#385d76;--ok:#4f7d5f;--add:#3f6b4f;--del:#7b3b2d;--fail:#a0624f;--line:#e3eaee;--border:#dbe5eb;--pop:#d3dee5;--chip:#e6eef3;--select:#e4ecf1;--hover:#eef3f6;--mono:"Cascadia Code",Consolas,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font:13px/1.5 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;color:var(--text);background:var(--canvas);display:grid;place-items:center;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ic{width:14px;height:14px;flex:none}
+kbd{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 4px;border:1px solid #d6e0e6;border-bottom-width:2px;border-radius:4px;background:#fbfcfd;font:10.5px/1 var(--mono);color:var(--muted)}
+.app{width:1000px;height:600px;background:var(--app);border-radius:10px;box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c;display:grid;grid-template-columns:1fr 430px;overflow:hidden}
+/* left: map */
+.left{display:grid;grid-template-rows:auto 1fr;min-width:0;border-right:1px solid var(--line)}
+.top{padding:12px 16px 10px;border-bottom:1px solid var(--line);display:grid;gap:8px}
+.tr{display:flex;align-items:center;gap:9px}
+.tr b{color:var(--strong);font-weight:600}
+.env{font:11.5px var(--mono);color:var(--link);background:var(--chip);height:20px;padding:0 7px;border-radius:5px;display:inline-flex;align-items:center}
+.m{color:var(--faint);font-size:12px}
+.prog{display:flex;align-items:center;gap:10px}
+.prog .st{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ok)}
+.bar{flex:1;height:4px;border-radius:2px;background:var(--ok)}
+.num{font:11.5px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.map{position:relative;overflow:hidden;background-image:radial-gradient(#d3dee5 1px,transparent 1px);background-size:16px 16px;background-color:#f4f7f9}
+.edges{position:absolute;inset:0;width:100%;height:100%}
+.edges path{stroke:#9fbfa9;stroke-width:1.3;fill:none}
+.node{position:absolute;width:120px}
+.node .p{font:10.5px var(--mono);color:var(--muted);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.shot{height:72px;border-radius:7px;background:#fff;border:1px solid var(--border);box-shadow:0 1px 2px #263f5512;padding:7px 8px;display:grid;gap:4px;align-content:start;position:relative}
+.shot i{display:block;height:4px;border-radius:2px;background:#e4ebef}
+.shot i.h{height:7px;width:52%;background:#cfdae1}
+.shot i.s{width:68%}.shot i.t{width:40%}
+.shot i.g{height:14px;background:#eef3f6}
+.node .c{font-size:10.5px;color:var(--faint);margin-top:3px;white-space:nowrap}
+.node.fixed .shot{border-color:#9fb6c3;box-shadow:0 0 0 3px #6f89981f}
+.mark{position:absolute;right:6px;bottom:6px;width:16px;height:16px;border-radius:5px;display:grid;place-items:center;color:#fff;background:var(--ok)}
+.mark svg{width:10px;height:10px;stroke-width:2.2}
+.fixtag{position:absolute;left:6px;bottom:6px;height:16px;padding:0 5px;border-radius:4px;background:var(--chip);color:var(--link);font:9.5px var(--mono);display:flex;align-items:center}
+.start{position:absolute;left:14px;top:221px;width:9px;height:9px;border-radius:50%;border:1.5px solid var(--ok);background:#fff}
+.toast{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);height:30px;padding:0 10px 0 8px;border-radius:8px;background:rgb(247 250 252 / 85%);backdrop-filter:blur(8px) saturate(120%);border:1px solid #ffffffa3;box-shadow:0 1px 2px #263f5514,0 12px 30px #263f5526;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--strong);white-space:nowrap}
+/* right: agent session */
+.right{display:grid;grid-template-rows:40px 1fr auto;min-height:0}
+.rh{display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid var(--line)}
+.rh .who{width:20px;height:20px;border-radius:6px;background:#e3ecf1;color:var(--strong);display:grid;place-items:center}
+.rh .who svg{width:12px;height:12px;stroke-width:1.65}
+.rh b{color:var(--strong);font-weight:600;font-size:12.5px}
+.feed{overflow:auto;padding:10px 14px;display:grid;gap:6px;align-content:start}
+.feed::-webkit-scrollbar{width:6px}.feed::-webkit-scrollbar-thumb{background:#c9d5dc;border-radius:3px}
+.you{justify-self:end;max-width:82%;background:var(--select);color:var(--strong);border-radius:12px;padding:6px 11px;font-size:12.5px}
+.say{font-size:12.5px;color:var(--text);line-height:1.5}
+.say b{color:var(--strong);font-weight:600}
+.tool{display:grid;grid-template-columns:14px 1fr auto;gap:8px;align-items:center;min-height:24px;font-size:12px}
+.tool .n{font:11.5px var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tool .n em{font-style:normal;color:var(--faint)}
+.tool time{font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+.tool .sub{grid-column:2/4;font-size:11.5px;color:var(--faint);margin-top:-3px}
+.tick path{stroke:var(--ok)}
+.fail{border:1px solid #ead7cf;background:#fdf9f7;border-radius:8px;padding:8px 10px;display:grid;gap:5px;font-size:12px}
+.fail .h{display:flex;align-items:center;gap:6px;color:var(--strong);font-weight:550}
+.fail .h svg{color:var(--fail)}
+.fail .r{display:grid;grid-template-columns:62px 1fr;gap:6px;color:var(--text)}
+.fail .r span:first-child{color:var(--faint);font-size:11.5px}
+.chip{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 6px;border-radius:5px;background:var(--chip);color:var(--link);font:11px var(--mono);white-space:nowrap}
+.chip .a{color:var(--add)}.chip .d{color:var(--del)}
+.sum{border:1px solid #dbe5ea;border-radius:8px;overflow:hidden;background:#f2f6f8}
+.sum div{display:grid;grid-template-columns:96px 1fr;gap:8px;padding:3px 10px;font-size:12px;border-top:1px solid var(--line)}
+.sum div:first-child{border-top:0}
+.sum span:first-child{color:var(--faint);font-size:11.5px}
+.sum span:last-child{color:var(--strong)}
+.compose{margin:0 12px 10px;border:1px solid var(--border);border-radius:14px;background:var(--raised);box-shadow:inset 0 1px 3px #53738c12,0 10px 28px #263f551a;padding:8px 8px 8px 12px;display:flex;align-items:center;gap:8px}
+.compose span{flex:1;color:var(--faint);font-size:12.5px}
+.send{width:30px;height:30px;border-radius:9px;background:#dfe8ee;color:var(--run);display:grid;place-items:center}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style></head>
+<body><div class="app">
+  <div class="left">
+    <div class="top">
+      <div class="tr"><b>Rerun after fix</b><span class="env">1234567_SB1</span><span class="m">5 flows · run 2 of 2</span><span style="flex:1"></span><span class="m"><kbd>M</kbd> map <kbd>L</kbd> list</span></div>
+      <div class="prog"><span class="st"><svg class="ic" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg>Run finished</span><div class="bar"></div><span class="num">5/5</span><span class="num">1:09</span></div>
+    </div>
+    <div class="map">
+      <svg class="edges">
+        <path d="M23 225 C 30 225, 30 225, 36 225"/>
+        <path d="M156 225 C 186 225, 186 89, 216 89"/>
+        <path d="M156 225 C 186 225, 186 199, 216 199"/>
+        <path d="M156 225 C 186 225, 186 309, 216 309"/>
+        <path d="M156 225 C 186 225, 186 419, 216 419"/>
+        <path d="M336 199 C 376 199, 376 199, 416 199"/>
+        <path d="M336 309 C 376 309, 376 309, 416 309"/>
+      </svg>
+      <div class="start"></div>
+      <div class="node" style="left:36px;top:172px"><div class="p">/app/center/card.nl</div><div class="shot"><i class="h"></i><i class="g"></i><i></i><i class="s"></i><span class="mark"><svg viewBox="0 0 12 12"><path d="M2.5 6.5l2.2 2.2 4.8-5.2"/></svg></span></div><div class="c">5 tests · 5 touches</div></div>
+      <div class="node fixed" style="left:216px;top:36px"><div class="p">salesord.nl</div><div class="shot"><i class="h"></i><i></i><i class="s"></i><i class="g"></i><i class="t"></i><span class="fixtag">fixed</span><span class="mark"><svg viewBox="0 0 12 12"><path d="M2.5 6.5l2.2 2.2 4.8-5.2"/></svg></span></div><div class="c">failed in run 1 · passed</div></div>
+      <div class="node" style="left:216px;top:146px"><div class="p">vendbill.nl</div><div class="shot"><i class="h"></i><i class="s"></i><i></i><i class="g"></i><i class="t"></i><span class="mark"><svg viewBox="0 0 12 12"><path d="M2.5 6.5l2.2 2.2 4.8-5.2"/></svg></span></div><div class="c">1 test · 4 touches</div></div>
+      <div class="node" style="left:216px;top:256px"><div class="p">custinvc.nl</div><div class="shot"><i class="h"></i><i></i><i class="g"></i><i class="s"></i><span class="mark"><svg viewBox="0 0 12 12"><path d="M2.5 6.5l2.2 2.2 4.8-5.2"/></svg></span></div><div class="c">1 test · 3 touches</div></div>
+      <div class="node" style="left:216px;top:366px"><div class="p">AP Clerk suitelet</div><div class="shot"><i class="h"></i><i class="g"></i><i></i><i class="s"></i><span class="mark"><svg viewBox="0 0 12 12"><path d="M2.5 6.5l2.2 2.2 4.8-5.2"/></svg></span></div><div class="c">11 steps · 1:36</div></div>
+      <div class="node" style="left:416px;top:146px"><div class="p">vendbill.nl</div><div class="shot"><i class="h"></i><i></i><i class="s"></i><i class="g"></i><span class="mark"><svg viewBox="0 0 12 12"><path d="M2.5 6.5l2.2 2.2 4.8-5.2"/></svg></span></div><div class="c">approved · open</div></div>
+      <div class="node" style="left:416px;top:256px"><div class="p">printtransaction.nl</div><div class="shot"><i class="h"></i><i class="t"></i><i></i><i></i><i class="s"></i><span class="mark"><svg viewBox="0 0 12 12"><path d="M2.5 6.5l2.2 2.2 4.8-5.2"/></svg></span></div><div class="c">PDF 1 page</div></div>
+      <div class="toast"><svg class="ic" viewBox="0 0 16 16" style="color:var(--ok)"><path d="M3.5 8.5l3 3 6-7"/></svg><span>5 of 5 passing</span><span class="m">was 4 of 5 before the fix</span></div>
+    </div>
+  </div>
+  <div class="right">
+    <div class="rh"><span class="who"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M10.4 21.9a10 10 0 0 0 9.941-15.416"/><path d="M13.5 2.1a10 10 0 0 0-9.841 15.416"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/></svg></span><b>Nightly flows on SB1</b><span class="m">Claude Code · 4m 12s</span></div>
+    <div class="feed">
+      <div class="you">Run the nightly flows on SB1 and fix what breaks</div>
+      <div class="tool"><svg class="ic tick" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="n">orvane / flow_tests <em>run · 5 flows</em></span><time>1:14</time><span class="sub">4 passed · 1 failed</span></div>
+      <div class="tool"><svg class="ic tick" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="n">orvane / flow_tests <em>failure · SO with IT VAT</em></span><time>0:02</time></div>
+      <div class="fail">
+        <div class="h"><svg class="ic" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg>Create sales order with IT VAT</div>
+        <div class="r"><span>Step 7</span><span>expect Tax code is IT 22% · got empty</span></div>
+        <div class="r"><span>Evidence</span><span><span class="chip"><svg class="ic" viewBox="0 0 16 16" style="width:11px"><rect x="1.5" y="3" width="13" height="10" rx="2"/><path d="M6.5 6v4l3.5-2z"/></svg>frame 0:41</span> <span class="chip">ctk_cs_so_tax.js:84</span></span></div>
+        <div class="r"><span>Cause</span><span>exits early when the customer has no VAT number</span></div>
+      </div>
+      <div class="say">A real bug, not a flaky test. Falling back to the subsidiary's tax code.</div>
+      <div class="tool"><svg class="ic tick" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="n">orvane_netsuite_file_write</span><span class="chip">ctk_cs_so_tax.js <span class="a">+1</span> <span class="d">−1</span></span></div>
+      <div class="tool"><svg class="ic tick" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="n">orvane / flow_tests <em>rerun · 5 flows</em></span><time>1:09</time><span class="sub">5 passed</span></div>
+      <div class="sum">
+        <div><span>Ran</span><span>5 flows on 1234567_SB1</span></div>
+        <div><span>Passed</span><span>5 / 5 (4 / 5 before the fix)</span></div>
+        <div><span>Caught &amp; fixed</span><span>Empty tax code for private customers</span></div>
+        <div><span>Evidence</span><span>Recording and a frame per step</span></div>
+        <div><span>Kept</span><span>Runs nightly at 02:00</span></div>
+      </div>
+    </div>
+    <div class="compose"><span>Ask about a result, a failure, or what to test next</span><button class="send"><svg class="ic" viewBox="0 0 16 16"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg></button></div>
+  </div>
+</div></body></html>

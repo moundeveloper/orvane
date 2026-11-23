@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Flow tests</title>
+<style>
+:root{--canvas:#e9edf0;--app:#f7f9fa;--raised:#fbfcfd;--strong:#273f50;--text:#455968;--muted:#5d7381;--faint:#8296a2;--accent:#6f8998;--run:#365f78;--link:#385d76;--ok:#4f7d5f;--fail:#a0624f;--line:#e3eaee;--border:#dbe5eb;--pop:#d3dee5;--chip:#e6eef3;--select:#e4edf2;--hover:#eef3f6;--mono:"Cascadia Code",Consolas,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font:13px/1.5 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;color:var(--text);background:var(--canvas);display:grid;place-items:center;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ic{width:14px;height:14px}
+kbd{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 4px;border:1px solid #d6e0e6;border-bottom-width:2px;border-radius:4px;background:#fbfcfd;font:10.5px/1 var(--mono);color:var(--muted)}
+.app{width:860px;background:var(--app);border-radius:10px;box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c;overflow:hidden}
+.bar{height:44px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--line)}
+.bar .t{color:var(--strong);font-weight:600}
+.env{font:11.5px var(--mono);color:var(--link);background:var(--chip);height:22px;padding:0 8px;border-radius:6px;display:inline-flex;align-items:center;gap:5px}
+.m{color:var(--faint);font-size:12px}
+.sp{flex:1}
+.btn{height:26px;padding:0 10px;border:1px solid var(--pop);border-radius:7px;background:var(--raised);display:inline-flex;align-items:center;gap:6px;font-size:12px}
+.btn.p{background:var(--run);border-color:var(--run);color:#fff}
+.btn.p kbd{background:transparent;border-color:#ffffff55;color:#ffffffcc;height:16px;min-width:16px}
+.head,.r{display:grid;grid-template-columns:20px 1fr 92px 110px 64px 74px;align-items:center;gap:10px;padding:0 16px}
+.head{height:30px;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#7a8f9b;background:var(--app);border-bottom:1px solid var(--line)}
+.list{padding:4px 8px 8px}
+.r{height:38px;border-radius:6px;padding:0 8px}
+.r:hover{background:var(--hover)}
+.r .n{color:var(--strong);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r .n small{color:var(--faint);font-weight:400;font-size:12px;margin-left:6px}
+.r .c{font:11.5px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.r .w{font-size:12px;color:var(--faint)}
+.hist{display:flex;gap:2px}
+.hist i{width:5px;height:14px;border-radius:2px;background:#9fbfa9}
+.hist i.x{background:#d29c8c}
+.ok{color:var(--ok)}.bad{color:var(--fail)}
+.r.sel{background:#f6ebe7}
+.open{margin:2px 8px 8px 36px;padding:10px 12px;border:1px solid #ead7cf;border-radius:8px;background:#fdf9f7}
+.oh{display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:8px}
+.oh b{color:var(--strong);font-weight:550}
+.oh code{font:11px var(--mono);color:var(--link);background:var(--chip);padding:1px 5px;border-radius:4px}
+.strip{display:flex;gap:6px}
+.fr{width:88px;flex:none;border-radius:6px;overflow:hidden;border:1px solid var(--border);background:#fff;cursor:pointer}
+.fr:hover{border-color:#9fb6c3}
+.fr .img{height:50px;padding:5px 6px;display:grid;gap:3px;align-content:start;background:#fff}
+.fr .img i{display:block;height:4px;border-radius:2px;background:#e2e9ee}
+.fr .img i.h{height:6px;width:55%;background:#cdd8df}
+.fr .img i.s{width:70%}
+.fr .img i.x{background:#e7b8aa;width:40%}
+.fr .cap{height:20px;display:flex;align-items:center;gap:4px;padding:0 6px;font:10px var(--mono);color:var(--muted);border-top:1px solid var(--line)}
+.fr.bad{border:1.5px solid var(--fail);box-shadow:0 0 0 3px #a0624f1a}
+.fr.off{opacity:.45}
+.oa{display:flex;align-items:center;gap:8px;margin-top:10px}
+.foot{height:32px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 16px;color:var(--faint);font-size:11.5px}
+.foot span{display:inline-flex;align-items:center;gap:5px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style></head>
+<body><div class="app">
+  <div class="bar">
+    <svg class="ic" viewBox="0 0 16 16" style="color:var(--accent)"><path d="M3 4h10M3 8h10M3 12h6"/><path d="M11.5 11l1.3 1.3 2.2-2.6"/></svg>
+    <span class="t">Flow tests</span>
+    <span class="env">1234567_SB1</span>
+    <span class="m">5 flows · last run 02:00 nightly · 4 passed, 1 failed</span>
+    <span class="sp"></span>
+    <button class="btn"><svg class="ic" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>Nightly 02:00</button>
+    <button class="btn p"><svg class="ic" viewBox="0 0 16 16" style="width:11px;fill:#fff;stroke:none"><path d="M4 2.5v11l9-5.5z"/></svg>Run all on SB1 <kbd>Ctrl</kbd><kbd>↵</kbd></button>
+  </div>
+  <div class="head"><span></span><span>Flow</span><span>Last 10</span><span>Ran</span><span>Steps</span><span>Time</span></div>
+  <div class="list" role="listbox">
+    <div class="r" role="option"><svg class="ic ok" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="n">Approve bill with ritenuta<small>vendor F0291</small></span><span class="hist"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="w">Today 02:01</span><span class="c">8/8</span><span class="c">0:41</span></div>
+    <div class="r sel" role="option" aria-selected="true"><svg class="ic bad" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg><span class="n">Create sales order with IT VAT<small>customer C1043</small></span><span class="hist"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="x"></i><i class="x"></i></span><span class="w">Today 02:02</span><span class="c">6/9</span><span class="c">0:58</span></div>
+    <div class="open">
+      <div class="oh"><b>Step 7 · expect Tax code is IT 22%</b><span class="m">got empty · since deploy of</span><code>ctk_cs_so_tax.js</code><span class="m">yesterday 17:20</span></div>
+      <div class="strip">
+        <div class="fr"><div class="img"><i class="h"></i><i></i><i class="s"></i></div><div class="cap">1 open</div></div>
+        <div class="fr"><div class="img"><i class="h"></i><i></i><i class="s"></i><i></i></div><div class="cap">2 fill</div></div>
+        <div class="fr"><div class="img"><i class="h"></i><i class="s"></i><i></i></div><div class="cap">3 expect</div></div>
+        <div class="fr"><div class="img"><i class="h"></i><i></i><i></i><i class="s"></i></div><div class="cap">4 click</div></div>
+        <div class="fr"><div class="img"><i class="h"></i><i></i><i class="s"></i><i></i></div><div class="cap">5 fill</div></div>
+        <div class="fr"><div class="img"><i class="h"></i><i></i><i></i><i class="s"></i></div><div class="cap">6 fill</div></div>
+        <div class="fr bad"><div class="img"><i class="h"></i><i></i><i class="s"></i><i class="x"></i></div><div class="cap" style="color:var(--fail)">7 expect</div></div>
+        <div class="fr off"><div class="img"><i class="h"></i><i></i></div><div class="cap">8 click</div></div>
+      </div>
+      <div class="oa"><button class="btn"><svg class="ic" viewBox="0 0 16 16"><rect x="1.5" y="3" width="13" height="10" rx="2"/><path d="M6.5 6v4l3.5-2z"/></svg>Open replay</button><button class="btn"><svg class="ic" viewBox="0 0 16 16"><path d="M2.5 8h11M9 3.5 13.5 8 9 12.5"/></svg>Send to agent</button><button class="btn">Run this flow</button><span class="sp"></span><span class="m">Recording 4.1 MB · kept 30 days</span></div>
+    </div>
+    <div class="r" role="option"><svg class="ic ok" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="n">Print invoice PDF template<small>INV-2026-1187</small></span><span class="hist"><i></i><i></i><i></i><i></i><i class="x"></i><i></i><i></i><i></i><i></i><i></i></span><span class="w">Today 02:03</span><span class="c">5/5</span><span class="c">0:22</span></div>
+    <div class="r" role="option"><svg class="ic ok" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="n">Import FatturaPA XML in AP Clerk<small>IT01234567890_00412.xml</small></span><span class="hist"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="w">Today 02:04</span><span class="c">11/11</span><span class="c">1:36</span></div>
+    <div class="r" role="option"><svg class="ic ok" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="n">Run CTK QR Code suitelet<small>item SEDIA-ERG-01</small></span><span class="hist"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="w">Today 02:05</span><span class="c">4/4</span><span class="c">0:17</span></div>
+  </div>
+  <div class="foot"><span><kbd>↑</kbd><kbd>↓</kbd> flow</span><span><kbd>←</kbd><kbd>→</kbd> frame</span><span><kbd>Space</kbd> replay</span><span><kbd>R</kbd> run</span><span class="sp" style="flex:1"></span><span>Runs locally in a background Browser tab</span></div>
+</div></body></html>
