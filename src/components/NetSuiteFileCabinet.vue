@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onBeforeUnmount, ref, toRaw, watch } from "vue";
 import Icon from "./Icon.vue";
 import FileFolderTree from "./FileFolderTree.vue";
 import NetSuiteFileEditor from "./NetSuiteFileEditor.vue";
+import NetSuiteFileDiff from "./NetSuiteFileDiff.vue";
 import SplitTabs from "./SplitTabs.vue";
 import WindowedTableBody from "./WindowedTableBody.vue";
 import WindowedGrid from "./WindowedGrid.vue";
@@ -18,7 +19,11 @@ import {
 } from "../splitTabs";
 import {
   TRASH_DAYS,
+  VERSION_LIMIT,
   addTrash,
+  addVersion,
+  clearVersions,
+  listVersions,
   drafts,
   findDraft,
   importLegacy,
@@ -27,6 +32,8 @@ import {
   storageError,
   trash,
   updateDraft as storeDraft,
+  type FileVersion,
+  type FolderSnapshot,
   type TrashEntry,
 } from "../netsuiteFiles";
 import type { Block } from "../model";
@@ -64,6 +71,11 @@ type Pane = {
   searchSeq: number;
   dragOver: boolean;
   pdfUrl: string;
+  // History diff or Compare shown in place of the editor.
+  diff?:
+    | { kind: "version"; version: FileVersion }
+    | { kind: "compare"; left: string; right: string }
+    | null;
   restoredFile?: Row;
   initialized?: boolean;
 };
@@ -81,7 +93,10 @@ const props = defineProps<{
   initialFile?: { id: number; name: string };
   storageKey?: string;
 }>();
-const emit = defineEmits<{ "opened-initial": [] }>();
+const emit = defineEmits<{
+  "opened-initial": [];
+  "open-script": [script: { id: number; scriptid: string }];
+}>();
 // Matches Magic NetSuite's FileCabinetPane file type groups.
 const TEXT_TYPES = new Set([
   "JAVASCRIPT",
@@ -175,7 +190,21 @@ const roots = ref<Row[]>([]),
         content: string;
         busy: boolean;
       }
-    | { kind: "delete"; items: Item[]; folderId: number; busy: boolean }
+    | {
+        kind: "delete";
+        items: Item[];
+        folderId: number;
+        busy: boolean;
+        subfolders?: number;
+      }
+    | {
+        kind: "restore";
+        entry: TrashEntry;
+        search: string;
+        rows: Row[];
+        loading: boolean;
+        busy: boolean;
+      }
     | {
         kind: "move";
         items: Item[];
@@ -194,7 +223,6 @@ const roots = ref<Row[]>([]),
       }
     | null
   >(null),
-  uploadInput = ref<HTMLInputElement>(),
   root = ref<HTMLElement>(),
   contextMenu = ref<{ x: number; y: number; actions: MenuAction[] } | null>(
     null,
@@ -207,7 +235,10 @@ const roots = ref<Row[]>([]),
   previews = ref<Record<string, { text?: string; image?: string; error?: boolean }>>(
     {},
   ),
-  toasts = ref<{ id: string; text: string; error?: boolean }[]>([]);
+  toasts = ref<{ id: string; text: string; error?: boolean }[]>([]),
+  // Saved versions per `environment|fileId`, loaded when a file opens.
+  versions = ref<Record<string, FileVersion[]>>({}),
+  historyMenu = ref<{ pane: string; x: number; y: number } | null>(null);
 const NEW_FILE_TYPES = [
   ".js",
   ".ts",
@@ -313,8 +344,20 @@ function folderSize(kb: unknown) {
   if (!n) return "—";
   return n < 1024 ? `${n.toFixed(1)} KB` : `${(n / 1024).toFixed(1)} MB`;
 }
+// NetSuite's special folder types, shown as in Magic NetSuite.
+const FOLDER_TYPES: Record<string, { label: string; icon?: string }> = {
+  SUITESCRIPTS: { label: "SuiteScripts" },
+  SUITEBUNDLES: { label: "SuiteBundles", icon: "box" },
+  SUITEAPPS: { label: "SuiteApps", icon: "layers" },
+  TEMPLATES: { label: "Templates", icon: "library" },
+  IMAGES: { label: "Images", icon: "image" },
+  CERTIFICATES: { label: "Certificates", icon: "certificates" },
+};
+function folderIcon(folder: Row) {
+  return FOLDER_TYPES[String(folder.foldertype || "")]?.icon;
+}
 function itemIcon(item: Row) {
-  if (item.type === "folder") return "folder";
+  if (item.type === "folder") return folderIcon(item) || "folder";
   if (isScript(item) || item.filetype === "JSON") return "code";
   if (item.filetype === "HTMLDOC") return "globe";
   return "file";
@@ -368,6 +411,12 @@ async function saveFile() {
       content,
       original,
     });
+    versions.value[`${environment}|${file.id}`] = await addVersion(
+      environment,
+      Number(file.id),
+      original,
+      content,
+    );
     if (target.preview === file && props.environment === environment) {
       file.content = content;
       file.base64 = encode(content);
@@ -387,7 +436,104 @@ async function saveFile() {
     target.busy = "";
   }
 }
+function versionsOf(p: Pane) {
+  return p.preview
+    ? (versions.value[`${props.environment}|${p.preview.id}`] ?? [])
+    : [];
+}
+async function loadVersions(environment: string, id: number) {
+  versions.value[`${environment}|${id}`] = await listVersions(environment, id);
+}
+function editorText(p: Pane) {
+  return String(draftOf(p)?.content ?? p.preview?.content ?? "");
+}
+function openHistory(event: MouseEvent, p: Pane) {
+  if (historyMenu.value?.pane === p.id) {
+    historyMenu.value = null;
+    return;
+  }
+  const box = root.value,
+    button = event.currentTarget as HTMLElement;
+  if (!box) return;
+  const bounds = box.getBoundingClientRect(),
+    rect = button.getBoundingClientRect(),
+    scale = bounds.width / box.offsetWidth || 1;
+  historyMenu.value = {
+    pane: p.id,
+    x: Math.max(0, Math.min(box.offsetWidth - 330, (rect.right - bounds.left) / scale - 330)),
+    y: (rect.bottom - bounds.top) / scale + 4,
+  };
+}
+function showVersion(p: Pane, version: FileVersion) {
+  historyMenu.value = null;
+  p.diff = { kind: "version", version };
+}
+function restoreVersion(p: Pane) {
+  if (p.diff?.kind !== "version") return;
+  const content = p.diff.version.content;
+  p.editing = true;
+  p.diff = null;
+  updateDraft(content);
+  toast("Version restored to the editor. Save to send it to NetSuite.");
+}
+async function clearHistory(p: Pane) {
+  historyMenu.value = null;
+  const file = p.preview;
+  if (!file) return;
+  await clearVersions(props.environment, Number(file.id));
+  versions.value[`${props.environment}|${file.id}`] = [];
+  if (p.diff?.kind === "version") p.diff = null;
+  toast("History cleared");
+}
+function startCompare(p: Pane) {
+  historyMenu.value = null;
+  if (!p.preview) return;
+  p.diff = p.diff?.kind === "compare"
+    ? null
+    : { kind: "compare", left: String(p.preview.content ?? ""), right: "" };
+}
+async function compareItem(item: Item) {
+  const target = current.value;
+  await openFile(item, target);
+  if (target.preview && !target.preview.binary && !target.error)
+    startCompare(target);
+}
+async function pasteCompare(p: Pane) {
+  if (p.diff?.kind !== "compare") return;
+  try {
+    p.diff.right = await navigator.clipboard.readText();
+  } catch (e) {
+    toast(`Clipboard not available: ${errorText(e)}`, true);
+  }
+}
+function swapCompare(p: Pane) {
+  if (p.diff?.kind === "compare")
+    p.diff = { kind: "compare", left: p.diff.right, right: p.diff.left };
+}
+function closeDiff(p: Pane) {
+  p.diff = null;
+}
+function ago(time: number) {
+  const s = (Date.now() - time) / 1000;
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  const date = new Date(time),
+    clock = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (s < 172800) return `Yesterday ${clock}`;
+  return `${date.toLocaleDateString([], { day: "numeric", month: "short" })} ${clock}`;
+}
 const selectedFolder = computed(() => current.value.path.at(-1));
+// The open folder's row comes from its parent's listing (tree or roots).
+const selectedFolderType = computed(() => {
+  const id = selectedFolder.value?.id;
+  if (id === undefined) return "";
+  const row = [roots.value, ...Object.values(treeChildren.value)]
+    .flat()
+    .find((f) => Number(f.id) === id);
+  const type = String(row?.foldertype || "");
+  return !type ? "" : FOLDER_TYPES[type]?.label || (type === "DEFAULT" ? "Default" : type);
+});
 function isBookmarked(id: unknown, kind: Kind) {
   return currentBookmarks.value.some(
     (b) => b.id === Number(id) && (b.kind || "folder") === kind,
@@ -559,8 +705,10 @@ async function openFile(row: Row, target = current.value) {
       requestEpoch === epoch &&
       environment === props.environment &&
       target.requestSeq === requestSeq
-    )
+    ) {
       setPreview(target, data);
+      if (!data.binary) void loadVersions(environment, Number(row.id));
+    }
   } catch (e) {
     if (requestEpoch === epoch && target.requestSeq === requestSeq)
       target.error = errorText(e);
@@ -578,6 +726,8 @@ function setPreview(p: Pane, file: Row | null) {
   if (p.pdfUrl) URL.revokeObjectURL(p.pdfUrl);
   p.pdfUrl = "";
   p.preview = file;
+  p.diff = null;
+  if (historyMenu.value?.pane === p.id) historyMenu.value = null;
   if (file) p.restoredFile = undefined;
   if (file?.base64 && isPdf(file)) {
     const raw = atob(String(file.base64));
@@ -638,9 +788,22 @@ function removeBookmark(bookmark: Bookmark) {
   bookmarks.value = bookmarks.value.filter((b) => b !== bookmark);
 }
 async function openBookmark(bookmark: Bookmark, target = current.value) {
-  await navigate([...bookmark.path], target);
-  if (bookmark.kind === "file" && !target.error)
+  let path = [...bookmark.path];
+  // Like Magic NetSuite, a file bookmark follows its file to a new folder.
+  if (bookmark.kind === "file")
+    try {
+      const data = await props.request("query", {
+        sql: `SELECT folder FROM file WHERE id = ${Number(bookmark.id)}`,
+      });
+      const folder = Number(data.rows?.[0]?.folder);
+      if (folder && folder !== path.at(-1)?.id) path = [{ id: folder, name: "" }];
+    } catch {}
+  await navigate(path, target);
+  if (bookmark.kind === "file" && !target.error) {
+    if (path !== bookmark.path && target.path.at(-1)?.id === path.at(-1)?.id)
+      bookmark.path = [...target.path];
     await openFile({ id: bookmark.id, name: bookmark.name }, target);
+  }
 }
 function openBookmarkInTab(bookmark: Bookmark) {
   const target = addPane(false);
@@ -655,21 +818,26 @@ async function checkBookmarks() {
     const ids = (kind: Kind) =>
       list.filter((b) => (b.kind || "folder") === kind).map((b) => b.id);
     const sql = (table: string, values: number[]) =>
-      `SELECT id FROM ${table} WHERE id IN (${values.join(",")})`;
+      `SELECT id, name FROM ${table} WHERE id IN (${values.join(",")})`;
     const [files, folders] = await Promise.all(
       (["file", "folder"] as const).map(async (kind) => {
         const values = ids(kind);
-        if (!values.length) return new Set<number>();
+        if (!values.length) return new Map<number, string>();
         const data = await props.request("query", {
           sql: sql(kind === "file" ? "file" : "MediaItemFolder", values),
         });
-        return new Set<number>((data.rows || []).map((r: Row) => Number(r.id)));
+        return new Map<number, string>(
+          (data.rows || []).map((r: Row) => [Number(r.id), String(r.name ?? "")]),
+        );
       }),
     );
     if (environment !== props.environment) return;
     for (const b of list) {
       const found = (b.kind === "file" ? files : folders)!;
       b.missing = !found.has(b.id) && b.id > 0;
+      // Renamed in NetSuite: keep the bookmark's name current.
+      const name = found.get(b.id);
+      if (name && name !== b.name) b.name = name;
     }
   } catch (e) {
     toast(`Bookmark check failed: ${errorText(e)}`, true);
@@ -738,6 +906,12 @@ function itemMenu(event: MouseEvent, item: Item) {
       icon: "code",
       run: () => scriptsUsing(item),
     });
+  if (item.type === "file" && isText(item))
+    actions.push({
+      label: "Compare",
+      icon: "columns",
+      run: () => compareItem(item),
+    });
   if (item.type === "file" && item.url)
     actions.push({
       label: "Copy URL",
@@ -780,7 +954,7 @@ function bodyMenu(event: MouseEvent) {
     actions.push(
       { label: "New Folder", icon: "folder", run: () => openDialog("folder") },
       { label: "New File", icon: "file", run: () => openDialog("file") },
-      { label: "Upload Files", icon: "upload", run: () => uploadInput.value?.click() },
+      { label: "Upload Files", icon: "upload", run: () => pickUpload(current.value) },
       { label: "Copy Folder ID", icon: "copy", run: () => copy(String(folder.id), "ID") },
     );
   actions.push({ label: "Refresh", icon: "refresh", run: () => refresh() });
@@ -980,17 +1154,84 @@ function confirmDelete(list: Item[]) {
     folderId: selectedFolder.value?.id ?? 0,
     busy: false,
   };
+  // Like Magic NetSuite, count what the folders hold before confirming.
+  const ids = list.filter((i) => i.type === "folder").map((i) => Number(i.id));
+  if (ids.length)
+    props
+      .request("query", {
+        sql: `SELECT COUNT(*) AS n FROM MediaItemFolder WHERE parent IN (${ids.join(",")})`,
+      })
+      .then((data) => {
+        const live = dialog.value;
+        if (live?.kind === "delete" && toRaw(live.items) === list)
+          live.subfolders = Number(data.rows?.[0]?.n) || 0;
+      })
+      .catch(() => {});
 }
 const deleteWarning = computed(() => {
   const d = dialog.value;
   if (d?.kind !== "delete") return "";
   const folders = d.items.filter((i) => i.type === "folder");
   if (!folders.length) return "";
-  const files = folders.reduce((n, f) => n + (Number(f.numfolderfiles) || 0), 0);
-  return files
-    ? `${folders.length === 1 ? "This folder contains" : "These folders contain"} ${files} file(s). NetSuite only deletes empty folders.`
-    : "Folders are deleted from NetSuite and cannot be restored from trash.";
+  const files = folders.reduce((n, f) => n + (Number(f.numfolderfiles) || 0), 0),
+    inside = [
+      `${files} file(s)`,
+      d.subfolders !== undefined ? `${d.subfolders} subfolder(s)` : "",
+    ]
+      .filter(Boolean)
+      .join(" and ");
+  return `${folders.length === 1 ? "This folder contains" : "These folders contain"} ${inside}. Everything inside is deleted from NetSuite; folders and text files go to trash.`;
 });
+const TREE_LIMIT = 1000;
+type FolderTree = {
+  snapshot: FolderSnapshot;
+  // Files to delete per folder, then folders deepest first.
+  groups: { folderId: number; fileIds: number[] }[];
+  folderIds: number[];
+  files: number;
+  folders: number;
+};
+// Reads a folder's whole subtree: what trash keeps and what has to be deleted
+// first, since NetSuite only deletes empty folders.
+async function folderTree(id: number, count = { n: 0 }): Promise<FolderTree> {
+  const data = await props.request("folder", { id }),
+    tree: FolderTree = {
+      snapshot: { files: [], folders: [] },
+      groups: [],
+      folderIds: [],
+      files: 0,
+      folders: 0,
+    },
+    files: Row[] = data.files || [];
+  count.n += files.length + (data.folders || []).length;
+  if (count.n > TREE_LIMIT)
+    throw Error(`More than ${TREE_LIMIT} items inside. Delete it in smaller parts.`);
+  for (const file of files) {
+    let content: string | null = null;
+    if (isText(file) && Number(file.filesize) <= TRASH_LIMIT)
+      try {
+        const read = await props.request("file", { id: Number(file.id) });
+        if (!read.binary) content = String(read.content ?? "");
+      } catch {}
+    tree.snapshot.files.push({
+      name: String(file.name),
+      filetype: String(file.filetype || ""),
+      content,
+    });
+  }
+  if (files.length)
+    tree.groups.push({ folderId: id, fileIds: files.map((f) => Number(f.id)) });
+  tree.files += files.length;
+  for (const sub of data.folders || []) {
+    const child = await folderTree(Number(sub.id), count);
+    tree.snapshot.folders.push({ name: String(sub.name), snapshot: child.snapshot });
+    tree.groups.push(...child.groups);
+    tree.folderIds.push(...child.folderIds, Number(sub.id));
+    tree.files += child.files;
+    tree.folders += child.folders + 1;
+  }
+  return tree;
+}
 async function executeDelete() {
   const d = dialog.value;
   if (d?.kind !== "delete" || d.busy) return;
@@ -1000,14 +1241,16 @@ async function executeDelete() {
   d.busy = true;
   target.busy = "Deleting…";
   try {
-    const files = d.items.filter((i) => i.type === "file");
+    const files = d.items.filter((i) => i.type === "file"),
+      folders = d.items.filter((i) => i.type === "folder"),
+      added: { entry: TrashEntry; ids: string[] }[] = [];
     // Snapshot text files first so they can be restored for 15 days.
     for (const file of files) {
       if (!isText(file) || Number(file.filesize) > TRASH_LIMIT) continue;
       try {
         const data = await props.request("file", { id: Number(file.id) });
-        if (!data.binary)
-          addTrash({
+        if (!data.binary) {
+          const entry: TrashEntry = {
             id: uid(),
             environment,
             fileId: Number(file.id),
@@ -1016,28 +1259,72 @@ async function executeDelete() {
             filetype: String(file.filetype || ""),
             content: String(data.content ?? ""),
             deletedAt: Date.now(),
-          });
+          };
+          addTrash(entry);
+          added.push({ entry, ids: [`File ${file.id}`] });
+        }
       } catch {}
+    }
+    // Folders: read the whole subtree, keep it in trash, then empty it.
+    const trees: FolderTree[] = [];
+    for (const item of folders) {
+      target.busy = `Reading ${item.name}…`;
+      const tree = await folderTree(Number(item.id));
+      trees.push(tree);
+      const entry: TrashEntry = {
+        id: uid(),
+        environment,
+        fileId: Number(item.id),
+        name: String(item.name),
+        folder: { id: folder.id, name: folder.name },
+        filetype: "",
+        content: JSON.stringify(tree.snapshot),
+        deletedAt: Date.now(),
+        kind: "folder",
+        files: tree.files,
+        folders: tree.folders,
+      };
+      addTrash(entry);
+      added.push({
+        entry,
+        ids: [
+          `Folder ${item.id}`,
+          ...tree.groups.flatMap((g) => g.fileIds.map((id) => `File ${id}`)),
+          ...tree.folderIds.map((id) => `Folder ${id}`),
+        ],
+      });
+    }
+    target.busy = "Deleting…";
+    const remaining: string[] = [],
+      errors: string[] = [];
+    for (const group of trees.flatMap((t) => t.groups)) {
+      const part = await props.request("delete-items", {
+        folderId: group.folderId,
+        fileIds: group.fileIds,
+        folderIds: [],
+      });
+      remaining.push(...(part.remaining || []));
+      errors.push(...(part.errors || []));
     }
     const result = await props.request("delete-items", {
       folderId: d.folderId,
       fileIds: files.map((f) => Number(f.id)),
-      folderIds: d.items
-        .filter((i) => i.type === "folder")
-        .map((f) => Number(f.id)),
+      folderIds: [
+        ...trees.flatMap((t) => t.folderIds),
+        ...folders.map((f) => Number(f.id)),
+      ],
     });
-    const remaining: string[] = result.remaining || [];
+    remaining.push(...(result.remaining || []));
+    errors.push(...(result.errors || []));
+    // Drop trash entries only when nothing of theirs was deleted.
     removeTrash(
-      trash.value.filter(
-        (t) =>
-          t.environment === environment &&
-          remaining.includes(`File ${t.fileId}`) &&
-          t.deletedAt >= Date.now() - 60000,
-      ),
+      added
+        .filter(({ ids }) => ids.every((id) => remaining.includes(id)))
+        .map(({ entry }) => entry),
     );
     if (remaining.length)
       toast(
-        `${remaining.length} item(s) were not deleted. ${(result.errors || [])[0] || ""}`,
+        `${remaining.length} item(s) were not deleted. ${errors[0] || ""}`,
         true,
       );
     else toast(`Deleted ${d.items.length} item(s)`);
@@ -1093,7 +1380,12 @@ function folderDragOver(event: DragEvent, item: Item) {
   dropFolder.value = item.key;
 }
 // Drops work across split groups: the target folder may be in another pane.
-function dropOnFolder(event: DragEvent, item: Item, p: Pane) {
+function dropOnFolder(
+  event: DragEvent,
+  item: Item,
+  p: Pane,
+  targetPath = [...p.path, { id: Number(item.id), name: String(item.name) }],
+) {
   dropFolder.value = "";
   p.dragOver = false;
   if (item.type !== "folder") return;
@@ -1108,7 +1400,7 @@ function dropOnFolder(event: DragEvent, item: Item, p: Pane) {
     items: moving,
     from: Number(data.from),
     target: { id: Number(item.id), name: String(item.name) },
-    targetPath: [...p.path, { id: Number(item.id), name: String(item.name) }],
+    targetPath,
     pane: p.id,
     busy: false,
   };
@@ -1144,16 +1436,38 @@ async function executeMove() {
   }
 }
 function areaDragOver(event: DragEvent, p: Pane) {
+  // Items dragged onto a pane's empty area move into its open folder.
+  if (isCabinetDrag(event)) {
+    if (!p.path.length) return;
+    event.preventDefault();
+    dropFolder.value = `pane:${p.id}`;
+    return;
+  }
   if (!event.dataTransfer?.types.includes("Files")) return;
   event.preventDefault();
   p.dragOver = true;
 }
 function areaDragLeave(event: DragEvent, p: Pane) {
-  if (!(event.currentTarget as Element).contains(event.relatedTarget as Node))
+  if (!(event.currentTarget as Element).contains(event.relatedTarget as Node)) {
     p.dragOver = false;
+    if (dropFolder.value === `pane:${p.id}`) dropFolder.value = "";
+  }
 }
 function areaDrop(event: DragEvent, p: Pane) {
   p.dragOver = false;
+  if (isCabinetDrag(event)) {
+    dropFolder.value = "";
+    const folder = p.path.at(-1);
+    if (!folder) return;
+    event.preventDefault();
+    dropOnFolder(
+      event,
+      { ...folder, type: "folder", key: `folder:${folder.id}` },
+      p,
+      p.path,
+    );
+    return;
+  }
   if (!event.dataTransfer?.types.includes("Files")) return;
   event.preventDefault();
   void dropFiles(event, p.path.at(-1)?.id, p);
@@ -1201,12 +1515,19 @@ async function uploadFiles(files: File[], folderId: number, p: Pane) {
     toast(`${errors.length} upload(s) failed`, true);
   } else toast(`Uploaded ${files.length} file(s)`);
 }
-function uploadPicked(event: Event) {
+// Each pane renders its own hidden file input; a template ref inside the
+// pane loop is an array, so the input is found by its pane instead.
+function pickUpload(p: Pane) {
+  root.value
+    ?.querySelector<HTMLInputElement>(`[data-pane="${p.id}"] input[type="file"]`)
+    ?.click();
+}
+function uploadPicked(event: Event, p: Pane) {
   const input = event.target as HTMLInputElement,
     files = Array.from(input.files || []),
-    folder = selectedFolder.value;
+    folder = p.path.at(-1);
   input.value = "";
-  if (files.length && folder) void uploadFiles(files, folder.id, current.value);
+  if (files.length && folder) void uploadFiles(files, folder.id, p);
 }
 function openDialog(kind: "folder" | "file") {
   if (!selectedFolder.value) return;
@@ -1283,15 +1604,17 @@ async function scriptsUsing(file: Item) {
     error: "",
   };
   dialog.value = d;
+  // Update the reactive copy: changes to the plain object would not render.
+  const live = dialog.value as typeof d;
   try {
     const data = await props.request("query", {
       sql: `SELECT id, scriptid, name, scripttype FROM script WHERE scriptfile = ${Number(file.id)} ORDER BY name`,
     });
-    if (dialog.value === d) d.rows = data.rows || [];
+    if (dialog.value === live) live.rows = data.rows || [];
   } catch (e) {
-    d.error = errorText(e);
+    live.error = errorText(e);
   } finally {
-    d.loading = false;
+    live.loading = false;
   }
 }
 function addPane(focus = true, group?: SplitSide | null, after?: string) {
@@ -1579,16 +1902,95 @@ function downloadItem(row: Row) {
     .catch((e) => toast(`Download failed: ${errorText(e)}`, true));
 }
 async function restoreTrash(entry: TrashEntry) {
+  // Restore into the original folder while it exists, else ask where.
+  let exists = false;
+  if (entry.folder.id > 0)
+    try {
+      const data = await props.request("query", {
+        sql: `SELECT id FROM MediaItemFolder WHERE id = ${Number(entry.folder.id)}`,
+      });
+      exists = !!data.rows?.length;
+    } catch {}
+  if (exists) return doRestore(entry, entry.folder);
+  dialog.value = {
+    kind: "restore",
+    entry,
+    search: "",
+    rows: roots.value,
+    loading: false,
+    busy: false,
+  };
+}
+let restoreSearchSeq = 0;
+async function searchRestoreFolders() {
+  const d = dialog.value;
+  if (d?.kind !== "restore") return;
+  const term = d.search.trim(),
+    seq = ++restoreSearchSeq;
+  if (!term) {
+    d.rows = roots.value;
+    d.loading = false;
+    return;
+  }
+  d.loading = true;
   try {
-    await props.request("upload-file", {
-      folderId: entry.folder.id,
-      name: entry.name,
-      base64: encode(entry.content),
-    });
-    removeTrash([entry]);
-    refreshFolder(entry.folder.id);
-    toast(`Restored ${entry.name} to ${entry.folder.name}`);
+    const data = await props.request("search-files", { search: term });
+    if (seq === restoreSearchSeq) d.rows = (data.folders || []).slice(0, 30);
   } catch (e) {
+    if (seq === restoreSearchSeq) toast(errorText(e), true);
+  } finally {
+    if (seq === restoreSearchSeq) d.loading = false;
+  }
+}
+async function restoreFolder(snapshot: FolderSnapshot, folderId: number) {
+  let skipped = 0;
+  for (const file of snapshot.files) {
+    if (file.content === null) {
+      skipped++;
+      continue;
+    }
+    await props.request("upload-file", {
+      folderId,
+      name: file.name,
+      base64: encode(file.content),
+    });
+  }
+  for (const sub of snapshot.folders) {
+    const created = await props.request("create-folder", {
+      folderId,
+      name: sub.name,
+    });
+    skipped += await restoreFolder(sub.snapshot, Number(created.id));
+  }
+  return skipped;
+}
+async function doRestore(entry: TrashEntry, into: Crumb) {
+  const d = dialog.value;
+  if (d?.kind === "restore") d.busy = true;
+  try {
+    let note = "";
+    if (entry.kind === "folder") {
+      const created = await props.request("create-folder", {
+        folderId: into.id,
+        name: entry.name,
+      });
+      const skipped = await restoreFolder(
+        JSON.parse(entry.content) as FolderSnapshot,
+        Number(created.id),
+      );
+      if (skipped) note = ` (${skipped} binary file(s) could not be restored)`;
+    } else
+      await props.request("upload-file", {
+        folderId: into.id,
+        name: entry.name,
+        base64: encode(entry.content),
+      });
+    removeTrash([entry]);
+    if (dialog.value?.kind === "restore") dialog.value = null;
+    refreshFolder(into.id);
+    toast(`Restored ${entry.name} to ${into.name}${note}`);
+  } catch (e) {
+    if (d?.kind === "restore") d.busy = false;
     toast(`Restore failed: ${errorText(e)}`, true);
   }
 }
@@ -1604,10 +2006,21 @@ function daysLeft(entry: TrashEntry) {
 function closeContext(event: PointerEvent) {
   if (!(event.target as Element)?.closest(".fc-context-menu"))
     contextMenu.value = null;
+  if (!(event.target as Element)?.closest(".fc-history-menu, .fc-history-button"))
+    historyMenu.value = null;
+}
+// A press inside an embedded page never reaches this document; the window
+// losing focus to it closes the history menu instead.
+function closeHistory() {
+  historyMenu.value = null;
+}
+function clearDropTarget() {
+  dropFolder.value = "";
 }
 function globalKeys(event: KeyboardEvent) {
   if (event.key === "Escape") {
     if (contextMenu.value) contextMenu.value = null;
+    else if (historyMenu.value) historyMenu.value = null;
     else if (dialog.value && !("busy" in dialog.value && dialog.value.busy))
       dialog.value = null;
   }
@@ -1641,6 +2054,8 @@ onMounted(() => {
   })();
   document.addEventListener("pointerdown", closeContext, true);
   document.addEventListener("keydown", globalKeys);
+  window.addEventListener("blur", closeHistory);
+  document.addEventListener("dragend", clearDropTarget);
 });
 onBeforeUnmount(() => {
   epoch++;
@@ -1648,6 +2063,8 @@ onBeforeUnmount(() => {
   for (const p of panes.value) if (p.pdfUrl) URL.revokeObjectURL(p.pdfUrl);
   document.removeEventListener("pointerdown", closeContext, true);
   document.removeEventListener("keydown", globalKeys);
+  window.removeEventListener("blur", closeHistory);
+  document.removeEventListener("dragend", clearDropTarget);
 });
 </script>
 <template>
@@ -1698,6 +2115,10 @@ onBeforeUnmount(() => {
           <dd>{{ selectedFolder.name }}</dd>
           <dt>ID</dt>
           <dd>{{ selectedFolder.id }}</dd>
+          <template v-if="selectedFolderType">
+            <dt>Type</dt>
+            <dd>{{ selectedFolderType }}</dd>
+          </template>
           <dt>Contents</dt>
           <dd>{{ current.folders.length }} folders · {{ current.files.length }} files</dd>
           <dt>Size</dt>
@@ -1727,6 +2148,7 @@ onBeforeUnmount(() => {
         :selected="selectedFolder?.id"
         :filter="treeFilter"
         :loading="treeLoading"
+        :icon-of="folderIcon"
         @toggle="toggleTree"
         @navigate="navigate"
       />
@@ -1827,7 +2249,7 @@ onBeforeUnmount(() => {
         <template v-if="p.preview"
           ><button @click="downloadItem(p.preview)">
             <Icon name="download" :size="14" /> Download</button
-          ><button @click="p.preview = null">
+          ><button @click="setPreview(p, null)">
             <Icon name="back" :size="14" /> Back
           </button></template
         ><template v-else
@@ -1873,15 +2295,14 @@ onBeforeUnmount(() => {
             aria-label="Upload"
             title="Upload files"
             :disabled="!!upload"
-            @click="uploadInput?.click()"
+            @click="pickUpload(p)"
           >
             <Icon name="upload" :size="14" /></button
           ><input
-            ref="uploadInput"
             type="file"
             multiple
             hidden
-            @change="uploadPicked"
+            @change="uploadPicked($event, p)"
           />
           <div class="fc-seg">
             <button
@@ -1982,7 +2403,7 @@ onBeforeUnmount(() => {
           <div class="fc-trash-head">
             <strong>Trash</strong>
             <span class="fc-hint"
-              >Text files are kept for {{ TRASH_DAYS }} days.</span
+              >Folders and text files are kept for {{ TRASH_DAYS }} days.</span
             >
             <div class="fc-spacer" />
             <button
@@ -1998,10 +2419,13 @@ onBeforeUnmount(() => {
           </div>
           <p v-if="!currentTrash.length" class="fc-hint">Trash is empty.</p>
           <div v-for="entry in currentTrash" :key="entry.id" class="fc-trash-row">
-            <Icon name="file" :size="14" />
+            <Icon :name="entry.kind === 'folder' ? 'folder' : 'file'" :size="14" />
             <span>{{ entry.name }}</span>
             <small
               >{{ entry.folder.name }} ·
+              <template v-if="entry.kind === 'folder'"
+                >{{ entry.files }} file(s), {{ entry.folders }} subfolder(s) inside ·
+              </template>
               {{ new Date(entry.deletedAt).toLocaleString() }} ·
               {{ daysLeft(entry) }} days left</small
             >
@@ -2038,6 +2462,40 @@ onBeforeUnmount(() => {
             <p>Unable to display this file type.</p>
             <button @click="downloadItem(p.preview)">Download</button>
           </div>
+          <div v-else-if="p.diff" class="fc-preview">
+            <div class="fc-edit-bar" role="toolbar" aria-label="Diff">
+              <template v-if="p.diff.kind === 'version'">
+                <span class="fc-diff-tag">Version · {{ ago(p.diff.version.savedAt) }}</span>
+                <span class="fc-hint">left: saved version · right: editor</span>
+                <div class="fc-spacer" />
+                <button @click="restoreVersion(p)">Restore this version</button>
+                <button @click="closeDiff(p)">Close diff<kbd class="fc-kbd">Esc</kbd></button>
+              </template>
+              <template v-else>
+                <span class="fc-diff-tag">Compare</span>
+                <span class="fc-hint">left: saved in NetSuite · right: pasted text</span>
+                <div class="fc-spacer" />
+                <button @click="pasteCompare(p)">Paste clipboard</button>
+                <button @click="swapCompare(p)">Swap</button>
+                <button @click="closeDiff(p)">Close<kbd class="fc-kbd">Esc</kbd></button>
+              </template>
+            </div>
+            <NetSuiteFileDiff
+              v-if="p.diff.kind === 'version'"
+              :left="p.diff.version.content"
+              :right="editorText(p)"
+              :name="String(p.preview.name || '')"
+              @close="closeDiff(p)"
+            />
+            <NetSuiteFileDiff
+              v-else
+              v-model:right="p.diff.right"
+              :left="p.diff.left"
+              :name="String(p.preview.name || '')"
+              editable
+              @close="closeDiff(p)"
+            />
+          </div>
           <div v-else class="fc-preview">
             <div class="fc-edit-bar">
               <label class="fc-switch">
@@ -2052,6 +2510,21 @@ onBeforeUnmount(() => {
                 }}</span
               >
               <div class="fc-spacer" />
+              <button
+                v-if="p.editing"
+                class="fc-history-button"
+                :aria-expanded="historyMenu?.pane === p.id"
+                aria-haspopup="listbox"
+                title="Versions kept before each save"
+                @click="openHistory($event, p)"
+              >
+                <Icon name="clock" :size="13" />History<span class="fc-count">{{
+                  versionsOf(p).length
+                }}</span>
+              </button>
+              <button @click="startCompare(p)">
+                <Icon name="columns" :size="13" />Compare
+              </button>
               <template v-if="p.editing">
                 <button
                   v-if="dirtyOf(p)"
@@ -2086,7 +2559,7 @@ onBeforeUnmount(() => {
           <div
             
             class="fc-content"
-            :class="{ grid: view === 'grid', 'drag-over': p.dragOver }"
+            :class="{ grid: view === 'grid', 'drag-over': p.dragOver || dropFolder === `pane:${p.id}` }"
             tabindex="0"
             @keydown="listKeys"
             @contextmenu.prevent="bodyMenu"
@@ -2416,6 +2889,53 @@ onBeforeUnmount(() => {
     </div></template></template></template>
     </SplitTabs>
     <div
+      v-if="historyMenu"
+      class="fc-history-menu"
+      role="listbox"
+      aria-label="Saved versions"
+      :style="{ left: historyMenu.x + 'px', top: historyMenu.y + 'px' }"
+    >
+      <template v-for="hp in [paneOf(historyMenu.pane)]" :key="hp.id">
+        <div class="fc-history-section">Before each save · this computer</div>
+        <button
+          v-for="version in versionsOf(hp)"
+          :key="version.id"
+          type="button"
+          role="option"
+          :aria-selected="hp.diff?.kind === 'version' && hp.diff.version.id === version.id"
+          @click="showVersion(hp, version)"
+        >
+          <span class="fc-history-dot" /><span class="fc-history-time">{{
+            ago(version.savedAt)
+          }}</span
+          ><span class="fc-history-delta"
+            ><span class="add">+{{ version.added }}</span>
+            <span class="del">−{{ version.removed }}</span></span
+          ><span class="fc-history-lines">{{ version.lines }} lines</span>
+        </button>
+        <p v-if="!versionsOf(hp).length" class="fc-hint fc-history-empty">
+          No versions yet. Each save keeps the content it replaces.
+        </p>
+        <div class="fc-history-foot">
+          <span
+            >{{ versionsOf(hp).length }} of {{ VERSION_LIMIT }} kept<template
+              v-if="versionsOf(hp).length >= VERSION_LIMIT"
+            >
+              · oldest drops next</template
+            ></span
+          >
+          <button
+            v-if="versionsOf(hp).length"
+            type="button"
+            class="fc-history-clear"
+            @click="clearHistory(hp)"
+          >
+            Clear history
+          </button>
+        </div>
+      </template>
+    </div>
+    <div
       v-if="contextMenu"
       class="fc-context-menu"
       role="menu"
@@ -2534,8 +3054,8 @@ onBeforeUnmount(() => {
           </ul>
         </template>
         <p class="fc-hint">
-          Text file content is saved to trash for {{ TRASH_DAYS }} days. Binary
-          files cannot be restored.
+          Folders and text file content are saved to trash for
+          {{ TRASH_DAYS }} days. Binary files cannot be restored.
         </p>
         <p v-if="deleteWarning" class="fc-warning">{{ deleteWarning }}</p>
         <div class="fc-dialog-actions">
@@ -2586,6 +3106,49 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div
+        v-else-if="dialog.kind === 'restore'"
+        class="fc-dialog"
+        role="dialog"
+        aria-label="Restore to folder"
+      >
+        <h3><Icon name="folder" :size="15" /> Restore to folder</h3>
+        <p>
+          The original folder of <strong>{{ dialog.entry.name }}</strong> no
+          longer exists. Choose where to restore it.
+        </p>
+        <input
+          v-model="dialog.search"
+          class="fc-restore-search"
+          aria-label="Search folders"
+          placeholder="Search folders…"
+          :disabled="dialog.busy"
+          @input="searchRestoreFolders"
+        />
+        <div class="fc-restore-list" role="listbox" aria-label="Folders">
+          <p v-if="dialog.loading" class="fc-hint">
+            <span class="fc-spinner" />Searching…
+          </p>
+          <p v-else-if="!dialog.rows.length" class="fc-hint">No folders found.</p>
+          <template v-else>
+            <button
+              v-for="row in dialog.rows"
+              :key="row.id"
+              type="button"
+              role="option"
+              :disabled="dialog.busy"
+              @click="doRestore(dialog.entry, { id: Number(row.id), name: String(row.name) })"
+            >
+              <Icon name="folder" :size="13" />
+              <span>{{ row.name }}</span>
+              <small>#{{ row.id }}</small>
+            </button>
+          </template>
+        </div>
+        <div class="fc-dialog-actions">
+          <button :disabled="dialog.busy" @click="dialog = null">Cancel</button>
+        </div>
+      </div>
+      <div
         v-else-if="dialog.kind === 'scripts'"
         class="fc-dialog"
         role="dialog"
@@ -2609,8 +3172,19 @@ onBeforeUnmount(() => {
             <small>{{ s.scriptid }} · {{ s.scripttype || "Script" }}</small>
           </div>
           <button
+            :aria-label="`Open ${s.name} in Scripts`"
+            title="Open in Scripts"
+            @click="
+              dialog = null;
+              emit('open-script', { id: Number(s.id), scriptid: String(s.scriptid || '') });
+            "
+          >
+            <Icon name="code" :size="13" />
+          </button>
+          <button
             v-if="openRecord"
             :aria-label="`Open ${s.name} in NetSuite`"
+            title="Open in NetSuite"
             @click="openRecord('script', s.id)"
           >
             <Icon name="external" :size="13" />
@@ -3568,5 +4142,160 @@ onBeforeUnmount(() => {
   .fc-detail {
     display: none;
   }
+}
+.fc-diff-tag {
+  font-size: 12px;
+  font-weight: 550;
+  color: #273f50;
+}
+.fc-edit-bar .fc-kbd {
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid #d6e0e6;
+  border-radius: 3px;
+  background: #eef3f6;
+  color: #5d7381;
+  font: 10px Consolas, monospace;
+}
+.fc-edit-bar .fc-history-button[aria-expanded="true"] {
+  background: #e4edf2;
+  border-color: #b9cad4;
+}
+.fc-count {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #e6eef3;
+  color: #385d76;
+  font: 600 10.5px/16px Consolas, monospace;
+  text-align: center;
+}
+.fc-history-menu {
+  position: absolute;
+  z-index: 30;
+  width: 330px;
+  padding-top: 2px;
+  border: 1px solid #d3dee5;
+  border-radius: 10px;
+  background: #fbfcfd;
+  box-shadow: 0 1px 2px #263f5514, 0 12px 30px #263f5526;
+  overflow: hidden;
+}
+.fc-history-section {
+  padding: 8px 10px 4px;
+  color: #7a8f9b;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.fc-history-menu button[role="option"] {
+  display: grid;
+  grid-template-columns: 16px 1fr auto auto;
+  gap: 9px;
+  align-items: center;
+  width: calc(100% - 8px);
+  height: 32px;
+  margin: 0 4px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: #455968;
+  font-size: 12.5px;
+  text-align: left;
+}
+.fc-history-menu button[role="option"]:hover {
+  background: #eef3f6;
+}
+.fc-history-menu button[aria-selected="true"] {
+  background: #e4edf2;
+}
+.fc-history-dot {
+  justify-self: center;
+  width: 5px;
+  height: 5px;
+  border: 1.6px solid #6f8998;
+  border-radius: 50%;
+}
+.fc-history-time {
+  color: #273f50;
+  font-weight: 500;
+}
+.fc-history-delta,
+.fc-history-lines {
+  color: #8296a2;
+  font: 11px Consolas, monospace;
+}
+.fc-history-delta .add {
+  color: #3f6b4f;
+}
+.fc-history-delta .del {
+  color: #7b3b2d;
+}
+.fc-history-empty {
+  margin: 0;
+  padding: 4px 12px 8px;
+}
+.fc-history-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  margin-top: 4px;
+  padding: 0 10px;
+  border-top: 1px solid #e3eaee;
+  color: #8296a2;
+  font-size: 11.5px;
+}
+.fc-history-clear {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: #7b3b2d;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.fc-restore-search {
+  width: 100%;
+  margin: 2px 0 6px;
+  padding: 6px 9px;
+  border: 1px solid #d6e2e9;
+  border-radius: 4px;
+  background: #fbfcfd;
+  color: #273f50;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.fc-restore-search:focus {
+  border-color: #7b97a7;
+}
+.fc-restore-list {
+  max-height: 220px;
+  overflow: auto;
+}
+.fc-dialog .fc-restore-list button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: #455968;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.fc-dialog .fc-restore-list button:hover {
+  background: #eef3f6;
+}
+.fc-restore-list small {
+  margin-left: auto;
+  color: #8296a2;
+  font-family: Consolas, monospace;
 }
 </style>

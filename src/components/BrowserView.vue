@@ -167,6 +167,8 @@ interface WebviewElement extends HTMLElement {
   getWebContentsId(): number;
   setAudioMuted(muted: boolean): void;
   executeJavaScript(code: string, userGesture?: boolean): Promise<unknown>;
+  findInPage(text: string, options?: { forward?: boolean; findNext?: boolean }): number;
+  stopFindInPage(action: "clearSelection" | "keepSelection" | "activateSelection"): void;
 }
 interface ProcessingTab { id: string; label: string; status: string; autoRefresh: boolean; busy?: boolean; temporary?: boolean; }
 interface BrowserNetSuiteEnvironment { origin: string; label: string }
@@ -219,6 +221,21 @@ interface OrvaneDesktop {
   ): () => void;
   passwords?: PasswordsApi;
   setTabLogin?(id: number, rootUrl: string, loginId: string): Promise<void>;
+  pageDialogs?: {
+    claim(id: string): Promise<boolean>;
+    answer(id: string, ok: boolean, value?: string): Promise<boolean>;
+    onOpen(callback: (request: PageDialog) => void): () => void;
+    onDone(callback: (id: string) => void): () => void;
+  };
+}
+/** A page's alert(), confirm() or prompt(), waiting for the user. */
+interface PageDialog {
+  id: string;
+  from: number;
+  kind: "alert" | "confirm" | "prompt";
+  origin: string;
+  message: string;
+  value: string;
 }
 
 // Inside the Orvane desktop app pages load in <webview>, which sites can't
@@ -698,34 +715,12 @@ function closeTab(id: string) {
   if (space !== state.value.space) return save();
   selectAfterRemoval(fallback!.id);
 }
-// Closing a tab by hand (close button, middle click, Ctrl+W) slides it out
-// to the side first; then it leaves the list and the tabs after it move up
-// into the gap (browser-reorder-move). The list's layout is never touched.
-let pendingClose: { id: string; animation: Animation } | undefined;
-function flushPendingClose() {
-  const pending = pendingClose;
-  if (!pending) return;
-  pendingClose = undefined;
-  closeTab(pending.id);
-}
+// Closing a tab by hand (close button, middle click, Ctrl+W) is instant: the
+// tab and its page go at once and the tabs after it move up into the gap
+// (browser-reorder-move). No slide-out first: the owner found it too slow.
 function closeTabSliding(id: string) {
-  flushPendingClose();
-  if (state.value.tabs.find((tab) => tab.id === id)?.rootUrl) return closeTab(id);
-  const row = root.value?.querySelector<HTMLElement>(`.browser-tab[data-drag-tab="${CSS.escape(id)}"]`);
-  if (!row?.offsetParent || matchMedia("(prefers-reduced-motion: reduce)").matches) return closeTab(id);
-  const across = root.value!.classList.contains("layout-comfortable");
-  row.dataset.closing = "";
-  const animation = row.animate(
-    [
-      { transform: "translate(0, 0)", opacity: 1 },
-      { transform: across ? "translateY(-100%)" : "translateX(-100%)", opacity: 0 },
-    ],
-    { duration: 170, easing: "cubic-bezier(0.4, 0, 1, 1)", fill: "forwards" },
-  );
-  pendingClose = { id, animation };
-  animation.onfinish = () => pendingClose?.animation === animation && flushPendingClose();
+  closeTab(id);
 }
-onBeforeUnmount(flushPendingClose);
 function label(tab: BrowserTab) {
   if (tab.title) return tab.title;
   if (!tab.url) return "New tab";
@@ -743,6 +738,17 @@ function bindWebview(tab: BrowserTab, element: unknown) {
   const view = element as WebviewElement;
   if (webviews.get(tab.id) === view) return;
   webviews.set(tab.id, view);
+  view.addEventListener("found-in-page", (event) => {
+    const result = (event as Event & { result?: { activeMatchOrdinal?: number; matches?: number } }).result;
+    const find = finds[tab.id];
+    if (!find || !result || webviews.get(tab.id) !== view) return;
+    if (typeof result.matches === "number") find.matches = result.matches;
+    if (typeof result.activeMatchOrdinal === "number") find.current = result.activeMatchOrdinal;
+  });
+  view.addEventListener("did-navigate", () => {
+    const find = finds[tab.id];
+    if (find) find.current = find.matches = 0;
+  });
   const startup = started[tab.id];
   const configureStartupLogin = !loginStartupTabs.has(tab.id) && startup === tab.rootUrl && !!tab.loginId;
   if (configureStartupLogin) loginStartupTabs.add(tab.id);
@@ -914,6 +920,105 @@ onBeforeUnmount(() => {
   stopPrompt?.();
   stopAutoLogin?.();
 });
+// ---- Find in page (Ctrl+F): a floating bar over the tab's page ----
+const finds = reactive<Record<string, { open: boolean; text: string; current: number; matches: number }>>({});
+const findInput = ref<HTMLInputElement>();
+const activeFind = computed(() => {
+  const find = finds[state.value.active];
+  return find?.open && webviews.has(state.value.active) ? find : undefined;
+});
+function openFind() {
+  const id = state.value.active;
+  if (!webviews.has(id)) return;
+  const find = (finds[id] ??= { open: false, text: "", current: 0, matches: 0 });
+  find.open = true;
+  void nextTick(() => {
+    findInput.value?.focus();
+    findInput.value?.select();
+  });
+}
+function runFind(forward = true, next = false) {
+  const id = state.value.active;
+  const find = finds[id];
+  const view = webviews.get(id);
+  if (!find || !view) return;
+  try {
+    if (!find.text) {
+      view.stopFindInPage("clearSelection");
+      find.current = find.matches = 0;
+    } else view.findInPage(find.text, { forward, findNext: next });
+  } catch {
+    // The page is not attached yet.
+  }
+}
+function findKey(event: KeyboardEvent) {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+    event.preventDefault();
+    findInput.value?.select();
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    runFind(!event.shiftKey, true);
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    closeFind();
+  }
+}
+function closeFind() {
+  const id = state.value.active;
+  const find = finds[id];
+  if (!find) return;
+  find.open = false;
+  try {
+    webviews.get(id)?.stopFindInPage("keepSelection");
+  } catch {
+    // Already gone.
+  }
+  webviews.get(id)?.focus();
+}
+// ---- Page popups (alert/confirm/prompt) as an Orvane card on their tab ----
+const pageDialogs = reactive<Record<string, PageDialog & { input: string }>>({});
+const pageDialogBox = new Map<string, HTMLElement>();
+let stopPageDialog: (() => void) | undefined, stopPageDialogDone: (() => void) | undefined;
+function focusPageDialog(tabId: string) {
+  void nextTick(() => {
+    const box = pageDialogBox.get(tabId);
+    (box?.querySelector<HTMLElement>("input") ?? box?.querySelector<HTMLElement>(".primary"))?.focus();
+    box?.querySelector<HTMLInputElement>("input")?.select();
+  });
+}
+onMounted(() => {
+  const api = desktop?.pageDialogs;
+  if (!api) return;
+  stopPageDialog = api.onOpen((request) => {
+    const view = webviewFor(request.from);
+    const tab = view && state.value.tabs.find((t) => webviews.get(t.id) === view);
+    if (!tab) return;
+    void api.claim(request.id).then((mine) => {
+      if (!mine) return;
+      pageDialogs[tab.id] = { ...request, input: request.value };
+      if (isShown(tab.id)) focusPageDialog(tab.id);
+    });
+  });
+  stopPageDialogDone = api.onDone((id) => {
+    for (const [tabId, dialog] of Object.entries(pageDialogs))
+      if (dialog.id === id) delete pageDialogs[tabId];
+  });
+});
+onBeforeUnmount(() => {
+  stopPageDialog?.();
+  stopPageDialogDone?.();
+});
+watch(() => state.value.active, (id) => {
+  if (id && pageDialogs[id]) focusPageDialog(id);
+});
+function answerPageDialog(tabId: string, ok: boolean) {
+  const dialog = pageDialogs[tabId];
+  if (!dialog) return;
+  delete pageDialogs[tabId];
+  void desktop?.pageDialogs?.answer(dialog.id, ok, dialog.kind === "prompt" ? dialog.input : undefined);
+  webviews.get(tabId)?.focus();
+}
 // The page's selection, text and picture for Agent sessions.
 let stopAppText: (() => void) | undefined;
 const activeView = () => webviews.get(state.value.active);
@@ -945,6 +1050,13 @@ const stopCommands = registerCommands(`browser:${props.block.id}`, () => [
   { id: `browser-memory:${props.block.id}`, title: "Browser memory (AI routes, notes, flows)", icon: "keyboard", blockId: props.block.id, keywords: "site memory ai", run: () => openDrawer("memory") },
   ...(useWebview && activeTab.value.url
     ? [{
+        id: `browser-find:${props.block.id}`,
+        title: "Find in page",
+        icon: "search",
+        blockId: props.block.id,
+        keywords: "search text ctrl+f",
+        run: () => openFind(),
+      }, {
         id: `browser-ai:${props.block.id}`,
         title: aiAccess[activeTab.value.id] ? "Stop AI access to this tab" : "Let AI use this tab",
         icon: "keyboard",
@@ -1106,7 +1218,47 @@ onMounted(() => {
         url: tab.url,
         active: tab.id === state.value.active,
         ...(aiAccess[tab.id] ? { access: aiAccess[tab.id] } : {}),
+        ...(tab.group ? { group: state.value.groups.find((g) => g.id === tab.group)?.name } : {}),
       })),
+    groups: () =>
+      state.value.groups
+        .filter((group) => group.space === state.value.space)
+        .map((group) => ({
+          name: group.name,
+          tabIds: state.value.tabs.filter((tab) => tab.group === group.id).map((tab) => tab.id),
+        })),
+    group(tabIds, name) {
+      const ids = tabIds.filter((id) => state.value.tabs.some((tab) => tab.id === id));
+      if (ids.length !== tabIds.length) throw Error("No such tab.");
+      // Like groupTabs, but the user's own tab selection is left alone.
+      const move = (group: TabGroup | null) => {
+        for (const tab of state.value.tabs) {
+          if (!ids.includes(tab.id)) continue;
+          if (!group) delete tab.group;
+          else {
+            if (tab.pinned) togglePin(tab);
+            tab.group = group.id;
+            group.collapsed = false;
+          }
+        }
+        save();
+      };
+      if (name === null) {
+        move(null);
+        return null;
+      }
+      const clean = name.slice(0, 60);
+      let group = state.value.groups.find(
+        (g) => g.space === state.value.space && g.name.toLowerCase() === clean.toLowerCase(),
+      );
+      if (!group) {
+        group = { id: uid(), name: clean, space: state.value.space,
+          color: COLORS[state.value.groups.length % COLORS.length]! };
+        state.value.groups.push(group);
+      }
+      move(group);
+      return group.name;
+    },
     open(url) {
       const safe = url ? safeUrl(url) : START;
       if (url && !safe) throw Error("Only http, https and file addresses open in the Browser.");
@@ -3407,14 +3559,11 @@ function shortcut(name: string) {
     return void window.dispatchEvent(new CustomEvent("orvane:palette", { detail: name === "palette" ? "" : name === "commands" ? ">" : "agent" }));
   if (name === "google-sign-in") say("Continue sign-in on the site in your system browser.");
   else if (name === "address") focusAddress();
+  else if (name === "find") openFind();
   else if (name === "new-tab") addTab();
   else if (name === "close-tab") {
     if (peek.value) closePeek();
-    else {
-      // A second Ctrl+W while the first tab is still sliding closes the next one.
-      flushPendingClose();
-      closeTabSliding(state.value.active);
-    }
+    else closeTabSliding(state.value.active);
   } else if (name === "reopen-tab") reopenClosed();
   else if (name === "library") openDrawer("library");
   else if (name === "sidebar") toggleSidebar();
@@ -3476,7 +3625,7 @@ function keyShortcut(event: KeyboardEvent) {
     if (key === "tab") name = event.shiftKey ? "tab-back" : "tab-next";
     else if (event.shiftKey) name = ({ a: "search", c: "copy-url", t: "reopen-tab" } as Record<string, string>)[key];
     else if (/^[1-9]$/.test(key)) name = "tab-" + key;
-    else name = ({ k: "palette", l: "address", t: "new-tab", w: "close-tab", b: "library",
+    else name = ({ k: "palette", l: "address", t: "new-tab", w: "close-tab", b: "library", f: "find",
       [String.fromCharCode(92)]: "sidebar", ...(peek.value ? { o: "promote-peek" } : {}) } as Record<string, string>)[key];
   }
   return name;
@@ -3726,6 +3875,7 @@ function browserWheel(event: WheelEvent) {
                 <template v-else>{{ glyph(tab) }}</template>
               </span>
               <span class="tab-text">{{ label(tab) }}</span>
+              <span v-if="pageDialogs[tab.id]" class="tab-asks" aria-label="Page is waiting for you" data-tip="Page is waiting for you"></span>
               <Icon v-if="tab.rootUrl" name="lock" :size="12" aria-label="Locked tab" />
               <span class="pane-tag">{{
                 state.stacked
@@ -3786,6 +3936,7 @@ function browserWheel(event: WheelEvent) {
               <template v-else>{{ glyph(row.tab) }}</template>
             </span>
             <span class="tab-text">{{ label(row.tab) }}</span>
+            <span v-if="pageDialogs[row.tab.id]" class="tab-asks" aria-label="Page is waiting for you" data-tip="Page is waiting for you"></span>
             <span v-if="aiAccess[row.tab.id]" class="tab-ai-mark" :class="aiAccess[row.tab.id]"
               :aria-label="aiAccess[row.tab.id] === 'controlled' ? 'AI is using this tab' : 'AI may use this tab'"
               :data-tip="aiAccess[row.tab.id] === 'controlled' ? 'AI is using this tab' : 'AI may use this tab'"></span>
@@ -4140,6 +4291,65 @@ function browserWheel(event: WheelEvent) {
           referrerpolicy="strict-origin-when-cross-origin"
           allow=""
         ></iframe>
+      </template>
+      <div v-if="activeFind" class="browser-find" role="search" aria-label="Find in page" @keydown.stop>
+        <Icon name="search" :size="14" />
+        <input
+          ref="findInput"
+          v-model="activeFind.text"
+          aria-label="Find in page"
+          spellcheck="false"
+          autocomplete="off"
+          @input="runFind()"
+          @keydown="findKey"
+        />
+        <span class="browser-find-count" aria-live="polite">{{
+          activeFind.text ? (activeFind.matches ? `${activeFind.current} of ${activeFind.matches}` : "No matches") : ""
+        }}</span>
+        <span class="browser-find-sep" aria-hidden="true"></span>
+        <button type="button" aria-label="Previous match" data-tip="Previous · Shift Enter" :disabled="!activeFind.matches" @click="runFind(false, true)">
+          <Icon name="up" :size="13" />
+        </button>
+        <button type="button" aria-label="Next match" data-tip="Next · Enter" :disabled="!activeFind.matches" @click="runFind(true, true)">
+          <Icon name="down" :size="13" />
+        </button>
+        <button type="button" aria-label="Close find" data-tip="Close · Esc" @click="closeFind">
+          <Icon name="close" :size="12" />
+        </button>
+      </div>
+      <template v-for="(dialog, tabId) in pageDialogs" :key="dialog.id">
+        <div
+          v-show="isShown(String(tabId))"
+          class="browser-page-dialog"
+          :class="paneClass(String(tabId))"
+          @pointerdown.self.prevent
+        >
+          <div
+            :ref="(element) => element ? pageDialogBox.set(String(tabId), element as HTMLElement) : pageDialogBox.delete(String(tabId))"
+            class="page-dialog-card"
+            role="alertdialog"
+            aria-modal="true"
+            :aria-label="`${dialog.origin || 'This page'} asks`"
+            @keydown.stop
+            @keydown.esc.prevent="answerPageDialog(String(tabId), false)"
+          >
+            <p class="page-dialog-who"><b>{{ dialog.origin || "This page" }}</b> asks</p>
+            <p class="page-dialog-message">{{ dialog.message }}</p>
+            <input
+              v-if="dialog.kind === 'prompt'"
+              v-model="dialog.input"
+              class="page-dialog-input"
+              aria-label="Answer"
+              spellcheck="false"
+              @keydown.enter.prevent="answerPageDialog(String(tabId), true)"
+            />
+            <div class="page-dialog-actions">
+              <span class="page-dialog-keys"><kbd>Enter</kbd><span>OK</span><template v-if="dialog.kind !== 'alert'"><kbd>Esc</kbd><span>Cancel</span></template></span>
+              <button v-if="dialog.kind !== 'alert'" type="button" @click="answerPageDialog(String(tabId), false)">Cancel</button>
+              <button type="button" class="primary" @click="answerPageDialog(String(tabId), true)">OK</button>
+            </div>
+          </div>
+        </div>
       </template>
       <div
         v-for="tab in blankPanes"
@@ -4827,6 +5037,217 @@ function browserWheel(event: WheelEvent) {
 }
 .tab-ai-mark.controlled {
   background: var(--accent);
+}
+.browser-tab > .tab-asks {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin: 0 2px;
+  border-radius: 50%;
+  background: #365f78;
+}
+/* Find in page: a small frosted bar at the top right of the page. */
+.browser-find {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 38px;
+  padding: 0 5px 0 10px;
+  border: 1px solid #d3dee5;
+  border-radius: 10px;
+  background: rgb(247 250 252 / 86%);
+  backdrop-filter: blur(8px) saturate(120%);
+  box-shadow: 0 1px 2px #263f5514, 0 12px 30px #263f5526;
+  color: #6f8998;
+  animation: browser-find-in 0.14s ease-out;
+}
+@keyframes browser-find-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.browser-find input {
+  width: 200px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  color: #273f50;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.browser-find-count {
+  min-width: 56px;
+  padding-right: 4px;
+  color: #8296a2;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.browser-find-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: #e3eaee;
+}
+.browser-find button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: #5d7381;
+}
+.browser-find button:hover:not(:disabled) {
+  background: #eef3f6;
+  color: #273f50;
+}
+.browser-find button:disabled {
+  opacity: 0.45;
+}
+.browser-find button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px #6f899840;
+}
+@media (prefers-reduced-motion: reduce) {
+  .browser-find {
+    animation: none;
+  }
+}
+/* A page's alert/confirm/prompt: a card over that tab only, the page frosted. */
+.browser-page-dialog {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: #e9edf0a6;
+  backdrop-filter: blur(1.5px) saturate(90%);
+}
+.page-dialog-card {
+  width: min(360px, 100%);
+  margin-bottom: 12%;
+  padding: 16px 18px;
+  border: 1px solid #d3dee5;
+  border-radius: 10px;
+  background: #fbfcfd;
+  box-shadow: 0 1px 2px #263f5514, 0 12px 30px #263f5526;
+  color: #455968;
+  font-size: 13px;
+  animation: page-dialog-in 0.16s ease-out;
+}
+@keyframes page-dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+.page-dialog-who {
+  margin: 0 0 8px;
+  color: #8296a2;
+  font-size: 11.5px;
+}
+.page-dialog-who b {
+  color: #5d7381;
+  font: 400 11.5px "Cascadia Code", Consolas, monospace;
+}
+.page-dialog-message {
+  margin: 0;
+  max-height: 40vh;
+  overflow: auto;
+  color: #273f50;
+  font-size: 13.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.page-dialog-input {
+  display: block;
+  width: 100%;
+  height: 30px;
+  margin-top: 10px;
+  padding: 0 9px;
+  border: 1px solid #dbe5eb;
+  border-radius: 7px;
+  background: #fff;
+  color: #273f50;
+  font: inherit;
+}
+.page-dialog-input:focus {
+  border-color: #7b97a7;
+  outline: none;
+}
+.page-dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+.page-dialog-keys {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  color: #8296a2;
+  font-size: 11.5px;
+}
+.page-dialog-keys kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid #d6e0e6;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: #fbfcfd;
+  color: #5d7381;
+  font: 10.5px/1 "Cascadia Code", Consolas, monospace;
+}
+.page-dialog-keys kbd + span {
+  margin-right: 6px;
+}
+.page-dialog-actions button {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 14px;
+  border: 1px solid #d3dee5;
+  border-radius: 7px;
+  background: #fbfcfd;
+  color: #455968;
+  font-size: 12.5px;
+}
+.page-dialog-actions button:hover {
+  background: #eef3f6;
+}
+.page-dialog-actions button.primary {
+  border-color: #365f78;
+  background: #365f78;
+  color: #fff;
+}
+.page-dialog-actions button.primary:hover {
+  background: #2f5469;
+}
+.page-dialog-actions button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px #6f899840;
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-dialog-card {
+    animation: none;
+  }
 }
 .browser-tab.ai-controlled {
   box-shadow: inset 0 0 0 1px var(--accent);

@@ -195,6 +195,10 @@ defineExpose({ toggle: show });
   display: inline-grid;
   place-items: center;
 }
+/* Inside the round ring the button is round too, not a square in a circle. */
+.cr-wrap:has(> .cr-ring) > :slotted(button) {
+  border-radius: 50%;
+}
 .cr-ring {
   position: absolute;
   inset: -4px;

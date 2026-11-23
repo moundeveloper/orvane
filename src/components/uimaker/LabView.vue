@@ -23,6 +23,11 @@ watch(() => [round.value?.id, round.value?.variants.length], () => {
   if (round.value && !variant.value) ui.labVariant = round.value.variants[0]?.id ?? null;
 }, { immediate: true });
 
+// A picked round is a snapshot: later versions (a delivered brief, another
+// round's pick) live in Review, so the chip says which one is newest.
+const latest = computed(() => (props.model.versions[ui.c] ?? []).at(-1)?.n);
+const newer = computed(() => round.value?.status === 'picked' && latest.value > round.value.pickedAs ? latest.value : null);
+
 const src = computed(() => variant.value && labUrl(ui.c, round.value.id, variant.value.id, variant.value.mtime));
 const picking = ref(false);
 async function pick() {
@@ -44,6 +49,7 @@ async function pick() {
     </div>
     <div class="spacer"></div>
     <span v-if="round.status === 'picked'" class="chip green">Picked as v{{ round.pickedAs }}</span>
+    <span v-if="newer" class="chip lab-newer" :title="`v${newer} is newer than this round. Open it in Review.`">Now v{{ newer }}</span>
     <span v-else-if="round.status === 'closed'" class="chip">Closed</span>
     <button v-else class="btn primary" :disabled="!variant || picking" @click="pick">Pick</button>
   </header>

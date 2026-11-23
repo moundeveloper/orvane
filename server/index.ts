@@ -87,7 +87,7 @@ const notes = new NotesService(
   process.env.ORVANE_DATA_DIR ||
     fileURLToPath(new URL("../.orvane", import.meta.url)),
 );
-registerNetSuiteTools(server, dataDirectory);
+registerNetSuiteTools(server, dataDirectory, liveRun);
 const closeExposition = registerExpositionTools(server, dataDirectory);
 registerDesignTools(server);
 const closeUiMaker = registerUiMakerTools(

@@ -9,6 +9,8 @@ import { AgentRunner } from "./agent-runner.ts";
 import { claudeModels, codexModels } from "./agent-cli.ts";
 import { listSkills, SavedPrompts } from "./agent-skills.ts";
 import { AgentSchedules } from "./agent-schedules.ts";
+import { mcpInstall, mcpRemove, mcpSetup, mcpStatus, mcpTest } from "./agent-mcp.ts";
+import { AgentUsageStore, claudeUsage, readCodexUsage } from "./agent-usage.ts";
 
 const base = "/__orvane/agents/";
 const key = z.string().min(1).max(1000);
@@ -56,6 +58,8 @@ export function agentSessionsApi(directory: string): Plugin {
       prompts: SavedPrompts;
       schedules: AgentSchedules;
       skillsHome: (provider: "claude" | "codex") => string;
+      usage: AgentUsageStore;
+      codexSessions: string;
     }
   >();
   let testing = false;
@@ -99,7 +103,16 @@ export function agentSessionsApi(directory: string): Plugin {
           : undefined,
       );
       const workspaceFile = join(directory, testing ? `tests/${namespace}.sqlite` : "workspace.sqlite");
+      const usage = new AgentUsageStore(workspaceFile);
+      runner.onClaudeUsage = (event) => {
+        const reported = claudeUsage(event);
+        if (reported) usage.saveClaude(reported);
+      };
       service = {
+        usage,
+        codexSessions: testing
+          ? join(dir, "codex-sessions")
+          : join(process.env.CODEX_HOME || join(homedir(), ".codex"), "sessions"),
         claude,
         codex,
         runner,
@@ -244,6 +257,33 @@ export function agentSessionsApi(directory: string): Plugin {
         } finally {
           res.off("close", cancel);
         }
+      }
+      if (op === "usage")
+        return reply(200, {
+          claude: service.usage.claude() ?? null,
+          codex: (await readCodexUsage(service.codexSessions).catch(() => undefined)) ?? null,
+        });
+      if (op.startsWith("mcp-")) {
+        const dir = testing ? join(directory, "tests", namespace) : directory;
+        const setup = testing
+          ? {
+              ...mcpSetup(dir),
+              claudeFile: join(dir, ".claude.json"),
+              // The test CLI fixture plays both CLIs' `mcp` commands.
+              cli: (provider: "claude" | "codex") => {
+                const file = join(dir, "agent-cli.cjs");
+                if (!existsSync(file)) throw Error("No test CLI fixture is installed.");
+                return { file: process.execPath, args: [file, "--mcp-provider", provider] };
+              },
+            }
+          : mcpSetup(directory);
+        if (op === "mcp-status") return reply(200, { rows: await mcpStatus(setup) });
+        const provider = z.enum(["claude", "codex"]).parse(args.provider);
+        if (op === "mcp-test") return reply(200, await mcpTest(setup, provider));
+        if (op === "mcp-install") await mcpInstall(setup, provider);
+        else if (op === "mcp-remove") await mcpRemove(setup, provider);
+        else return reply(404, { error: "Unknown MCP operation." });
+        return reply(200, { rows: await mcpStatus(setup) });
       }
       if (op === "launcher") {
         await mkdir(surveying, { recursive: true });

@@ -27,6 +27,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { setupPasswords } from "./passwords.mjs";
+import { setupPageDialogs } from "./page-dialogs.mjs";
+import { setupPageRecorder } from "./page-recorder.mjs";
 import { netSuiteLogin } from "./netsuite-login.mjs";
 import { browserEnvironments } from "./netsuite-accounts.mjs";
 import { setupNetSuite } from "./netsuite.mjs";
@@ -137,7 +139,7 @@ const CANVAS_GESTURES = `(() => {
       else if (event.shiftKey) name = ({ a: "search", c: "copy-url", t: "reopen-tab", p: "commands", k: "agent", l: "send-selection" })[key];
       else if (/^[1-9]$/.test(key)) name = "tab-" + key;
       else name = ({ k: "palette", l: "address", t: "new-tab", w: "close-tab", b: "library",
-        o: "promote-peek", [String.fromCharCode(92)]: "sidebar" })[key];
+        o: "promote-peek", f: "find", [String.fromCharCode(92)]: "sidebar" })[key];
     }
     if (!name) return;
     stop(event);
@@ -288,6 +290,8 @@ function secure() {
     folder: app.getPath("userData"),
   });
   processing.onSignInReset(trackPasswords.resetAutoLogin);
+  // Page alert/confirm/prompt as Orvane cards instead of native popups.
+  setupPageDialogs({ partition: BROWSER_PARTITION, isProcessing: processing.owns });
   ipcMain.handle("orvane:browser-netsuite-environments", (event, id) => {
     const guest = ownGuest(event, id);
     if (!guest || guest.session !== sites || event.senderFrame?.parent || !isOrvane(event.senderFrame?.url ?? ""))
@@ -755,6 +759,8 @@ async function captureAgentPage(guest, op) {
     clearTimeout(timer);
   }
 }
+/** Real-time page recordings for browser_record, made on first use. */
+let pageRecorder;
 ipcMain.handle("orvane:page-agent", async (event, id, op) => {
   const guest = ownGuest(event, id);
   if (!guest || !op || typeof op !== "object") throw Error("No such page.");
@@ -804,6 +810,11 @@ ipcMain.handle("orvane:page-agent", async (event, id, op) => {
     }
     case "screenshot":
       return captureAgentPage(guest, op);
+    case "record-start":
+    case "record-status":
+    case "record-stop":
+      pageRecorder ??= setupPageRecorder({ folder: app.getPath("userData"), isPaused: (id) => pausedGuests.has(id) });
+      return pageRecorder.handle(guest, op);
     case "navigate":
       return navigateAgentPage(guest, op);
     default:

@@ -39,6 +39,7 @@ type ViewTab = {
   dashboard: string;
   version: number;
   file?: { id: number; name: string };
+  script?: { id: number; scriptid: string };
 };
 const validApp = (value: unknown): value is AppId =>
   value === "scripts" ||
@@ -395,6 +396,10 @@ function editScriptFile(file: { id: number; name: string }) {
   focusedTab.value.file = file;
   openApp("files");
 }
+function openScript(script: { id: number; scriptid: string }) {
+  focusedTab.value.script = script;
+  openApp("scripts");
+}
 async function fileRequest(operation: string, args: Row = {}): Promise<Row> {
   if (!api || !selected.value) throw Error("Choose an environment.");
   try {
@@ -593,6 +598,7 @@ onBeforeUnmount(() => {
               :initial-file="tab.file"
               :storage-key="tab.id === 'main' ? '' : tab.id"
               @opened-initial="tab.file = undefined"
+              @open-script="openScript"
             />
             <NetSuiteScripts
               v-else-if="tab.view === 'scripts'"
@@ -601,7 +607,9 @@ onBeforeUnmount(() => {
               :request="fileRequest"
               :open-record="openRecord"
               :status="selectedStatus"
+              :initial-script="tab.script"
               @edit-file="editScriptFile"
+              @opened-initial="tab.script = undefined"
             />
             <NetSuiteQuery
               v-else-if="tab.view === 'query'"

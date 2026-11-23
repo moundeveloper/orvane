@@ -9,6 +9,7 @@ import { isAbsolute, join } from "node:path";
 import type { ServerResponse } from "node:http";
 import {
   agentBusy,
+  agentNames,
   claudeContext,
   summarizeAgentRun,
   type AgentActivity,
@@ -21,6 +22,7 @@ import {
 import {
   agentArgs,
   agentEnvironment,
+  codexHasOrvaneMcp,
   findAgent,
   loginHint,
   verifyAgentLogin,
@@ -393,7 +395,10 @@ export class AgentRunner {
         command.file,
         [
           ...command.args,
-          ...agentArgs(provider, sessionId, run.view.model, run.view.effort, run.view.mode, run.view.fork, run.view.resumeAt),
+          ...agentArgs(
+            provider, sessionId, run.view.model, run.view.effort, run.view.mode, run.view.fork, run.view.resumeAt,
+            provider === "codex" && run.view.mode === "full" && codexHasOrvaneMcp(env),
+          ),
           ...(run.job ? [
             "--safe-mode", "--no-session-persistence", "--tools", "",
             "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
@@ -411,7 +416,8 @@ export class AgentRunner {
         },
       );
       run.child = child;
-      run.view.activity = "Starting…";
+      // Until the CLI answers, the run is only waiting on it.
+      run.view.activity = `Waiting for ${agentNames[run.view.provider]}`;
       this.publish(run);
       child.stdin.on("error", () => {});
       child.stderr.setEncoding("utf8").on("data", (text: string) => {
@@ -498,7 +504,13 @@ export class AgentRunner {
   }
 
   // Claude's CLI keeps stdin open for permission replies in stream-json mode.
+  /** Claude's subscription limits, as it reports them during a run. */
+  onClaudeUsage?: (event: unknown) => void;
   private claudeRecord(run: Entry, data: any) {
+    if (data?.type === "rate_limit_event") {
+      this.onClaudeUsage?.(data);
+      return;
+    }
     this.rememberSession(run, data.session_id);
     if (
       data.type === "control_request" &&

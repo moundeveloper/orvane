@@ -17,14 +17,29 @@ export type TrashEntry = {
   name: string;
   folder: { id: number; name: string };
   filetype: string;
+  // Text content; for a folder (kind "folder") a JSON FolderSnapshot.
   content: string;
   deletedAt: number;
+  kind?: "file" | "folder";
+  files?: number;
+  folders?: number;
+};
+// What a deleted folder held, as Magic NetSuite keeps it: text files with
+// their content, other files by name only (they cannot be restored).
+export type FolderSnapshot = {
+  files: { name: string; filetype: string; content: string | null }[];
+  folders: { name: string; snapshot: FolderSnapshot }[];
 };
 export const TRASH_DAYS = 15;
 // Total trash content kept per environment; oldest entries go first.
 const TRASH_BUDGET = 20_000_000;
 const db = new Dexie("orvane-netsuite-files");
 db.version(1).stores({ drafts: "key, environment", trash: "id, environment" });
+db.version(2).stores({
+  drafts: "key, environment",
+  trash: "id, environment",
+  versions: "id, file",
+});
 const draftKey = (d: { environment: string; id: number }) =>
   `${d.environment}|${d.id}`;
 export const drafts = ref<FileDraft[]>([]),
@@ -150,3 +165,121 @@ export function flushDrafts() {
 }
 if (typeof window !== "undefined")
   window.addEventListener("pagehide", flushDrafts);
+
+// Local save history, ported from Magic NetSuite's file versions: before a
+// save replaces a file's content in NetSuite, the content it replaced is kept
+// here. At most VERSION_LIMIT per file and environment; the oldest goes first.
+export type FileVersion = {
+  id: string;
+  environment: string;
+  fileId: number;
+  content: string;
+  savedAt: number;
+  lines: number;
+  added: number;
+  removed: number;
+};
+export const VERSION_LIMIT = 5;
+// IndexedDB keeps the versions; this map serves reads and keeps them for the
+// session when IndexedDB fails.
+const versionCache = new Map<string, FileVersion[]>();
+const fileKey = (environment: string, fileId: number) =>
+  `${environment}|${fileId}`;
+export async function listVersions(environment: string, fileId: number) {
+  const key = fileKey(environment, fileId);
+  if (!versionCache.has(key))
+    try {
+      const rows = (await db
+        .table("versions")
+        .where("file")
+        .equals(key)
+        .toArray()) as (FileVersion & { file: string })[];
+      versionCache.set(
+        key,
+        rows.map(({ file: _file, ...v }) => v as FileVersion),
+      );
+    } catch (e) {
+      failed(e);
+      versionCache.set(key, versionCache.get(key) ?? []);
+    }
+  return [...versionCache.get(key)!].sort((a, b) => b.savedAt - a.savedAt);
+}
+export async function addVersion(
+  environment: string,
+  fileId: number,
+  content: string,
+  replacedBy: string,
+) {
+  const key = fileKey(environment, fileId),
+    list = await listVersions(environment, fileId),
+    delta = lineDelta(content, replacedBy),
+    version: FileVersion = {
+      id: `${key}|${Date.now()}|${Math.random().toString(36).slice(2, 8)}`,
+      environment,
+      fileId,
+      content,
+      savedAt: Date.now(),
+      lines: content ? content.split("\n").length : 0,
+      ...delta,
+    };
+  const kept = [version, ...list].slice(0, VERSION_LIMIT),
+    dropped = list.filter((v) => !kept.includes(v));
+  versionCache.set(key, kept);
+  try {
+    await db.table("versions").put({ ...version, file: key });
+    if (dropped.length)
+      await db.table("versions").bulkDelete(dropped.map((v) => v.id));
+  } catch (e) {
+    failed(e);
+  }
+  return kept;
+}
+export async function clearVersions(environment: string, fileId: number) {
+  const key = fileKey(environment, fileId);
+  versionCache.set(key, []);
+  try {
+    await db.table("versions").where("file").equals(key).delete();
+  } catch (e) {
+    failed(e);
+  }
+}
+// Lines added and removed going from `before` to `after`.
+export function lineDelta(before: string, after: string) {
+  const a = before.split("\n"),
+    b = after.split("\n");
+  let start = 0,
+    endA = a.length,
+    endB = b.length;
+  while (start < endA && start < endB && a[start] === b[start]) start++;
+  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+    endA--;
+    endB--;
+  }
+  const x = a.slice(start, endA),
+    y = b.slice(start, endB);
+  let common = 0;
+  if (x.length * y.length <= 4_000_000) {
+    // Longest common subsequence, one row at a time.
+    let row = new Array<number>(y.length + 1).fill(0);
+    for (const line of x) {
+      const next = new Array<number>(y.length + 1).fill(0);
+      for (let j = 0; j < y.length; j++)
+        next[j + 1] =
+          line === y[j] ? row[j]! + 1 : Math.max(row[j + 1]!, next[j]!);
+      row = next;
+    }
+    common = row[y.length]!;
+  } else {
+    // Too large to align: count lines that only one side has.
+    const counts = new Map<string, number>();
+    for (const line of x) counts.set(line, (counts.get(line) ?? 0) + 1);
+    for (const line of y) {
+      const n = counts.get(line) ?? 0;
+      if (n) {
+        common++;
+        counts.set(line, n - 1);
+      }
+    }
+  }
+  return { added: y.length - common, removed: x.length - common };
+}

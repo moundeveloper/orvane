@@ -8,7 +8,45 @@ const { join } = require("node:path");
 const { createInterface } = require("node:readline");
 const { spawn } = require("node:child_process");
 
-const args = process.argv.slice(2);
+let args = process.argv.slice(2);
+// `mcp add|get|remove` as Claude Code and Codex run them, for Agent Sessions →
+// Settings. Claude keeps its servers in .claude.json; Codex answers `get --json`.
+if (args[0] === "--mcp-provider") {
+  const { readFileSync } = require("node:fs");
+  const provider = args[1];
+  args = args.slice(2);
+  const file = join(__dirname, provider === "claude" ? ".claude.json" : "codex-mcp.json");
+  const read = () => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {});
+  const config = read();
+  config.mcpServers ??= {};
+  const [, action] = args;
+  if (action === "add") {
+    const split = args.indexOf("--");
+    const options = args.slice(2, split);
+    const name = options.find((value, index) => !value.startsWith("-") && !/^(-e|--env|-s)$/.test(options[index - 1] ?? ""));
+    const env = {};
+    options.forEach((value, index) => {
+      if (/^(-e|--env)$/.test(options[index - 1] ?? "")) {
+        const [key, ...rest] = value.split("=");
+        env[key] = rest.join("=");
+      }
+    });
+    const [command, ...commandArgs] = args.slice(split + 1);
+    config.mcpServers[name] = { type: "stdio", command, args: commandArgs, env };
+    writeFileSync(file, JSON.stringify(config));
+  } else if (action === "remove") {
+    delete config.mcpServers[args.filter((value) => !value.startsWith("-") && value !== "user").at(-1)];
+    writeFileSync(file, JSON.stringify(config));
+  } else if (action === "get") {
+    const entry = config.mcpServers[args[2]];
+    if (!entry) {
+      console.error(`No MCP server named '${args[2]}' found.`);
+      process.exit(1);
+    }
+    process.stdout.write(JSON.stringify({ name: args[2], transport: { type: "stdio", ...entry } }));
+  }
+  process.exit(0);
+}
 const emit = (record) => process.stdout.write(JSON.stringify(record) + "\n");
 const codexId = "22222222-2222-4222-8222-222222222222";
 const claudeId = "11111111-1111-4111-8111-111111111111";
@@ -102,6 +140,11 @@ if (args[1] === "status") {
           info: {
             model_context_window: 200_000,
             last_token_usage: { input_tokens: 95_000, cached_input_tokens: 60_000, output_tokens: 5_000 },
+          },
+          rate_limits: {
+            limit_id: "codex",
+            primary: { used_percent: 16.0, window_minutes: 300, resets_at: 1795439157 },
+            secondary: { used_percent: 95.0, window_minutes: 10080, resets_at: 1795513771 },
           },
         });
         emit({
@@ -247,6 +290,17 @@ if (args[1] === "status") {
       emit({
         type: "assistant",
         message: { content: [{ type: "text", text: result }] },
+      });
+      emit({
+        type: "rate_limit_event",
+        rate_limit_info: {
+          status: "allowed",
+          unifiedWindows: {
+            five_hour: { utilization: 0.39, resetsAt: 1795440000, status: "allowed" },
+            seven_day: { utilization: 0.44, resetsAt: 1795600800, status: "allowed" },
+          },
+        },
+        session_id: claudeId,
       });
       emit({ type: "result", subtype: "success", session_id: claudeId });
     }

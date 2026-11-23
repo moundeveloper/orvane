@@ -1,16 +1,20 @@
 import {
   copyFile,
   mkdir,
+  mkdtemp,
   readFile,
   readdir,
+  rm,
   unlink,
   writeFile,
 } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import type { BrowserContext, Page } from "@playwright/test";
 import { test, expect } from "./fixtures";
-import { agentArgs, agentEnvironment } from "../server/agent-cli";
+import { agentArgs, agentEnvironment, codexHasOrvaneMcp } from "../server/agent-cli";
 
 const claudeId = "11111111-1111-4111-8111-111111111111";
 const codexId = "22222222-2222-4222-8222-222222222222";
@@ -147,14 +151,67 @@ test("the AI launcher starts in Surveying and global search can reopen the sessi
     running.getByText("orvane / workspace_status", { exact: true }),
   ).toBeVisible({ timeout: 15_000 });
   await expect(trail.locator(".trail-head .cs-dna")).toBeVisible();
-  await expect(trail.getByText("Thinking", { exact: true })).toBeVisible();
+  // One loader only: no spinning AI mark beside the DNA loader while it runs.
+  await expect(trail.locator(".trail-head .cs-mark")).toHaveCount(0);
+  // While a tool step runs, the head says it is working (not "Writing the answer").
+  await expect(trail.locator(".cs-trail-state")).toHaveText("Working");
+  // No filler line under the steps ("Then it writes the answer").
+  await expect(trail.getByText(/writes the answer/i)).toHaveCount(0);
   await page.screenshot({ path: info.outputPath("ai-thinking-trail.png") });
   await writeFile(join(directory, "finish-launcher"), "");
-  // Once it finishes, the full step list with details takes its place.
-  const activity = app.getByRole("list", { name: "Run activity" });
+  // Once it finishes, its calls fold into a time strip at the top of the
+  // reply: one segment per call, closed until opened.
   await expect(app.getByText("Codex started", { exact: true })).toBeVisible({
     timeout: 30000,
   });
+  const strip = app.locator(".run-activity.strip").filter({ hasText: "Checked the workspace layout." });
+  const activity = strip.getByRole("list", { name: "Tool calls" });
+  await expect(strip.locator("summary")).toContainText(/\d+ calls?/);
+  await expect(strip.locator(".bars i")).not.toHaveCount(0);
+  await expect(activity).toBeHidden();
+  // In a reply from the transcript the strip sits above the text.
+  const reply = app.locator(".cs-message.cs-assistant", { has: page.locator(".run-activity.strip") }).last();
+  const stripTop = (await reply.locator(".run-activity.strip").boundingBox())!.y;
+  const textTop = (await reply.locator(".cs-message-text").boundingBox())!.y;
+  expect(stripTop).toBeLessThan(textTop);
+  // Strip and rows share one selection. A segment opens the list, selects
+  // its call and opens that row; the label names the call.
+  const segment = strip.locator('.bars i[title^="orvane / workspace_status"]');
+  await segment.click();
+  await expect(activity).toBeVisible();
+  const statusRow = activity.getByRole("button", { name: /orvane \/ workspace_status/ });
+  await expect(statusRow).toHaveAttribute("aria-expanded", "true");
+  await expect(statusRow).toHaveAttribute("aria-pressed", "true");
+  await expect(segment).toHaveClass(/\bsel\b/);
+  await expect(strip.locator(".strip-label")).toContainText(/workspace_status · .+ · \d+ of \d+/);
+  await page.screenshot({ path: info.outputPath("time-strip-open.png") });
+  // Selecting a row selects its segment instead (and closes the other row).
+  await activity.getByRole("button", { name: /Shell command/ }).click();
+  await expect(strip.locator('.bars i[title^="Shell command"]')).toHaveClass(/\bsel\b/);
+  await expect(segment).not.toHaveClass(/\bsel\b/);
+  await expect(statusRow).toHaveAttribute("aria-expanded", "false");
+  // Clicking the selected one again clears the selection.
+  await activity.getByRole("button", { name: /Shell command/ }).click();
+  await expect(strip.locator(".bars i.sel")).toHaveCount(0);
+  await expect(strip.locator(".strip-label")).toContainText(/\d+ calls?/);
+  // The scrolling dock leaves room around the composer, so its rounded
+  // bottom corners and shadow aren't cut into square edges.
+  const room = await app.locator(".cs-dock").evaluate((dock) => {
+    const box = dock.getBoundingClientRect();
+    const composer = dock.querySelector(".cs-composer")!.getBoundingClientRect();
+    return {
+      left: composer.left - box.left,
+      right: box.right - composer.right,
+      bottom: box.bottom - composer.bottom,
+    };
+  });
+  expect(room.left).toBeGreaterThanOrEqual(12);
+  expect(room.right).toBeGreaterThanOrEqual(12);
+  expect(room.bottom).toBeGreaterThanOrEqual(12);
+  // The finished answer keeps its AI mark.
+  await expect(
+    app.locator(".cs-message.cs-assistant .cs-message-meta .cs-mark").first(),
+  ).toBeVisible();
   await expect(
     activity.getByText("Checked the workspace layout."),
   ).toBeVisible();
@@ -175,9 +232,10 @@ test("the AI launcher starts in Surveying and global search can reopen the sessi
   const command = activity.getByRole("button", { name: /Shell command/ });
   await command.click();
   await expect(activity.locator("dd", { hasText: "verify" })).toBeVisible();
-  await page.screenshot({ path: info.outputPath("ai-step-details.png") });
-  await step.click();
   await expect(activity.getByText("Private fixture output")).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath("ai-step-details.png") });
+  await command.click();
+  await expect(activity.locator("dd", { hasText: "verify" })).toHaveCount(0);
   const [input] = (await readFile(join(directory, "inputs.jsonl"), "utf8"))
     .trim()
     .split("\n")
@@ -399,6 +457,22 @@ test("context ring shows the latest Codex transcript usage", async ({ page, cont
   await composer.press("Enter");
   const ring = app.getByRole("button", { name: "Context 50% used" });
   await expect(ring).toBeVisible({ timeout: 20_000 });
+  // Codex's own limits sit beside the ring: its tighter window, red near the end.
+  const usage = app.getByRole("button", { name: "Codex usage: Week 95%" });
+  await expect(usage).toBeVisible();
+  await expect(usage).toHaveClass(/full/);
+  await composer.focus();
+  await page.keyboard.press("Alt+u");
+  const limits = page.getByRole("dialog", { name: "Usage" });
+  await expect(limits.locator(".au-row")).toHaveCount(2);
+  await expect(limits.locator(".au-row").first()).toContainText("16%");
+  await expect(limits.locator(".au-row").last()).toContainText("95%");
+  await page.screenshot({ path: info.outputPath("usage.png") });
+  await limits.press("Escape");
+  await expect(limits).toHaveCount(0);
+  // The send button inside the round ring is round as well.
+  await composer.fill("Next");
+  await expect(app.locator(".cr-wrap:has(.cr-ring) .cs-send")).toHaveCSS("border-radius", "50%");
   await ring.click();
   const detail = page.getByRole("dialog", { name: "Context used" });
   await expect(detail.getByText("100k of 200k")).toBeVisible();
@@ -410,6 +484,50 @@ test("context ring shows the latest Codex transcript usage", async ({ page, cont
   await page.screenshot({ path: info.outputPath("context-ring.png") });
   await detail.press("Escape");
   await expect(ring).toBeFocused();
+});
+
+test("Settings installs, tests and removes the Orvane MCP for each CLI", async ({ page, context }, info) => {
+  test.setTimeout(120_000);
+  const { directory } = await fixture(context);
+  const app = await openApp(page);
+  // Settings sits at the bottom of the sidebar, under the session list.
+  const nav = app.getByRole("button", { name: "Settings", exact: true });
+  const list = (await app.locator(".cs-session-list").boundingBox())!;
+  expect((await nav.boundingBox())!.y).toBeGreaterThanOrEqual(list.y + list.height - 1);
+  await nav.click();
+  await expect(nav).toHaveAttribute("aria-current", "page");
+  const settings = app.getByRole("region", { name: "Settings" });
+  const claude = settings.getByRole("listitem", { name: "Claude Code" });
+  const codex = settings.getByRole("listitem", { name: "Codex" });
+  await expect(claude.getByText("Not set up")).toBeVisible({ timeout: 20_000 });
+  await expect(codex.getByText("Not set up")).toBeVisible();
+  // What Install writes is shown first, and nothing is written yet.
+  await expect(settings.locator("pre").last()).toContainText("[mcp_servers.orvane]");
+  await expect(settings.locator("pre").last()).toContainText(`ORVANE_DATA_DIR = '${directory}'`);
+  expect(existsSync(join(directory, ".claude.json"))).toBe(false);
+  await page.screenshot({ path: info.outputPath("agent-settings.png") });
+
+  // Install through the CLI, then the server is started and its tools counted.
+  await claude.getByRole("button", { name: "Install" }).click();
+  await expect(claude.getByText(/^Connected · \d+ tools$/)).toBeVisible({ timeout: 60_000 });
+  const saved = JSON.parse(await readFile(join(directory, ".claude.json"), "utf8")).mcpServers.orvane;
+  expect(saved.args.at(-1)).toMatch(/[\\/]server[\\/]launch\.mjs$/);
+  expect(saved.env).toEqual({ ORVANE_DATA_DIR: directory });
+  // Enter on a row that is not set up installs it.
+  await codex.focus();
+  await page.keyboard.press("Enter");
+  await expect(codex.getByRole("button", { name: "Remove" })).toBeVisible({ timeout: 20_000 });
+  await codex.getByRole("button", { name: "Remove" }).click();
+  await expect(codex.getByText("Not set up")).toBeVisible({ timeout: 20_000 });
+  expect(JSON.parse(await readFile(join(directory, "codex-mcp.json"), "utf8")).mcpServers).toEqual({});
+
+  // The session preference lives here too.
+  const suggest = settings.getByRole("switch", { name: "Suggest next message" });
+  const before = await suggest.getAttribute("aria-checked");
+  await suggest.click();
+  await expect(suggest).not.toHaveAttribute("aria-checked", before!);
+  await nav.click();
+  await expect(settings).toHaveCount(0);
 });
 
 test("scheduled prompts can be created, paused, run and reopened", async ({ page, context }, info) => {
@@ -759,6 +877,27 @@ test("effort and edit mode map onto each CLI's flags", () => {
   // Full access: no approvals and no sandbox in either CLI.
   expect(agentArgs("claude", undefined, undefined, undefined, "full").join(" ")).toContain("--permission-mode bypassPermissions");
   expect(agentArgs("codex", undefined, undefined, undefined, "full")).toEqual(expect.arrayContaining(["-s", "danger-full-access"]));
+  // Codex approves Orvane MCP tools only in Full access, and only when its
+  // config has the orvane server (the override breaks Codex otherwise).
+  const approve = 'mcp_servers.orvane.default_tools_approval_mode="approve"';
+  const fullCodex = agentArgs("codex", undefined, undefined, undefined, "full", undefined, undefined, true);
+  expect(fullCodex).toContain(approve);
+  expect(fullCodex.indexOf(approve)).toBeLessThan(fullCodex.indexOf("exec"));
+  expect(agentArgs("codex", undefined, undefined, undefined, "full", undefined, undefined, false)).not.toContain(approve);
+  expect(agentArgs("codex", undefined, undefined, undefined, "auto", undefined, undefined, true)).not.toContain(approve);
+});
+
+test("Codex's orvane MCP server is detected from its config", async () => {
+  const home = await mkdtemp(join(tmpdir(), "orvane-codex-home-"));
+  try {
+    expect(codexHasOrvaneMcp({ CODEX_HOME: home })).toBe(false);
+    await writeFile(join(home, "config.toml"), "[mcp_servers.node_repl]\ncommand = 'node'\n");
+    expect(codexHasOrvaneMcp({ CODEX_HOME: home })).toBe(false);
+    await writeFile(join(home, "config.toml"), "[mcp_servers.orvane]\ncommand = 'C:\\node\\node.exe'\n\n[mcp_servers.orvane.env]\n");
+    expect(codexHasOrvaneMcp({ CODEX_HOME: home })).toBe(true);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
 });
 
 test("streams Claude, routes both decisions and stops the process tree", async ({
@@ -820,13 +959,23 @@ test("streams Claude, routes both decisions and stops the process tree", async (
   await expect(
     app.getByRole("button", { name: "Send", exact: true }),
   ).toBeVisible();
+  // Claude reported its limits during the run; Orvane kept them.
+  await expect(app.getByRole("button", { name: "Claude Code usage: Week 44%" })).toBeVisible();
   await composer.fill("Wait for Stop");
   await composer.press("Enter");
   await expect(app.getByText("Using Wait", { exact: true })).toBeVisible();
   const descendant = Number(
     await readFile(join(directory, "descendant.txt"), "utf8"),
   );
-  await app.getByRole("button", { name: "Stop", exact: true }).click();
+  // While it runs, Stop takes Send's place in the ring wrapper: a 30px icon
+  // button (round whenever the ring is drawn), not a wide text button.
+  const stop = app.getByRole("button", { name: "Stop", exact: true });
+  await expect(app.locator(".cr-wrap").getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+  const size = (await stop.boundingBox())!;
+  expect(Math.round(size.width)).toBe(Math.round(size.height));
+  expect(size.width).toBeLessThan(40);
+  await expect(stop).toHaveText("");
+  await stop.click();
   await expect(
     app.getByRole("status").getByText("Stopped", { exact: true }),
   ).toBeVisible();

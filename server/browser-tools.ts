@@ -47,12 +47,17 @@ export function registerBrowserTools(server: McpServer, liveRun: LiveRun, dataDi
     return data;
   };
   const respond = (data: Data) => {
-    const { image, mimeType, ...rest } = data;
+    const { image, mimeType, images, ...rest } = data;
     const content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[] = [
       { type: "text", text: JSON.stringify(rest, null, 2) },
     ];
     if (typeof image === "string" && image)
       content.push({ type: "image", data: image, mimeType: String(mimeType || "image/jpeg") });
+    // Several pictures (browser_record's contact sheets), in order.
+    if (Array.isArray(images))
+      for (const item of images as { data?: unknown; mimeType?: unknown }[])
+        if (typeof item?.data === "string" && item.data)
+          content.push({ type: "image", data: item.data, mimeType: String(item.mimeType || "image/jpeg") });
     return { content, structuredContent: { result: rest } };
   };
   const guarded = async (run: () => Promise<Data>) => {
@@ -87,11 +92,40 @@ export function registerBrowserTools(server: McpServer, liveRun: LiveRun, dataDi
     }
   };
 
+  /** A short look at a page right after it opened: enough to tell it loaded
+   * the right thing, or that it shows an error, a notice or a sign-in page. */
+  const pageCheck = async (id: string, sessionId?: string) => {
+    try {
+      type Page = { url?: string; title?: string; text?: string; loading?: boolean };
+      const look = async () =>
+        (await request("snapshot", { tabId: id, maxElements: 10, textLength: 300 }, sessionId)) as Page;
+      let page = await look();
+      // Give a loading page up to about 5 seconds.
+      for (let tries = 0; page.loading && tries < 10; tries++) {
+        await new Promise((done) => setTimeout(done, 500));
+        page = await look();
+      }
+      const text = String(page.text ?? "");
+      const problem = /\b(record does not exist|page not found|404|access denied|you do not have permission|sign in|log ?in to|session (has )?expired|an unexpected error)\b/i.exec(
+        `${page.title ?? ""} ${text.slice(0, 300)}`,
+      );
+      return {
+        title: page.title,
+        url: page.url,
+        loading: page.loading,
+        text: text.slice(0, 200),
+        ...(problem ? { pageProblem: `The page says "${problem[0]}". Check the address.` } : {}),
+      };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  };
+
   server.registerTool(
     "browser_tabs",
     {
       description:
-        "List the Browser apps on the Orvane canvas and their tabs, with each tab's AI access: none, \"granted\" (the user shared it; take it with browser_control) or \"controlled\" (you are working in it).",
+        "List the Browser apps on the Orvane canvas and their tabs, with each tab's AI access: none, \"granted\" (the user shared it; take it with browser_control) or \"controlled\" (you are working in it), and the tab group it is in. Each Browser also lists its tab groups (current space) with their tabs.",
       inputSchema: { sessionId: session },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -99,23 +133,58 @@ export function registerBrowserTools(server: McpServer, liveRun: LiveRun, dataDi
   );
 
   server.registerTool(
+    "browser_group",
+    {
+      description:
+        "Put Browser tabs in a tab group by name (created in the current space if it does not exist), or take them out of their group with group: null. Only tabs you opened or the user shared with you. browser_tabs lists tabs and groups; browser_open can open a tab straight into a group.",
+      inputSchema: {
+        tabIds: z.array(z.string()).min(1).max(50).describe("Tabs to move, from browser_tabs or browser_open."),
+        group: z.string().min(1).max(60).nullable().describe("Group name, or null to ungroup."),
+        sessionId: session,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async ({ sessionId, ...args }) => guarded(() => request("group", args, sessionId)),
+  );
+
+  server.registerTool(
     "browser_open",
     {
       description:
-        "Open a new tab in an Orvane Browser app and take control of it, like a Playwright page. The tab shows the AI border and the user can't use it until you call browser_control release (or they press Take control). Sign-ins and cookies are the user's Browser profile. Returns tabId, and siteMemory when routes, notes or flows were saved for the site; then use browser_snapshot to see the page and browser_act to work in it. Choose purpose: \"task\" (default) for a scratch tab you use for quick work and then close with browser_control close; \"user\" when the page is meant for the user (to show a result or leave them somewhere): you never close it, and release leaves it in front.",
+        "Open a new tab in an Orvane Browser app and take control of it, like a Playwright page. The tab shows the AI border and the user can't use it until you call browser_control release (or they press Take control). Sign-ins and cookies are the user's Browser profile. Returns tabId, and siteMemory when routes, notes or flows were saved for the site; then use browser_snapshot to see the page and browser_act to work in it. To open several pages at once pass urls (one tab each, returns { tabs }); add check: true to get each page's title, address and first text, with pageProblem when it shows an error or sign-in page. Choose purpose: \"task\" (default) for a scratch tab you use for quick work and then close with browser_control close; \"user\" when the page is meant for the user (to show a result or leave them somewhere): you never close it, and release leaves it in front.",
       inputSchema: {
         url: z.string().optional().describe("Address to open (http, https or file). Omit for an empty tab."),
+        urls: z.array(z.string().min(1)).min(1).max(10).optional().describe("Several addresses to open in one call, one tab each (same purpose and group). Use instead of url, not with it."),
+        check: z.boolean().optional().describe("Return a short look at each opened page (title, address, first text, pageProblem when it looks like an error or sign-in page), so no browser_snapshot is needed to confirm it loaded."),
         purpose: z.enum(["task", "user"]).optional().describe("task (default): your scratch tab, close it when done. user: opened for the user, stays open."),
+        group: z.string().max(60).optional().describe("Open the tab in this tab group (by name); the group is created if it does not exist. Use it to keep related tabs together, e.g. one group per task."),
         appId: z.string().optional().describe("Browser app to open in (browser_tabs). Default: the focused app if it is a Browser, else the first Browser app."),
         blockId: z.string().optional().describe("Browser component inside that app, when it has several."),
         sessionId: session,
       },
       annotations: { readOnlyHint: false, ...live },
     },
-    async ({ sessionId, ...args }) =>
+    async ({ sessionId, urls, check, ...args }) =>
       guarded(async () => {
-        const data = await request("open", args, sessionId);
-        return withMemory(data, (data.page as Data | undefined)?.url ?? args.url);
+        if (urls && args.url !== undefined) throw Error("Give url or urls, not both.");
+        const openOne = async (url: string | undefined) => {
+          const data = await request("open", { ...args, url }, sessionId);
+          const opened = withMemory(data, (data.page as Data | undefined)?.url ?? url);
+          return check && typeof data.tabId === "string"
+            ? { ...opened, check: await pageCheck(data.tabId, sessionId) }
+            : opened;
+        };
+        if (!urls) return openOne(args.url);
+        // One at a time: each open takes control of a new tab in order.
+        const tabs: Data[] = [];
+        for (const url of urls) {
+          try {
+            tabs.push({ url, ...(await openOne(url)) });
+          } catch (error) {
+            tabs.push({ url, error: error instanceof Error ? error.message : String(error) });
+          }
+        }
+        return { tabs };
       }),
   );
 
@@ -145,7 +214,8 @@ export function registerBrowserTools(server: McpServer, liveRun: LiveRun, dataDi
       description:
         "Read a tab you control: address, title, loading state, scroll position, visible interactive elements and headings with refs (\"e12\") for browser_act, the start of the page text, and the site's saved memory (siteMemory). Refs stay the same for the same element while the page lives. Only the main frame is read (not iframes).",
       inputSchema: {
-        tabId,
+        tabId: tabId.optional(),
+        tabIds: z.array(z.string().min(1)).min(1).max(10).optional().describe("Read several tabs in one call instead of tabId; returns { tabs: [...] } in the same order."),
         maxElements: z.number().int().min(10).max(500).optional().describe("Default 150."),
         textLength: z.number().int().min(0).max(20000).optional().describe("Characters of page text. Default 1500."),
         includeHidden: z.boolean().optional().describe("Also list links hidden in the page (collapsed menus, closed panels) as hiddenLinks {name, href}: navigate to one directly instead of opening the menus."),
@@ -153,10 +223,25 @@ export function registerBrowserTools(server: McpServer, liveRun: LiveRun, dataDi
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
-    async ({ sessionId, ...args }) =>
+    async ({ sessionId, tabIds, ...args }) =>
       guarded(async () => {
-        const data = await request("snapshot", args, sessionId);
-        return withMemory(data, data.url);
+        if (!tabIds) {
+          if (!args.tabId) throw Error("Give tabId or tabIds.");
+          const data = await request("snapshot", args, sessionId);
+          return withMemory(data, data.url);
+        }
+        if (args.tabId) throw Error("Give tabId or tabIds, not both.");
+        const tabs = await Promise.all(
+          tabIds.map(async (id) => {
+            try {
+              const data = await request("snapshot", { ...args, tabId: id }, sessionId);
+              return { tabId: id, ...withMemory(data, data.url) };
+            } catch (error) {
+              return { tabId: id, error: error instanceof Error ? error.message : String(error) };
+            }
+          }),
+        );
+        return { tabs };
       }),
   );
 
@@ -168,6 +253,61 @@ export function registerBrowserTools(server: McpServer, liveRun: LiveRun, dataDi
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     async ({ sessionId, ...args }) => guarded(() => request("screenshot", args, sessionId)),
+  );
+
+  const region = z
+    .object({
+      name: z.string().max(60).optional().describe("Label for this region in the results."),
+      selector: z.string().max(500).optional().describe("CSS selector of the element to record; its text changes are logged too."),
+      x: z.number().optional(),
+      y: z.number().optional(),
+      width: z.number().positive().optional(),
+      height: z.number().positive().optional(),
+    })
+    .describe("An element (selector) or a viewport rectangle in CSS pixels (x, y, width, height).");
+  server.registerTool(
+    "browser_record",
+    {
+      description:
+        "Record a tab you control in real time and read it frame by frame: animations, typing demos, carousels, loaders, transitions, anything screenshots seconds apart would miss. Frames come from what the page paints (up to 15 per second); frames that look like the one before are dropped, and each region comes back as a contact sheet image of its keyframes labelled #n, time and how long it held, plus a list with the region's text at each keyframe (element regions) and every text change with its time. All frames are saved to disk (folder) for deeper analysis. action \"capture\" (default) records for durationMs and returns; \"start\" then \"stop\" (with recordingId) records while you act in between (browser_act click on a demo tab, scroll, hover); \"status\" tells if it is still recording. Regions must be visible in the viewport when the recording starts; scroll first. Up to 4 regions; omit for the whole viewport.",
+      inputSchema: {
+        tabId,
+        action: z.enum(["capture", "start", "stop", "status"]).optional(),
+        recordingId: z.string().optional().describe("stop / status: the id start returned."),
+        regions: z.array(region).max(4).optional(),
+        durationMs: z.number().int().min(500).max(30_000).optional().describe("capture: how long to record. Default 5000."),
+        stopWhenStillMs: z.number().int().min(300).max(10_000).optional().describe("capture: end early once nothing has painted for this long (after the first second)."),
+        fps: z.number().min(1).max(15).optional().describe("Frames per second at most. Default 8; 12-15 for fast motion."),
+        maxKeyframes: z.number().int().min(1).max(40).optional().describe("Keyframes per region at most (thinned evenly over time). Default 16."),
+        threshold: z.number().min(0.001).max(0.5).optional().describe("How different a frame must be from the last kept one to count, 0-1 mean colour change. Default 0.012; lower catches small movements."),
+        sessionId: session,
+      },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    async ({ sessionId, action = "capture", durationMs = 5000, stopWhenStillMs, ...args }) =>
+      guarded(async () => {
+        if (action === "status" || action === "stop") {
+          if (!args.recordingId) throw Error("recordingId is required: the id action \"start\" returned.");
+          return request(action === "stop" ? "record-stop" : "record-status", args, sessionId);
+        }
+        const maxMs = action === "capture" ? durationMs + 1000 : 30_000;
+        const started = await request("record-start", { ...args, maxMs }, sessionId);
+        if (action === "start") return { ...started, note: "Recording (30 s at most). Act now, then call browser_record action \"stop\" with this recordingId." };
+        const recordingId = String(started.recordingId);
+        const until = Date.now() + durationMs;
+        while (Date.now() < until) {
+          await new Promise((done) => setTimeout(done, Math.min(400, Math.max(0, until - Date.now()))));
+          if (!stopWhenStillMs) continue;
+          const state = (await request("record-status", { tabId: args.tabId, recordingId }, sessionId)) as {
+            recording?: boolean; elapsedMs?: number; lastFrameMs?: number;
+          };
+          if (!state.recording) break;
+          const still = (state.elapsedMs ?? 0) - (state.lastFrameMs ?? 0);
+          if ((state.elapsedMs ?? 0) > 1000 && still >= stopWhenStillMs) break;
+        }
+        const stopped = await request("record-stop", { ...args, recordingId }, sessionId);
+        return started.warning ? { warning: started.warning, ...stopped } : stopped;
+      }),
   );
 
   /** Navigates to a saved route on the tab's own site and checks it. */

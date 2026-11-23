@@ -675,7 +675,7 @@ test("Agent sessions links named files, opens folders in Orvane and adds @ conte
           "assistant",
           i
             ? "Done."
-            : "Created [voxel-guide.md](voxel-guide.md). Chunks live in `src/Chunk.ts:3`; `missing.ts` was never made.",
+            : "Created [voxel-guide.md](voxel-guide.md). Chunks live in `src/Chunk.ts:3`; `missing.ts` was never made. See [the docs](https://example.com/voxels).",
         ),
     );
   }
@@ -720,6 +720,8 @@ test("Agent sessions links named files, opens folders in Orvane and adds @ conte
   await expect(guide).toBeVisible();
   await guide.click();
   await message.getByRole("link", { name: "src/Chunk.ts:3" }).click();
+  // Web links go to Orvane's Browser, not straight to the system browser.
+  await message.getByRole("link", { name: "the docs" }).click();
   await expect(message.locator("code", { hasText: "missing.ts" })).not.toHaveClass(
     /md-path/,
   );
@@ -727,6 +729,7 @@ test("Agent sessions links named files, opens folders in Orvane and adds @ conte
   expect(await opened()).toEqual([
     { kind: "file", target: join(project, "voxel-guide.md"), label: "voxel-guide.md" },
     { kind: "file", target: join(project, "src", "Chunk.ts"), label: "Chunk.ts" },
+    { kind: "page", target: "https://example.com/voxels", label: "https://example.com/voxels" },
     { kind: "folder", target: project, label: "link-project" },
   ]);
   const composer = app.getByRole("textbox", { name: "Message", exact: true });

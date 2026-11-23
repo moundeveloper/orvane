@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from "vue";
 import type { AgentActivity } from "../agentSessions";
 
 // title: "Run activity" for a live run; transcripts list a reply's tool
-// calls under their own title, closed until opened.
+// calls under their own title, closed until opened. strip: a finished run's
+// calls folded into one time strip (one segment per call, as wide as it
+// took) at the top of the reply; it opens to the same rows.
 const props = withDefaults(
-  defineProps<{ items: AgentActivity[]; title?: string; collapsed?: boolean }>(),
-  { title: "Run activity", collapsed: false },
+  defineProps<{ items: AgentActivity[]; title?: string; collapsed?: boolean; strip?: boolean }>(),
+  { title: "Run activity", collapsed: false, strip: false },
 );
 
 const kinds: Record<AgentActivity["kind"], string> = {
@@ -61,6 +63,68 @@ function diff(item: AgentActivity) {
     ...input.new_string.split("\n").map((text) => ({ text, add: true })),
   ];
 }
+// ---- Time strip ----
+const root = ref<HTMLDetailsElement>();
+const stripLabel = ref<HTMLElement>();
+// One selection shared by the strip and the rows; it stays until changed.
+const selected = ref("");
+const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const seconds = (item: AgentActivity) =>
+  item.startedAt && item.endedAt ? Math.max(0, item.endedAt - item.startedAt) / 1000 : 0;
+const total = computed(() => {
+  const sum = props.items.reduce((all, item) => all + seconds(item), 0);
+  return sum < 60 ? `${sum.toFixed(1)}s` : `${Math.floor(sum / 60)}m ${Math.round(sum % 60)}s`;
+});
+// Calls to the same tool share a tone, so repeated queries read as one run.
+const tones = computed(() => {
+  const names = [...new Set(props.items.map((item) => item.label))];
+  return new Map(props.items.map((item) => [item.id, names.indexOf(item.label) % 3]));
+});
+const allDone = computed(() => props.items.every((item) => item.status === "completed"));
+const selectedIndex = computed(() => props.items.findIndex((item) => item.id === selected.value));
+/** "orvane / orvane_netsuite_query" → "netsuite_query" for the strip label. */
+const shortName = (item: AgentActivity) => {
+  const [server, tool] = item.label.split(" / ");
+  return tool ? tool.replace(new RegExp(`^${server}_`), "") : item.label;
+};
+function select(id: string, reveal: boolean) {
+  selected.value = selected.value === id ? "" : id;
+  if (!selected.value) return;
+  if (root.value) root.value.open = true;
+  if (!reveal) return;
+  void nextTick(() =>
+    root.value
+      ?.querySelector(`li[data-id="${CSS.escape(id)}"]`)
+      ?.scrollIntoView({ block: "nearest", behavior: still() ? "auto" : "smooth" }),
+  );
+}
+function segmentClick(event: MouseEvent, item: AgentActivity) {
+  event.preventDefault();
+  select(item.id, true);
+}
+// The label's new text fades in over the old (it never blinks out).
+watch(selected, () =>
+  nextTick(() => {
+    if (!still()) stripLabel.value?.animate([{ opacity: 0.35 }, { opacity: 1 }], { duration: 130, easing: "ease-out" });
+  }),
+);
+function stripKey(event: KeyboardEvent) {
+  const onSummary = (event.target as Element | null)?.tagName === "SUMMARY";
+  if (onSummary && (event.key === "ArrowRight" || event.key === "ArrowLeft")) {
+    event.preventDefault();
+    const step = event.key === "ArrowRight" ? 1 : -1;
+    const from = selectedIndex.value < 0 ? (step > 0 ? -1 : props.items.length) : selectedIndex.value;
+    const next = props.items[Math.max(0, Math.min(props.items.length - 1, from + step))];
+    if (next && next.id !== selected.value) select(next.id, true);
+  } else if (event.key === "Escape" && root.value?.open) {
+    event.stopPropagation();
+    if (selected.value) selected.value = "";
+    else {
+      root.value.open = false;
+      root.value.querySelector("summary")?.focus();
+    }
+  }
+}
 const copied = ref("");
 let copiedTimer: ReturnType<typeof setTimeout> | undefined;
 async function copy(key: string, text: string) {
@@ -81,7 +145,99 @@ const inputText = (item: AgentActivity) =>
 </script>
 
 <template>
-  <details class="run-activity" :class="{ live: current }" :open="!collapsed">
+  <details
+    v-if="strip"
+    ref="root"
+    class="run-activity strip"
+    :open="!collapsed"
+    @keydown="stripKey"
+  >
+    <summary :aria-label="`${items.length} ${items.length === 1 ? 'call' : 'calls'}, ${total}`">
+      <svg v-if="allDone" class="tick ok" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 12.5l4.5 4.5L19 7.5" />
+      </svg>
+      <span ref="stripLabel" class="strip-label">
+        <strong v-if="selectedIndex < 0">{{ items.length }} {{ items.length === 1 ? "call" : "calls" }}</strong>
+        <template v-else>
+          <em>{{ shortName(items[selectedIndex]!) }}</em>
+          <small> · {{ duration(items[selectedIndex]!) || "—" }} · {{ selectedIndex + 1 }} of {{ items.length }}</small>
+        </template>
+      </span>
+      <span class="bars" :class="{ picked: selected }">
+        <i
+          v-for="item in items"
+          :key="item.id"
+          :class="[`tone-${tones.get(item.id)}`, { sel: selected === item.id, failed: item.status === 'failed' }]"
+          :style="{ flexGrow: Math.max(0.3, seconds(item)) }"
+          :title="`${item.label} · ${duration(item) || '—'}`"
+          @click="segmentClick($event, item)"
+        />
+      </span>
+      <span class="total">{{ total }}</span>
+    </summary>
+    <ol aria-label="Tool calls">
+      <li
+        v-for="item in items"
+        :key="item.id"
+        :data-id="item.id"
+        :class="{ sel: selected === item.id }"
+      >
+        <button
+          type="button"
+          class="row"
+          :aria-pressed="selected === item.id"
+          :aria-expanded="hasDetails(item) ? selected === item.id : undefined"
+          @click="select(item.id, false)"
+        >
+          <span class="mark" :class="`tone-${tones.get(item.id)}`" aria-hidden="true" />
+          <span class="kind">{{ kinds[item.kind] }}</span>
+          <strong :class="{ mono: mono.has(item.kind) }">{{ item.label }}</strong>
+          <span class="dur">{{ duration(item) }}</span>
+          <span class="state" :class="`is-${item.status}`">
+            <svg v-if="item.status === 'completed'" class="tick" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 12.5l4.5 4.5L19 7.5" />
+            </svg>
+            <template v-else>{{ states[item.status] }}</template>
+          </span>
+        </button>
+        <p v-if="item.summary">{{ item.summary }}</p>
+        <div v-if="hasDetails(item) && selected === item.id" class="detail">
+          <section v-if="item.input && Object.keys(item.input).length">
+            <h4>
+              <span>Input</span>
+              <button type="button" @click="copy(`${item.id}:in`, inputText(item))">
+                {{ copied === `${item.id}:in` ? "Copied" : "Copy" }}
+              </button>
+            </h4>
+            <dl>
+              <template v-for="(value, key) in item.input" :key="key">
+                <dt>{{ key }}</dt>
+                <dd>{{ value }}</dd>
+              </template>
+            </dl>
+          </section>
+          <section v-if="diff(item) || item.output">
+            <h4>
+              <span>Output</span>
+              <button
+                type="button"
+                @click="copy(`${item.id}:out`, diff(item)?.map((line) => (line.add ? '+' : '-') + line.text).join('\n') ?? item.output ?? '')"
+              >
+                {{ copied === `${item.id}:out` ? "Copied" : "Copy" }}
+              </button>
+            </h4>
+            <pre v-if="diff(item)"><span
+              v-for="(line, index) in diff(item)"
+              :key="index"
+              :class="line.add ? 'add' : 'del'"
+            >{{ (line.add ? "+" : "-") + line.text }}</span></pre>
+            <pre v-else :class="{ err: item.status === 'failed' }">{{ item.output }}</pre>
+          </section>
+        </div>
+      </li>
+    </ol>
+  </details>
+  <details v-else class="run-activity" :class="{ live: current }" :open="!collapsed">
     <summary>
       <strong>{{ title }}</strong>
       <span class="count"
@@ -197,6 +353,163 @@ const inputText = (item: AgentActivity) =>
 </template>
 
 <style scoped>
+/* Time strip: no card, one quiet line; opens to the rows under it. */
+.run-activity.strip {
+  border: 0;
+  background: none;
+  overflow: visible;
+}
+.strip > summary {
+  gap: 8px;
+  margin-left: -8px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  color: #5d7381;
+}
+.strip > summary:hover {
+  background: #eef3f6;
+}
+.strip > summary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px #6f899840;
+}
+.strip > summary strong {
+  font-weight: 550;
+  white-space: nowrap;
+}
+.strip .tick.ok {
+  width: 13px;
+  height: 13px;
+  color: #4f7d5f;
+}
+.bars {
+  display: flex;
+  flex: 1;
+  gap: 2px;
+  min-width: 60px;
+  height: 6px;
+}
+.bars i {
+  display: block;
+  flex-basis: 0;
+  min-width: 4px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease-out,
+    box-shadow 160ms ease-out,
+    opacity 160ms ease-out,
+    transform 160ms ease-out;
+}
+.bars i:hover,
+.bars i.sel {
+  transform: scaleY(1.34);
+}
+.bars i.sel {
+  background: #365f78;
+  box-shadow:
+    0 0 0 2px #f7f9fa,
+    0 0 0 3.5px #6f8998;
+}
+.bars.picked i:not(.sel) {
+  opacity: 0.55;
+}
+.strip-label {
+  min-width: 0;
+  white-space: nowrap;
+}
+.strip-label em {
+  color: #365f78;
+  font: 11.5px "Cascadia Code", Consolas, monospace;
+  font-style: normal;
+}
+.strip-label small {
+  color: #8296a2;
+  font-size: 11.5px;
+}
+.tone-0 {
+  background: #c9d8e1;
+}
+.tone-1 {
+  background: #a9bfcc;
+}
+.tone-2 {
+  background: #8aa4b3;
+}
+li.sel .mark {
+  background: #365f78;
+}
+.bars i.failed {
+  background: #c99a8c;
+}
+.total {
+  color: #8296a2;
+  font: 11.5px "Cascadia Code", Consolas, monospace;
+  white-space: nowrap;
+}
+.strip ol {
+  margin: 2px 0 10px;
+  padding: 2px 0;
+  border-left: 2px solid #d3dee5;
+}
+.strip li {
+  position: relative;
+  border-top: 0;
+  padding: 0 0 0 8px;
+  border-radius: 0 6px 6px 0;
+  transition: background-color 160ms ease-out;
+}
+.strip li.sel {
+  background: #e9f0f4;
+}
+/* The selected row's blue edge draws down from the top. */
+.strip li::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -2px;
+  width: 2px;
+  background: #365f78;
+  content: "";
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 180ms ease-out;
+}
+.strip li.sel::before {
+  transform: scaleY(1);
+}
+.strip li.sel .row strong {
+  font-weight: 600;
+}
+.strip .detail {
+  animation: strip-rise 160ms ease-out;
+}
+@keyframes strip-rise {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bars i,
+  .strip li,
+  .strip li::before,
+  .mark {
+    transition: none;
+  }
+  .strip .detail {
+    animation: none;
+  }
+}
+.strip .row {
+  grid-template-columns: 10px 40px minmax(0, 1fr) auto 16px;
+}
+.mark {
+  width: 8px;
+  height: 4px;
+  border-radius: 2px;
+  transition: background-color 160ms ease-out;
+}
 .run-activity {
   flex: none;
   min-width: 0;

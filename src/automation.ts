@@ -328,7 +328,11 @@ export const runSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("browser"),
-      op: z.enum(["tabs", "open", "take", "release", "close", "act", "snapshot", "screenshot", "netsuite-environments", "netsuite-open"]),
+      op: z.enum([
+        "tabs", "open", "group", "take", "release", "close", "act", "snapshot", "screenshot",
+        "record-start", "record-status", "record-stop",
+        "netsuite-environments", "netsuite-open",
+      ]),
       args: z.record(z.string(), z.unknown()).default({}),
     })
     .strict(),

@@ -61,6 +61,18 @@ export interface AgentActivity {
   endedAt?: number;
 }
 
+/** One subscription limit window: percent used and when it resets (ms). */
+export interface AgentUsageWindow {
+  used: number;
+  resetsAt?: number;
+}
+/** The 5-hour and weekly limits a CLI last reported, and when (ms). */
+export interface AgentUsage {
+  at: number;
+  fiveHour?: AgentUsageWindow;
+  weekly?: AgentUsageWindow;
+}
+
 /** How full the session's context window was after the latest reply. */
 export interface AgentContext {
   /** Tokens in the context: earlier turns, what this turn added, the reply. */

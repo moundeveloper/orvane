@@ -21,6 +21,8 @@ import Icon from "./Icon.vue";
 import ChatMarkdown from "./ChatMarkdown.vue";
 import AgentRunActivity from "./AgentRunActivity.vue";
 import ThinkingTrail from "./ThinkingTrail.vue";
+import AgentSettings from "./AgentSettings.vue";
+import AgentUsage from "./AgentUsage.vue";
 import CustomSelect from "./CustomSelect.vue";
 import ContextPicker from "./ContextPicker.vue";
 import ComposerModes from "./ComposerModes.vue";
@@ -225,9 +227,17 @@ const provider = computed(
   () => newProvider.value || selected.value?.provider || "claude",
 );
 const busy = computed(() => sending.value || agentBusy(run.value));
+const usagePill = ref<InstanceType<typeof AgentUsage>>();
+// A finished run may have reported new subscription limits.
+watch(busy, (now, before) => {
+  if (before && !now) void usagePill.value?.refresh();
+});
 const queuePending = ref(false);
 const schedules = ref<AgentSchedule[]>([]);
 const schedulesOpen = ref(false);
+const settingsOpen = ref(false);
+const settingsButton = ref<HTMLButtonElement>();
+const settingsPane = ref<InstanceType<typeof AgentSettings>>();
 const schedulesLoading = ref(false);
 const schedulesPane = ref<InstanceType<typeof ScheduledPrompts>>();
 const contextRing = ref<InstanceType<typeof ContextRing>>();
@@ -365,12 +375,29 @@ const rowTime = (value: number) => {
     : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 };
 const working = computed(() => agentBusy(run.value));
+// Once a finished run's turn is in the transcript, its calls fold into a time
+// strip at the top of that reply (not a block under it). -2: the reply already
+// lists its own tool calls; -1: no reply to put them on, keep them apart.
+const runStripAt = computed(() => {
+  if (live.value || working.value || !run.value?.activities?.length) return -1;
+  let reply = -1;
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const message = messages.value[i]!;
+    if (message.role === "user") break;
+    if (message.tools.length) return -2;
+    if (message.text) reply = i;
+  }
+  return reply;
+});
 // Head of the thinking trail: what the run is doing as a whole.
 const trailLabel = computed(() => {
   if (!run.value) return "";
   if (run.value.permissions.length) return "Waiting for your approval";
   if (run.value.status === "stopping") return "Stopping…";
-  return run.value.text ? "Writing the answer" : "Thinking";
+  // A tool step is running: the steps below say which. Text written before
+  // a tool call ("I'll check…") is not the answer yet.
+  if (run.value.activities?.some((step) => step.status === "running")) return "Working";
+  return run.value.text ? "Replying" : "Thinking";
 });
 const elapsed = computed(() => {
   const started = run.value && runStarts.get(run.value.id);
@@ -941,6 +968,7 @@ async function openNew(kind: AgentProvider) {
 
 async function focusComposer() {
   schedulesOpen.value = false;
+  settingsOpen.value = false;
   if (expanded.value) await collapse();
   await nextTick();
   if (selected.value || newProvider.value) composer.value?.focus();
@@ -1501,6 +1529,7 @@ async function read(older = false, includeRun = false) {
 async function select(key: string) {
   if (sending.value || (newProvider.value && busy.value)) return;
   schedulesOpen.value = false;
+  settingsOpen.value = false;
   resetComposer();
   newProvider.value = undefined;
   const selectedGeneration = ++generation;
@@ -1569,6 +1598,7 @@ async function refresh() {
 }
 function back() {
   schedulesOpen.value = false;
+  settingsOpen.value = false;
   resetComposer();
   generation++;
   active.value = "";
@@ -1594,8 +1624,20 @@ async function loadSchedules() {
     schedulesLoading.value = false;
   }
 }
+async function showSettings() {
+  if (expanded.value) await collapse();
+  schedulesOpen.value = false;
+  settingsOpen.value = true;
+  await nextTick();
+  settingsPane.value?.focus();
+}
+function closeSettings() {
+  settingsOpen.value = false;
+  void nextTick(() => settingsButton.value?.focus({ preventScroll: true }));
+}
 async function showSchedules() {
   if (expanded.value) await collapse();
+  settingsOpen.value = false;
   schedulesOpen.value = true;
   void loadSchedules();
   await nextTick();
@@ -1795,6 +1837,13 @@ function sessionCommands() { return [
     icon: "clock",
     blockId: props.block.id,
     run: showSchedules,
+  },
+  {
+    id: `agent-settings:${props.block.id}`,
+    title: "Agent sessions settings (Orvane MCP)",
+    icon: "settings",
+    blockId: props.block.id,
+    run: showSettings,
   },
   ...(contextNow.value && !schedulesOpen.value
     ? [{
@@ -1997,9 +2046,9 @@ onBeforeUnmount(() => {
     <div
       class="cs-layout"
       :class="{
-        'cs-has-selection': active || newProvider || schedulesOpen,
+        'cs-has-selection': active || newProvider || schedulesOpen || settingsOpen,
         'cs-focus': expanded,
-        'cs-scheduled-layout': schedulesOpen,
+        'cs-scheduled-layout': schedulesOpen || settingsOpen,
         'cs-pane-layout': pane,
       }"
     >
@@ -2080,6 +2129,11 @@ onBeforeUnmount(() => {
             {{ search ? "No matching sessions." : "No local sessions found." }}
           </p>
         </div>
+        <button ref="settingsButton" type="button" class="cs-schedule-nav cs-settings-nav"
+          :aria-current="settingsOpen ? 'page' : undefined"
+          @click="settingsOpen ? closeSettings() : showSettings()">
+          <Icon name="settings" :size="14" />Settings
+        </button>
       </nav>
       <section v-if="schedulesOpen && !pane" class="cs-scheduled-view">
         <button type="button" class="cs-btn cs-ghost cs-scheduled-back" @click="closeSchedules">
@@ -2088,8 +2142,11 @@ onBeforeUnmount(() => {
         <ScheduledPrompts ref="schedulesPane" v-model="schedules" :loading="schedulesLoading"
           :model-options="modelOptionsFor" @load-models="loadModels" @open-session="openScheduledSession" />
       </section>
+      <section v-if="settingsOpen && !pane" class="cs-scheduled-view">
+        <AgentSettings ref="settingsPane" :suggest="harness.settings.suggest" @update:suggest="toggleSuggest" />
+      </section>
       <AgentTiles
-        v-show="!schedulesOpen"
+        v-show="!schedulesOpen && !settingsOpen"
         ref="tileView"
         class="cs-tiles"
         :class="{ 'cs-tiles-empty': !active && !newProvider && !splitOn }"
@@ -2260,6 +2317,14 @@ onBeforeUnmount(() => {
                     @action="messageAction($event, m.text)"
                   />
                 </div>
+                <!-- The reply's tool calls, folded into a time strip above its text. -->
+                <AgentRunActivity
+                  v-if="m.tools.length || index === runStripAt"
+                  class="cs-tool-steps"
+                  strip
+                  collapsed
+                  :items="m.tools.length ? toolSteps(m, index === messages.length - 1) : run!.activities!"
+                />
                 <ChatMarkdown
                   v-if="m.text"
                   class="cs-message-text"
@@ -2270,13 +2335,6 @@ onBeforeUnmount(() => {
                   >Message shortened for display. The transcript is
                   unchanged.</span
                 >
-                <AgentRunActivity
-                  v-if="m.tools.length"
-                  class="cs-tool-steps"
-                  :title="m.tools.length === 1 ? 'Tool call' : 'Tool calls'"
-                  collapsed
-                  :items="toolSteps(m, index === messages.length - 1)"
-                />
                 <ExpositionView
                   v-for="v in attachment.map.get(m.id) || []"
                   :key="v.view.id"
@@ -2299,11 +2357,9 @@ onBeforeUnmount(() => {
                 :key="'trail:' + run.id"
                 :items="run.activities ?? []"
                 :base="run.folder"
-                :pending="!run.text && !run.permissions.length"
                 :status="run.permissions.length ? '' : run.activity"
               >
                 <template #head>
-                  <span class="cs-mark cs-working"><Icon name="ai" :size="12" /></span>
                   <span class="cs-dna" aria-hidden="true"
                     ><span
                       v-for="k in 9"
@@ -2319,8 +2375,11 @@ onBeforeUnmount(() => {
                 </template>
               </ThinkingTrail>
               <AgentRunActivity
-                v-else-if="run?.activities?.length"
+                v-else-if="run?.activities?.length && runStripAt === -1"
                 :key="run.id"
+                class="cs-tool-steps"
+                strip
+                collapsed
                 :items="run.activities"
               />
               <section v-if="run?.queued?.length" class="cs-queue" aria-label="Queued follow-ups">
@@ -2744,26 +2803,28 @@ onBeforeUnmount(() => {
                 <span v-else class="cs-status" :title="agentPermissions[provider]">{{
                   agentPermissions[provider]
                 }}</span>
+                <AgentUsage v-if="!schedulesOpen" ref="usagePill" :provider="provider" />
+                <!-- Queue sits beside the ring; Stop takes Send's round place in it. -->
+                <button v-if="busy && run?.status === 'running' && hasDraft" type="button"
+                  class="cs-btn cs-primary cs-queue-btn" :disabled="queuePending"
+                  :title="run?.provider === 'claude'
+                    ? 'Enter to queue · Ctrl+Enter to steer now · Ctrl+Shift+Enter to stop and send · Alt+↑ to edit'
+                    : 'Enter to queue · Ctrl+Enter to interrupt · Alt+↑ to edit'"
+                  @click="queueDraft()"><Icon name="list" :size="14" />Queue</button>
                 <ContextRing
                   v-if="!schedulesOpen"
                   ref="contextRing"
                   :context="contextNow"
-                  :ring="!busy"
+                  :ring="true"
                   :can-compact="provider === 'claude' && !!selected && !busy"
                   :can-fork="provider === 'claude' && !!selected && !busy"
                   @compact="send('/compact')"
                   @fork="startFork"
                 >
-                  <div v-if="busy" class="cs-run-actions">
-                    <button type="button" class="cs-btn cs-stop"
-                      :disabled="run?.status !== 'running'" @click="runCommand('stop')">Stop</button>
-                    <button v-if="run?.status === 'running' && hasDraft" type="button"
-                      class="cs-btn cs-primary" :disabled="queuePending"
-                      :title="run?.provider === 'claude'
-                        ? 'Enter to queue · Ctrl+Enter to steer now · Ctrl+Shift+Enter to stop and send · Alt+↑ to edit'
-                        : 'Enter to queue · Ctrl+Enter to interrupt · Alt+↑ to edit'"
-                      @click="queueDraft()"><Icon name="list" :size="14" />Queue</button>
-                  </div>
+                  <button v-if="busy" type="button" class="cs-btn cs-stop" aria-label="Stop" title="Stop"
+                    :disabled="run?.status !== 'running'" @click="runCommand('stop')">
+                    <Icon name="stop" :size="11" />
+                  </button>
                   <button v-else type="submit" class="cs-btn cs-primary cs-send"
                     aria-label="Send" title="Send" :disabled="!hasDraft || (!!newProvider && !folder.trim())">
                     <Icon name="up" :size="16" />
@@ -2931,11 +2992,11 @@ onBeforeUnmount(() => {
 }
 .cs-schedule-nav:hover, .cs-schedule-nav[aria-current] { background: #e4edf2; color: #273f50; }
 .cs-schedule-nav svg { color: #6f8998; }
+.cs-settings-nav { margin: auto 10px 10px; }
 .cs-schedule-nav span { margin-left: auto; font: 11px "Cascadia Code", Consolas, monospace; color: #657b89; }
 .cs-scheduled-view { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .cs-scheduled-view > .scheduled { flex: 1; }
 .agent-sessions-app .cs-scheduled-back { display: none; }
-.cs-run-actions { display: flex; align-items: center; gap: 6px; }
 .cs-queue {
   position: relative;
   margin-left: 26px;
@@ -3280,14 +3341,6 @@ onBeforeUnmount(() => {
   border-radius: 6px;
   background: #e3ecf1;
   color: var(--cs-strong);
-}
-.cs-mark.cs-working :deep(svg) {
-  animation: cs-orbit 2.4s linear infinite;
-}
-@keyframes cs-orbit {
-  to {
-    transform: rotate(360deg);
-  }
 }
 .cs-user {
   justify-items: end;
@@ -3825,12 +3878,18 @@ onBeforeUnmount(() => {
   right: 0;
 }
 .cs-dock {
-  max-width: 760px;
+  /* The dock scrolls, so it clips whatever its box doesn't hold. The side and
+     bottom padding leave room for the composer's shadow and rounded corners;
+     the negative margins keep the cards at the same 760px width and place. */
   max-height: 70cqh;
-  margin: 0 auto;
+  margin: 0 max(-20px, calc((100% - 800px) / 2)) -14px;
+  padding: 0 20px 14px;
   display: grid;
   gap: 8px;
   overflow: auto;
+  pointer-events: none;
+}
+.cs-dock > * {
   pointer-events: auto;
 }
 .cs-card {
@@ -4108,7 +4167,12 @@ onBeforeUnmount(() => {
 }
 .cs-stop {
   flex: none;
+  width: 30px;
   height: 30px;
+  padding: 0;
+}
+.cs-stop :deep(svg) {
+  fill: currentColor;
 }
 @container (max-width: 650px) {
   .cs-layout {

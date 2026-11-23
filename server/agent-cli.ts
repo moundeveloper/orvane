@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
@@ -288,6 +288,20 @@ export async function verifyAgentLogin(
   throw Error(loginHint(provider));
 }
 
+// Whether Codex's config has an `orvane` MCP server. Approving its tools with
+// a `-c mcp_servers.orvane...` override when no such server exists makes
+// Codex fail to load its config ("invalid transport"), so check first.
+export function codexHasOrvaneMcp(env: NodeJS.ProcessEnv = process.env) {
+  const home = env.CODEX_HOME || join(homedir(), ".codex");
+  try {
+    return /^\s*\[mcp_servers\.(orvane|"orvane")\]\s*$/m.test(
+      readFileSync(join(home, "config.toml"), "utf8"),
+    );
+  } catch {
+    return false;
+  }
+}
+
 const claudeModes: Record<AgentEditMode, string> = {
   ask: "default",
   auto: "acceptEdits",
@@ -302,6 +316,7 @@ export function agentArgs(
   mode?: AgentEditMode,
   fork?: boolean,
   resumeAt?: string,
+  orvaneMcp?: boolean,
 ) {
   if (provider === "claude")
     return [
@@ -337,6 +352,11 @@ export function agentArgs(
     "sandbox_workspace_write.network_access=false",
     "-c",
     "sandbox_workspace_write.writable_roots=[]",
+    // Codex runs with approvals off, so Orvane MCP tools that change something
+    // (browser_open, browser_act...) are refused. Full access approves them.
+    ...(mode === "full" && orvaneMcp
+      ? ["-c", 'mcp_servers.orvane.default_tools_approval_mode="approve"']
+      : []),
     "exec",
     "--json",
     "--skip-git-repo-check",

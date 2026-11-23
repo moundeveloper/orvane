@@ -26,6 +26,9 @@ const props = defineProps<{
   selected?: number;
   filter: string;
   loading: number[];
+  // Icon for a special folder (e.g. NetSuite's folder types); plain folders
+  // keep the open/closed folder icon.
+  iconOf?: (folder: Row) => string | undefined;
 }>();
 const emit = defineEmits<{ toggle: [Row]; navigate: [Crumb[]] }>();
 const entries = computed(() => {
@@ -301,7 +304,10 @@ onBeforeUnmount(() => {
             @keydown="tab($event, segment.entry, true)"
           >
             <Icon
-              :name="segment.entry.open ? 'folder-open' : 'folder'"
+              :name="
+                iconOf?.(segment.entry.folder) ||
+                (segment.entry.open ? 'folder-open' : 'folder')
+              "
               :size="13"
             /><span>{{ segment.entry.folder.name }}</span
             ><small v-if="Number(segment.entry.folder.numfolderfiles) > 0">{{

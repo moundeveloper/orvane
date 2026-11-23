@@ -77,6 +77,19 @@ function markPath(element: Element, path: string) {
   element.setAttribute("tabindex", "0");
 }
 function openPath(event: Event) {
+  // Web links open in Orvane's Browser (the system browser only when the
+  // workspace has no Browser app), not straight in the system browser.
+  const web = (event.target as Element).closest<HTMLAnchorElement>("a[href]");
+  if (web && /^https?:/i.test(web.getAttribute("href") || "")) {
+    event.preventDefault();
+    const url = web.href;
+    window.dispatchEvent(
+      new CustomEvent("orvane:open-link", {
+        detail: { external: true, link: { kind: "page", target: url, label: url } },
+      }),
+    );
+    return;
+  }
   const element = (event.target as Element).closest<HTMLElement>("[data-path]");
   if (!element) return;
   event.preventDefault();

@@ -131,18 +131,24 @@ test("Ctrl+T and Ctrl+Shift+T reach a Browser app selected by its frame", async 
     // clicking a tab or the page.
     const active = browser.locator(".browser-tab.active");
     const activeId = await active.getAttribute("data-drag-tab");
-    // The closed tab slides out, then leaves the list.
+    // The closed tab leaves the list at once (no slide-out animation).
     await page.evaluate(() => {
       const w = window as unknown as { slid?: string[] };
       w.slid = [];
       new MutationObserver((records) => records.forEach((r) => {
         const el = r.target as HTMLElement;
-        if (el.dataset?.closing !== undefined) w.slid!.push(el.dataset.dragTab ?? "");
+        if (el.dataset?.closing !== undefined) {
+          w.slid!.push(el.dataset.dragTab ?? "");
+          // The slide-out is quick: at most 100ms before the tab leaves.
+          const timing = el.getAnimations()[0]?.effect?.getTiming();
+          (w as { slideMs?: number }).slideMs = Number(timing?.duration);
+        }
       })).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["data-closing"] });
     });
     await press("Control+w");
     await expect(tabs).toHaveCount(2);
-    expect(await page.evaluate(() => (window as unknown as { slid: string[] }).slid)).toContain(activeId);
+    // Closing is instant: the tab never slides out first.
+    expect(await page.evaluate(() => (window as unknown as { slid: string[] }).slid)).toEqual([]);
     // A short list has nothing to scroll: no scrollbar on the tabs.
     expect(await browser.locator(".browser-side .browser-tabs").evaluate((list) => list.scrollHeight - list.clientHeight)).toBeLessThanOrEqual(0);
     await expect(browser.locator(`[data-drag-tab="${activeId}"]`)).toHaveCount(0);

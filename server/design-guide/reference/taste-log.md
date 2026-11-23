@@ -31,6 +31,7 @@ Quotes are the owner's own words (typos kept out). Newest last. Add to this file
 ## Agent sessions
 
 - Working indicator: did not like the first options; pointed at a Pinterest pin: "I really like it, the DNA kind of animation." Then: "Make it more like the pin. This one looks too bulky." "The balls, when merged and about to split up, are a little bit too big." "Could we compress it on the width side? Make it more compact." → "Perfect."
+- Rejected the "Then it writes the answer" line under the run steps: "like duh of course it will." No filler lines that state the obvious; the header (Thinking / Working / Replying) and the DNA loader say enough. Also: only one loader while a run works (no spinning AI mark beside the DNA loader), and Stop sits round inside the context ring where Send was, not as a wide text button.
 - Step done mark: picked **Drawn tick** over check circle and checkbox. "I don't like the [row] with the line in the middle" (strikethrough).
 - Step details: picked **Inline expand** over side inspector and input/output tabs. Wanted tool, what it did, inputs, outputs, and the drawn tick per step.
 - On a mock with a new orb as the thinking mark: "put the already established AI loader there" (the DNA loader). Reuse what exists.
@@ -48,6 +49,10 @@ Quotes are the owner's own words (typos kept out). Newest last. Add to this file
 - Round 3 implementation picks: Notes Rewrite and Canvas Rewind. The owner asked for clearer intent in App Details and explanations in UI Maker. Use each Lab variant’s About field to explain where the feature appears and how the example works.
 - The owner disliked the rectangle around the Canvas Rewind time rail. Show keyboard focus on the playhead itself.
 - The owner passed on Canvas Map, Command Results, and Deploy Watch because they did not find those concepts useful.
+
+## NetSuite File Cabinet history and compare (23.11.2026)
+
+- Approved as mocked (UI Maker "File Cabinet history and compare", round r1): History and Compare as plain buttons in the existing edit bar, History opening a version menu (relative time, mono +/− line counts, "4 of 5 kept", Clear history in red text), and a side-by-side diff that replaces the editor with "Restore this version" / Close diff (Esc). Ported features keep the existing File Cabinet styling rather than a new look.
 
 ## General
 

@@ -9,8 +9,6 @@ const props = defineProps<{
   items: AgentActivity[];
   /** Session folder, for relative file paths. */
   base?: string;
-  /** Show the "Then it writes the answer" line. */
-  pending?: boolean;
   /** What the run is doing when no step is running, e.g. "Preparing request". */
   status?: string;
 }>();
@@ -183,9 +181,6 @@ function open(path: string) {
         </div>
       </li>
     </ol>
-    <div v-if="pending" class="trail-wait">
-      <i aria-hidden="true"><b /><b /><b /></i>Then it writes the answer
-    </div>
   </section>
 </template>
 
@@ -355,46 +350,13 @@ p {
     background-position: -150% 0;
   }
 }
-.trail-wait {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding-top: 4px;
-  font-size: 12.5px;
-  color: #8296a2;
-}
-.trail-wait i {
-  display: flex;
-  justify-content: center;
-  gap: 3px;
-  width: 20px;
-}
-.trail-wait b {
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: #9fb3bf;
-  animation: trail-blink 1.2s ease-in-out infinite;
-}
-.trail-wait b:nth-child(2) {
-  animation-delay: 0.15s;
-}
-.trail-wait b:nth-child(3) {
-  animation-delay: 0.3s;
-}
-@keyframes trail-blink {
-  50% {
-    opacity: 0.25;
-  }
-}
 @keyframes trail-fade {
   from {
     opacity: 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .trail,
-  .trail-wait b {
+  .trail {
     animation: none;
   }
   .shimmer {

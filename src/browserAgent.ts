@@ -29,6 +29,8 @@ export interface AgentTabInfo {
   active: boolean;
   access?: AgentAccess;
   opened?: AgentPurpose;
+  /** The tab group it is in, by name. */
+  group?: string;
 }
 export type PageOp =
   | { type: "mouse"; x: number; y: number; action: "click" | "double" | "move"; button?: "left" | "right" | "middle" }
@@ -36,6 +38,16 @@ export type PageOp =
   | { type: "text"; text: string }
   | { type: "key"; key: string }
   | { type: "screenshot"; timeoutMs: number }
+  | { type: "record-start"; fps: number; maxMs: number }
+  | { type: "record-status"; recordingId: string }
+  | {
+      type: "record-stop";
+      recordingId: string;
+      regions: RecordRect[];
+      viewport: { width: number; height: number };
+      maxKeyframes: number;
+      threshold: number;
+    }
   | { type: "navigate"; action: "back" | "forward" | "reload"; timeoutMs: number }
   | { type: "navigate"; action: "url"; url: string; timeoutMs: number };
 export interface BrowserAgentHost {
@@ -50,6 +62,11 @@ export interface BrowserAgentHost {
   navigationUrl(tabId: string, url: string): string;
   select(tabId: string): void;
   close(tabId: string): void;
+  /** Tab groups in the current space, with their tabs. */
+  groups(): { name: string; tabIds: string[] }[];
+  /** Puts tabs in the group with this name (created if missing), or takes
+   * them out of their group when name is null. Returns the group's name. */
+  group(tabIds: string[], name: string | null): string | null;
   /** NetSuite environments the signed-in tab's user can open (desktop only). */
   netSuiteEnvironments?(tabId: string): Promise<NetSuiteEnvironment[]>;
   /** Does what the header's environment picker does: goes to a tab already on
@@ -95,7 +112,10 @@ const LIMIT_MS = 11_000; // MCP bridge requests end after 15 s.
 
 export type BrowserRequest = {
   kind: "browser";
-  op: "tabs" | "open" | "take" | "release" | "close" | "act" | "snapshot" | "screenshot" | "netsuite-environments" | "netsuite-open";
+  op:
+    | "tabs" | "open" | "group" | "take" | "release" | "close" | "act" | "snapshot" | "screenshot"
+    | "record-start" | "record-status" | "record-stop"
+    | "netsuite-environments" | "netsuite-open";
   args: Record<string, unknown>;
 };
 
@@ -441,6 +461,7 @@ export async function runBrowserAgent(
       browsers: blocks.map((block) => ({
         ...block,
         mounted: hosts.has(block.blockId),
+        groups: hosts.get(block.blockId)?.groups() ?? [],
         tabs: (hosts.get(block.blockId)?.tabs() ?? []).map((tab) =>
           opened.has(tab.tabId) ? { ...tab, opened: opened.get(tab.tabId) } : tab,
         ),
@@ -468,6 +489,8 @@ export async function runBrowserAgent(
     opened.set(tabId, purpose);
     host.setAccess(tabId, "controlled");
     const out: Record<string, unknown> = { tabId, appId: block.appId, blockId: block.blockId, purpose };
+    const group = str(args, "group")?.trim();
+    if (group) out.group = host.group([tabId], group);
     if (url) {
       const { id } = await controlled(tabId);
       await settle(id);
@@ -477,6 +500,19 @@ export async function runBrowserAgent(
       out.page = await page(id);
     }
     return out;
+  }
+  if (request.op === "group") {
+    const ids = Array.isArray(args.tabIds) ? args.tabIds.filter((id): id is string => typeof id === "string") : [];
+    if (!ids.length) throw Error("tabIds is required: the tabs to put in the group (browser_tabs lists them).");
+    const name = args.group === null ? null : str(args, "group")?.trim();
+    if (name === undefined || name === "") throw Error("group is required: the group's name, or null to take the tabs out of their group.");
+    const host = hostOfTab(ids[0]!);
+    for (const id of ids) {
+      if (hostOfTab(id) !== host) throw Error("All tabs must be in the same Browser app.");
+      if (!host.access(id))
+        throw Error(`You can group only tabs you opened or the user shared with you. Tab ${id} is not shared.`);
+    }
+    return { group: host.group(ids, name), tabIds: ids };
   }
   if (request.op === "netsuite-environments" || request.op === "netsuite-open") {
     const { host, tab } = netSuiteSource(str(args, "tabId"));
@@ -540,5 +576,192 @@ export async function runBrowserAgent(
     const { id } = await controlled(tabId);
     return { ...(await screenshot(id, deadline)), page: await page(id, Math.max(1, deadline - Date.now())) };
   }
+  if (request.op === "record-start") return recordStart(tabId, args);
+  if (request.op === "record-status") {
+    const { id } = await controlled(tabId);
+    return (await op(id, { type: "record-status", recordingId: str(args, "recordingId") ?? "" })) as Record<string, unknown>;
+  }
+  if (request.op === "record-stop") return recordStop(tabId, args);
   return act(args);
+}
+
+// ---- Real-time recording (browser_record) ----
+
+export interface RecordRect { x: number; y: number; width: number; height: number }
+interface RecordRegion { name: string; rect: RecordRect; text: boolean }
+interface Keyframe { frame: number; ms: number; holdMs: number; change: number; image: string; size: { width: number; height: number } }
+interface RecordResult {
+  recordingId: string; mode: string; ended?: string; startedAt: number; durationMs: number; frames: number;
+  folder?: string; saveWarning?: string; regions: { index: number; keyframes: Keyframe[] }[];
+}
+/** Regions and page size of each recording, from its start until it stops. */
+const recordingSetups = new Map<string, { tabId: string; regions: RecordRegion[]; viewport: { width: number; height: number } }>();
+
+/** Page script: resolves the regions to viewport rectangles and samples the
+ * text of element regions every 150 ms into window.__orvaneRecord. */
+function recordRegionsScript(specs: unknown[]) {
+  return `(() => {
+  const specs = ${JSON.stringify(specs)};
+  window.__orvaneRecord?.stop();
+  const vw = innerWidth, vh = innerHeight;
+  const regions = [], elements = [];
+  for (const [i, s] of specs.entries()) {
+    let el = null, r;
+    if (s.selector) {
+      el = document.querySelector(s.selector);
+      if (!el) return { error: "No element matches " + s.selector + "." };
+      const b = el.getBoundingClientRect();
+      r = { x: b.left, y: b.top, width: b.width, height: b.height };
+    } else if (s.width && s.height) r = { x: s.x || 0, y: s.y || 0, width: s.width, height: s.height };
+    else { el = document.body; r = { x: 0, y: 0, width: vw, height: vh }; }
+    const x0 = Math.max(0, r.x), y0 = Math.max(0, r.y);
+    const x1 = Math.min(vw, r.x + r.width), y1 = Math.min(vh, r.y + r.height);
+    const name = s.name || s.selector || (s.width ? "area " + (i + 1) : "page");
+    if (x1 - x0 < 4 || y1 - y0 < 4)
+      return { error: "Region " + name + " is outside the visible page. Scroll it into view first (browser_act scroll)." };
+    regions.push({ name, rect: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }, text: !!el });
+    elements.push(el);
+  }
+  const log = [], last = [];
+  const sample = () => {
+    const t = Date.now();
+    elements.forEach((el, i) => {
+      if (!el || log.length >= 400) return;
+      const text = (el.innerText || "").replace(/\\s+/g, " ").trim().slice(0, 400);
+      if (text !== last[i]) { last[i] = text; log.push({ t, region: i, text }); }
+    });
+  };
+  sample();
+  const timer = setInterval(sample, 150);
+  window.__orvaneRecord = { log, stop() { clearInterval(timer); sample(); } };
+  return { regions, viewport: { width: vw, height: vh } };
+})()`;
+}
+
+async function recordStart(tabId: string, args: Record<string, unknown>) {
+  const { id } = await controlled(tabId);
+  const specs = Array.isArray(args.regions) && args.regions.length ? args.regions.slice(0, 4) : [{}];
+  const setup = await run<{ error?: string; regions: RecordRegion[]; viewport: { width: number; height: number } }>(
+    id,
+    recordRegionsScript(specs),
+  );
+  if (setup?.error) throw Error(setup.error);
+  const started = (await op(id, {
+    type: "record-start",
+    fps: num(args, "fps", 8),
+    maxMs: num(args, "maxMs", 30_000),
+  })) as { recordingId: string; mode: string; startedAt: number; warning?: string };
+  recordingSetups.set(started.recordingId, { tabId, regions: setup.regions, viewport: setup.viewport });
+  return { ...started, regions: setup.regions.map(({ name, rect }) => ({ name, rect })) };
+}
+
+async function recordStop(tabId: string, args: Record<string, unknown>) {
+  const { id } = await controlled(tabId);
+  const recordingId = str(args, "recordingId") ?? "";
+  const setup = recordingSetups.get(recordingId);
+  if (!setup || setup.tabId !== tabId) throw Error("No such recording on this tab. Start one with action \"start\".");
+  recordingSetups.delete(recordingId);
+  let log: { t: number; region: number; text: string }[] = [];
+  try {
+    log = (await run<typeof log | null>(id, "(() => { const r = window.__orvaneRecord; if (!r) return null; r.stop(); delete window.__orvaneRecord; return r.log; })()", 3000)) ?? [];
+  } catch {
+    // The page navigated or froze: no text log.
+  }
+  const result = (await op(id, {
+    type: "record-stop",
+    recordingId,
+    regions: setup.regions.map((r) => r.rect),
+    viewport: setup.viewport,
+    maxKeyframes: num(args, "maxKeyframes", 16),
+    threshold: num(args, "threshold", 0.012),
+  })) as RecordResult;
+  const t0 = result.startedAt;
+  const images: { data: string; mimeType: string }[] = [];
+  const regions = [];
+  for (const [r, region] of setup.regions.entries()) {
+    const keyframes = result.regions[r]?.keyframes ?? [];
+    const texts = log.filter((entry) => entry.region === r);
+    // The text the region showed when each keyframe was painted.
+    const textAt = (ms: number) => {
+      let found: string | undefined;
+      for (const entry of texts) if (entry.t - t0 <= ms + 80) found = entry.text;
+      return found;
+    };
+    let previousText: string | undefined;
+    const rows = keyframes.map((k, n) => {
+      const text = region.text ? textAt(k.ms) : undefined;
+      const row = {
+        n: n + 1,
+        ms: k.ms,
+        holdMs: k.holdMs,
+        change: k.change,
+        ...(text !== undefined && text !== previousText ? { text } : {}),
+      };
+      previousText = text ?? previousText;
+      return row;
+    });
+    if (keyframes.length) images.push(await contactSheet(region.name, keyframes));
+    regions.push({
+      name: region.name,
+      rect: region.rect,
+      keyframes: rows,
+      ...(region.text
+        ? { textChanges: texts.map((entry) => ({ ms: Math.max(0, entry.t - t0), text: entry.text })).slice(0, 120) }
+        : {}),
+    });
+  }
+  const { regions: _frames, ...rest } = result;
+  return { ...rest, regions, images };
+}
+
+/** One JPEG grid of a region's keyframes, each labelled with its number and time. */
+async function contactSheet(name: string, keyframes: Keyframe[]) {
+  const bitmaps = await Promise.all(
+    keyframes.map(async (k) => {
+      const bytes = Uint8Array.from(atob(k.image), (c) => c.charCodeAt(0));
+      return createImageBitmap(new Blob([bytes], { type: "image/jpeg" }));
+    }),
+  );
+  const natural = Math.max(...bitmaps.map((b) => b.width));
+  const aspect = bitmaps[0]!.height / bitmaps[0]!.width;
+  const gap = 8, label = 18, head = 26, sheetMax = 1600;
+  let cols = Math.max(1, Math.min(keyframes.length, Math.floor((sheetMax - gap) / (Math.min(natural, 400) + gap))));
+  let cell = Math.min(natural, Math.floor((sheetMax - gap * (cols + 1)) / cols));
+  // Keep the sheet within about 4000 px tall.
+  for (;;) {
+    const rows = Math.ceil(keyframes.length / cols);
+    if (head + rows * (Math.round(cell * aspect) + label + gap) + gap <= 4000 || cell <= 80) break;
+    cols++;
+    cell = Math.floor((sheetMax - gap * (cols + 1)) / cols);
+  }
+  const cellH = Math.round(cell * aspect);
+  const rows = Math.ceil(keyframes.length / cols);
+  const width = gap + cols * (cell + gap);
+  const height = head + rows * (cellH + label + gap) + gap;
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#e9edf0";
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "#273f50";
+  ctx.font = "600 13px Inter, 'Segoe UI', sans-serif";
+  ctx.textBaseline = "middle";
+  ctx.fillText(`${name} · ${keyframes.length} keyframes`, gap, head / 2 + 2);
+  ctx.font = "11px 'Cascadia Code', Consolas, monospace";
+  keyframes.forEach((k, i) => {
+    const x = gap + (i % cols) * (cell + gap);
+    const y = head + Math.floor(i / cols) * (cellH + label + gap);
+    ctx.fillStyle = "#455968";
+    ctx.fillText(`#${i + 1}  ${(k.ms / 1000).toFixed(2)}s  hold ${(k.holdMs / 1000).toFixed(2)}s`, x, y + label / 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(x, y + label, cell, cellH);
+    ctx.drawImage(bitmaps[i]!, x, y + label, cell, cellH);
+    ctx.strokeStyle = "#d3dee5";
+    ctx.strokeRect(x + 0.5, y + label + 0.5, cell - 1, cellH - 1);
+  });
+  bitmaps.forEach((b) => b.close());
+  const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.82 });
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return { data: btoa(binary), mimeType: "image/jpeg" };
 }

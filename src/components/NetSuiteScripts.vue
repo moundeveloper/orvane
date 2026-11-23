@@ -22,9 +22,12 @@ const props = defineProps<{
   request: (op: string, args?: Record<string, unknown>) => Promise<Row>;
   openRecord: (kind: string, id: unknown) => unknown;
   status?: string;
+  // Script to show when the app opens, e.g. from the File Cabinet.
+  initialScript?: { id: number; scriptid: string };
 }>();
 const emit = defineEmits<{
   "edit-file": [file: { id: number; name: string }];
+  "opened-initial": [];
 }>();
 const busy = ref(false),
   error = ref(""),
@@ -237,6 +240,19 @@ watch(
       void loadScripts();
     }
   },
+);
+// Shows the requested script once the list has loaded: filtered to its
+// script ID with its deployments open.
+watch(
+  [() => props.initialScript, scripts],
+  ([wanted, list]) => {
+    if (!wanted || !list.length) return;
+    search.value = wanted.scriptid || String(wanted.id);
+    const row = list.find((r) => Number(r.id) === wanted.id);
+    if (row && !expandedScripts.value.includes(wanted.id)) void toggleScript(row);
+    emit("opened-initial");
+  },
+  { immediate: true },
 );
 onActivated(() => (active.value = true));
 onDeactivated(() => (active.value = false));

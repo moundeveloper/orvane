@@ -93,8 +93,16 @@ test("UI Maker Lab shows a round's variants as tabs, follows the agent's writes 
   await expect(app.locator(".lab-title")).toHaveText("Card shadow");
   await expect(app.locator(".lab-empty")).toHaveText("No variants yet");
   await expect(app.locator(".lab-round")).toHaveCount(2);
+  await expect(app.locator(".lab-newer")).toHaveCount(0);
+  // Picking in the new round saves v3; the earlier round then says v3 is newer.
+  await api("lab-write", { c: "card", variant: "lifted", label: "Lifted", html: page("Lifted", "8px") });
+  await app.locator(".lab-bar").getByRole("button", { name: "Pick" }).click();
+  await expect(app.locator(".lab-bar .chip.green")).toHaveText("Picked as v3", { timeout: 30_000 });
+  await expect(app.locator(".lab-newer")).toHaveCount(0);
   await app.locator(".lab-round").nth(1).click();
   await expect(app.locator(".lab-title")).toHaveText("Card corners");
+  await expect(app.locator(".lab-bar .chip.green")).toHaveText("Picked as v2");
+  await expect(app.locator(".lab-newer")).toHaveText("Now v3");
   await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
 
   // Review mode is unchanged: its tools and the artboard come back.

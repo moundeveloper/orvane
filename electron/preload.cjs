@@ -138,6 +138,21 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
     openRecord: (origin, kind, id) => ipcRenderer.invoke("orvane:netsuite-open-record", origin, kind, id),
     run: (id, operation, args) => ipcRenderer.invoke("orvane:netsuite-run", id, operation, args),
   },
+  /** A Browser page's alert/confirm/prompt, shown as an Orvane card. */
+  pageDialogs: {
+    claim: (id) => ipcRenderer.invoke("orvane:page-dialog-claim", id),
+    answer: (id, ok, value) => ipcRenderer.invoke("orvane:page-dialog-answer", id, ok, value),
+    onOpen(callback) {
+      const listener = (_event, request) => callback(request);
+      ipcRenderer.on("orvane:page-dialog", listener);
+      return () => ipcRenderer.removeListener("orvane:page-dialog", listener);
+    },
+    onDone(callback) {
+      const listener = (_event, id) => callback(id);
+      ipcRenderer.on("orvane:page-dialog-done", listener);
+      return () => ipcRenderer.removeListener("orvane:page-dialog-done", listener);
+    },
+  },
   passwords: {
     list: () => ipcRenderer.invoke("orvane:passwords-list"),
     remove: (id) => ipcRenderer.invoke("orvane:passwords-remove", id),
