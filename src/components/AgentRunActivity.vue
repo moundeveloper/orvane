@@ -109,13 +109,24 @@ watch(selected, () =>
   }),
 );
 function stripKey(event: KeyboardEvent) {
-  const onSummary = (event.target as Element | null)?.tagName === "SUMMARY";
-  if (onSummary && (event.key === "ArrowRight" || event.key === "ArrowLeft")) {
+  const target = event.target as Element | null;
+  const onSummary = target?.tagName === "SUMMARY";
+  // A clicked call row steps with the arrows too, and focus follows it.
+  const onRow = !!target?.matches("li > button.row");
+  const plain = !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
+  // Ctrl+Left/Right stays Orvane's previous/next app shortcut.
+  if ((onSummary || onRow) && plain && (event.key === "ArrowRight" || event.key === "ArrowLeft")) {
     event.preventDefault();
     const step = event.key === "ArrowRight" ? 1 : -1;
     const from = selectedIndex.value < 0 ? (step > 0 ? -1 : props.items.length) : selectedIndex.value;
     const next = props.items[Math.max(0, Math.min(props.items.length - 1, from + step))];
     if (next && next.id !== selected.value) select(next.id, true);
+    if (next && onRow)
+      void nextTick(() =>
+        root.value
+          ?.querySelector<HTMLElement>(`li[data-id="${CSS.escape(next.id)}"] > button.row`)
+          ?.focus({ preventScroll: true }),
+      );
   } else if (event.key === "Escape" && root.value?.open) {
     event.stopPropagation();
     if (selected.value) selected.value = "";

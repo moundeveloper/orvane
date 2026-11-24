@@ -3399,11 +3399,15 @@ function cropUp(event?: PointerEvent) {
   cropping.value = null;
   cropArming.value = false;
   if (!drag || event?.type === "pointercancel") return;
+  // The area is in the Browser's pixels; a focused page shown at another
+  // zoom (--focus-page-zoom) measures it in its own CSS pixels.
+  const view = webviews.get(state.value.active);
+  const zoom = (view && Number(getComputedStyle(view).zoom)) || 1;
   const rect = {
-    x: Math.min(drag.x0, drag.x),
-    y: Math.min(drag.y0, drag.y),
-    width: Math.abs(drag.x - drag.x0),
-    height: Math.abs(drag.y - drag.y0),
+    x: Math.min(drag.x0, drag.x) / zoom,
+    y: Math.min(drag.y0, drag.y) / zoom,
+    width: Math.abs(drag.x - drag.x0) / zoom,
+    height: Math.abs(drag.y - drag.y0) / zoom,
   };
   if (rect.width > 4 && rect.height > 4)
     void (cropPurpose.value === "clip" ? pinClip(rect) : cropPurpose.value === "live" ? pinLive(rect) : capture("area", rect));
@@ -4959,6 +4963,8 @@ function browserWheel(event: WheelEvent) {
   display: flex;
   width: 100%;
   height: 100%;
+  /* In focus mode the page keeps the canvas zoom it was read at (App.vue). */
+  zoom: var(--focus-page-zoom, 1);
 }
 .browser-webview.browser-asleep {
   pointer-events: none;
@@ -6355,6 +6361,7 @@ function browserWheel(event: WheelEvent) {
 .browser-frame {
   position: absolute;
   inset: 0;
+  zoom: var(--focus-page-zoom, 1);
 }
 .browser-page.split :is(.pane-first, .pane-second) {
   position: absolute;

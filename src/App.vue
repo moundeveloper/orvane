@@ -472,13 +472,17 @@ function placeFocus() {
   const app = f && workspace.apps.find((a) => a.id === f.id);
   if (!f || !app) return;
   f.rect = focusArea();
-  // Keep the zoom the app was being read at: focus gives it the window, it
-  // does not make its content bigger or smaller.
-  const zoom = Math.min(2, Math.max(0.5, f.camera.zoom || 1));
-  camera.zoom = zoom;
-  camera.x = f.rect.x - app.x * zoom;
-  camera.y = f.rect.y - app.y * zoom;
+  // The app's own interface is shown at actual size; only web pages keep the
+  // size they were read at on the canvas (focusPageZoom).
+  camera.zoom = 1;
+  camera.x = f.rect.x - app.x;
+  camera.y = f.rect.y - app.y;
 }
+/** Canvas zoom the focused app was read at: its Browser pages keep it, so
+ * focusing gives a page more room without making its content bigger. */
+const focusPageZoom = computed(() =>
+  focused.value ? Math.min(2, Math.max(0.5, focused.value.camera.zoom || 1)) : 1,
+);
 function enterFocus(app: CanvasApp) {
   if (focused.value?.id === app.id) return exitFocus();
   stopPan();
@@ -4900,9 +4904,10 @@ onBeforeUnmount(() => {
         :style="{
           left: app.x + 'px',
           top: app.y + 'px',
-          width: (focused?.id === app.id ? focused.rect.width / camera.zoom : app.width) + 'px',
-          height: (focused?.id === app.id ? focused.rect.height / camera.zoom : app.height) + 'px',
+          width: (focused?.id === app.id ? focused.rect.width : app.width) + 'px',
+          height: (focused?.id === app.id ? focused.rect.height : app.height) + 'px',
           zIndex: focused?.id === app.id ? stack.length + 4 : (stackLevel('app', app.id) ?? 1),
+          '--focus-page-zoom': focused?.id === app.id ? focusPageZoom : undefined,
         }"
         @pointerdown.stop="pointerDown($event, app)"
         @focusin="focusIn($event, app)"
