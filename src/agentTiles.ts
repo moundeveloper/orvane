@@ -3,6 +3,7 @@
 // id; the pane's session lives in the host's `panes` record, keyed by that id.
 // "host" is the pane the Agent Sessions app itself draws; it always exists.
 import type { AgentProvider } from "./agentSessions";
+import type { AgentDraft } from "./agentNavigation";
 
 export type TileLeaf = { type: "pane"; id: string };
 export type TileSplit = { type: "split"; id: string; dir: "row" | "column"; ratio: number; a: TileNode; b: TileNode };
@@ -11,7 +12,7 @@ export type TileRect = { x: number; y: number; w: number; h: number };
 export type TileGap = TileRect & { id: string; dir: "row" | "column"; box: TileRect };
 export type TileEdge = "left" | "right" | "top" | "bottom";
 /** What a pane other than the host shows: a session, or a new one being set up. */
-export type PaneSession = { key?: string; provider?: AgentProvider; folder?: string };
+export type PaneSession = { key?: string; provider?: AgentProvider; folder?: string; initialDraft?: AgentDraft };
 export type TilesState = { root: TileNode; focus: string; panes: Record<string, PaneSession> };
 
 export const HOST = "host";

@@ -10,6 +10,7 @@ const props = withDefaults(
   defineProps<{ items: AgentActivity[]; title?: string; collapsed?: boolean; strip?: boolean }>(),
   { title: "Run activity", collapsed: false, strip: false },
 );
+const emit = defineEmits<{ "view-image": [path: string] }>();
 
 const kinds: Record<AgentActivity["kind"], string> = {
   mcp: "MCP",
@@ -208,6 +209,11 @@ const inputText = (item: AgentActivity) =>
             <svg v-if="item.status === 'completed'" class="tick" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M5 12.5l4.5 4.5L19 7.5" />
             </svg>
+            <!-- A failed call is a red cross, the counterpart of the tick. -->
+            <svg v-else-if="item.status === 'failed'" class="cross" viewBox="0 0 24 24" role="img" aria-label="Failed">
+              <title>Failed</title>
+              <path d="M7 7l10 10M17 7L7 17" />
+            </svg>
             <template v-else>{{ states[item.status] }}</template>
           </span>
         </button>
@@ -223,7 +229,11 @@ const inputText = (item: AgentActivity) =>
             <dl>
               <template v-for="(value, key) in item.input" :key="key">
                 <dt>{{ key }}</dt>
-                <dd>{{ value }}</dd>
+                <dd>
+                  <button v-if="item.label === 'Viewed image' && key === 'file_path'" type="button"
+                    @click="emit('view-image', value)">Preview {{ value.split(/[\\/]/).at(-1) }}</button>
+                  <template v-else>{{ value }}</template>
+                </dd>
               </template>
             </dl>
           </section>
@@ -299,6 +309,16 @@ const inputText = (item: AgentActivity) =>
             <template v-else>
               <i v-if="item.status === 'running'" class="spin" />
               <svg
+                v-else-if="item.status === 'failed'"
+                class="cross"
+                viewBox="0 0 24 24"
+                role="img"
+                aria-label="Failed"
+              >
+                <title>Failed</title>
+                <path d="M7 7l10 10M17 7L7 17" />
+              </svg>
+              <svg
                 v-else
                 class="cross"
                 viewBox="0 0 24 24"
@@ -306,7 +326,7 @@ const inputText = (item: AgentActivity) =>
               >
                 <path d="M7 7l10 10M17 7L7 17" />
               </svg>
-              {{ states[item.status] }}
+              <template v-if="item.status !== 'failed'">{{ states[item.status] }}</template>
             </template>
           </span>
         </component>
@@ -325,7 +345,11 @@ const inputText = (item: AgentActivity) =>
             <dl>
               <template v-for="(value, key) in item.input" :key="key">
                 <dt>{{ key }}</dt>
-                <dd>{{ value }}</dd>
+                <dd>
+                  <button v-if="item.label === 'Viewed image' && key === 'file_path'" type="button"
+                    @click="emit('view-image', value)">Preview {{ value.split(/[\\/]/).at(-1) }}</button>
+                  <template v-else>{{ value }}</template>
+                </dd>
               </template>
             </dl>
           </section>
@@ -672,6 +696,12 @@ li.open .chev {
 .cross {
   width: 12px;
   height: 12px;
+}
+.state.is-failed .cross {
+  width: 13px;
+  height: 13px;
+  color: #b3473a;
+  stroke-width: 2.4;
 }
 .detail {
   display: grid;

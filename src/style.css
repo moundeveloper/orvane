@@ -1175,13 +1175,14 @@ button:hover {
   position: absolute;
   z-index: 40;
   bottom: var(--dock-bottom);
-  /* Centred in the canvas left of the pinned side chat, when one is pinned. */
-  left: calc((100% - var(--side-reserve, 0px)) / 2);
+  /* Centred on the whole window, pinned side chat or not: the chat stops
+     above the dock's row (UI Maker "Pinned chat layout", Above the dock). */
+  left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 5px;
-  max-width: calc(100% - var(--side-reserve, 0px) - 40px);
+  max-width: calc(100% - 40px);
   height: var(--dock-height);
   padding: 7px 9px;
   background: #f5f8fa;

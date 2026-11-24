@@ -15,6 +15,7 @@ import {
 } from "../agentSessions";
 import { agentRequest } from "../exposition";
 import { flatten, type CanvasApp } from "../model";
+import { harness } from "../agentHarness";
 import {
   api,
   baseName,
@@ -26,6 +27,7 @@ import {
 import CustomSelect from "./CustomSelect.vue";
 import Icon from "./Icon.vue";
 import SessionChat from "./SessionChat.vue";
+import type { AgentDraft } from "../agentNavigation";
 import SessionList from "./SessionList.vue";
 import type { AgentSession } from "../exposition";
 
@@ -38,6 +40,7 @@ const emit = defineEmits<{
   close: [];
   /** Dock this session's chat on the right side of the window. */
   pin: [key: string];
+  "pin-draft": [draft: AgentDraft];
   /** Open this session in an Agent sessions app. */
   open: [key: string];
   started: [run: AgentRun];
@@ -88,6 +91,13 @@ function sessionsKey(event: KeyboardEvent) {
 }
 /** Ctrl+Shift+J while the Sessions tab shows a chat pins that chat. */
 function pinChosen() {
+  if (mode.value === "new") {
+    if (busy.value || !surveying.value) return false;
+    emit("pin-draft", { provider: provider.value, folder: folder.value || surveying.value,
+      text: draft.value, paths: paths.value, model: model.value.trim() });
+    draft.value = "";
+    return true;
+  }
   if (mode.value !== "sessions" || !chosen.value) return false;
   emit("pin", chosen.value.key);
   return true;
@@ -288,6 +298,8 @@ async function start() {
         provider: provider.value,
         folder: folder.value || undefined,
         model: model.value.trim() || undefined,
+        // The default edit mode from Agent sessions → Settings.
+        ...(harness.settings.defaultModes?.[provider.value] ? { mode: harness.settings.defaultModes[provider.value] } : {}),
       },
     });
     if (folder.value)
@@ -413,6 +425,10 @@ onBeforeUnmount(() => {
         <button type="button" role="tab" :aria-selected="mode === 'sessions'" @click="mode = 'sessions'">Sessions{{ sessionCount ? ` · ${sessionCount}` : "" }}</button>
       </div>
       <span class="launcher-space"></span>
+      <button v-if="mode === 'new'" type="button" class="launcher-icon" aria-label="Pin new session"
+        data-tip="Pin new session · Ctrl+Shift+J" :disabled="busy || !surveying" @click="pinChosen()">
+        <Icon name="pin" :size="15" />
+      </button>
       <template v-if="mode === 'sessions'">
         <button type="button" class="launcher-icon" aria-label="Pin to side" data-tip="Pin to side · Ctrl+Shift+J" :disabled="!chosen" @click="chosen && emit('pin', chosen.key)">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 2.5 13.5 6l-2.5 1-2.5 3 .5 2.5L4 7.5 6.5 8l3-2.5z" /><path d="M5.5 10.5 2.5 13.5" /></svg>

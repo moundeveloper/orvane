@@ -7,7 +7,22 @@ import {
   ref,
   watch,
 } from "vue";
-import { agentOpenRequests, agentRunIndicators } from "../agentNavigation";
+import {
+  AGENT_REVEAL,
+  agentLineage,
+  agentOpenRequests,
+  agentRunIndicators,
+  continueDrafts,
+  pendingReveals,
+  PIN_AGENT_DRAFT,
+  recordLineage,
+  revealSession,
+  type AgentDraft,
+  type AgentReveal,
+  type AgentSource,
+} from "../agentNavigation";
+import ContinuePicker, { type ContinueChoice } from "./ContinuePicker.vue";
+import ContinueCard from "./ContinueCard.vue";
 import {
   agentRequest,
   type AgentSession,
@@ -21,7 +36,9 @@ import Icon from "./Icon.vue";
 import ChatMarkdown from "./ChatMarkdown.vue";
 import AgentRunActivity from "./AgentRunActivity.vue";
 import AgentQuestions from "./AgentQuestions.vue";
+import ImagePeek, { type PeekImage } from "./ImagePeek.vue";
 import ThinkingTrail from "./ThinkingTrail.vue";
+import DnaHelix from "./DnaHelix.vue";
 import AgentSettings from "./AgentSettings.vue";
 import AgentUsage from "./AgentUsage.vue";
 import CustomSelect from "./CustomSelect.vue";
@@ -66,8 +83,9 @@ import { registerCommands } from "../commands";
 import {
   agentBusy,
   agentNames,
-  agentPermissions,
   askedQuestions,
+  attachmentPicture,
+  splitAttachments,
   summarizeAgentRun,
   type AgentRunSummary,
   type AgentProvider,
@@ -82,7 +100,9 @@ import {
 import {
   api as fileRequest,
   DRAG_MIME,
+  fileToken,
   parentOf,
+  rawUrl,
   type FileEntry,
   type Roots,
 } from "./files/explorer";
@@ -91,10 +111,15 @@ import {
 const props = defineProps<{
   block: Block;
   /** quiet: opening a session leaves focus where it is (AI launcher preview). */
-  pane?: PaneSession & { id: string; nonce: number; quiet?: boolean };
+  pane?: PaneSession & { id: string; nonce: number; quiet?: boolean; initialDraft?: AgentDraft };
   focused?: boolean;
 }>();
-const emit = defineEmits<{ "pane-state": [state: PaneSession] }>();
+const emit = defineEmits<{
+  "pane-state": [state: PaneSession];
+  "draft-state": [draft: AgentDraft];
+  /** A split pane asks the host to open a continued draft beside it. */
+  continue: [draft: AgentDraft];
+}>();
 const sessions = ref<AgentSession[]>([]),
   active = ref(""),
   search = ref(""),
@@ -270,8 +295,9 @@ const effort = computed({
     chosenEfforts.value = { ...chosenEfforts.value, [modelKey.value]: value };
   },
 });
+// A chat without its own pick uses the default from Settings → Sessions.
 const editMode = computed({
-  get: () => chosenModes.value[modelKey.value] ?? "",
+  get: () => chosenModes.value[modelKey.value] ?? harness.settings.defaultModes?.[provider.value] ?? "",
   set: (value: AgentEditMode | "") => {
     chosenModes.value = { ...chosenModes.value, [modelKey.value]: value };
   },
@@ -363,10 +389,44 @@ const groups = computed(() => {
     else earlier.push(s);
   }
   return [
-    { label: "Needs attention", items: attention, runs: pendingRuns.value },
-    { label: "Today", items: today, runs: [] },
-    { label: "Earlier", items: earlier, runs: [] },
+    { label: "Needs attention", items: nest(attention), runs: pendingRuns.value },
+    { label: "Today", items: nest(today), runs: [] },
+    { label: "Earlier", items: nest(earlier), runs: [] },
   ].filter((group) => group.items.length || group.runs.length);
+});
+// A continued session sits right under the session it came from, indented,
+// when both are in the same group.
+function nest(items: AgentSession[]) {
+  const keys = new Set(items.map((s) => s.key));
+  const children = new Map<string, AgentSession[]>();
+  const top: AgentSession[] = [];
+  for (const s of items) {
+    const parent = agentLineage.get(s.key)?.key;
+    if (parent && parent !== s.key && keys.has(parent)) children.set(parent, [...(children.get(parent) ?? []), s]);
+    else top.push(s);
+  }
+  const out: AgentSession[] = [];
+  const seen = new Set<string>();
+  const add = (s: AgentSession) => {
+    if (seen.has(s.key)) return;
+    seen.add(s.key);
+    out.push(s);
+    for (const child of children.get(s.key) ?? []) add(child);
+  };
+  top.forEach(add);
+  items.forEach(add);
+  return out;
+}
+const childKeys = computed(() => {
+  const out = new Set<string>();
+  for (const group of groups.value) {
+    const keys = new Set(group.items.map((s) => s.key));
+    for (const s of group.items) {
+      const parent = agentLineage.get(s.key)?.key;
+      if (parent && parent !== s.key && keys.has(parent)) out.add(s.key);
+    }
+  }
+  return out;
 });
 const rowTime = (value: number) => {
   const d = new Date(value),
@@ -741,6 +801,23 @@ function composerKey(event: KeyboardEvent) {
 }
 function appKey(event: KeyboardEvent) {
   const target = event.target as HTMLElement;
+  // Ctrl+Alt+M continue with another model, Ctrl+Alt+O open the source. A
+  // split pane answers first; its host then leaves the key alone.
+  if (
+    event.ctrlKey && event.altKey && !event.shiftKey && !event.metaKey &&
+    (event.code === "KeyM" || event.code === "KeyO") && !event.defaultPrevented
+  ) {
+    if (event.code === "KeyM" && (selected.value || sourceQuote.value)) {
+      event.preventDefault();
+      openContinue();
+    } else if (event.code === "KeyO" && fromSource.value) {
+      event.preventDefault();
+      openSource();
+    }
+    // Inside a split pane the key belongs to this pane, never to the host's.
+    if (props.pane) event.preventDefault();
+    return;
+  }
   if (
     props.pane ||
     schedulesOpen.value || event.key !== "/" ||
@@ -787,6 +864,12 @@ function menuKey(event: KeyboardEvent) {
   } else if (event.key === "Tab") closeMenu();
 }
 function outsideMenu(event: Event) {
+  if (continueOpen.value) {
+    const path = event.composedPath();
+    const inside = [continueMenu.value?.$el as HTMLElement | undefined, menuButton.value, continuePill.value]
+      .some((el) => el && path.includes(el));
+    if (!inside) continueOpen.value = "";
+  }
   if (!menuOpen.value) return;
   const path = event.composedPath();
   if (![menu.value, menuButton.value].some((el) => el && path.includes(el)))
@@ -970,6 +1053,238 @@ async function openNew(kind: AgentProvider) {
   folderInput.value?.focus();
 }
 
+function currentDraft(kind: AgentProvider): AgentDraft {
+  return { provider: kind, folder: folder.value, text: draft.value, paths: paths.value,
+    quotes: quotes.value, model: model.value, effort: effort.value, mode: editMode.value,
+    runId: run.value?.id };
+}
+function pinNew() {
+  if (!newProvider.value || sending.value) return;
+  window.dispatchEvent(new CustomEvent<AgentDraft>(PIN_AGENT_DRAFT, { detail: currentDraft(newProvider.value) }));
+  if (!busy.value) clearSent();
+}
+
+async function loadPinnedDraft(value: AgentDraft) {
+  back();
+  newProvider.value = value.provider;
+  folder.value = value.folder;
+  draft.value = value.text;
+  paths.value = value.paths;
+  quotes.value = value.quotes ?? [];
+  const origin = quotes.value.find((quote) => quote.origin);
+  continuing.value = origin?.origin
+    ? { key: origin.origin.key, title: origin.source, provider: origin.origin.provider }
+    : null;
+  if (value.model !== undefined) model.value = value.model;
+  if (value.effort !== undefined) effort.value = value.effort;
+  if (value.mode !== undefined) editMode.value = value.mode;
+  if (value.runId) {
+    const ticket = revision;
+    const restored = await agentRequest<AgentRun | null>("inspect-run", { id: value.runId }).catch(() => null);
+    if (restored && ticket === revision) watchRun(restored);
+  }
+}
+
+/* ---------- Continue with another model (UI Maker r3) ---------- */
+// The session menu turns into a model list; the pick opens a draft beside
+// this chat (split pane) or in the pinned panel. The draft carries the source
+// as a session quote with its transcript path, and both sessions link to
+// each other.
+/** The source of the draft shown here, until it is sent and becomes a session. */
+const continuing = ref<AgentSource | null>(null);
+const continueOpen = ref<"" | "menu" | "pill">("");
+const continueMenu = ref<InstanceType<typeof ContinuePicker>>();
+const continuePill = ref<HTMLElement>();
+const continueOptions = computed(() => ({ claude: modelOptionsFor("claude"), codex: modelOptionsFor("codex") }));
+const continuePlace = computed(() => (props.pane?.id === "side" ? "panel" : "beside"));
+const sourceQuote = computed(() => (newProvider.value ? quotes.value.find((quote) => quote.origin) : undefined));
+/** Header link: where this session came from. */
+const fromSource = computed<AgentSource | null>(() =>
+  newProvider.value ? continuing.value : (active.value && agentLineage.get(active.value)) || null,
+);
+/** Header link on the source: the newest session or draft that continues it. */
+const continuedIn = computed(() => {
+  const key = active.value;
+  if (!key || newProvider.value) return null;
+  const draft = [...continueDrafts.values()].reverse().find((item) => item.from.key === key && item.blockId === props.block.id);
+  if (draft) return { label: `New ${agentNames[draft.provider]} session`, go: () => revealSession({ blockId: props.block.id, paneId: draft.paneId }) };
+  const child = [...agentLineage].reverse().find(([, source]) => source.key === key)?.[0];
+  if (!child) return null;
+  const title = sessions.value.find((s) => s.key === child)?.title || "the next session";
+  return { label: title, go: () => revealSession({ blockId: props.block.id, key: child }) };
+});
+const continueId = tileId("draft");
+watch(
+  [continuing, newProvider],
+  ([source, kind]) => {
+    if (source && kind)
+      continueDrafts.set(continueId, { id: continueId, blockId: props.block.id, paneId: props.pane?.id ?? HOST, from: source, provider: kind });
+    else continueDrafts.delete(continueId);
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => continueDrafts.delete(continueId));
+
+function openContinue() {
+  if (!selected.value && !sourceQuote.value) return;
+  menuOpen.value = false;
+  void loadModels("claude");
+  void loadModels("codex");
+  continueOpen.value = selected.value ? "menu" : "pill";
+}
+function closeContinue(restore = false) {
+  const was = continueOpen.value;
+  continueOpen.value = "";
+  if (!restore) return;
+  if (was === "menu") menuButton.value?.focus({ preventScroll: true });
+  else continuePill.value?.focus({ preventScroll: true });
+}
+const firstLine = (text: string, limit = 140) =>
+  (text.split(/\r?\n/).map((line) => line.replace(/^[#>*\-\s`]+/, "").trim()).find(Boolean) ?? "").slice(0, limit);
+const oneLine = (text: string, limit: number) => {
+  const flat = text.replace(/```[\s\S]*?```/g, " ").replace(/[`*_#>]/g, "").replace(/\s+/g, " ").trim();
+  return flat.length > limit ? `${flat.slice(0, limit - 1).trimEnd()}…` : flat;
+};
+async function buildContinueDraft(choice: ContinueChoice): Promise<AgentDraft | null> {
+  const s = selected.value;
+  if (!s) return null;
+  const kind = s.provider ?? "claude";
+  let transcript = "";
+  try {
+    transcript = (await agentRequest<{ path: string }>("transcript-file", { key: s.key })).path;
+  } catch (cause) {
+    showRunError(cause);
+    return null;
+  }
+  const list = messages.value;
+  const said = (m: AgentMessage) => (m.role === "user" ? userParts(m.text).text : m.text).trim();
+  const lastIndex = (test: (m: AgentMessage) => boolean) => {
+    for (let i = list.length - 1; i >= 0; i--) if (test(list[i]!)) return i;
+    return -1;
+  };
+  const lastUser = lastIndex((m) => m.role === "user" && !!said(m));
+  const lastReply = lastIndex((m) => m.role !== "user" && !!said(m));
+  const changed = [
+    ...new Set(
+      list.flatMap((m) =>
+        m.tools
+          .filter((tool) => /^(Edit|Write|MultiEdit|NotebookEdit|apply_patch|edit|write|str_replace)/i.test(tool.name))
+          .map((tool) => tool.input?.file_path || tool.input?.path || tool.input?.notebook_path || "")
+          .filter(Boolean),
+      ),
+    ),
+  ].slice(-6);
+  const replyText = lastReply >= 0 ? said(list[lastReply]!) : "";
+  // The agent spoke last and ended on a question: that is what is open.
+  const question =
+    lastReply > lastUser
+      ? replyText.split(/\n\s*\n/).map((part) => part.trim()).reverse().find((part) => /\?\s*$/.test(part)) ?? ""
+      : "";
+  const origin = {
+    key: s.key,
+    provider: kind,
+    transcript,
+    ...(model.value ? { model: modelOptionsFor(kind).find((option) => option.value === model.value)?.label ?? model.value } : {}),
+    updatedAt: s.updatedAt,
+    calls: list.reduce((sum, m) => sum + m.tools.length, 0),
+    asked: lastUser >= 0 ? oneLine(said(list[lastUser]!), 200) : "",
+    reply: oneLine(replyText, 260),
+    changed,
+    open: oneLine(question, 220),
+    turns: list
+      .filter((m) => said(m) || m.tools.length)
+      .slice(-60)
+      .map((m) => ({ id: m.id, at: m.at, role: m.role, line: firstLine(said(m)) || `${m.tools.length} tool calls`, tools: m.tools.length })),
+  };
+  const summary = [
+    origin.asked && `Asked: ${origin.asked}`,
+    origin.reply && `Last reply: ${origin.reply}`,
+    changed.length && `Changed: ${changed.join(", ")}`,
+    origin.open && `Open: ${origin.open}`,
+  ].filter(Boolean).join("\n");
+  return {
+    provider: choice.provider,
+    folder: s.project,
+    text: `Continue from "${s.title}". `,
+    paths: [],
+    quotes: [{
+      id: `continue:${s.key}`,
+      kind: "session",
+      source: s.title,
+      detail: `${agentNames[kind]} in ${projectName(s.project)}, session ${s.sessionId}`,
+      text: summary,
+      origin,
+    }],
+    model: choice.model,
+  };
+}
+async function pickContinue(choice: ContinueChoice) {
+  const mode = continueOpen.value;
+  continueOpen.value = "";
+  if (mode === "pill") {
+    // The draft's destination changes; nothing else does.
+    newProvider.value = choice.provider;
+    model.value = choice.model;
+    focusComposerEnd();
+    return;
+  }
+  const draftValue = await buildContinueDraft(choice);
+  if (!draftValue) return;
+  if (props.pane?.id === "side") window.dispatchEvent(new CustomEvent<AgentDraft>(PIN_AGENT_DRAFT, { detail: draftValue }));
+  else if (props.pane) emit("continue", draftValue);
+  else continueBeside(HOST, draftValue);
+}
+/** The host opens a continued draft as a new tile beside `from`. */
+function continueBeside(from: string, value: AgentDraft) {
+  tiles.value.focus = from;
+  splitPane("row", { provider: value.provider, folder: value.folder, initialDraft: value });
+}
+async function focusComposerEnd() {
+  await nextTick();
+  const field = composer.value;
+  if (!field) return;
+  field.focus({ preventScroll: true });
+  field.setSelectionRange(field.value.length, field.value.length);
+}
+function openSource(messageId?: string) {
+  const source = sourceQuote.value?.origin?.key ?? fromSource.value?.key;
+  if (source) revealSession({ blockId: props.block.id, key: source, messageId });
+}
+/** Scroll a message into view and mark it for a moment. */
+async function revealMessage(id: string) {
+  await nextTick();
+  const element = thread.value?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(id)}"]`);
+  if (!element) return;
+  pinned = false;
+  element.scrollIntoView({ block: "center", behavior: "smooth" });
+  element.classList.remove("cs-flash");
+  void element.offsetWidth;
+  element.classList.add("cs-flash");
+  setTimeout(() => element.classList.remove("cs-flash"), 1300);
+}
+function onReveal(event: Event) {
+  const detail = (event as CustomEvent<AgentReveal>).detail;
+  if (detail.blockId !== props.block.id) return;
+  // The host brings the pane forward, or opens the session beside.
+  if (!props.pane) {
+    const ids = leaves(tiles.value.root);
+    const at = detail.paneId
+      ? ids.includes(detail.paneId) ? detail.paneId : ""
+      : active.value === detail.key && ids.includes(HOST)
+        ? HOST
+        : Object.keys(tiles.value.panes).find((id) => tiles.value.panes[id]!.key === detail.key) ?? "";
+    if (at) tiles.value.focus = at;
+    else if (detail.key) splitPane("row", { key: detail.key });
+  }
+  if (detail.key && detail.key === active.value && messages.value.length) {
+    const id = pendingReveals.get(detail.key);
+    pendingReveals.delete(detail.key);
+    if (id) void revealMessage(id);
+  }
+}
+onMounted(() => window.addEventListener(AGENT_REVEAL, onReveal));
+onBeforeUnmount(() => window.removeEventListener(AGENT_REVEAL, onReveal));
+
 async function focusComposer() {
   schedulesOpen.value = false;
   settingsOpen.value = false;
@@ -1008,9 +1323,20 @@ async function present(value: AgentRun) {
           s.sessionId === value.sessionId,
       );
       if (session && ticket === revision) {
+        // The mode picked for the new chat stays with the session it became.
+        const picked = chosenModes.value[`new:${value.provider}`];
+        if (picked !== undefined) chosenModes.value = { ...chosenModes.value, [session.key]: picked };
+        if (model.value) chosenModels.value = { ...chosenModels.value, [session.key]: model.value };
+        if (effort.value) chosenEfforts.value = { ...chosenEfforts.value, [session.key]: effort.value };
         const waitingDraft = draft.value;
         const waitingPaths = paths.value;
-        await select(session.key);
+        const scrolled = chat.value?.scrollTop ?? 0;
+        if (continuing.value) recordLineage(session.key, continuing.value);
+        await select(session.key, true);
+        if (!pinned && chat.value) {
+          await nextTick();
+          chat.value.scrollTop = scrolled;
+        }
         if (active.value === session.key && !draft.value) {
           draft.value = waitingDraft;
           paths.value = waitingPaths;
@@ -1030,7 +1356,7 @@ async function present(value: AgentRun) {
     }
   }
   await nextTick();
-  if (live.value && chat.value && ticket === revision)
+  if (live.value && pinned && chat.value && ticket === revision)
     chat.value.scrollTop = chat.value.scrollHeight;
 }
 
@@ -1081,6 +1407,11 @@ function showRunError(error: unknown) {
     error instanceof Error ? error.message : "Session command failed.";
 }
 
+function withAttachments(text: string, files: string[]) {
+  return files.length
+    ? `${text}\n\nLocal attachments:\n${files.map((path) => JSON.stringify(path)).join("\n")}`
+    : text;
+}
 // The draft as sent: the text, then the attached paths.
 function outgoing() {
   const files = [
@@ -1088,9 +1419,7 @@ function outgoing() {
   ];
   const context = quotes.value.map(quoteText).join("\n\n");
   const text = context ? (draft.value.trim() ? `${draft.value}\n\n${context}` : context) : draft.value;
-  return files.length
-    ? `${text}\n\nLocal attachments:\n${files.map((path) => JSON.stringify(path)).join("\n")}`
-    : text;
+  return withAttachments(text, files);
 }
 function clearSent() {
   draft.value = "";
@@ -1160,6 +1489,8 @@ async function editQueued(item: AgentQueued) {
 const queueLine = (text: string) => text.trim().split(/\r?\n/, 1)[0]!.slice(0, 240);
 async function send(messageOverride?: string) {
   if (agentBusy(run.value) && !sending.value) return queueDraft();
+  // Sending brings the view back to the end of the conversation.
+  pinned = true;
   if (
     busy.value ||
     !(messageOverride || hasDraft.value) ||
@@ -1226,6 +1557,8 @@ const composerHandle: ComposerHandle = {
   },
 };
 const quoteLine = (quote: AgentQuote) =>
+  (quote.origin &&
+    `full transcript · ${quote.origin.turns.length} turns · ${quote.origin.calls} tool ${quote.origin.calls === 1 ? "call" : "calls"}`) ||
   quote.text.trim().split(/\r?\n/).find((line) => line.trim())?.slice(0, 160) ||
   (quote.image ? "Picture" : "");
 function removeQuote(id: string) {
@@ -1266,6 +1599,100 @@ function dropFiles(event: DragEvent) {
   if (!dropped.length) return;
   paths.value = [...new Set([...paths.value, ...dropped])].slice(0, 20);
   void focusComposer();
+}
+// Pasted pictures show as tiles in the composer and above the sent message;
+// a click opens them full-window (ImagePeek), ← → step through the set.
+const pictures = (list: string[]) =>
+  list.flatMap((path) => {
+    const src = attachmentPicture(path);
+    return src ? [{ path, src }] : [];
+  });
+const draftPictures = computed(() => pictures(paths.value));
+const draftFiles = computed(() => paths.value.filter((path) => !attachmentPicture(path)));
+/** Show pictures as tiles and keep other attachments in the message. */
+// The source reference of a continued session (quoteText's origin block),
+// shown as a small chip under the message instead of its full text.
+const continuedBlock =
+  /\n*Continue from the earlier session "(.*?)"(?: \([^\n]*\))?\.\nIts full transcript \(JSONL\) is at: [^\n]*\nRead it when [^\n]*\n```\n[\s\S]*?\n```\s*$/;
+function userParts(text: string) {
+  const { text: body, paths: sent } = splitAttachments(text);
+  const tiles = pictures(sent);
+  const imagePaths = new Set(tiles.map((picture) => picture.path));
+  const reference = continuedBlock.exec(body);
+  const shown = reference ? body.slice(0, reference.index) : body;
+  const others = sent.filter((path) => !imagePaths.has(path));
+  return {
+    text: tiles.length || reference ? withAttachments(shown, tiles.length ? others : sent) : text,
+    pictures: tiles,
+    continued: reference?.[1] ?? "",
+  };
+}
+const peek = ref<{ items: PeekImage[]; index: number } | null>(null);
+let peekTrigger: HTMLElement | null = null;
+function openPictures(list: { path: string; src: string }[], index: number) {
+  peekTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  peek.value = {
+    items: list.map((item) => ({ src: item.src, title: item.path.split(/[\\/]/).pop()!, source: item.path })),
+    index,
+  };
+}
+async function openViewedImage(path: string) {
+  try {
+    openPictures([{ path, src: attachmentPicture(path) ?? rawUrl(path, await fileToken()) }], 0);
+  } catch (error) {
+    showRunError(error);
+  }
+}
+function closePictures() {
+  peek.value = null;
+  peekTrigger?.focus({ preventScroll: true });
+  peekTrigger = null;
+}
+function pickPicture(index: number) {
+  if (peek.value) peek.value.index = index;
+}
+function stepPicture(by: number) {
+  if (!peek.value) return;
+  const count = peek.value.items.length;
+  pickPicture((peek.value.index + by + count) % count);
+}
+/** Any picture as a PNG data URL (the attachment store keeps PNGs). */
+async function pngData(file: Blob) {
+  if (file.type === "image/png")
+    return await new Promise<string>((done, fail) => {
+      const reader = new FileReader();
+      reader.onload = () => done(String(reader.result));
+      reader.onerror = () => fail(reader.error);
+      reader.readAsDataURL(file);
+    });
+  const bitmap = await createImageBitmap(file);
+  const canvas = document.createElement("canvas");
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  canvas.getContext("2d")!.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  return canvas.toDataURL("image/png");
+}
+// Pasting a screenshot (or an image copied anywhere) saves it under
+// .orvane/agent-attachments and attaches it like a dropped file; files copied
+// in Windows attach by path. Text pastes as usual.
+async function pasteFiles(event: ClipboardEvent) {
+  const files = [...(event.clipboardData?.files ?? [])];
+  if (!files.length) return;
+  event.preventDefault();
+  const desktop = (window as unknown as { orvaneDesktop?: { pathForFile?(file: File): string } }).orvaneDesktop;
+  const added: string[] = [];
+  try {
+    for (const file of files) {
+      const path = desktop?.pathForFile?.(file) ?? "";
+      if (path) added.push(path);
+      else if (file.type.startsWith("image/"))
+        added.push((await agentRequest<{ path: string }>("attachment-save", { data: await pngData(file) })).path);
+    }
+  } catch (error) {
+    showRunError(error);
+  }
+  if (added.length) paths.value = [...new Set([...paths.value, ...added])].slice(0, 20);
 }
 // "@" also lists other sessions; picking one adds its latest reply.
 const mentionSessions = computed<MentionSession[]>(() =>
@@ -1481,8 +1908,6 @@ async function read(older = false, includeRun = false) {
   const key = active.value,
     gen = generation;
   const box = chat.value,
-    atBottom =
-      !box || box.scrollHeight - box.scrollTop - box.clientHeight < 100,
     oldHeight = box?.scrollHeight || 0;
   const data = await agentRequest<AgentSessionRead>("read", {
     key,
@@ -1527,15 +1952,45 @@ async function read(older = false, includeRun = false) {
   await nextTick();
   if (chat.value && !expanded.value) {
     if (older) chat.value.scrollTop += chat.value.scrollHeight - oldHeight;
-    else if (atBottom) chat.value.scrollTop = chat.value.scrollHeight;
+    // Only a reader at the very bottom (or a session just opened) follows.
+    else if (pinned) chat.value.scrollTop = chat.value.scrollHeight;
+  }
+  // A continued session asked to show one of this session's messages.
+  const reveal = !older && pendingReveals.get(key);
+  if (reveal && messages.value.some((m) => m.id === reveal)) {
+    pendingReveals.delete(key);
+    void revealMessage(reveal);
   }
 }
-async function select(key: string) {
+// Follow the end of the conversation only while the reader is at the very
+// bottom: anything that grows below (live output, a reply laid out again when
+// its run finishes, links resolved late, the call strip) keeps the view there.
+// Scrolled up even a little, nothing moves the view (even while a run is
+// live) until the reader is back at the bottom or sends a message.
+let pinned = true;
+const thread = ref<HTMLElement>();
+function chatScrolled() {
+  const box = chat.value;
+  if (box) pinned = box.scrollHeight - box.scrollTop - box.clientHeight < 8;
+}
+const followEnd = new ResizeObserver(() => {
+  const box = chat.value;
+  if (box && pinned) box.scrollTop = box.scrollHeight;
+});
+onMounted(() => thread.value && followEnd.observe(thread.value));
+onBeforeUnmount(() => followEnd.disconnect());
+/** keepScroll: a new chat turning into its saved session (not the owner
+ * opening one), so a reader scrolled up stays where they are. */
+async function select(key: string, keepScroll = false) {
   if (sending.value || (newProvider.value && busy.value)) return;
+  if (!keepScroll) pinned = true;
   schedulesOpen.value = false;
   settingsOpen.value = false;
   resetComposer();
   newProvider.value = undefined;
+  continuing.value = null;
+  // A continue reference belongs to its draft, unlike other context chips.
+  quotes.value = quotes.value.filter((quote) => !quote.origin);
   const selectedGeneration = ++generation;
   active.value = key;
   saveBlock();
@@ -1609,6 +2064,7 @@ function back() {
   saveBlock();
   expanded.value = null;
   newProvider.value = undefined;
+  continuing.value = null;
   messages.value = [];
   visuals.value = [];
   warnings.value = [];
@@ -1787,10 +2243,16 @@ if (props.pane) {
       const pane = props.pane;
       if (!pane) return;
       if (pane.key) {
+        if (pane.id === "side" && newProvider.value && busy.value) back();
         if (pane.key !== active.value || !messages.value.length) void select(pane.key).then(() => {
           if (!pane.quiet) return focusComposer();
         });
         else if (!pane.quiet) void focusComposer();
+      } else if (pane.initialDraft) {
+        const continued = pane.initialDraft.quotes?.some((quote) => quote.origin);
+        void loadPinnedDraft(pane.initialDraft).then(() => {
+          if (continued && !pane.quiet) return focusComposerEnd();
+        });
       } else if (pane.provider) {
         void openNew(pane.provider).then(() => {
           if (pane.folder) folder.value = pane.folder;
@@ -1798,6 +2260,13 @@ if (props.pane) {
       }
     },
     { immediate: !!props.pane.nonce, flush: "post" },
+  );
+}
+if (props.pane?.id === "side") {
+  watch(
+    [newProvider, folder, draft, paths, quotes, model, effort, editMode, () => run.value?.id],
+    () => { if (newProvider.value) emit("draft-state", currentDraft(newProvider.value)); },
+    { flush: "post" },
   );
 }
 // With split panes, Ctrl+K lists the focused pane's session commands only.
@@ -1860,6 +2329,10 @@ function sessionCommands() { return [
         run: () => contextRing.value?.toggle(),
       }]
     : []),
+  ...(newProvider.value && props.pane?.id !== "side"
+    ? [{ id: `agent-pin-draft:${props.block.id}`, title: "Pin new session", icon: "pin" as const,
+        blockId: props.block.id, run: pinNew }]
+    : []),
   ...(selected.value || newProvider.value
     ? [{
         id: `agent-snapshot:${props.block.id}`,
@@ -1919,6 +2392,27 @@ function sessionCommands() { return [
           run: openTimeline,
         },
       ]
+    : []),
+  ...(selected.value
+    ? [{
+        id: `agent-continue:${props.block.id}`,
+        title: "Continue with another model…",
+        icon: "git" as const,
+        hint: "Ctrl+Alt+M",
+        keywords: "handoff codex claude model new session reference transcript",
+        blockId: props.block.id,
+        run: openContinue,
+      }]
+    : []),
+  ...(fromSource.value
+    ? [{
+        id: `agent-continue-source:${props.block.id}`,
+        title: `Open source session: ${fromSource.value.title}`,
+        icon: "agent-sessions" as const,
+        hint: "Ctrl+Alt+O",
+        blockId: props.block.id,
+        run: () => openSource(),
+      }]
     : []),
   ...(provider.value === "claude" && selected.value && !busy.value
     ? [
@@ -2011,7 +2505,7 @@ onBeforeUnmount(() => {
 });
 </script>
 <template>
-  <div ref="root" class="agent-sessions-app" :class="{ 'cs-pane-mode': pane }" @keydown="appKey">
+  <div ref="root" class="agent-sessions-app" :class="{ 'cs-pane-mode': pane, 'cs-pinned': pane?.id === 'side' }" @keydown="appKey">
     <header v-if="!pane" class="cs-toolbar">
       <span class="cs-title"
         ><Icon name="agent-sessions" :size="16" /><span>Agent sessions</span></span
@@ -2106,7 +2600,8 @@ onBeforeUnmount(() => {
               :key="s.key"
               type="button"
               class="cs-session"
-              :class="{ selected: shownKey === s.key }"
+              :class="{ selected: shownKey === s.key, 'cs-child': childKeys.has(s.key) }"
+              :title="childKeys.has(s.key) ? `Continued from ${agentLineage.get(s.key)?.title}` : undefined"
               :aria-current="shownKey === s.key ? 'true' : undefined"
               :disabled="sending || (!!newProvider && busy)"
               @click="openFromList(s.key, $event)"
@@ -2182,7 +2677,7 @@ onBeforeUnmount(() => {
                 ? `New ${agentNames[newProvider]} session`
                 : selected?.title || "Session"
             }}</strong>
-            <span class="cs-head-meta">
+            <span class="cs-head-meta" :class="{ 'cs-linked': fromSource || continuedIn }">
               <span>{{ agentNames[provider] }}</span>
               <template v-if="selected || folder">
                 <span class="cs-sep">·</span>
@@ -2196,9 +2691,24 @@ onBeforeUnmount(() => {
                   stateLabels[stateOf(summarizeAgentRun(run)) || "running"]
                 }}</span>
               </template>
+              <template v-if="fromSource">
+                <span class="cs-sep">·</span>
+                <button type="button" class="cs-lineage" :title="`Open ${fromSource.title} (Ctrl+Alt+O)`"
+                  @click="openSource()"><Icon name="git" :size="12" />from <b>{{ fromSource.title }}</b></button>
+              </template>
+              <template v-else-if="continuedIn">
+                <span class="cs-sep">·</span>
+                <button type="button" class="cs-lineage" :title="`Go to ${continuedIn.label}`"
+                  @click="continuedIn.go()"><Icon name="git" :size="12" />continued in <b>{{ continuedIn.label }}</b></button>
+              </template>
             </span>
           </div>
           <KeepAwake v-if="working" />
+          <button v-if="newProvider && pane?.id !== 'side'" type="button"
+            class="cs-btn cs-icon cs-ghost" aria-label="Pin new session" title="Pin new session"
+            :disabled="sending" @click="pinNew">
+            <Icon name="pin" :size="14" />
+          </button>
           <button
             v-if="selected || (newProvider && run)"
             class="cs-btn cs-open-folder"
@@ -2244,10 +2754,18 @@ onBeforeUnmount(() => {
                 <Icon :name="harness.settings.suggest ? 'check' : 'text'" :size="14" /><span>Suggest next message</span>
               </button>
               <hr />
+              <button type="button" role="menuitem" @click="openContinue">
+                <Icon name="git" :size="14" /><span>Continue with another model</span><kbd class="cs-menu-kbd">Ctrl Alt M</kbd>
+              </button>
+              <hr />
               <button type="button" role="menuitem" @click="menuAction('reload')">
                 <Icon name="refresh" :size="14" /><span>Reload transcript</span>
               </button>
             </div>
+            <ContinuePicker v-if="continueOpen === 'menu'" ref="continueMenu" class="cs-continue-pop"
+              :options="continueOptions" :place="continuePlace"
+              :current="{ provider, model }"
+              @pick="pickContinue" @close="closeContinue(true)" />
           </span>
         </header>
         <div class="cs-content">
@@ -2256,6 +2774,7 @@ onBeforeUnmount(() => {
             ref="chat"
             class="cs-chat"
             aria-label="Session conversation"
+            @scroll.passive="chatScrolled"
           >
             <SessionTimeline
               v-if="timeline && selected"
@@ -2265,7 +2784,7 @@ onBeforeUnmount(() => {
               :base="selected.project"
               @close="closeTimeline"
             />
-            <div v-show="!timeline" class="cs-thread">
+            <div v-show="!timeline" ref="thread" class="cs-thread">
               <button
                 v-if="before"
                 type="button"
@@ -2278,10 +2797,11 @@ onBeforeUnmount(() => {
               <p v-if="loading" class="cs-empty" role="status">
                 Reading session…
               </p>
-              <div v-if="newProvider && !live && !run" class="cs-hello">
+              <ContinueCard v-if="newProvider && !live && !run && sourceQuote" :quote="sourceQuote" :to="newProvider"
+                @open="openSource" />
+              <div v-else-if="newProvider && !live && !run" class="cs-hello">
                 <span class="cs-mark cs-mark-lg"><Icon name="ai" :size="20" /></span>
                 <strong>New {{ agentNames[newProvider] }} session</strong>
-                <span>{{ agentPermissions[newProvider] }}</span>
               </div>
               <p
                 v-if="!newProvider && !live && !loading && !messages.length"
@@ -2295,6 +2815,7 @@ onBeforeUnmount(() => {
               <article
                 v-for="(m, index) in messages"
                 :key="m.id"
+                :data-message-id="m.id"
                 class="cs-message"
                 :class="'cs-' + m.role"
               >
@@ -2325,18 +2846,30 @@ onBeforeUnmount(() => {
                 </div>
                 <!-- The reply's tool calls, folded into a time strip above its text. -->
                 <AgentRunActivity
+                  @view-image="openViewedImage"
                   v-if="m.tools.length || index === runStripAt"
                   class="cs-tool-steps"
                   strip
                   collapsed
                   :items="m.tools.length ? toolSteps(m, index === messages.length - 1) : run!.activities!"
                 />
+                <!-- A message's pasted pictures above its text, as sent. -->
+                <ul v-if="m.role === 'user' && userParts(m.text).pictures.length" class="cs-pictures cs-sent-pictures" aria-label="Pictures sent">
+                  <li v-for="(picture, index) in userParts(m.text).pictures" :key="picture.path">
+                    <button type="button" class="cs-picture" :aria-label="`Open ${picture.path}`"
+                      @click="openPictures(userParts(m.text).pictures, index)"><img :src="picture.src" alt="" /></button>
+                  </li>
+                </ul>
                 <ChatMarkdown
-                  v-if="m.text"
+                  v-if="m.role === 'user' ? userParts(m.text).text.trim() : m.text"
                   class="cs-message-text"
-                  :text="m.text"
+                  :text="m.role === 'user' ? userParts(m.text).text : m.text"
                   :base="selected?.project || run?.folder"
                 />
+                <button v-if="m.role === 'user' && userParts(m.text).continued" type="button" class="cs-sent-ref"
+                  :title="fromSource ? `Open ${fromSource.title}` : undefined" :disabled="!fromSource" @click="openSource()">
+                  <Icon name="agent-sessions" :size="12" /><b>@{{ userParts(m.text).continued }}</b>full transcript
+                </button>
                 <span v-if="m.truncated" class="cs-muted"
                   >Message shortened for display. The transcript is
                   unchanged.</span
@@ -2350,7 +2883,16 @@ onBeforeUnmount(() => {
               </article>
               <article v-if="live && run" class="cs-message cs-user">
                 <div class="cs-message-meta"><strong>You</strong></div>
-                <ChatMarkdown class="cs-message-text" :text="run.message" />
+                <ul v-if="userParts(run.message).pictures.length" class="cs-pictures cs-sent-pictures" aria-label="Pictures sent">
+                  <li v-for="(picture, index) in userParts(run.message).pictures" :key="picture.path">
+                    <button type="button" class="cs-picture" :aria-label="`Open ${picture.path}`"
+                      @click="openPictures(userParts(run.message).pictures, index)"><img :src="picture.src" alt="" /></button>
+                  </li>
+                </ul>
+                <ChatMarkdown v-if="userParts(run.message).text.trim()" class="cs-message-text" :text="userParts(run.message).text" />
+                <span v-if="userParts(run.message).continued" class="cs-sent-ref">
+                  <Icon name="agent-sessions" :size="12" /><b>@{{ userParts(run.message).continued }}</b>full transcript
+                </span>
               </article>
               <template v-if="live && run?.steered?.length">
                 <article v-for="item in run.steered" :key="item.at" class="cs-message cs-user cs-steered">
@@ -2359,28 +2901,22 @@ onBeforeUnmount(() => {
                 </article>
               </template>
               <ThinkingTrail
+                @view-image="openViewedImage"
                 v-if="working && run"
                 :key="'trail:' + run.id"
                 :items="run.activities ?? []"
+                :texts="run.textParts"
                 :base="run.folder"
                 :status="run.permissions.length ? '' : run.activity"
               >
-                <template #head>
-                  <span class="cs-dna" aria-hidden="true"
-                    ><span
-                      v-for="k in 9"
-                      :key="k"
-                      :style="{
-                        left: `${(k - 1) * 4.5}px`,
-                        animationDelay: `${-((10 - k) * 1.74) / 7}s`,
-                      }"
-                      ><b /><i /><i /></span
-                  ></span>
+                <template #head="{ stepWorking }">
+                  <DnaHelix v-if="!stepWorking" />
                   <strong class="cs-trail-state">{{ trailLabel }}</strong>
                   <time v-if="elapsed" class="cs-trail-time">{{ elapsed }}</time>
                 </template>
               </ThinkingTrail>
               <AgentRunActivity
+                @view-image="openViewedImage"
                 v-else-if="run?.activities?.length && runStripAt === -1"
                 :key="run.id"
                 class="cs-tool-steps"
@@ -2419,7 +2955,8 @@ onBeforeUnmount(() => {
                 :folder="run.folder"
                 @ask="askAbout"
               />
-              <article v-if="live && run?.text" class="cs-message cs-live">
+              <!-- While it works the text sits in the trail, between its steps. -->
+              <article v-if="live && run?.text && !(working && run.textParts)" class="cs-message cs-live">
                 <div class="cs-message-meta">
                   <span class="cs-mark"
                     ><Icon name="ai" :size="12"
@@ -2580,6 +3117,7 @@ onBeforeUnmount(() => {
               v-if="askedQuestions(permission)"
               :questions="askedQuestions(permission)!"
               :who="agentNames[run!.provider]"
+              :codex="run!.provider === 'codex'"
               @answer="runCommand('permission', { requestId: permission.id, allow: true, ...$event })"
               @skip="runCommand('permission', { requestId: permission.id, allow: false })"
             />
@@ -2667,6 +3205,16 @@ onBeforeUnmount(() => {
             </p>
             <div class="agent-composer cs-composer">
               <p v-if="dropping" class="cs-drop-hint" aria-hidden="true">Drop to attach</p>
+              <ImagePeek v-if="peek" :items="peek.items" :index="peek.index" thumbnails @close="closePictures" @step="stepPicture" @pick="pickPicture" />
+              <ul v-if="draftPictures.length" class="cs-pictures" aria-label="Pictures sent with the message">
+                <li v-for="(picture, index) in draftPictures" :key="picture.path">
+                  <button type="button" class="cs-picture" :aria-label="`Open ${picture.path}`" @click="openPictures(draftPictures, index)">
+                    <img :src="picture.src" alt="" />
+                  </button>
+                  <button type="button" class="cs-picture-remove" :aria-label="`Remove ${picture.path}`"
+                    @click="paths = paths.filter((item) => item !== picture.path)"><Icon name="close" :size="11" /></button>
+                </li>
+              </ul>
               <ul v-if="quotes.length" class="cs-quotes" aria-label="Context sent with the message">
                 <li v-for="quote in quotes" :key="quote.id" :class="quote.kind">
                   <Icon
@@ -2692,6 +3240,7 @@ onBeforeUnmount(() => {
                 aria-keyshortcuts="Enter Shift+Enter Control+Enter Control+Shift+Enter Escape @ / Shift+Tab Control+Alt+S Control+Alt+Z"
                 @focus="touchComposer(composerHandle)"
                 @keydown="composerKey"
+                @paste="pasteFiles"
                 @input="readMention"
                 @click="readMention"
                 @keyup.left.right.home.end="readMention"
@@ -2721,7 +3270,7 @@ onBeforeUnmount(() => {
                 <span v-if="suggestion && !draft" class="cs-suggest-hint"
                   ><kbd>Tab</kbd> use suggestion <kbd>Esc</kbd> dismiss</span
                 >
-                <span v-for="path in paths" :key="path" class="cs-attachment" :title="path"
+                <span v-for="path in draftFiles" :key="path" class="cs-attachment" :title="path"
                   ><Icon
                     :name="/\.[\w-]{1,8}$/.test(path) ? 'file' : 'folder'"
                     :size="12" /><span>{{ projectName(path) }}</span
@@ -2770,7 +3319,21 @@ onBeforeUnmount(() => {
                 </span>
               </div>
               <div class="cs-compose-actions">
+                <!-- A continued draft picks its model across both CLIs. -->
+                <span v-if="sourceQuote" class="cs-continue-anchor">
+                  <button ref="continuePill" type="button" class="select-trigger cs-model cs-continue-model"
+                    aria-haspopup="dialog" :aria-expanded="continueOpen === 'pill'" title="Change model (Ctrl+Alt+M)"
+                    @click="continueOpen === 'pill' ? closeContinue() : openContinue()">
+                    <span class="select-trigger-icon-label"><Icon name="cpu" :size="13" /><span>{{
+                      modelOptions.find((option) => option.value === model)?.label || model || "Provider default"
+                    }}</span></span><Icon name="down" :size="12" />
+                  </button>
+                  <ContinuePicker v-if="continueOpen === 'pill'" ref="continueMenu" class="cs-continue-up"
+                    :options="continueOptions" place="beside" change
+                    @pick="pickContinue" @close="closeContinue(true)" />
+                </span>
                 <CustomSelect
+                  v-else
                   v-model="model"
                   class="cs-model"
                   aria-label="Model"
@@ -2814,36 +3377,36 @@ onBeforeUnmount(() => {
                   role="status"
                   >Stopped</span
                 >
-                <span v-else class="cs-status" :title="agentPermissions[provider]">{{
-                  agentPermissions[provider]
-                }}</span>
-                <AgentUsage v-if="!schedulesOpen" ref="usagePill" :provider="provider" />
-                <!-- Queue sits beside the ring; Stop takes Send's round place in it. -->
-                <button v-if="busy && run?.status === 'running' && hasDraft" type="button"
-                  class="cs-btn cs-primary cs-queue-btn" :disabled="queuePending"
-                  :title="run?.provider === 'claude'
-                    ? 'Enter to queue · Ctrl+Enter to steer now · Ctrl+Shift+Enter to stop and send · Alt+↑ to edit'
-                    : 'Enter to queue · Ctrl+Enter to interrupt · Alt+↑ to edit'"
-                  @click="queueDraft()"><Icon name="list" :size="14" />Queue</button>
-                <ContextRing
-                  v-if="!schedulesOpen"
-                  ref="contextRing"
-                  :context="contextNow"
-                  :ring="true"
-                  :can-compact="provider === 'claude' && !!selected && !busy"
-                  :can-fork="provider === 'claude' && !!selected && !busy"
-                  @compact="send('/compact')"
-                  @fork="startFork"
-                >
-                  <button v-if="busy" type="button" class="cs-btn cs-stop" aria-label="Stop" title="Stop"
-                    :disabled="run?.status !== 'running'" @click="runCommand('stop')">
-                    <Icon name="stop" :size="11" />
-                  </button>
-                  <button v-else type="submit" class="cs-btn cs-primary cs-send"
-                    aria-label="Send" title="Send" :disabled="!hasDraft || (!!newProvider && !folder.trim())">
-                    <Icon name="up" :size="16" />
-                  </button>
-                </ContextRing>
+                <span v-else class="cs-status-space" aria-hidden="true" />
+                <div class="cs-send-controls">
+                  <AgentUsage v-if="!schedulesOpen" ref="usagePill" :provider="provider" />
+                  <!-- Queue sits beside the ring; Stop takes Send's round place in it. -->
+                  <button v-if="busy && run?.status === 'running' && hasDraft" type="button"
+                    class="cs-btn cs-primary cs-queue-btn" :disabled="queuePending"
+                    :title="run?.provider === 'claude'
+                      ? 'Enter to queue · Ctrl+Enter to steer now · Ctrl+Shift+Enter to stop and send · Alt+↑ to edit'
+                      : 'Enter to queue · Ctrl+Enter to interrupt · Alt+↑ to edit'"
+                    @click="queueDraft()"><Icon name="list" :size="14" />Queue</button>
+                  <ContextRing
+                    v-if="!schedulesOpen"
+                    ref="contextRing"
+                    :context="contextNow"
+                    :ring="true"
+                    :can-compact="provider === 'claude' && !!selected && !busy"
+                    :can-fork="provider === 'claude' && !!selected && !busy"
+                    @compact="send('/compact')"
+                    @fork="startFork"
+                  >
+                    <button v-if="busy" type="button" class="cs-btn cs-stop" aria-label="Stop" title="Stop"
+                      :disabled="run?.status !== 'running'" @click="runCommand('stop')">
+                      <Icon name="stop" :size="11" />
+                    </button>
+                    <button v-else type="submit" class="cs-btn cs-primary cs-send"
+                      aria-label="Send" title="Send" :disabled="!hasDraft || (!!newProvider && !folder.trim())">
+                      <Icon name="up" :size="16" />
+                    </button>
+                  </ContextRing>
+                </div>
               </div>
             </div>
           </div>
@@ -2861,6 +3424,7 @@ onBeforeUnmount(() => {
             :pane="paneProp(id)"
             :focused="tiles.focus === id"
             @pane-state="paneState(id, $event)"
+            @continue="continueBeside(id, $event)"
           />
         </template>
       </AgentTiles>
@@ -3285,6 +3849,133 @@ onBeforeUnmount(() => {
   border: 0;
   border-top: 1px solid var(--cs-line);
 }
+/* Continue with another model (UI Maker r3) */
+.cs-menu .cs-menu-kbd {
+  margin-left: auto;
+  padding-left: 12px;
+  white-space: nowrap;
+}
+.cs-continue-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 10;
+  animation: cs-pop 130ms ease-out;
+}
+.cs-continue-anchor {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+.cs-continue-up {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 10;
+  animation: cs-pop 130ms ease-out;
+}
+.agent-sessions-app .cs-lineage {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 20px;
+  margin-left: -2px;
+  padding: 0 6px 0 4px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: #385d76;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.cs-lineage:hover,
+.cs-lineage:focus-visible {
+  background: var(--cs-hover);
+  outline: none;
+}
+.cs-lineage b {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 550;
+  text-overflow: ellipsis;
+}
+.cs-lineage :deep(svg) {
+  flex: none;
+}
+.agent-sessions-app .cs-session.cs-child {
+  position: relative;
+  width: calc(100% - 14px);
+  margin-left: 14px;
+}
+.cs-session.cs-child::before {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: -8px;
+  width: 7px;
+  height: 18px;
+  border-bottom: 1.5px solid #c9d7e0;
+  border-left: 1.5px solid #c9d7e0;
+  border-bottom-left-radius: 5px;
+}
+.agent-sessions-app .cs-sent-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  justify-self: end;
+  max-width: min(560px, 86%);
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-left: 2px solid #6f8998;
+  border-radius: 0 5px 5px 0;
+  background: #eef3f6;
+  color: #5d7381;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.cs-sent-ref:not(:disabled):hover {
+  background: #e4edf2;
+}
+.cs-sent-ref:disabled {
+  cursor: default;
+}
+.cs-sent-ref b {
+  min-width: 0;
+  overflow: hidden;
+  color: #273f50;
+  font-weight: 550;
+  text-overflow: ellipsis;
+}
+.cs-sent-ref :deep(svg) {
+  flex: none;
+  color: #6f8998;
+}
+.cs-head-meta.cs-linked > .cs-path {
+  max-width: 96px;
+  flex-shrink: 6;
+  min-width: 0;
+}
+.cs-lineage b {
+  min-width: 8ch;
+}
+.cs-message.cs-flash {
+  border-radius: 8px;
+  animation: cs-flash 1.2s ease-out;
+}
+@keyframes cs-flash {
+  0%,
+  30% {
+    background: #e2ebf1;
+    box-shadow: 0 0 0 6px #e2ebf1;
+  }
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
 .cs-content {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -3388,243 +4079,6 @@ onBeforeUnmount(() => {
   font-size: 11.5px;
   color: var(--cs-muted);
   font-variant-numeric: tabular-nums;
-}
-/* Working indicator: dot pairs on rungs pinch shut and reopen, one column
-   1/7 of a cycle behind the next, so the pinch travels right like a helix.
-   Timing measured from the owner's Pinterest reference. */
-.cs-dna {
-  position: relative;
-  flex: none;
-  width: 38px;
-  height: 16px;
-}
-.cs-dna > span {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 1.6px;
-}
-.cs-dna i {
-  position: absolute;
-  left: 0;
-  top: 7.2px;
-  width: 1.6px;
-  height: 1.6px;
-  border-radius: 50%;
-  background: var(--cs-run);
-  transform: translateY(-7px);
-  animation: cs-dna-top 1.74s linear infinite;
-  animation-delay: inherit;
-}
-.cs-dna i + i {
-  transform: translateY(7px);
-  animation-name: cs-dna-bottom;
-}
-.cs-dna b {
-  position: absolute;
-  left: 0.5px;
-  top: 1px;
-  width: 0.6px;
-  height: 14px;
-  background: var(--cs-run);
-  opacity: 0.35;
-  animation: cs-dna-rung 1.74s linear infinite;
-  animation-delay: inherit;
-}
-@keyframes cs-dna-top {
-  0% {
-    transform: translateY(-7px) scale(1);
-  }
-  8% {
-    transform: translateY(-5.6px) scale(1.01);
-  }
-  10.3% {
-    transform: translateY(-3.75px) scale(1.06);
-  }
-  12.6% {
-    transform: translateY(-1.92px) scale(1.15);
-  }
-  15% {
-    transform: translateY(-1.34px) scale(1.18);
-  }
-  19.5% {
-    transform: translateY(-0.95px) scale(1.21);
-  }
-  24% {
-    transform: translateY(-0.63px) scale(1.24);
-  }
-  26.4% {
-    transform: translateY(-0.44px) scale(1.25);
-  }
-  37% {
-    transform: translateY(-0.44px) scale(1.25);
-  }
-  40% {
-    transform: translateY(-0.76px) scale(1.23);
-  }
-  45% {
-    transform: translateY(-1.34px) scale(1.18);
-  }
-  49% {
-    transform: translateY(-2.18px) scale(1.13);
-  }
-  52% {
-    transform: translateY(-3.23px) scale(1.08);
-  }
-  54% {
-    transform: translateY(-4.21px) scale(1.04);
-  }
-  58.6% {
-    transform: translateY(-5.21px) scale(1.02);
-  }
-  63% {
-    transform: translateY(-5.6px) scale(1.01);
-  }
-  70% {
-    transform: translateY(-6.14px) scale(1);
-  }
-  79% {
-    transform: translateY(-6.4px) scale(1);
-  }
-  93% {
-    transform: translateY(-6.73px) scale(1);
-  }
-  97.7% {
-    transform: translateY(-7px) scale(1);
-  }
-  100% {
-    transform: translateY(-7px) scale(1);
-  }
-}
-@keyframes cs-dna-bottom {
-  0% {
-    transform: translateY(7px) scale(1);
-  }
-  8% {
-    transform: translateY(5.6px) scale(1.01);
-  }
-  10.3% {
-    transform: translateY(3.75px) scale(1.06);
-  }
-  12.6% {
-    transform: translateY(1.92px) scale(1.15);
-  }
-  15% {
-    transform: translateY(1.34px) scale(1.18);
-  }
-  19.5% {
-    transform: translateY(0.95px) scale(1.21);
-  }
-  24% {
-    transform: translateY(0.63px) scale(1.24);
-  }
-  26.4% {
-    transform: translateY(0.44px) scale(1.25);
-  }
-  37% {
-    transform: translateY(0.44px) scale(1.25);
-  }
-  40% {
-    transform: translateY(0.76px) scale(1.23);
-  }
-  45% {
-    transform: translateY(1.34px) scale(1.18);
-  }
-  49% {
-    transform: translateY(2.18px) scale(1.13);
-  }
-  52% {
-    transform: translateY(3.23px) scale(1.08);
-  }
-  54% {
-    transform: translateY(4.21px) scale(1.04);
-  }
-  58.6% {
-    transform: translateY(5.21px) scale(1.02);
-  }
-  63% {
-    transform: translateY(5.6px) scale(1.01);
-  }
-  70% {
-    transform: translateY(6.14px) scale(1);
-  }
-  79% {
-    transform: translateY(6.4px) scale(1);
-  }
-  93% {
-    transform: translateY(6.73px) scale(1);
-  }
-  97.7% {
-    transform: translateY(7px) scale(1);
-  }
-  100% {
-    transform: translateY(7px) scale(1);
-  }
-}
-@keyframes cs-dna-rung {
-  0% {
-    transform: scaleY(1);
-  }
-  8% {
-    transform: scaleY(0.801);
-  }
-  10.3% {
-    transform: scaleY(0.536);
-  }
-  12.6% {
-    transform: scaleY(0.274);
-  }
-  15% {
-    transform: scaleY(0.191);
-  }
-  19.5% {
-    transform: scaleY(0.136);
-  }
-  24% {
-    transform: scaleY(0.09);
-  }
-  26.4% {
-    transform: scaleY(0.063);
-  }
-  37% {
-    transform: scaleY(0.063);
-  }
-  40% {
-    transform: scaleY(0.109);
-  }
-  45% {
-    transform: scaleY(0.191);
-  }
-  49% {
-    transform: scaleY(0.312);
-  }
-  52% {
-    transform: scaleY(0.461);
-  }
-  54% {
-    transform: scaleY(0.602);
-  }
-  58.6% {
-    transform: scaleY(0.744);
-  }
-  63% {
-    transform: scaleY(0.801);
-  }
-  70% {
-    transform: scaleY(0.877);
-  }
-  79% {
-    transform: scaleY(0.915);
-  }
-  93% {
-    transform: scaleY(0.962);
-  }
-  97.7% {
-    transform: scaleY(1);
-  }
-  100% {
-    transform: scaleY(1);
-  }
 }
 @keyframes cs-fade {
   from {
@@ -4095,6 +4549,79 @@ onBeforeUnmount(() => {
   height: 24px;
   padding: 0 6px 0 4px;
 }
+/* Pasted pictures (UI Maker "Composer images", Tiles): tiles at the top of
+   the composer, and above the message they were sent with. */
+.cs-pictures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.cs-pictures li {
+  position: relative;
+}
+.cs-picture {
+  display: block;
+  padding: 0;
+  border: 1px solid #d3dee5;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: 0 1px 2px #263f5512;
+  cursor: zoom-in;
+  transition: box-shadow 0.14s ease-out, border-color 0.14s ease-out;
+}
+.cs-picture:hover {
+  border-color: #9fb6c3;
+  box-shadow: 0 4px 12px #263f5518;
+}
+.cs-picture:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px #6f899840;
+}
+.cs-picture img {
+  display: block;
+  width: 84px;
+  height: 60px;
+  object-fit: cover;
+}
+.cs-sent-pictures {
+  justify-content: flex-end;
+  margin: 2px 0 6px;
+}
+.cs-sent-pictures .cs-picture img {
+  width: 96px;
+  height: 64px;
+}
+.agent-sessions-app .cs-picture-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  gap: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #273f50cc;
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.cs-pictures li:hover .cs-picture-remove,
+.cs-picture-remove:focus-visible {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cs-picture,
+  .cs-picture-remove {
+    transition: none;
+  }
+}
 .cs-attachment {
   display: inline-flex;
   align-items: center;
@@ -4173,6 +4700,38 @@ onBeforeUnmount(() => {
 .cs-status.cs-running {
   color: var(--cs-run);
 }
+.cs-status-space {
+  flex: 1 1 auto;
+}
+.cs-send-controls {
+  display: contents;
+}
+.cs-pinned .cs-dock,
+.cs-pinned .cs-composer {
+  grid-template-columns: minmax(0, 1fr);
+}
+.cs-pinned .cs-composer .cs-compose-actions {
+  flex-wrap: wrap;
+}
+.cs-pinned .cs-status-space {
+  display: none;
+}
+.cs-pinned .cs-composer .cs-status {
+  order: 5;
+  flex-basis: 100%;
+  text-align: left;
+}
+/* Keep the send controls together and leave room for the ring's overhang. */
+.cs-pinned .cs-send-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  margin-inline-start: auto;
+  padding-inline-end: 4px;
+}
 .cs-send {
   flex: none;
   width: 30px;
@@ -4243,12 +4802,32 @@ onBeforeUnmount(() => {
     flex-basis: 100%;
     text-align: left;
   }
+  .cs-status-space {
+    display: none;
+  }
   .cs-stop,
   .cs-send {
     margin-left: auto;
   }
   .cs-user .cs-message-text {
     max-width: 94%;
+  }
+}
+@container (max-width: 420px) {
+  .cs-pinned .cs-composer .cs-compose-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) max-content max-content;
+  }
+  .cs-pinned .cs-compose-actions :deep(.select-trigger.cs-model) {
+    width: 100%;
+    max-width: 180px;
+  }
+  .cs-pinned .cs-compose-actions :deep(.cm-pill > span) {
+    display: none;
+  }
+  .cs-pinned .cs-send-controls,
+  .cs-pinned .cs-composer .cs-status {
+    grid-column: 1 / -1;
   }
 }
 @media (prefers-reduced-motion: reduce) {

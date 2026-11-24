@@ -301,3 +301,215 @@ test("Claude's questions are answered in a question card, or skipped", async ({ 
   await card.getByRole("button", { name: "Skip" }).click();
   await expect(chat.getByText("Questions skipped")).toBeVisible({ timeout: 15_000 });
 });
+
+test("pin a new Codex draft, answer Plan questions and preview a viewed image", async ({ page, context }, info) => {
+  test.setTimeout(150_000);
+  const { directory, project } = await fixture(context);
+  await writeFile(join(project, "layout.png"), Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lXQAAAAASUVORK5CYII=", "base64",
+  ));
+  await page.addInitScript(() => {
+    localStorage.setItem("orvane.examples.v1", "installed");
+    if (!localStorage.getItem("orvane.agent-launcher.v1"))
+      localStorage.setItem("orvane.agent-launcher.v1", JSON.stringify({ provider: "codex", models: { codex: "test-codex" } }));
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "AI launcher", exact: true }).click();
+  const launcher = page.getByRole("dialog", { name: "AI launcher" });
+  await launcher.getByRole("textbox", { name: "Task prompt" }).fill("Choose the panel layout");
+  await launcher.getByRole("button", { name: "Pin new session" }).click();
+  const side = page.getByRole("complementary", { name: "Pinned AI session" });
+  const composer = side.getByRole("textbox", { name: "Message", exact: true });
+  await expect(composer).toHaveValue("Choose the panel layout", { timeout: 30_000 });
+  await expect(side.getByText("Codex can write in the workspace.", { exact: false })).toHaveCount(0);
+  await side.getByRole("textbox", { name: "Project folder" }).fill(project);
+  await side.getByRole("button", { name: "Edits: Auto-accept" }).click();
+  await expect(side.getByRole("button", { name: "Edits: Plan only" })).toBeVisible();
+  await composer.fill("Choose the panel layout and review layout.png");
+  await page.reload();
+  await expect(composer).toHaveValue("Choose the panel layout and review layout.png", { timeout: 30_000 });
+  await expect(side.getByRole("textbox", { name: "Project folder" })).toHaveValue(project);
+  await expect(side.getByRole("button", { name: "Edits: Plan only" })).toBeVisible();
+  await composer.press("Enter");
+  const card = side.getByRole("group", { name: "Questions from Codex" });
+  await expect(card).toBeVisible({ timeout: 25_000 });
+  await side.getByRole("region", { name: "Run steps" }).getByRole("button", { name: "layout.png" }).click();
+  const peek = page.getByRole("dialog", { name: "Peek: layout.png" });
+  await expect(peek.locator(".image-peek-stage img")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await card.getByRole("radio", { name: /Above the dock/ }).click();
+  await expect(card.getByRole("textbox", { name: "Other answer for Layout" })).toHaveCount(0);
+  await card.getByRole("button", { name: /Next/ }).click();
+  const privateAnswer = card.getByLabel("Answer for Private marker");
+  await expect(privateAnswer).toHaveAttribute("type", "password");
+  await privateAnswer.fill("fixture value");
+  await page.screenshot({ path: info.outputPath("codex-question.png") });
+  await card.getByRole("button", { name: /Send answers/ }).click();
+  await expect(side.getByText("Plan answers received", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(side.getByRole("button", { name: "Switch session" })).toContainText("Choose the panel layout");
+  const history = side.locator(".run-activity.strip").first();
+  await history.locator("summary").click();
+  await history.getByRole("button", { name: /Viewed image/ }).click();
+  await history.getByRole("button", { name: "Preview layout.png" }).click();
+  await expect(peek.locator(".image-peek-stage img")).toBeVisible();
+  await page.keyboard.press("Escape");
+  const readPacket = async (name: string) => JSON.parse((await readFile(join(directory, name), "utf8")).trim().split("\n")[0]!);
+  expect((await readPacket("codex-plan-thread.jsonl")).params).toMatchObject({ sandbox: "read-only", model: "test-codex" });
+  expect((await readPacket("codex-plan-turn.jsonl")).params.collaborationMode.mode).toBe("plan");
+  expect(await readPacket("codex-plan-answers.jsonl")).toEqual({ answers: {
+    layout: { answers: ["Above the dock"] }, marker: { answers: ["fixture value"] },
+  } });
+
+  await composer.fill("Ask another Plan question");
+  await composer.press("Enter");
+  await expect(card).toBeVisible({ timeout: 25_000 });
+  await card.getByRole("button", { name: "Skip" }).click();
+  await expect(side.getByText("Plan questions skipped", { exact: true })).toBeVisible({ timeout: 20_000 });
+});
+
+// New chats start in the default mode from Settings; while a turn works its
+// text sits between its steps (as it happened) with the loader below them; a
+// failed tool call is a red cross; a reader scrolled up is never pulled down.
+test("default mode, live order of text and steps, failed cross, scrolled-up view stays", async ({ page, context }, info) => {
+  test.setTimeout(120_000);
+  const { directory, project } = await fixture(context);
+  const app = await openApp(page);
+  await app.getByRole("button", { name: "Settings", exact: true }).click();
+  const modes = app.getByRole("radiogroup", { name: "Default mode for Claude Code" });
+  await expect(modes.getByRole("radio", { name: "Ask first" })).toHaveAttribute("aria-checked", "true");
+  await modes.getByRole("radio", { name: "Auto-accept" }).click();
+  await expect(modes.getByRole("radio", { name: "Auto-accept" })).toHaveAttribute("aria-checked", "true");
+  await page.screenshot({ path: info.outputPath("default-mode.png") });
+
+  await app.getByRole("button", { name: "Claude", exact: true }).click();
+  await app.getByRole("textbox", { name: "Project folder" }).fill(project);
+  const composer = app.getByRole("textbox", { name: "Message", exact: true });
+  await composer.fill("Allow this change");
+  await composer.press("Enter");
+  await expect(app.getByRole("group", { name: "Permission request for Write" })).toBeVisible({ timeout: 20_000 });
+  const args = (await inputs(directory)).at(-1)!.args;
+  expect(args[args.indexOf("--permission-mode") + 1]).toBe("acceptEdits");
+
+  // While it works: steps, then the text written after them, then the loader.
+  const trail = app.getByRole("region", { name: "Run steps" });
+  await expect(trail.locator(".trail-text")).toContainText("Preparing request");
+  const order = await trail.evaluate((section) => {
+    const all = [...section.querySelectorAll(".trail-step, .trail-text, .trail-head")];
+    const at = (test: (el: Element) => boolean) => all.findIndex(test);
+    return {
+      step: at((el) => el.matches(".trail-step") && /workspace_status/.test(el.textContent ?? "")),
+      text: at((el) => el.matches(".trail-text") && /Preparing request/.test(el.textContent ?? "")),
+      head: at((el) => el.matches(".trail-head")),
+      count: all.length,
+    };
+  });
+  expect(order.step).toBeGreaterThanOrEqual(0);
+  expect(order.text).toBeGreaterThan(order.step);
+  expect(order.head).toBe(order.count - 1);
+  await expect(app.locator(".cs-live")).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath("live-order.png") });
+
+  // Scrolled up while it works: the reply arriving and being laid out again
+  // must not pull the view down.
+  const chat = app.getByLabel("Session conversation");
+  await chat.evaluate((box) => {
+    (box as HTMLElement).style.flex = "none";
+    (box as HTMLElement).style.height = "140px";
+  });
+  await expect.poll(() => chat.evaluate((box) => box.scrollHeight - box.clientHeight)).toBeGreaterThan(40);
+  // Scroll down, then up, as a reader does (each fires a scroll event).
+  await chat.evaluate((box) => box.scrollTo(0, box.scrollHeight));
+  await page.waitForTimeout(100);
+  await chat.evaluate((box) => box.scrollTo(0, 0));
+  await page.waitForTimeout(100);
+  // dispatchEvent: Playwright's own click would scroll the chat to the button.
+  await app.getByRole("group", { name: "Permission request for Write" }).getByRole("button", { name: "Allow once" }).dispatchEvent("click");
+  await expect(chat.getByText("Write approved")).toBeAttached({ timeout: 15_000 });
+  // The failed MCP call shows a red cross, not the word.
+  const failed = app.locator(".state.is-failed").first();
+  await expect(failed.locator('svg.cross[aria-label="Failed"]')).toHaveCount(1);
+  expect(await failed.evaluate((el) => [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent!.trim()).join(""))).toBe("");
+  await page.waitForTimeout(1500);
+  expect(await chat.evaluate((box) => box.scrollTop)).toBe(0);
+});
+
+test("pasted screenshots show as tiles in the composer and sent message", async ({ page, context }, info) => {
+  test.setTimeout(120_000);
+  const { directory } = await fixture(context);
+  const app = await openApp(page);
+  await app.getByRole("button", { name: /Existing Claude project/ }).click();
+  const composer = app.getByRole("textbox", { name: "Message", exact: true });
+  await composer.focus();
+  const paste = (kind: "image" | "text", color = "#d9e5ee") =>
+    composer.evaluate(async (field, { kind, color }) => {
+      const data = new DataTransfer();
+      if (kind === "image") {
+        const canvas = document.createElement("canvas");
+        canvas.width = 480;
+        canvas.height = 300;
+        const paint = canvas.getContext("2d")!;
+        paint.fillStyle = "#f7f9fa";
+        paint.fillRect(0, 0, 480, 300);
+        paint.fillStyle = color;
+        paint.fillRect(0, 0, 480, 92);
+        paint.fillStyle = "#273f50";
+        paint.font = "18px system-ui";
+        paint.fillText("Agent sessions", 24, 56);
+        paint.fillStyle = "#d3dee5";
+        for (let y = 128; y < 270; y += 28) paint.fillRect(24, y, 320, 8);
+        const blob = await new Promise<Blob>((done) => canvas.toBlob((b) => done(b!), "image/png"));
+        data.items.add(new File([blob], "image.png", { type: "image/png" }));
+      } else data.setData("text/plain", "just text");
+      const event = new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true });
+      field.dispatchEvent(event);
+      return event.defaultPrevented;
+    }, { kind, color });
+  expect(await paste("text")).toBe(false);
+  await expect(app.locator(".cs-attachment")).toHaveCount(0);
+  expect(await paste("image", "#e7d8c9")).toBe(true);
+  expect(await paste("image")).toBe(true);
+  const tiles = app.getByRole("list", { name: "Pictures sent with the message" });
+  await expect(tiles.locator("img")).toHaveCount(2, { timeout: 15_000 });
+  for (const image of await tiles.locator("img").all()) {
+    await expect.poll(() => image.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBe(480);
+  }
+  const remove = tiles.getByRole("button", { name: /^Remove / }).first();
+  const iconOffset = await remove.evaluate((button) => {
+    const box = button.getBoundingClientRect();
+    const icon = button.querySelector("svg")!.getBoundingClientRect();
+    return [Math.abs(box.x + box.width / 2 - icon.x - icon.width / 2),
+      Math.abs(box.y + box.height / 2 - icon.y - icon.height / 2)];
+  });
+  expect(Math.max(...iconOffset)).toBeLessThan(1);
+  const first = tiles.getByRole("button", { name: /^Open / }).first();
+  await first.click();
+  const preview = page.getByRole("dialog", { name: /^Peek: snapshot-/ });
+  await expect(preview.locator(".image-peek-stage img")).toBeVisible();
+  await expect(preview.getByRole("button", { name: "Select", exact: true })).toHaveCount(0);
+  await expect(preview.locator(".image-peek-count")).toHaveText("1 / 2");
+  await page.keyboard.press("ArrowRight");
+  await expect(preview.locator(".image-peek-count")).toHaveText("2 / 2");
+  await expect(preview.locator(".image-peek-stage img")).toBeVisible();
+  await page.screenshot({ path: info.outputPath("attachment-preview.png") });
+  const thumbnails = preview.getByRole("group", { name: "Preview images" }).getByRole("button");
+  await expect(thumbnails.nth(1)).toHaveAttribute("aria-current", "true");
+  await thumbnails.first().click();
+  await expect(preview.locator(".image-peek-count")).toHaveText("1 / 2");
+  await page.keyboard.press("Escape");
+  await expect(preview).toHaveCount(0);
+  await expect(first).toBeFocused();
+  await tiles.getByRole("button", { name: /^Remove / }).last().focus();
+  await page.keyboard.press("Enter");
+  await expect(tiles.locator("img")).toHaveCount(1);
+
+  await composer.fill("Review this screenshot");
+  await page.screenshot({ path: info.outputPath("attachment-composer.png") });
+  await composer.press("Enter");
+  const sent = app.getByRole("list", { name: "Pictures sent", exact: true });
+  await expect(sent.getByRole("button", { name: /^Open / })).toBeVisible({ timeout: 15_000 });
+  await expect.poll(async () => (await inputs(directory).catch(() => [])).at(-1)?.message).toMatch(
+    /Review this screenshot[\s\S]*agent-attachments.*snapshot-.*\.png/,
+  );
+  await sent.getByRole("button", { name: /^Open / }).click();
+  await expect(preview.locator(".image-peek-stage img")).toBeVisible();
+});

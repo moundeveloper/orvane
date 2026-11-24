@@ -148,6 +148,9 @@ export interface AgentRun {
   sessionId?: string;
   message: string;
   text: string;
+  /** The text in parts, each after the step it followed (id of that
+   * activity, "" before the first), so a working run shows in order. */
+  textParts?: { after: string; text: string }[];
   activity: string;
   activities?: AgentActivity[];
   status: "running" | "stopping" | "completed" | "failed" | "stopped";
@@ -182,12 +185,15 @@ export type AgentRunSummary = Pick<
   startedAt?: number;
   endedAt?: number;
 };
-/** One line describing what an approval request would do. */
-/** One question from Claude's AskUserQuestion tool. */
+export const CODEX_QUESTION = "request_user_input";
+/** One structured question from the provider. */
 export interface AgentQuestion {
+  id?: string;
   question: string;
   header: string;
   multiSelect: boolean;
+  other?: boolean;
+  secret?: boolean;
   options: { label: string; description: string; preview?: string }[];
 }
 /** Answers for AskUserQuestion, keyed by question text: an option label,
@@ -199,18 +205,23 @@ export interface AgentAnswer {
 /** The questions of an AskUserQuestion request, or null when the request is
  * something else (or its input is not the expected shape). */
 export function askedQuestions(permission: { tool: string; input: string }): AgentQuestion[] | null {
-  if (permission.tool !== "AskUserQuestion" || !permission.input) return null;
+  const codex = permission.tool === CODEX_QUESTION;
+  if ((!codex && permission.tool !== "AskUserQuestion") || !permission.input) return null;
   try {
     const value = JSON.parse(permission.input) as { questions?: unknown };
     if (!Array.isArray(value.questions) || !value.questions.length) return null;
     const text = (v: unknown) => (typeof v === "string" ? v : "");
     const questions = value.questions.map((raw: any): AgentQuestion | null => {
       const question = text(raw?.question);
-      if (!question || !Array.isArray(raw.options)) return null;
-      const options = raw.options
+      const id = text(raw?.id);
+      if (!question || (codex ? !id : !Array.isArray(raw.options))) return null;
+      const options = (Array.isArray(raw.options) ? raw.options : [])
         .map((o: any) => ({ label: text(o?.label), description: text(o?.description), ...(text(o?.preview) ? { preview: text(o.preview) } : {}) }))
         .filter((o: { label: string }) => o.label);
-      return { question, header: text(raw.header) || question.slice(0, 12), multiSelect: raw.multiSelect === true, options };
+      return {
+        question, header: text(raw.header) || question.slice(0, 12), multiSelect: !codex && raw.multiSelect === true, options,
+        ...(codex ? { id, other: raw.isOther === true || !options.length, secret: raw.isSecret === true } : {}),
+      };
     });
     return questions.every(Boolean) ? (questions as AgentQuestion[]) : null;
   } catch {
@@ -224,6 +235,33 @@ function questionDetail(permission: { tool: string; input: string }) {
   const count = questions.length === 1 ? "1 question" : `${questions.length} questions`;
   return `${count} · ${questions[0]!.question}`.slice(0, 160);
 }
+/** A picture saved by attachment-save (a pasted screenshot): the URL that
+ * shows it in the composer and the chat, or null for any other file. */
+export function attachmentPicture(path: string) {
+  const name = path.split(/[\\/]/).pop() ?? "";
+  return /[\\/]agent-attachments[\\/]/.test(path) && /^snapshot-[\w-]{1,80}\.png$/.test(name)
+    ? `/__orvane/agents/attachment?name=${encodeURIComponent(name)}`
+    : null;
+}
+/** A sent message without its trailing "Local attachments" list, and the
+ * paths in that list. */
+export function splitAttachments(text: string): { text: string; paths: string[] } {
+  const match = /\n\nLocal attachments:\n((?:"(?:[^"\\\n]|\\[^\n])*"(?:\n|$))+)\s*$/.exec(text);
+  if (!match) return { text, paths: [] };
+  const paths = match[1]!
+    .trim()
+    .split("\n")
+    .map((line) => {
+      try {
+        return JSON.parse(line) as string;
+      } catch {
+        return "";
+      }
+    })
+    .filter((path) => typeof path === "string" && path);
+  return { text: text.slice(0, match.index), paths };
+}
+/** One line describing what an approval request would do. */
 export function approvalDetail(input: string) {
   try {
     const value = JSON.parse(input) as Record<string, unknown>;

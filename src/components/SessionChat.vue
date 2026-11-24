@@ -5,17 +5,19 @@
 // focus where it is; focus() goes to its composer.
 import { defineAsyncComponent, reactive, ref, watch } from "vue";
 import { makeBlock } from "../model";
+import type { AgentDraft } from "../agentNavigation";
 
 const AgentSessions = defineAsyncComponent(() => import("./AgentSessions.vue"));
-const props = defineProps<{ sessionKey: string; place: string }>();
-const emit = defineEmits<{ leave: [] }>();
+const props = defineProps<{ sessionKey: string; place: string; initialDraft?: AgentDraft }>();
+const emit = defineEmits<{ leave: []; "session-key": [key: string]; "draft-state": [draft: AgentDraft] }>();
 const block = { ...makeBlock("claude"), id: `session-chat:${props.place}` };
-const pane = reactive({ id: props.place, key: props.sessionKey, nonce: 1, quiet: true });
+const pane = reactive({ id: props.place, key: props.sessionKey, initialDraft: props.initialDraft, nonce: 1, quiet: true });
 const root = ref<HTMLElement>();
 watch(
-  () => props.sessionKey,
-  (key) => {
+  () => [props.sessionKey, props.initialDraft] as const,
+  ([key, initialDraft]) => {
     pane.key = key;
+    pane.initialDraft = initialDraft;
     pane.nonce++;
   },
 );
@@ -31,7 +33,9 @@ defineExpose({ focus: () => composer()?.focus({ preventScroll: true }) });
 
 <template>
   <div ref="root" class="session-chat" :data-place="place" @keydown.capture="key">
-    <AgentSessions :block="block" :pane="pane" focused />
+    <AgentSessions :block="block" :pane="pane" focused
+      @pane-state="$event.key && emit('session-key', $event.key)"
+      @draft-state="emit('draft-state', $event)" />
   </div>
 </template>
 

@@ -1,17 +1,23 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { AgentActivity } from "../agentSessions";
+import ChatMarkdown from "./ChatMarkdown.vue";
+import DnaHelix from "./DnaHelix.vue";
 
 // While a run works, its steps read as a short story: a headline per step,
-// one muted line of detail and the files it touched. The head (loader, state
-// and elapsed time) comes from the caller.
+// one muted line of detail and the files it touched, with the text the agent
+// writes in between, in the order it happened. The head (loader, state and
+// elapsed time) comes from the caller and stays below the latest entry.
 const props = defineProps<{
   items: AgentActivity[];
+  /** Text written while working, each part after the step it followed. */
+  texts?: { after: string; text: string }[];
   /** Session folder, for relative file paths. */
   base?: string;
   /** What the run is doing when no step is running, e.g. "Preparing request". */
   status?: string;
 }>();
+const emit = defineEmits<{ "view-image": [path: string] }>();
 
 interface Step {
   id: string;
@@ -122,17 +128,52 @@ function describe(item: AgentActivity): Step {
   return step;
 }
 
-const steps = computed(() => {
-  const list = props.items.map(describe);
+type Entry = (Step & { text?: undefined }) | { id: string; text: string };
+/** Steps and text parts in the order they happened. */
+const entries = computed((): Entry[] => {
+  const texts = (props.texts ?? []).filter((part) => part.text.trim());
+  const ids = new Set(props.items.map((item) => item.id));
+  const textAfter = (after: string) =>
+    texts.flatMap((part, index) => (part.after === after ? [{ id: `text:${index}`, text: part.text }] : []));
+  // Parts whose step scrolled out of the run's list go first.
+  const list: Entry[] = texts.flatMap((part, index) =>
+    part.after && !ids.has(part.after) ? [{ id: `text:${index}`, text: part.text }] : [],
+  );
+  list.push(...textAfter(""));
+  for (const item of props.items) list.push(describe(item), ...textAfter(item.id));
   if (props.status && !props.items.some((item) => item.status === "running"))
     list.push({ id: "status", status: "running", title: props.status, mono: false, detail: "", files: [] });
   return list;
 });
-// Long runs show their latest steps; the rest open on request.
+// Long runs show their latest entries; the rest open on request.
 const shown = 6;
 const all = ref(false);
-const hidden = computed(() => (all.value ? 0 : Math.max(0, steps.value.length - shown)));
-const visible = computed(() => steps.value.slice(hidden.value));
+const hidden = computed(() => (all.value ? 0 : Math.max(0, entries.value.length - shown)));
+const visible = computed(() => entries.value.slice(hidden.value));
+/** A step is working: the helix stands in its place on the rail, so the
+ * head below the trail keeps only its label and time (slot prop). */
+const stepWorking = computed(() => visible.value.some((entry) => entry.text === undefined && entry.status === "running"));
+/** The rail joins finished steps' dots only: no line runs into the working
+ * step's helix (from the step before it) or out of it. */
+const joinsNext = computed(() => {
+  const steps = visible.value.filter((entry) => entry.text === undefined);
+  const next = new Map<string, boolean>();
+  steps.forEach((step, index) => {
+    const after = steps[index + 1];
+    next.set(step.id, !!after && step.status !== "running" && after.status !== "running");
+  });
+  return next;
+});
+/** Text entries the rail runs through: between two joined dots. */
+const railThrough = computed(() => {
+  const through = new Set<string>();
+  let open = false;
+  for (const entry of visible.value) {
+    if (entry.text === undefined) open = !!joinsNext.value.get(entry.id);
+    else if (open) through.add(entry.id);
+  }
+  return through;
+});
 
 function open(path: string) {
   window.dispatchEvent(
@@ -145,18 +186,24 @@ function open(path: string) {
 
 <template>
   <section class="trail" aria-label="Run steps">
-    <div class="trail-head"><slot name="head" /></div>
     <button v-if="hidden" type="button" class="trail-more" @click="all = true">
       {{ hidden === 1 ? "1 earlier step" : `${hidden} earlier steps` }}
     </button>
     <ol>
+      <template v-for="step in visible" :key="step.id">
+      <!-- What the agent wrote between steps, as it wrote it. -->
+      <li v-if="step.text !== undefined" class="trail-text" :class="{ rail: railThrough.has(step.id) }">
+        <ChatMarkdown class="cs-message-text" :text="step.text" :base="base" />
+      </li>
       <li
-        v-for="step in visible"
-        :key="step.id"
+        v-else
         class="trail-step"
-        :class="`is-${step.status}`"
+        :class="[`is-${step.status}`, { joins: joinsNext.get(step.id) }]"
       >
-        <span class="dot" aria-hidden="true" />
+        <!-- The working step: the helix in place of its dot (UI Maker
+             "Working step helix", Replaces dot). -->
+        <DnaHelix v-if="step.status === 'running'" class="rail-helix" />
+        <span v-else class="dot" aria-hidden="true" />
         <div class="body">
           <h4 :class="{ mono: step.mono, shimmer: step.status === 'running' }">
             {{ step.title }}
@@ -168,8 +215,8 @@ function open(path: string) {
               :key="file.path + file.label"
               type="button"
               class="chip"
-              :title="`Show ${file.path} in Orvane`"
-              @click="open(file.path)"
+              :title="step.title === 'Viewed image' ? `Preview ${file.path}` : `Show ${file.path} in Orvane`"
+              @click="step.title === 'Viewed image' ? emit('view-image', file.path) : open(file.path)"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M6 3h8l4 4v14H6z" />
@@ -180,7 +227,10 @@ function open(path: string) {
           </div>
         </div>
       </li>
+      </template>
     </ol>
+    <!-- The loader follows the work: always below the latest entry. -->
+    <div class="trail-head" :class="{ 'step-working': stepWorking }"><slot name="head" :step-working="stepWorking" /></div>
   </section>
 </template>
 
@@ -196,11 +246,19 @@ function open(path: string) {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  margin-bottom: 4px;
+  margin-top: 4px;
+}
+.trail-head.step-working {
+  padding-left: 50px;
+}
+.trail-text {
+  position: relative;
+  padding: 4px 0 6px 50px;
+  min-width: 0;
 }
 .trail-more {
   justify-self: start;
-  margin: 0 0 2px 30px;
+  margin: 0 0 2px 50px;
   padding: 2px 6px;
   border: 0;
   border-radius: 5px;
@@ -228,22 +286,29 @@ ol {
 .trail-step {
   position: relative;
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
+  grid-template-columns: 40px minmax(0, 1fr);
   gap: 10px;
   padding: 5px 0;
 }
 /* The rail joins each dot to the next step's dot. */
-.trail-step::before {
+/* The rail joins a finished step's dot to the next one (through any text
+   written between them); the working step's helix stands alone. */
+.trail-step.joins::before,
+.trail-text.rail::before {
   content: "";
   position: absolute;
-  left: 9.5px;
+  left: 19.5px;
   top: 21px;
   bottom: -6px;
   width: 1px;
   background: #d3dee5;
 }
-.trail-step:last-child::before {
-  background: linear-gradient(#d3dee5, transparent);
+.trail-text.rail::before {
+  top: -6px;
+}
+.rail-helix {
+  justify-self: center;
+  margin-top: 3px;
 }
 .dot {
   justify-self: center;

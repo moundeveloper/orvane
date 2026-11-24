@@ -4,7 +4,7 @@
 import { computed, reactive, watch } from "vue";
 import { agentRequest } from "./exposition";
 import { agentRunIndicators } from "./agentNavigation";
-import { agentNames, type AgentRunSummary } from "./agentSessions";
+import { agentNames, type AgentEditMode, type AgentProvider, type AgentRunSummary } from "./agentSessions";
 import { appTextAt, appTextIn } from "./appText";
 
 /** Context added to the composer: a selection, an app snapshot or another session. */
@@ -17,12 +17,38 @@ export interface AgentQuote {
   text: string;
   /** Saved picture of a snapshot. */
   image?: string;
+  /** "Continue with another model": the session this draft continues. */
+  origin?: ContinueSource;
+}
+/** The source of a continued session: where its full transcript is and what
+ * the reference card shows. Built from the transcript, not written by a model. */
+export interface ContinueSource {
+  key: string;
+  provider: AgentProvider;
+  transcript: string;
+  model?: string;
+  updatedAt?: number;
+  calls: number;
+  asked: string;
+  reply: string;
+  changed: string[];
+  open: string;
+  turns: { id: string; at: string; role: "user" | "assistant"; line: string; tools: number }[];
 }
 
 const quoteLimit = 4000;
 export function quoteText(quote: AgentQuote) {
   const text = quote.text.length > quoteLimit ? quote.text.slice(0, quoteLimit) + "\n…" : quote.text;
   const where = quote.detail ? ` (${quote.detail})` : "";
+  if (quote.origin)
+    return [
+      `Continue from the earlier session "${quote.source}"${where}.`,
+      `Its full transcript (JSONL) is at: ${JSON.stringify(quote.origin.transcript)}`,
+      "Read it when you need earlier turns, decisions or tool output. Where it stopped:",
+      "```",
+      text,
+      "```",
+    ].join("\n");
   const head =
     quote.kind === "session"
       ? `Context from the earlier session "${quote.source}"${where}, its latest reply:`
@@ -170,7 +196,14 @@ export const harness = reactive({
       }
     })(),
   ),
-  settings: load(settingsKey, { alerts: true, keepAwake: true, suggest: true }),
+  settings: load(settingsKey, {
+    alerts: true,
+    keepAwake: true,
+    suggest: true,
+    /** Edit mode every new chat starts in, per CLI (Settings → Sessions).
+     * Replace the object to change it, so the setting is saved. */
+    defaultModes: {} as Partial<Record<AgentProvider, AgentEditMode>>,
+  }),
   awake: false,
   /** Ctrl+Alt+U asked the Agent sessions app to show its activity list. */
   activityOpen: false,

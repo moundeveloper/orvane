@@ -2,7 +2,7 @@ import type { Plugin, Connect } from "vite";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { z } from "zod";
 import { SessionTranscripts } from "./session-transcripts.ts";
 import { AgentRunner } from "./agent-runner.ts";
@@ -160,8 +160,11 @@ export function agentSessionsApi(directory: string): Plugin {
     const url = new URL(req.url, "http://localhost");
     const op = url.pathname.slice(base.length);
     const streaming = op === "run-events" && req.method === "GET";
+    // A picture saved by attachment-save, shown in the composer and chat.
+    const picture = op === "attachment" && req.method === "GET";
     if (
       !streaming &&
+      !picture &&
       (req.method !== "POST" ||
         req.headers["content-type"]?.split(";")[0] !== "application/json")
     )
@@ -179,6 +182,17 @@ export function agentSessionsApi(directory: string): Plugin {
     try {
       const service = serviceFor(namespace);
       const { claude, codex, runner, surveying, prompts, schedules, skillsHome } = service;
+      if (picture) {
+        const name = url.searchParams.get("name") ?? "";
+        // Only names attachment-save makes: no paths, nothing else on disk.
+        if (!/^snapshot-[\w-]{1,80}\.png$/.test(name)) return reply(400, { error: "Unknown picture." });
+        const folder = join(testing ? join(directory, "tests", namespace) : directory, "agent-attachments");
+        const data = await readFile(join(folder, name)).catch(() => null);
+        if (!data) return reply(404, { error: "Picture was not found." });
+        res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "private, max-age=86400" });
+        res.end(data);
+        return;
+      }
       if (streaming) {
         if (!runner.subscribe(id.parse(url.searchParams.get("id")), res))
           return reply(404, { error: "Run was not found." });
@@ -312,6 +326,10 @@ export function agentSessionsApi(directory: string): Plugin {
           catalogues.set(provider, catalogue);
         }
         return reply(200, { models: await catalogue.request });
+      }
+      if (op === "transcript-file") {
+        const value = key.parse(args.key);
+        return reply(200, { path: await transcripts(value).file(value) });
       }
       if (op === "read") {
         const data = await transcripts(key.parse(args.key)).read(args);

@@ -1,4 +1,5 @@
 import { test, expect } from "./fixtures";
+import { emptyWorkspace } from "../src/model";
 
 test("action results dismiss automatically after leaving the action library", async ({
   page,
@@ -345,4 +346,42 @@ test("the slot glow hands off to the center ring with the pointer, and the wheel
   await expect(page.locator(".radial-overlay[inert]")).toHaveCount(1);
   await expect(page.locator(".dock-tab.active")).toHaveText("Alpha");
   await expect(page.locator(".radial-overlay")).toHaveCount(0);
+});
+
+// With a chat pinned to the side the canvas ends left of it, but the wheel is
+// still drawn at the window's centre: the pointer picks the slot it points at.
+test("the wheel follows the pointer with a pinned side chat", async ({ page }) => {
+  test.setTimeout(90_000);
+  const workspace = emptyWorkspace();
+  workspace.wheel = ["A", "B", "C", "D", "E", "F"].map((name) => ({
+    id: `slot-${name}`,
+    parent: "",
+    name,
+    kind: "group" as const,
+    appId: "",
+  }));
+  await page.addInitScript((data) => {
+    localStorage.setItem("orvane.examples.v1", "installed");
+    localStorage.setItem("orvane.workspace.v1", JSON.stringify(data));
+    localStorage.setItem("orvane.side-chat.v1", JSON.stringify({ key: "side-test", open: true }));
+  }, workspace);
+  await page.goto("/");
+  await expect(page.locator("main")).toHaveAttribute("data-ready", "true");
+  await expect(page.getByRole("complementary", { name: "Pinned AI session" })).toBeVisible();
+  const { width, height } = page.viewportSize()!;
+  const cx = width / 2,
+    cy = height / 2;
+  await page.mouse.move(cx, cy - 20);
+  await page.keyboard.down("Alt");
+  await page.keyboard.down("q");
+  await expect(page.getByLabel("Action wheel")).toBeVisible();
+  const selected = page.locator(".radial-layer:not(.leaving) .radial-entry.selected");
+  // Slots go clockwise from the top, 60° apart: B at 60°, F at 300°.
+  await page.mouse.move(cx + 140 * Math.sin(Math.PI / 3), cy - 140 * Math.cos(Math.PI / 3));
+  await expect(selected).toHaveAttribute("aria-label", "B");
+  await page.mouse.move(cx - 140 * Math.sin(Math.PI / 3), cy - 140 * Math.cos(Math.PI / 3));
+  await expect(selected).toHaveAttribute("aria-label", "F");
+  await page.keyboard.press("Escape");
+  await page.keyboard.up("q");
+  await page.keyboard.up("Alt");
 });

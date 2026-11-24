@@ -144,13 +144,21 @@ test("the AI launcher starts in Surveying and global search can reopen the sessi
   await launcher.getByRole("button", { name: "Start task" }).click();
   await expect(launcher).toHaveCount(0, { timeout: 30_000 });
   const app = page.locator(".agent-sessions-app");
-  // While it works, the run reads as a trail of steps under the AI loader.
+  // The full-size helix takes the dot's place on the working step.
   const trail = app.getByRole("region", { name: "Run steps" });
   const running = trail.locator(".trail-step.is-running");
   await expect(
     running.getByText("orvane / workspace_status", { exact: true }),
   ).toBeVisible({ timeout: 15_000 });
-  await expect(trail.locator(".trail-head .cs-dna")).toBeVisible();
+  await expect(running.locator(".cs-dna")).toBeVisible();
+  await expect(running.locator(".dot")).toHaveCount(0);
+  await expect(trail.locator(".cs-dna")).toHaveCount(1);
+  const rails = await trail.locator(".trail-step").evaluateAll((rows) =>
+    rows.map((row) => ({ running: row.classList.contains("is-running"), joins: row.classList.contains("joins") })),
+  );
+  for (const [index, row] of rails.entries()) {
+    if (row.running || rails[index + 1]?.running) expect(row.joins).toBe(false);
+  }
   // One loader only: no spinning AI mark beside the DNA loader while it runs.
   await expect(trail.locator(".trail-head .cs-mark")).toHaveCount(0);
   // While a tool step runs, the head says it is working (not "Writing the answer").
@@ -457,10 +465,11 @@ test("context ring shows the latest Codex transcript usage", async ({ page, cont
   await composer.press("Enter");
   const ring = app.getByRole("button", { name: "Context 50% used" });
   await expect(ring).toBeVisible({ timeout: 20_000 });
-  // Codex's own limits sit beside the ring: its tighter window, red near the end.
-  const usage = app.getByRole("button", { name: "Codex usage: Week 95%" });
+  // Codex's own limits sit beside the ring: the 5-hour window (the weekly
+  // one, at 95%, is in the popover).
+  const usage = app.getByRole("button", { name: "Codex usage: 5h 16%" });
   await expect(usage).toBeVisible();
-  await expect(usage).toHaveClass(/full/);
+  await expect(usage).not.toHaveClass(/full/);
   await composer.focus();
   await page.keyboard.press("Alt+u");
   const limits = page.getByRole("dialog", { name: "Usage" });
@@ -468,6 +477,13 @@ test("context ring shows the latest Codex transcript usage", async ({ page, cont
   await expect(limits.locator(".au-row").first()).toContainText("16%");
   await expect(limits.locator(".au-row").last()).toContainText("95%");
   await page.screenshot({ path: info.outputPath("usage.png") });
+  await limits.press("Escape");
+  await expect(limits).toHaveCount(0);
+  // Alt+U also works after clicking the chat text, which focuses nothing.
+  await app.getByLabel("Session conversation").locator(".cs-user .cs-message-text").last().click();
+  await expect.poll(() => page.evaluate(() => document.activeElement === document.body)).toBe(true);
+  await page.keyboard.press("Alt+u");
+  await expect(limits).toBeVisible();
   await limits.press("Escape");
   await expect(limits).toHaveCount(0);
   // The send button inside the round ring is round as well.
@@ -960,7 +976,7 @@ test("streams Claude, routes both decisions and stops the process tree", async (
     app.getByRole("button", { name: "Send", exact: true }),
   ).toBeVisible();
   // Claude reported its limits during the run; Orvane kept them.
-  await expect(app.getByRole("button", { name: "Claude Code usage: Week 44%" })).toBeVisible();
+  await expect(app.getByRole("button", { name: "Claude Code usage: 5h 39%" })).toBeVisible();
   await composer.fill("Wait for Stop");
   await composer.press("Enter");
   await expect(app.getByText("Using Wait", { exact: true })).toBeVisible();

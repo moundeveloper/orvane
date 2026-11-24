@@ -1,6 +1,7 @@
 <script setup lang="ts">
-// Subscription limits in the composer: a pill with the session CLI's tighter
-// window (5-hour or weekly), and a popover with both CLIs and reset times.
+// Subscription limits in the composer: a pill with the session CLI's 5-hour
+// window (weekly when no 5-hour one is reported), and a popover with both
+// CLIs and reset times.
 // The numbers are what each CLI last reported in a run; nothing is fetched.
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { usePopover } from "./pickers/usePopover";
@@ -25,14 +26,12 @@ async function refresh() {
   }
 }
 const level = (used: number) => (used >= 95 ? "full" : used >= 80 ? "high" : "");
-/** The window closest to its limit for the session's CLI. */
-const tight = computed(() => {
+/** The window shown on the pill: the 5-hour one, else the weekly one. */
+const tight = computed((): (AgentUsageWindow & { label: string }) | undefined => {
   const own = usage.value[props.provider];
-  const windows = [
-    own?.fiveHour && { label: "5h", ...own.fiveHour },
-    own?.weekly && { label: "Week", ...own.weekly },
-  ].filter(Boolean) as (AgentUsageWindow & { label: string })[];
-  return windows.sort((a, b) => b.used - a.used)[0];
+  if (own?.fiveHour) return { label: "5h", ...own.fiveHour };
+  if (own?.weekly) return { label: "Week", ...own.weekly };
+  return undefined;
 });
 const providers = computed(() =>
   ([props.provider, props.provider === "claude" ? "codex" : "claude"] as AgentProvider[]).filter((p) => usage.value[p]),
@@ -64,37 +63,62 @@ function key(event: KeyboardEvent) {
 function altU(event: KeyboardEvent) {
   if (!event.altKey || event.ctrlKey || event.metaKey || event.key.toLowerCase() !== "u") return;
   const app = trigger.value?.closest(".agent-sessions-app");
-  if (!app || !(event.target instanceof Node) || !app.contains(event.target)) return;
+  if (!app || !(event.target instanceof Node)) return;
+  // Alt+U again inside the open popover closes it.
+  if (open.value && popover.value?.contains(event.target)) {
+    event.preventDefault();
+    return toggle();
+  }
+  const inApp = app.contains(event.target);
+  // Nested panes: only the innermost Agent sessions answers.
+  if (inApp && (event.target as Element).closest?.(".agent-sessions-app") !== app) return;
+  if (!inApp) {
+    // A press on text, a header or empty space focuses nothing, so the key
+    // lands on the page body: the place last pressed decides (the pinned
+    // side panel, the launcher or a canvas app holding this chat).
+    if (event.target !== document.body) return;
+    const host = app.closest(".side-chat, .agent-launcher, .canvas-app") ?? app;
+    const pressed = lastPress instanceof Node && lastPress.isConnected ? lastPress : null;
+    if (pressed ? !host.contains(pressed) : !app.closest(".canvas-app.scroll-owner, .canvas-app.focused-app")) return;
+    // The innermost Agent sessions under that press answers.
+    const under = (pressed as Element | null)?.closest?.(".agent-sessions-app");
+    if (under && host.contains(under) && under !== app) return;
+  }
   event.preventDefault();
   toggle();
 }
 const guestDown = () => open.value && close();
+// Where the owner last pressed, shared by every usage pill (see altU).
+let lastPress: EventTarget | null = null;
+const remember = (event: PointerEvent) => (lastPress = event.target);
 onMounted(() => {
   void refresh();
   window.addEventListener("keydown", altU, true);
+  window.addEventListener("pointerdown", remember, true);
   window.addEventListener("orvane:guest-pointer-down", guestDown);
 });
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", altU, true);
+  window.removeEventListener("pointerdown", remember, true);
   window.removeEventListener("orvane:guest-pointer-down", guestDown);
 });
 defineExpose({ refresh });
 </script>
 
 <template>
+  <!-- Always shown, so Alt+U has something to open from before a run reports. -->
   <button
-    v-if="tight"
     ref="trigger"
     type="button"
     class="au-pill"
-    :class="level(tight.used)"
-    :aria-label="`${agentNames[provider]} usage: ${tight.label} ${tight.used}%`"
+    :class="tight ? level(tight.used) : 'empty'"
+    :aria-label="tight ? `${agentNames[provider]} usage: ${tight.label} ${tight.used}%` : 'Usage'"
     aria-haspopup="dialog"
     :aria-expanded="open"
     title="Usage · Alt U"
     @click="toggle"
   >
-    <i aria-hidden="true"></i>{{ tight.label }} {{ tight.used }}%
+    <i aria-hidden="true"></i>{{ tight ? `${tight.label} ${tight.used}%` : "Usage" }}
   </button>
   <Teleport to="body">
     <div
@@ -169,6 +193,12 @@ defineExpose({ refresh });
 }
 .au-pill.full i {
   background: #a0624f;
+}
+.au-pill.empty {
+  color: #8296a2;
+}
+.au-pill.empty i {
+  background: #c9d6de;
 }
 .au-pill:hover,
 .au-pill[aria-expanded="true"] {

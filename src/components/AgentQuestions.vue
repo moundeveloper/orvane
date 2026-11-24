@@ -5,7 +5,7 @@ import type { AgentAnswer, AgentQuestion } from "../agentSessions";
 // Claude's AskUserQuestion shown as questions (UI Maker "Agent questions",
 // variant Claude asks): one tab per question, options picked by click or
 // number key, "Other" text, an optional note and the option's preview.
-const props = defineProps<{ questions: AgentQuestion[]; who: string; busy?: boolean }>();
+const props = defineProps<{ questions: AgentQuestion[]; who: string; codex?: boolean; busy?: boolean }>();
 const emit = defineEmits<{ answer: [AgentAnswer]; skip: [] }>();
 
 const at = ref(0);
@@ -17,6 +17,8 @@ const root = ref<HTMLElement>();
 const otherField = ref<HTMLInputElement>();
 
 const current = computed(() => props.questions[at.value]!);
+const hasOther = computed(() => current.value.other !== false);
+const optionCount = computed(() => current.value.options.length + Number(hasOther.value));
 const answered = (index: number) => picks[index]!.size > 0 || other[index]!.trim() !== "";
 const done = computed(() => props.questions.filter((_, index) => answered(index)).length);
 const complete = computed(() => done.value === props.questions.length);
@@ -53,12 +55,12 @@ function go(step: number) {
 }
 function send() {
   if (!complete.value || props.busy) return;
-  const answers: Record<string, string> = {};
+  const answers: Record<string, string> = Object.create(null);
   const annotations: NonNullable<AgentAnswer["annotations"]> = {};
   props.questions.forEach((question, index) => {
     const labels = [...picks[index]!].sort((a, b) => a - b).map((i) => question.options[i]!.label);
     const typed = other[index]!.trim();
-    answers[question.question] = [...labels, ...(typed ? [typed] : [])].join(", ");
+    answers[question.id ?? question.question] = [...labels, ...(typed ? [typed] : [])].join(", ");
     const note = notes[index]!.trim();
     const chosen = !question.multiSelect && labels.length ? question.options[[...picks[index]!][0]!]?.preview : undefined;
     if (note || chosen) annotations[question.question] = { ...(note ? { notes: note } : {}), ...(chosen ? { preview: chosen } : {}) };
@@ -125,11 +127,11 @@ defineExpose({ focus: () => root.value?.focus() });
     <div class="aq-body" :class="{ 'has-preview': preview }">
       <div class="aq-q">
         <h3>{{ current.question }}</h3>
-        <div class="aq-mode">{{ current.multiSelect ? "Pick any that apply" : "Pick one" }}</div>
+        <div class="aq-mode">{{ !current.options.length ? (current.secret ? "Secret answer" : "Free answer") : current.multiSelect ? "Pick any that apply" : "Pick one" }}</div>
         <div
           class="aq-opts"
           :class="current.multiSelect ? 'multi' : 'single'"
-          :role="current.multiSelect ? 'group' : 'radiogroup'"
+          :role="current.multiSelect || !current.options.length ? 'group' : 'radiogroup'"
           :aria-label="current.header"
         >
           <button
@@ -150,19 +152,21 @@ defineExpose({ focus: () => root.value?.focus() });
               <span v-if="option.description" class="aq-desc">{{ option.description }}</span>
             </span>
           </button>
-          <label class="aq-other">
-            <kbd>{{ current.options.length + 1 }}</kbd><span />
+          <label v-if="hasOther" class="aq-other" :class="{ 'aq-free': !current.options.length }">
+            <kbd v-if="current.options.length">{{ current.options.length + 1 }}</kbd><span v-if="current.options.length" />
             <input
               ref="otherField"
               class="aq-field"
-              :aria-label="`Other answer for ${current.header}`"
-              placeholder="Something else: type your answer"
+              :type="current.secret ? 'password' : 'text'"
+              :autocomplete="current.secret ? 'off' : undefined"
+              :aria-label="`${current.options.length ? 'Other answer' : 'Answer'} for ${current.header}`"
+              :placeholder="current.secret ? 'Paste here' : current.options.length ? 'Something else: type your answer' : 'Type your answer'"
               :value="other[at]"
               @input="typedOther(($event.target as HTMLInputElement).value)"
             />
           </label>
         </div>
-        <label class="aq-note">
+        <label v-if="!codex" class="aq-note">
           <span>Note for {{ who }}</span>
           <input v-model="notes[at]" class="aq-field" :aria-label="`Note for ${current.header}`" placeholder="Optional" />
         </label>
@@ -176,7 +180,7 @@ defineExpose({ focus: () => root.value?.focus() });
       <span class="aq-count">{{ done }} of {{ questions.length }} answered</span>
       <span class="aq-grow" />
       <span class="aq-hints">
-        <span><kbd>1</kbd>–<kbd>{{ current.options.length + 1 }}</kbd> pick</span>
+        <span v-if="current.options.length"><kbd>1</kbd><template v-if="optionCount > 1">–<kbd>{{ optionCount }}</kbd></template> pick</span>
         <span v-if="questions.length > 1"><kbd>←</kbd><kbd>→</kbd> question</span>
       </span>
       <button type="button" class="aq-btn aq-ghost" :disabled="busy" @click="emit('skip')">Skip</button>
@@ -198,6 +202,7 @@ defineExpose({ focus: () => root.value?.focus() });
 <style scoped>
 .aq {
   --aq-mono: "Cascadia Code", Consolas, monospace;
+  container-type: inline-size;
   border: 1px solid #e3d7c0;
   border-radius: 11px;
   background: #fdfbf7;
@@ -260,6 +265,7 @@ defineExpose({ focus: () => root.value?.focus() });
   color: #5d7381;
   white-space: nowrap;
   cursor: pointer;
+  flex: none;
 }
 .aq-tab[aria-selected="true"] {
   background: #fbfcfd;
@@ -406,6 +412,9 @@ defineExpose({ focus: () => root.value?.focus() });
   align-items: center;
   padding: 5px 8px;
 }
+.aq-other.aq-free {
+  grid-template-columns: minmax(0, 1fr);
+}
 .aq-field {
   height: 30px;
   width: 100%;
@@ -504,6 +513,8 @@ defineExpose({ focus: () => root.value?.focus() });
   align-items: center;
   gap: 6px;
   cursor: pointer;
+  flex: none;
+  white-space: nowrap;
 }
 .aq-btn:hover:not(:disabled) {
   background: #f3ece0;
@@ -533,6 +544,28 @@ defineExpose({ focus: () => root.value?.focus() });
   background: #ffffff26;
   border-color: #ffffff40;
   color: #fff;
+}
+@container (max-width: 415px) {
+  .aq-head {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding-block: 7px;
+  }
+  .aq-who {
+    white-space: nowrap;
+  }
+  .aq-tabs {
+    overflow-x: auto;
+  }
+  .aq-body.has-preview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .aq-count {
+    white-space: nowrap;
+  }
+  .aq-hints {
+    display: none;
+  }
 }
 .aq-primary:disabled kbd {
   background: none;

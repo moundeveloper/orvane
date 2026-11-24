@@ -10,7 +10,12 @@ import type { ServerResponse } from "node:http";
 import {
   agentBusy,
   agentNames,
+  askedQuestions,
+  attachmentPicture,
   claudeContext,
+  codexContext,
+  CODEX_QUESTION,
+  splitAttachments,
   summarizeAgentRun,
   type AgentActivity,
   type AgentAnswer,
@@ -69,6 +74,7 @@ type Entry = {
   child?: ChildProcessWithoutNullStreams;
   clients: Set<ServerResponse>;
   inputs: Map<string, unknown>;
+  codexRequests?: Map<string, string | number>;
   decisions: { tool: string; allowed: boolean; at?: string }[];
   timer?: ReturnType<typeof setTimeout>;
   updates?: ReturnType<typeof setTimeout>;
@@ -77,6 +83,8 @@ type Entry = {
   failure?: string;
   claudeText: string;
   partial: string;
+  /** Text parts streamed since Claude's last assistant message. */
+  streamedParts: number;
   claudeThinking?: { id: string; index: number };
   /** Repository state when the run started; null outside a repository. */
   before?: Snapshot | null;
@@ -296,6 +304,7 @@ export class AgentRunner {
       stderr: "",
       claudeText: "",
       partial: "",
+      streamedParts: 0,
     };
     this.locks.add(lock);
     this.runs.set(id, run);
@@ -342,6 +351,14 @@ export class AgentRunner {
       "Waiting for model…";
   }
 
+  /** Text the agent writes while it works, placed after the step it
+   * followed, so the live chat reads in the order the work happened. */
+  private addTextPart(run: Entry, text: string) {
+    const parts = (run.view.textParts ??= []);
+    parts.push({ after: run.view.activities?.at(-1)?.id ?? "", text: text.slice(-outputLimit) });
+    if (parts.length > 60) parts.shift();
+  }
+
   private claudeTool(
     run: Entry,
     block: { id?: unknown; name?: unknown; input?: unknown },
@@ -378,6 +395,10 @@ export class AgentRunner {
   private async launch(run: Entry, command: ReturnType<typeof findAgent>) {
     const { provider, folder, message, sessionId } = run.view;
     const env = agentEnvironment();
+    const codexPlan = provider === "codex" && run.view.mode === "plan";
+    const images = provider === "codex"
+      ? splitAttachments(message).paths.filter((path) => isAbsolute(path) && attachmentPicture(path))
+      : [];
     try {
       await verifyAgentLogin(provider, command, folder, env);
       if (run.view.status === "stopping") return this.finish(run);
@@ -396,10 +417,15 @@ export class AgentRunner {
         command.file,
         [
           ...command.args,
-          ...agentArgs(
+          ...(codexPlan ? [
+            "-c", 'model_provider="openai"',
+            "-c", "sandbox_workspace_write.network_access=false",
+            "app-server", "--listen", "stdio://",
+          ] : agentArgs(
             provider, sessionId, run.view.model, run.view.effort, run.view.mode, run.view.fork, run.view.resumeAt,
             provider === "codex" && run.view.mode === "full" && codexHasOrvaneMcp(env),
-          ),
+            images,
+          )),
           ...(run.job ? [
             "--safe-mode", "--no-session-persistence", "--tools", "",
             "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
@@ -448,7 +474,9 @@ export class AgentRunner {
         this.finish(
           run,
           run.failure ||
-            (code === 0
+            (codexPlan && !run.resultSeen && code === 0
+              ? run.stderr.trim() || "Codex app-server quit before the turn finished."
+              : code === 0 || (codexPlan && run.resultSeen)
               ? undefined
               : run.stderr.trim() || `CLI exited with code ${code}.`),
         );
@@ -464,6 +492,14 @@ export class AgentRunner {
           message: { role: "user", content: message },
           parent_tool_use_id: null,
           session_id: "",
+        });
+      } else if (codexPlan) {
+        this.write(run, {
+          id: "initialize", method: "initialize",
+          params: {
+            clientInfo: { name: "orvane", title: "Orvane", version: "0.1.0" },
+            capabilities: { experimentalApi: true },
+          },
         });
       } else child.stdin.end(message, "utf8");
     } catch (error) {
@@ -486,6 +522,7 @@ export class AgentRunner {
     }
     if (!data || typeof data !== "object") return;
     if (run.view.provider === "claude") this.claudeRecord(run, data);
+    else if (run.view.mode === "plan") this.codexPlanRecord(run, data);
     else this.codexRecord(run, data);
     this.publish(run);
   }
@@ -565,6 +602,11 @@ export class AgentRunner {
         run.claudeThinking?.index === event.index
       )
         this.finishThinking(run);
+      // A new text block starts a new part, after the latest step.
+      if (!data.parent_tool_use_id && event?.type === "content_block_start" && block?.type === "text") {
+        this.addTextPart(run, "");
+        run.streamedParts++;
+      }
       const delta = event?.delta;
       if (
         !data.parent_tool_use_id &&
@@ -573,6 +615,13 @@ export class AgentRunner {
       ) {
         run.partial = (run.partial + delta.text).slice(-outputLimit);
         run.view.text = (run.claudeText + run.partial).slice(-outputLimit);
+        // Text with no block start of its own still gets a part.
+        if (!run.streamedParts) {
+          this.addTextPart(run, "");
+          run.streamedParts++;
+        }
+        const part = run.view.textParts!.at(-1)!;
+        part.text = (part.text + delta.text).slice(-outputLimit);
       }
     }
     if (data.type === "assistant" && !data.parent_tool_use_id) {
@@ -589,7 +638,13 @@ export class AgentRunner {
         run.claudeText = (run.claudeText + text + "\n\n").slice(-outputLimit);
         run.partial = "";
         run.view.text = run.claudeText.trimEnd();
+        // Streamed already, block by block; otherwise it arrives whole here.
+        const streamed = run.streamedParts
+          ? (run.view.textParts ?? []).slice(-run.streamedParts).map((part) => part.text).join("")
+          : "";
+        if (streamed.replace(/\s+/g, "") !== text.replace(/\s+/g, "")) this.addTextPart(run, text);
       }
+      if (!data.parent_tool_use_id) run.streamedParts = 0;
       for (const block of blocks)
         if (block?.type === "tool_use") this.claudeTool(run, block);
     }
@@ -637,16 +692,109 @@ export class AgentRunner {
       data.type === "item.completed" &&
       data.item?.type === "agent_message" &&
       typeof data.item.text === "string"
-    )
+    ) {
       run.view.text = [run.view.text, data.item.text]
         .filter(Boolean)
         .join("\n\n")
         .slice(-outputLimit);
+      this.addTextPart(run, data.item.text);
+    }
     this.codexActivity(run, data);
     if (data.type === "turn.failed")
       run.failure = data.error?.message || "Codex reported a failed turn.";
     if (data.type === "error" && typeof data.message === "string")
       run.view.activity = data.message.slice(0, 1000);
+  }
+
+  private codexPlanRecord(run: Entry, data: any) {
+    const { id, method, params, result, error } = data;
+    if (typeof id === "number" || typeof id === "string") {
+      if (typeof method === "string") {
+        if (method === "item/tool/requestUserInput") {
+          const requestId = `codex:${typeof id}:${id}`;
+          const input = JSON.stringify({ questions: params?.questions });
+          const permission = { id: requestId, tool: CODEX_QUESTION, input };
+          if (input.length <= 30_000 && askedQuestions(permission)) {
+            const requests = (run.codexRequests ??= new Map());
+            if (requests.has(requestId)) return;
+            requests.set(requestId, id);
+            run.view.permissions.push(permission);
+            return;
+          }
+          this.write(run, { id, result: { answers: {} } });
+        } else {
+          this.write(run, { id, error: { code: -32601, message: "Request unavailable in Orvane Plan mode." } });
+        }
+        return;
+      }
+      if (error && ["initialize", "thread", "turn"].includes(String(id))) {
+        run.failure = error.message || "Codex app-server rejected the turn.";
+        run.child?.stdin.end();
+        return;
+      }
+      if (id === "initialize") {
+        this.write(run, { method: "initialized" });
+        const { sessionId, folder, model } = run.view;
+        this.write(run, { id: "thread", method: sessionId ? "thread/resume" : "thread/start",
+          params: {
+            cwd: folder, sandbox: "read-only", approvalPolicy: "never", model,
+            ...(sessionId ? { threadId: sessionId, excludeTurns: true } : {}),
+          },
+        });
+      } else if (id === "thread" && result?.thread?.id && typeof result.model === "string") {
+        this.rememberSession(run, result.thread.id);
+        const { message, effort } = run.view;
+        const images = splitAttachments(message).paths.filter((path) => isAbsolute(path) && attachmentPicture(path));
+        this.write(run, {
+          id: "turn", method: "turn/start",
+          params: {
+            threadId: result.thread.id,
+            input: [{ type: "text", text: message }, ...images.map((path) => ({ type: "localImage", path }))],
+            collaborationMode: { mode: "plan", settings: { model: result.model, reasoning_effort: effort === "max" ? "xhigh" : effort } },
+          },
+        });
+      } else if (id === "thread") {
+        run.failure = "Codex did not return a session and model.";
+        run.child?.stdin.end();
+      }
+      return;
+    }
+    if (method === "serverRequest/resolved") {
+      this.removePermission(run, `codex:${typeof params?.requestId}:${params?.requestId}`);
+      return;
+    }
+    if (method === "turn/completed") {
+      run.resultSeen = true;
+      if (params?.turn?.status === "interrupted") run.view.status = "stopping";
+      else if (params?.turn?.status !== "completed")
+        run.failure = params?.turn?.error?.message || "Codex reported a failed turn.";
+      run.child?.stdin.end();
+      return;
+    }
+    if (method === "thread/tokenUsage/updated") {
+      const usage = params?.tokenUsage;
+      const last = usage?.last;
+      if (last) run.view.context = codexContext({
+        model_context_window: usage.modelContextWindow,
+        last_token_usage: {
+          input_tokens: last.inputTokens, cached_input_tokens: last.cachedInputTokens, output_tokens: last.outputTokens,
+        },
+      });
+      return;
+    }
+    if ((method === "item/started" || method === "item/completed") && params?.item) {
+      const item = params.item;
+      const names: Record<string, string> = {
+        agentMessage: "agent_message", mcpToolCall: "mcp_tool_call", commandExecution: "command_execution",
+        fileChange: "file_change", webSearch: "web_search", collabAgentToolCall: "collab_tool_call",
+      };
+      this.codexRecord(run, {
+        type: method.replace("/", "."),
+        item: { ...item, type: Object.hasOwn(names, item.type) ? names[item.type] : item.type,
+          text: item.type === "reasoning" ? item.summary?.join("\n") : item.text,
+          aggregated_output: item.aggregatedOutput, exit_code: item.exitCode },
+      });
+    }
   }
 
   private codexActivity(run: Entry, data: any) {
@@ -664,6 +812,9 @@ export class AgentRunner {
       web_search: ["search", "Web search"],
       file_change: ["changes", "File changes"],
       collab_tool_call: ["tool", "Agent collaboration"],
+      imageView: ["tool", "Viewed image"],
+      contextCompaction: ["tool", "Compacted context"],
+      plan: ["tool", "Plan"],
     };
     const entry = Object.hasOwn(kinds, item.type)
       ? kinds[item.type]
@@ -696,7 +847,7 @@ export class AgentRunner {
                     )
                     .join("\n"),
                 }
-              : undefined,
+              : item.type === "imageView" ? { file_path: item.path } : undefined,
     );
     const output =
       typeof item.error?.message === "string"
@@ -714,7 +865,7 @@ export class AgentRunner {
             )
           : kind === "mcp"
             ? stepOutput(item.result?.content ?? item.result)
-            : undefined;
+            : item.type === "plan" ? stepOutput(item.text) : undefined;
     this.updateActivity(run, {
       id: item.id,
       kind,
@@ -727,6 +878,7 @@ export class AgentRunner {
   }
 
   private removePermission(run: Entry, id: string) {
+    run.codexRequests?.delete(id);
     run.inputs.delete(id);
     run.view.permissions = run.view.permissions.filter(
       (request) => request.id !== id,
@@ -748,6 +900,24 @@ export class AgentRunner {
     )
       throw Error("This approval request is unavailable.");
     const asks = request.tool === "AskUserQuestion";
+    if (request.tool === CODEX_QUESTION) {
+      const rpcId = run.codexRequests?.get(requestId);
+      const questions = askedQuestions(request);
+      if (rpcId === undefined || !questions) throw Error("This Codex question is unavailable.");
+      const answers = Object.fromEntries(allow ? questions.map((question) => {
+        const key = question.id!;
+        const value = answer?.answers[key];
+        if (typeof value !== "string" || !value.trim()) throw Error("Answer the questions first.");
+        if (question.other === false && !question.options.some((option) => option.label === value))
+          throw Error("Choose one of the supplied answers.");
+        return [key, { answers: [value] }];
+      }) : []);
+      this.removePermission(run, requestId);
+      run.decisions.push({ tool: request.tool, allowed: allow, at: new Date().toISOString() });
+      this.write(run, { id: rpcId, result: { answers } });
+      this.publish(run, true);
+      return;
+    }
     if (answer && !asks) throw Error("Only questions take answers.");
     if (allow && asks && !answer) throw Error("Answer the questions first.");
     const original = run.inputs.get(requestId);
@@ -939,6 +1109,7 @@ export class AgentRunner {
     run.view.status = "stopping";
     run.view.permissions = [];
     run.inputs.clear();
+    run.codexRequests?.clear();
     this.publish(run, true);
     const child = run.child;
     if (!child?.pid) return;
@@ -973,6 +1144,7 @@ export class AgentRunner {
       if (item.status === "running") item.status = "interrupted";
     run.view.permissions = [];
     run.inputs.clear();
+    run.codexRequests?.clear();
     this.locks.delete(run.lock);
     if (run.textDone) {
       this.runs.delete(run.view.id);

@@ -6,19 +6,22 @@ import { computed, nextTick, onMounted, ref, watch } from "vue";
 import Icon from "./Icon.vue";
 
 export type PeekImage = { src: string; title: string; source?: string };
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   items: PeekImage[];
   index: number;
+  /** An image set can show its thumbnails below the preview. */
+  thumbnails?: boolean;
   /** Optional selection: shows a Select toggle (Enter). */
   selected?: boolean;
-}>();
-const emit = defineEmits<{ close: []; step: [number]; toggle: [] }>();
+}>(), { selected: undefined });
+const emit = defineEmits<{ close: []; step: [number]; toggle: []; pick: [number] }>();
 
 const root = ref<HTMLElement>();
 const stage = ref<HTMLElement>();
 const item = computed(() => props.items[props.index]);
 const view = ref({ x: 0, y: 0, scale: 1 });
 const natural = ref({ width: 0, height: 0 });
+const unavailable = ref(false);
 let fitScale = 1;
 const MIN = 0.05;
 const MAX = 8;
@@ -58,7 +61,10 @@ function loaded(event: Event) {
 }
 watch(
   () => item.value?.src,
-  () => (natural.value = { width: 0, height: 0 }),
+  () => {
+    natural.value = { width: 0, height: 0 };
+    unavailable.value = false;
+  },
 );
 
 function wheel(event: WheelEvent) {
@@ -124,6 +130,7 @@ onMounted(() => void nextTick(() => root.value?.focus({ preventScroll: true })))
     <div
       ref="root"
       class="image-peek"
+      :class="{ 'with-thumbnails': thumbnails && items.length > 1 }"
       role="dialog"
       :aria-label="`Peek: ${item?.title ?? ''}`"
       tabindex="-1"
@@ -134,13 +141,14 @@ onMounted(() => void nextTick(() => root.value?.focus({ preventScroll: true })))
       <header class="image-peek-bar">
         <strong :title="item?.title">{{ item?.title }}</strong>
         <a
-          v-if="item?.source"
+          v-if="item?.source && /^https?:\/\//i.test(item.source)"
           :href="item.source"
           target="_blank"
           rel="noopener noreferrer"
           class="image-peek-source"
           >{{ item.source }}</a
         >
+        <span v-else-if="item?.source" class="image-peek-source" :title="item.source">{{ item.source }}</span>
         <span class="image-peek-grow"></span>
         <span class="image-peek-zoom" aria-live="polite">{{ percent }}</span>
         <b class="image-peek-count">{{ index + 1 }} / {{ items.length }}</b>
@@ -167,7 +175,9 @@ onMounted(() => void nextTick(() => root.value?.focus({ preventScroll: true })))
             transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
           }"
           @load="loaded"
+          @error="unavailable = true"
         />
+        <p v-if="unavailable" class="image-peek-unavailable" role="status">Image unavailable</p>
       </div>
       <nav class="image-peek-rail" role="toolbar" aria-label="Peek">
         <button type="button" aria-label="Close Peek" title="Close (Esc)" @click="emit('close')">
@@ -198,6 +208,18 @@ onMounted(() => void nextTick(() => root.value?.focus({ preventScroll: true })))
           </button>
         </template>
       </nav>
+      <div v-if="thumbnails && items.length > 1" class="image-peek-thumbnails" role="group" aria-label="Preview images">
+        <button
+          v-for="(image, i) in items"
+          :key="image.src"
+          type="button"
+          :aria-label="`Show ${image.title}`"
+          :aria-current="i === index ? 'true' : undefined"
+          @click="emit('pick', i)"
+        >
+          <img :src="image.src" alt="" />
+        </button>
+      </div>
     </div>
   </Teleport>
 </template>
@@ -220,6 +242,39 @@ onMounted(() => void nextTick(() => root.value?.focus({ preventScroll: true })))
     sans-serif;
   outline: none;
   animation: image-peek-in 160ms ease-out;
+}
+.image-peek.with-thumbnails {
+  grid-template-rows: 40px minmax(0, 1fr) 56px;
+}
+.image-peek-thumbnails {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: safe center;
+  gap: 8px;
+  padding: 4px 12px;
+  overflow-x: auto;
+}
+.image-peek-thumbnails button {
+  flex: none;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #d3dee5;
+  border-radius: 8px;
+  background: #fff;
+}
+.image-peek-thumbnails button:hover,
+.image-peek-thumbnails button[aria-current="true"] {
+  border-color: #365f78;
+}
+.image-peek-thumbnails button[aria-current="true"] {
+  box-shadow: 0 0 0 2px #365f7833;
+}
+.image-peek-thumbnails img {
+  display: block;
+  width: 60px;
+  height: 40px;
+  object-fit: cover;
 }
 @keyframes image-peek-in {
   from {
@@ -274,6 +329,13 @@ onMounted(() => void nextTick(() => root.value?.focus({ preventScroll: true })))
 }
 .image-peek-stage.dragging {
   cursor: grabbing;
+}
+.image-peek-unavailable {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
 }
 .image-peek-stage img {
   position: absolute;

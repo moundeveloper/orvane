@@ -54,8 +54,25 @@ Quotes are the owner's own words (typos kept out). Newest last. Add to this file
 
 - Approved as mocked (UI Maker "File Cabinet history and compare", round r1): History and Compare as plain buttons in the existing edit bar, History opening a version menu (relative time, mono +/− line counts, "4 of 5 kept", Clear history in red text), and a side-by-side diff that replaces the editor with "Restore this version" / Close diff (Esc). Ported features keep the existing File Cabinet styling rather than a new look.
 
+## Pinned chat, working step and pasted images (24.11.2026)
+
+- Picked **Above the dock** for pinned chat. Keep the full-width header and centre the dock in the window. The panel stops above the dock and has a bounded width resize handle. Rejected shifting the header or dock to accommodate the panel.
+- Picked **Replaces dot** for the working step. Use the existing full-size DNA helix. The rail connects dots to each other and leaves the helix clear above and below.
+- Picked **Tiles** for pasted pictures. Show the picture in the composer and with the sent message, and open it in the image preview when clicked.
+
+## Structured agent questions (24.11.2026)
+
+- Approved both **Claude asks** and **Codex asks** in UI Maker. Keep the shared question tabs and keyboard shortcuts. Claude can offer multiple selections, notes and previews. Codex follows the question's single-choice, free-text or masked-input format.
+
 ## General
+
+- Rejected the first **Continue with another model** mock and asked for a higher standard of mockup. Asked to remove the standing permission blurb from the chat composer.
 
 - "Everything is custom here": no standard HTML date/time selectors, no native arrows on scrollbars ("the ugly standard html arrows").
 - Scrollbars that do not match the app are "so annoying to have to catch and fix over and over": one global scrollbar style.
 - Wants options to choose from for design questions, then decides. Do not pick for them when the choice is taste.
+
+## Continue with another model (24.11.2026)
+
+- After Codex's two mocks, picked Claude's round r3 ("Where you land, how you find the source") and asked to build both variants, **Sessions app** and **Pinned chat**: "you mogged him". What won: the ⋯ menu turning into a searchable model list whose footer names the destination, the draft landing beside the source (split tile) or in the panel, a reference card with the last request/reply/files/open question and an inline transcript, the `@session` chip marked full transcript, two-way header links (from … / continued in …), indenting in the session list, a Back to draft bar in the pinned chat, and a first turn whose reference shows as a chip.
+- Split session tiles resize by dragging the empty gap between them, like the Terminal's splits. No drawn handle or grip.

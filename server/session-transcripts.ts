@@ -125,6 +125,13 @@ export class SessionTranscripts {
     await this.allowed(file.path);
     return file.info;
   }
+  /** The transcript file on disk, for a new session that continues this one. */
+  async file(key: string) {
+    await this.list();
+    const file = this.files.get(key);
+    if (!file) throw Error("Session not found. Refresh the session list.");
+    return this.allowed(file.path);
+  }
   invalidate() {
     this.indexedAt = 0;
   }
@@ -299,6 +306,23 @@ export class SessionTranscripts {
           timestamp: d.timestamp,
         };
       } else if (
+        d?.type === "event_msg" && item?.type === "item_completed" &&
+        typeof item.item?.id === "string" &&
+        ["ImageView", "ContextCompaction", "Plan"].includes(item.item.type)
+      ) {
+        const entry = item.item;
+        d = {
+          type: "assistant",
+          message: { content: [{
+            type: "tool_use", id: entry.id, completed: true,
+            name: entry.type === "ImageView" ? "Viewed image" : entry.type === "Plan" ? "Plan" : "Compacted context",
+            input: entry.type === "ImageView" ? { file_path: entry.path } : undefined,
+            output: entry.type === "Plan" ? entry.text : undefined,
+          }] },
+          timestamp: d.timestamp,
+          uuid: `item:${entry.id}`,
+        };
+      } else if (
         d?.type === "response_item" &&
         item?.type === "message" &&
         item.role === "assistant"
@@ -405,6 +429,8 @@ export class SessionTranscripts {
           tools.push({
             id: b.id,
             name: b.name,
+            ...(b.completed === true ? { status: "completed" as const } : {}),
+            ...(b.output ? { output: stepOutput(b.output) } : {}),
             ...(b.name.endsWith("exposition_show") &&
             typeof b.input?.view?.id === "string"
               ? { visualId: b.input.view.id }

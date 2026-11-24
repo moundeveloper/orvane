@@ -3,7 +3,14 @@
 // (install, test, remove through each CLI's own `mcp` commands) and session
 // preferences. Nothing is written until Install or Remove is pressed.
 import { onMounted, reactive, ref } from "vue";
-import { agentNames, type AgentProvider } from "../agentSessions";
+import {
+  agentEditModeNames,
+  agentEditModes,
+  agentNames,
+  type AgentEditMode,
+  type AgentProvider,
+} from "../agentSessions";
+import { harness } from "../agentHarness";
 import { agentRequest } from "../exposition";
 import Icon from "./Icon.vue";
 
@@ -24,6 +31,30 @@ const busy = reactive<Partial<Record<AgentProvider, string>>>({});
 const tested = reactive<Partial<Record<AgentProvider, number>>>({});
 const open = reactive<Partial<Record<AgentProvider, boolean>>>({});
 const root = ref<HTMLElement>();
+// The edit mode new chats start in; unset is what the CLI does by itself.
+const modeHints: Record<AgentEditMode, string> = {
+  ask: "Asks before each edit or command",
+  auto: "Accepts file edits, asks for the rest",
+  plan: "Plans only, changes nothing",
+  full: "Runs everything without asking",
+};
+function defaultMode(provider: AgentProvider) {
+  return harness.settings.defaultModes?.[provider] ?? agentEditModes[provider][0]!;
+}
+function setDefaultMode(provider: AgentProvider, mode: AgentEditMode) {
+  harness.settings.defaultModes = { ...harness.settings.defaultModes, [provider]: mode };
+}
+function modeKey(event: KeyboardEvent, provider: AgentProvider) {
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+  event.preventDefault();
+  const list = agentEditModes[provider];
+  const at = list.indexOf(defaultMode(provider));
+  const next = list[(at + (event.key === "ArrowRight" ? 1 : -1) + list.length) % list.length]!;
+  setDefaultMode(provider, next);
+  void Promise.resolve().then(() =>
+    (event.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus(),
+  );
+}
 
 async function load() {
   loading.value = true;
@@ -132,6 +163,30 @@ defineExpose({ focus: () => root.value?.focus() });
 
     <h2>Sessions</h2>
     <div class="as-card">
+      <div v-for="name in (['claude', 'codex'] as AgentProvider[])" :key="name" class="as-toggle">
+        <span
+          ><b>Default mode for new {{ agentNames[name] }} chats</b
+          ><small>{{ modeHints[defaultMode(name)] }}. You can still change it per chat (Shift+Tab).</small></span
+        >
+        <span
+          class="as-seg"
+          role="radiogroup"
+          :aria-label="`Default mode for ${agentNames[name]}`"
+          @keydown="modeKey($event, name)"
+        >
+          <button
+            v-for="mode in agentEditModes[name]"
+            :key="mode"
+            type="button"
+            role="radio"
+            :aria-checked="defaultMode(name) === mode"
+            :tabindex="defaultMode(name) === mode ? 0 : -1"
+            @click="setDefaultMode(name, mode)"
+          >
+            {{ agentEditModeNames[mode] }}
+          </button>
+        </span>
+      </div>
       <div class="as-toggle">
         <span><b>Suggest next message</b><small>Offer a follow-up in the composer when a run finishes.</small></span>
         <button type="button" class="as-switch" role="switch" :aria-checked="suggest" aria-label="Suggest next message"
@@ -381,6 +436,41 @@ kbd {
   gap: 12px;
   min-height: 48px;
   padding: 8px 14px;
+}
+.as-toggle + .as-toggle {
+  border-top: 1px solid #e3eaee;
+}
+/* Segmented control (design guide: track #e8eff3, pressed button raised). */
+.as-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: #e8eff3;
+}
+.as-seg button {
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: #5d7381;
+  font: inherit;
+  font-size: 11.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.as-seg button:hover {
+  color: #273f50;
+}
+.as-seg button[aria-checked="true"] {
+  background: #fbfcfd;
+  color: #273f50;
+  box-shadow: 0 1px 2px #263f5512;
+}
+.as-seg button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #6f899866;
 }
 .as-toggle b {
   display: block;

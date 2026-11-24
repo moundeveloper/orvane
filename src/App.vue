@@ -50,9 +50,9 @@ import { WORKBENCH_WIDGET, workbenchEditable, type WorkbenchKind } from "./workb
 import { DRAG_MIME } from "./components/files/explorer";
 import CommandPalette from "./components/CommandPalette.vue";
 import AgentLauncher from "./components/AgentLauncher.vue";
-import { agentOpenRequests, agentRunIndicators } from "./agentNavigation";
+import { AGENT_REVEAL, agentOpenRequests, agentRunIndicators, PIN_AGENT_DRAFT, type AgentDraft, type AgentReveal } from "./agentNavigation";
 import { agentRequest } from "./exposition";
-import type { AgentRun } from "./agentSessions";
+import { agentNames, type AgentRun } from "./agentSessions";
 import {
   configureHarness,
   harness,
@@ -1059,19 +1059,31 @@ const agentLauncher = ref(false);
 const SIDE_KEY = "orvane.side-chat.v1";
 const sideSaved = (() => {
   try {
-    return JSON.parse(localStorage.getItem(SIDE_KEY) ?? "{}") as { key?: string; open?: boolean };
+    return JSON.parse(localStorage.getItem(SIDE_KEY) ?? "{}") as {
+      key?: string; draft?: AgentDraft; open?: boolean; collapsed?: boolean; width?: number;
+    };
   } catch {
     return {};
   }
 })();
 /** The session pinned last (kept when unpinned, for Ctrl+Shift+J). */
 const sideSession = ref(sideSaved.key ?? "");
-const sideOpen = ref(!!(sideSaved.open && sideSaved.key));
+const sideDraft = ref(sideSaved.draft);
+const latestSideDraft = ref(sideSaved.draft);
+const hasSideSession = computed(() => Boolean(sideSession.value || sideDraft.value));
+const sideOpen = ref(!!(sideSaved.open && hasSideSession.value));
+/** Pinned but folded into the small bubble at the right edge. */
+const sideCollapsed = ref(!!sideSaved.collapsed);
 const sideSwitching = ref(false);
 const sideChat = ref<{ focus(): void }>();
+/** The pinned panel's width: dragged on its left edge, kept between these
+ * limits (the widest leaves at least half the window to the canvas). */
+const SIDE_MIN = 320;
+const sideMax = () => Math.max(SIDE_MIN, Math.min(720, Math.round(window.innerWidth / 2)));
+const sideWidth = ref(Math.min(sideMax(), Math.max(SIDE_MIN, Number(sideSaved.width) || 384)));
 /** Width the pinned panel takes from the canvas (panel plus its margin). */
-const SIDE_RESERVE = 396;
-const sideReserve = () => (sideOpen.value && sideSession.value && window.innerWidth >= 800 ? SIDE_RESERVE : 0);
+const sideReserve = () =>
+  sideOpen.value && hasSideSession.value && !sideCollapsed.value && window.innerWidth >= 800 ? sideWidth.value + 12 : 0;
 /** The canvas viewport is the window minus the pinned panel, so Home and focus fit what is left. */
 const sideReserved = ref(0);
 function measureViewport() {
@@ -1080,17 +1092,29 @@ function measureViewport() {
   viewport.height = window.innerHeight;
 }
 measureViewport();
-watch([sideSession, sideOpen], () => {
-  measureViewport();
+function saveSideChat() {
   try {
-    localStorage.setItem(SIDE_KEY, JSON.stringify({ key: sideSession.value, open: sideOpen.value }));
+    localStorage.setItem(
+      SIDE_KEY,
+      JSON.stringify({ key: sideSession.value, draft: latestSideDraft.value, open: sideOpen.value, collapsed: sideCollapsed.value, width: sideWidth.value }),
+    );
   } catch {
     /* only a convenience */
   }
+}
+function updateSideDraft(value: AgentDraft) {
+  if (!sideDraft.value) return;
+  latestSideDraft.value = value;
+  saveSideChat();
+}
+watch([sideSession, sideDraft, sideOpen, sideCollapsed, sideWidth], () => {
+  measureViewport();
+  saveSideChat();
   if (focused.value) void nextTick(placeFocus);
 });
 const sideTitle = ref("");
 const sideProvider = ref("claude");
+const sideLabel = computed(() => sideDraft.value ? "New session" : sideTitle.value || "Session");
 watch(
   sideSession,
   async (key) => {
@@ -1124,22 +1148,134 @@ watch(sideSwitching, (open) => {
   else document.removeEventListener("pointerdown", outsideSideSwitch, true);
 });
 window.addEventListener("orvane:guest-pointer-down", () => (sideSwitching.value = false));
+// Resizing the pinned panel: drag its left edge, or ←/→ on the focused edge
+// (Shift for bigger steps), Home/End for the narrowest/widest.
+const sideResizing = ref(false);
+function setSideWidth(width: number) {
+  sideWidth.value = Math.round(Math.min(sideMax(), Math.max(SIDE_MIN, width)));
+}
+function sideResizeDown(event: PointerEvent) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  const handle = event.currentTarget as HTMLElement;
+  handle.setPointerCapture(event.pointerId);
+  sideResizing.value = true;
+  const startX = event.clientX;
+  const startWidth = sideWidth.value;
+  const move = (e: PointerEvent) => {
+    if (e.pointerId === event.pointerId) setSideWidth(startWidth + startX - e.clientX);
+  };
+  const finish = () => {
+    sideResizing.value = false;
+    handle.removeEventListener("pointermove", move);
+  };
+  handle.addEventListener("pointermove", move);
+  handle.addEventListener("lostpointercapture", finish, { once: true });
+}
+function sideResizeKey(event: KeyboardEvent) {
+  const step = event.shiftKey ? 64 : 16;
+  const next =
+    event.key === "ArrowLeft" ? sideWidth.value + step
+    : event.key === "ArrowRight" ? sideWidth.value - step
+    : event.key === "Home" ? SIDE_MIN
+    : event.key === "End" ? sideMax()
+    : null;
+  if (next === null) return;
+  event.preventDefault();
+  setSideWidth(next);
+}
+// A smaller window narrows a panel that no longer fits its limit.
+window.addEventListener("resize", () => {
+  if (sideWidth.value > sideMax()) setSideWidth(sideWidth.value);
+});
+/** What the pinned session is doing, for the collapsed bubble. */
+const sideState = computed((): "waiting" | "working" | "idle" => {
+  if (sideDraft.value) {
+    const runId = latestSideDraft.value?.runId;
+    const run = runId ? agentRunIndicators.get(runId) : undefined;
+    return !run || !["running", "stopping"].includes(run.status) ? "idle" : run.awaitingApproval ? "waiting" : "working";
+  }
+  let path = "";
+  try {
+    const key = sideSession.value.replace(/^codex:/, "");
+    path = atob(key.replace(/-/g, "+").replace(/_/g, "/")).toLowerCase();
+  } catch {
+    return "idle";
+  }
+  const run = harness.runs.find(
+    (r) => r.sessionId && ["running", "stopping"].includes(r.status) && path.includes(r.sessionId.toLowerCase()),
+  );
+  return !run ? "idle" : run.awaitingApproval ? "waiting" : "working";
+});
+function collapseSideChat(collapse: boolean) {
+  sideCollapsed.value = collapse;
+  if (collapse) sideSwitching.value = false;
+}
+/** Continue with another model: while the pinned panel shows a source (or a
+ * continued session) opened from another one, this goes back to where you
+ * were: a draft, which keeps what you typed, or a session. */
+const sideBack = ref<{ label: string; draft?: AgentDraft; key?: string } | null>(null);
+function sideRevealEvent(event: Event) {
+  const detail = (event as CustomEvent<AgentReveal>).detail;
+  if (detail.blockId !== "session-chat:side") return;
+  if (detail.paneId === "side" || (sideBack.value && detail.key && detail.key === sideBack.value.key)) return goSideBack();
+  if (!detail.key || detail.key === sideSession.value) return;
+  const back = sideDraft.value
+    ? { label: `Draft · New ${agentNames[latestSideDraft.value?.provider ?? sideDraft.value.provider]} session`,
+        draft: latestSideDraft.value ?? sideDraft.value }
+    : sideSession.value ? { label: sideTitle.value || "Session", key: sideSession.value } : null;
+  pinSession(detail.key);
+  sideBack.value = back;
+}
+function goSideBack() {
+  const back = sideBack.value;
+  sideBack.value = null;
+  if (back?.draft) pinDraft(back.draft);
+  else if (back?.key) pinSession(back.key);
+}
 function pinSession(key: string) {
+  sideBack.value = null;
+  sideDraft.value = latestSideDraft.value = undefined;
   sideSession.value = key;
   sideOpen.value = true;
+  sideCollapsed.value = false;
   agentLauncher.value = false;
   sideSwitching.value = false;
 }
+function pinDraft(value: AgentDraft) {
+  sideBack.value = null;
+  sideSession.value = "";
+  sideDraft.value = latestSideDraft.value = value;
+  sideOpen.value = true;
+  sideCollapsed.value = false;
+  sideSwitching.value = false;
+  agentLauncher.value = false;
+  void nextTick(() => sideChat.value?.focus());
+}
+function pinDraftEvent(event: Event) {
+  pinDraft((event as CustomEvent<AgentDraft>).detail);
+}
+function promoteSideDraft(key: string) {
+  if (sideDraft.value) pinSession(key);
+}
+function unpinSideChat() {
+  if (sideDraft.value) sideDraft.value = latestSideDraft.value;
+  sideOpen.value = false;
+}
 const agentLauncherPanel = ref<{ pinChosen(): boolean }>();
 function toggleSideChat() {
-  // The launcher's Sessions tab pins the chat it shows.
+  // The launcher can pin the draft or the session it shows.
   if (agentLauncher.value && agentLauncherPanel.value?.pinChosen()) return;
-  if (sideOpen.value) sideOpen.value = false;
-  else if (sideSession.value) sideOpen.value = true;
+  // Pinned: Ctrl+Shift+J folds the panel into its bubble and back.
+  if (sideOpen.value) collapseSideChat(!sideCollapsed.value);
+  else if (hasSideSession.value) {
+    sideOpen.value = true;
+    sideCollapsed.value = false;
+  }
   else {
     // Nothing pinned yet: pick a session in the launcher.
     agentLauncher.value = true;
-    status.value = "Pick a session in the launcher's Sessions tab, then pin it.";
+    status.value = "Pin a new task or pick a session in the launcher.";
   }
 }
 const agentStarting = ref(false);
@@ -1248,10 +1384,11 @@ function paletteKeys(e: KeyboardEvent) {
     return;
   }
   // Ctrl+Shift+A: type in the pinned side chat.
-  if (key === "a" && e.shiftKey && sideOpen.value && sideSession.value) {
+  if (key === "a" && e.shiftKey && sideOpen.value && hasSideSession.value) {
     e.preventDefault();
     e.stopPropagation();
-    sideChat.value?.focus();
+    if (sideCollapsed.value) collapseSideChat(false);
+    void nextTick(() => sideChat.value?.focus());
     return;
   }
   const commands = key === "p" && e.shiftKey;
@@ -2782,15 +2919,19 @@ const wheelOpen = ref(false),
 const wheelKeyIndex = ref<number | null>(null);
 const wheelCenter = ref<HTMLButtonElement>(),
   wheelEditor = ref<HTMLElement>();
-const wheelCenterSelected = computed(
-  () =>
-    wheelKeyIndex.value === null &&
-    Math.hypot(
-      pointerPosition.x - viewport.width / 2,
-      pointerPosition.y - viewport.height / 2,
-    ) <
-    Math.min(360, viewport.width * 0.86, viewport.height * 0.78) * 0.24,
-);
+/** The pointer from the wheel's centre, and the wheel's diameter. The wheel
+ * is drawn at the window's centre: the canvas viewport ends left of a pinned
+ * side chat, so its centre is not the wheel's. */
+function wheelGeometry() {
+  const dx = pointerPosition.x - window.innerWidth / 2,
+    dy = pointerPosition.y - window.innerHeight / 2;
+  const diameter = Math.min(360, window.innerWidth * 0.86, window.innerHeight * 0.78);
+  return { dx, dy, distance: Math.hypot(dx, dy), diameter };
+}
+const wheelCenterSelected = computed(() => {
+  const { distance, diameter } = wheelGeometry();
+  return wheelKeyIndex.value === null && distance < diameter * 0.24;
+});
 async function openWheelConfig(origin?: HTMLElement, reset = false) {
   const source = origin?.getBoundingClientRect();
   if (wheelOpen.value) wheelExit = "center";
@@ -2919,10 +3060,8 @@ function wheelSegment(index: number) {
 const wheelSelected = computed(() => {
   if (wheelKeyIndex.value !== null)
     return wheelEntries.value[wheelKeyIndex.value];
-  const dx = pointerPosition.x - viewport.width / 2,
-    dy = pointerPosition.y - viewport.height / 2;
-  const diameter = Math.min(360, viewport.width * 0.86, viewport.height * 0.78);
-  if (Math.hypot(dx, dy) < diameter * 0.24 || !wheelEntries.value.length)
+  const { dx, dy, distance, diameter } = wheelGeometry();
+  if (distance < diameter * 0.24 || !wheelEntries.value.length)
     return undefined;
   const angle =
     (Math.atan2(dy, dx) + Math.PI / 2 + 2 * Math.PI) % (2 * Math.PI);
@@ -3023,13 +3162,9 @@ watch(wheelOpen, async (open) => {
 // arrow keys it is all-or-nothing and fades over 220 ms.
 const wheelBlend = computed(() => {
   if (wheelKeyIndex.value !== null) return 1;
-  const diameter = Math.min(360, viewport.width * 0.86, viewport.height * 0.78);
+  const { distance, diameter } = wheelGeometry();
   const dead = diameter * 0.24,
     band = diameter * 0.1;
-  const distance = Math.hypot(
-    pointerPosition.x - viewport.width / 2,
-    pointerPosition.y - viewport.height / 2,
-  );
   return Math.min(1, Math.max(0, (distance - (dead - band)) / (2 * band)));
 });
 const wheelActive = computed(
@@ -4313,6 +4448,8 @@ onMounted(() => {
   window.addEventListener("orvane:open-git", openGitEvent);
   window.addEventListener("orvane:palette", paletteEvent);
   window.addEventListener("orvane:send-selection", sendSelectionEvent);
+  window.addEventListener(PIN_AGENT_DRAFT, pinDraftEvent);
+  window.addEventListener(AGENT_REVEAL, sideRevealEvent);
   startActivity();
   window.addEventListener("paste", pasteImage);
   window.addEventListener("pointermove", trackPointer, { passive: true });
@@ -4341,6 +4478,8 @@ onBeforeUnmount(() => {
   window.removeEventListener("orvane:open-git", openGitEvent);
   window.removeEventListener("orvane:palette", paletteEvent);
   window.removeEventListener("orvane:send-selection", sendSelectionEvent);
+  window.removeEventListener(PIN_AGENT_DRAFT, pinDraftEvent);
+  window.removeEventListener(AGENT_REVEAL, sideRevealEvent);
   stopActivity();
   window.removeEventListener("paste", pasteImage);
   window.removeEventListener("pointermove", trackPointer);
@@ -4422,11 +4561,25 @@ onBeforeUnmount(() => {
         @starting="agentStarting = $event"
         @started="openAgentSession({ run: $event }); agentLauncher = false"
         @pin="pinSession"
+        @pin-draft="pinDraft"
         @open="openAgentSession({ key: $event }); agentLauncher = false"
       />
     </Transition>
     <Transition name="side-chat">
-    <aside v-if="sideOpen && sideSession" class="side-chat workspace-frost" aria-label="Pinned AI session" @pointerdown.stop="closeSideSwitch($event)" @keydown.esc="sideSwitching && ($event.stopPropagation(), (sideSwitching = false))">
+    <aside v-if="sideOpen && hasSideSession" v-show="!sideCollapsed" class="side-chat workspace-frost" :style="{ '--side-width': `${sideWidth}px` }" aria-label="Pinned AI session" @pointerdown.stop="closeSideSwitch($event)" @keydown.esc="sideSwitching && ($event.stopPropagation(), (sideSwitching = false))">
+      <div
+        class="side-chat-resize"
+        :class="{ dragging: sideResizing }"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize side chat"
+        :aria-valuenow="sideWidth"
+        :aria-valuemin="SIDE_MIN"
+        :aria-valuemax="sideMax()"
+        tabindex="0"
+        @pointerdown="sideResizeDown"
+        @keydown="sideResizeKey"
+      ></div>
       <header class="side-chat-head">
         <button
           type="button"
@@ -4435,13 +4588,15 @@ onBeforeUnmount(() => {
           :aria-expanded="sideSwitching"
           @click="sideSwitching = !sideSwitching"
         >
-          <span class="side-chat-provider" :class="sideProvider">{{ sideProvider === "codex" ? "X" : "C" }}</span><b>{{ sideTitle || "Session" }}</b>
+          <span class="side-chat-provider" :class="sideDraft?.provider || sideProvider">{{ (sideDraft?.provider || sideProvider) === "codex" ? "X" : "C" }}</span><b>{{ sideLabel }}</b>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
         </button>
         <span class="side-chat-space"></span>
-        <button type="button" class="side-chat-button active" aria-label="Unpin side chat" data-tip="Unpin · Ctrl+Shift+J"
-          @click="sideOpen = false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 2.5 13.5 6l-2.5 1-2.5 3 .5 2.5L4 7.5 6.5 8l3-2.5z" /><path d="M5.5 10.5 2.5 13.5" /></svg></button>
-        <button type="button" class="side-chat-button" aria-label="Open in Agent sessions" data-tip="Open in Agent sessions"
+        <button type="button" class="side-chat-button" aria-label="Collapse side chat" data-tip="Collapse · Ctrl+Shift+J"
+          @click="collapseSideChat(true)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" /></svg></button>
+        <button type="button" class="side-chat-button active" aria-label="Unpin side chat" data-tip="Unpin"
+          @click="unpinSideChat"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 2.5 13.5 6l-2.5 1-2.5 3 .5 2.5L4 7.5 6.5 8l3-2.5z" /><path d="M5.5 10.5 2.5 13.5" /></svg></button>
+        <button v-if="sideSession" type="button" class="side-chat-button" aria-label="Open in Agent sessions" data-tip="Open in Agent sessions"
           @click="openAgentSession({ key: sideSession })"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 3h4v4M13 3 7.5 8.5M12 9.5V13H3V4h3.5" /></svg></button>
       </header>
       <Transition name="side-chat-list">
@@ -4449,11 +4604,38 @@ onBeforeUnmount(() => {
           <SessionList :current="sideSession" @pick="pinSession($event.key)" />
         </div>
       </Transition>
-      <SessionChat ref="sideChat" :session-key="sideSession" place="side" />
+      <div v-if="sideBack" class="side-chat-back" role="status">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.4" /><circle cx="4.5" cy="12.5" r="1.4" /><circle cx="11.5" cy="5.5" r="1.4" /><path d="M4.5 5v6M11.5 7c0 2.6-2.4 3.8-7 4.8" /></svg>
+        <span>{{ sideBack.label }}</span>
+        <button type="button" class="side-chat-back-go" @click="goSideBack">{{ sideBack.draft ? "Back to draft" : "Back" }}</button>
+        <button type="button" class="side-chat-back-close" aria-label="Dismiss" @click="sideBack = null">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" /></svg>
+        </button>
+      </div>
+      <SessionChat ref="sideChat" :session-key="sideSession" :initial-draft="sideDraft" place="side"
+        @session-key="promoteSideDraft" @draft-state="updateSideDraft" />
       <footer class="side-chat-keys">
-        <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>A</kbd> type here<span class="side-chat-space"></span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>J</kbd> unpin
+        <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>A</kbd> type here<span class="side-chat-space"></span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>J</kbd> collapse
       </footer>
     </aside>
+    </Transition>
+    <!-- The collapsed side chat: a small face at the right edge. It blinks
+         while idle, reads left and right while the session works, and shows
+         an amber dot when it waits for you. -->
+    <Transition name="side-bubble">
+      <button
+        v-if="sideOpen && hasSideSession && sideCollapsed"
+        type="button"
+        class="side-bubble workspace-frost"
+        :class="`is-${sideState}`"
+        :aria-label="`Open pinned chat: ${sideLabel}${sideState === 'working' ? ', working' : sideState === 'waiting' ? ', waiting for you' : ''}`"
+        :data-tip="`${sideLabel} · Ctrl+Shift+J`"
+        @pointerdown.stop
+        @click="collapseSideChat(false)"
+      >
+        <span class="side-bubble-face" aria-hidden="true"><i></i><i></i></span>
+        <span v-if="sideState === 'waiting'" class="side-bubble-dot" aria-hidden="true"></span>
+      </button>
     </Transition>
     <div ref="agentPopovers" class="agent-launcher-popovers" />
     <CustomToolsPanel v-if="customToolsOpen" @close="customToolsOpen = false" />

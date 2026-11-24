@@ -65,6 +65,43 @@ if (args[1] === "status") {
       apiProvider: "firstParty",
     });
   process.exitCode = signedOut ? 1 : 0;
+} else if (args.includes("app-server")) {
+  const folder = join(__dirname, "codex-sessions", "2026", "11", "21");
+  const file = join(folder, "plan.jsonl");
+  const record = (type, payload) => append(file, { type, payload, timestamp: new Date().toISOString() });
+  const itemDone = (item) => emit({ method: "item/completed", params: { threadId: codexId, item } });
+  createInterface({ input: process.stdin }).on("line", (line) => {
+    const packet = JSON.parse(line);
+    if (packet.method === "initialize") emit({ id: packet.id, result: {} });
+    if (packet.method === "thread/start" || packet.method === "thread/resume") {
+      append(join(__dirname, "codex-plan-thread.jsonl"), packet);
+      mkdirSync(folder, { recursive: true });
+      if (!existsSync(file)) record("session_meta", { id: codexId, cwd: process.cwd() });
+      emit({ id: packet.id, result: { thread: { id: codexId }, model: packet.params.model || "test-codex" } });
+    }
+    if (packet.method === "turn/start") {
+      append(join(__dirname, "codex-plan-turn.jsonl"), packet);
+      emit({ id: packet.id, result: { turn: { id: "turn-1", status: "inProgress" } } });
+      record("event_msg", { type: "item_completed", item: { type: "UserMessage", content: packet.params.input } });
+      const item = { id: "image-1", type: "imageView", path: join(__dirname, "project", "layout.png") };
+      record("event_msg", { type: "item_completed", item: { ...item, type: "ImageView" } });
+      itemDone(item);
+      emit({ id: 17, method: "item/tool/requestUserInput", params: { questions: [
+        { id: "layout", header: "Layout", question: "Which layout should I use?", options: [
+          { label: "Above the dock", description: "Keep the dock in place." }, { label: "Full height", description: "Fill the right edge." },
+        ] },
+        { id: "marker", header: "Private marker", question: "What is the private marker?", isSecret: true, options: null },
+      ] } });
+    }
+    if (packet.id === 17 && packet.result) {
+      append(join(__dirname, "codex-plan-answers.jsonl"), packet.result);
+      emit({ method: "serverRequest/resolved", params: { threadId: codexId, requestId: 17 } });
+      const text = Object.keys(packet.result.answers).length ? "Plan answers received" : "Plan questions skipped";
+      record("response_item", { type: "message", role: "assistant", content: [{ type: "output_text", text }] });
+      itemDone({ id: "reply-1", type: "agentMessage", text });
+      emit({ method: "turn/completed", params: { threadId: codexId, turn: { id: "turn-1", status: "completed" } } });
+    }
+  });
 } else if (codex) {
   let message = "";
   process.stdin

@@ -317,6 +317,7 @@ export function agentArgs(
   fork?: boolean,
   resumeAt?: string,
   orvaneMcp?: boolean,
+  images: string[] = [],
 ) {
   if (provider === "claude")
     return [
@@ -362,6 +363,8 @@ export function agentArgs(
     "--skip-git-repo-check",
     ...(sessionId ? ["resume", sessionId] : []),
     ...(model ? ["--model", model] : []),
+    ...images.flatMap((path) => ["--image", path]),
+    ...(images.length ? ["--"] : []),
     "-",
   ];
 }
