@@ -254,3 +254,50 @@ test("the effort popover opens above its pill and the model search stays above a
   expect(await list.evaluate((el) => el.scrollTop)).toBe(0);
   await page.screenshot({ path: info.outputPath("model-list.png") });
 });
+
+// Claude's AskUserQuestion shows its questions (not a generic Allow once) and
+// sends the owner's answers back in the tool's updated input; Skip denies it.
+test("Claude's questions are answered in a question card, or skipped", async ({ page, context }, info) => {
+  test.setTimeout(120_000);
+  await fixture(context);
+  const app = await openApp(page);
+  await app.getByRole("button", { name: /Existing Claude project/ }).click();
+  const composer = app.getByRole("textbox", { name: "Message", exact: true });
+  const chat = app.getByLabel("Session conversation");
+  await composer.fill("Ask me questions");
+  await composer.press("Enter");
+  const card = app.getByRole("group", { name: "Questions from Claude Code" });
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await expect(app.getByRole("group", { name: "Permission request for AskUserQuestion" })).toHaveCount(0);
+  await expect(card).toContainText("Which zoom should focus mode use?");
+  await expect(card.getByRole("button", { name: "Send answers" })).toHaveCount(0);
+
+  // Question 1: pick an option (its preview shows) and add a note.
+  await card.getByRole("radio", { name: /UI 1x, page keeps zoom/ }).click();
+  await expect(card.getByLabel("Preview")).toContainText("PAGE 0.83x");
+  await card.getByRole("textbox", { name: "Note for Focus zoom" }).fill("keep the limits");
+  await page.screenshot({ path: info.outputPath("agent-questions.png") });
+  // Question 2 with the arrows: number keys toggle, Other adds own text.
+  await card.getByRole("radio", { name: /UI 1x/ }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(card).toContainText("Where should Ctrl+arrows switch apps?");
+  await page.keyboard.press("1");
+  await page.keyboard.press("3");
+  await expect(card.getByRole("checkbox", { name: /Canvas/ })).toHaveAttribute("aria-checked", "true");
+  await expect(card.getByRole("checkbox", { name: /Timeline/ })).toHaveAttribute("aria-checked", "true");
+  await card.getByRole("textbox", { name: "Other answer for Ctrl+arrows" }).fill("Browser later");
+  await expect(card).toContainText("2 of 2 answered");
+  await card.getByRole("button", { name: /Send answers/ }).click();
+  await expect(chat.getByText(
+    'Answers {"Which zoom should focus mode use?":"UI 1x, page keeps zoom","Where should Ctrl+arrows switch apps?":"Canvas, Timeline, Browser later"} ' +
+      'notes {"Which zoom should focus mode use?":{"notes":"keep the limits","preview":"PAGE 0.83x"}}',
+  )).toBeVisible({ timeout: 15_000 });
+  await expect(card).toHaveCount(0);
+
+  // Skip denies the questions.
+  await composer.fill("Ask me questions");
+  await composer.press("Enter");
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await card.getByRole("button", { name: "Skip" }).click();
+  await expect(chat.getByText("Questions skipped")).toBeVisible({ timeout: 15_000 });
+});

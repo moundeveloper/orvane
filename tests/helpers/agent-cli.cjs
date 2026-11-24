@@ -223,6 +223,41 @@ if (args[1] === "status") {
         return;
       }
       save("user", message);
+      if (message === "Ask me questions") {
+        // Claude's AskUserQuestion arrives as a permission request.
+        emit({
+          type: "control_request",
+          request_id: "question-1",
+          request: {
+            subtype: "can_use_tool",
+            tool_name: "AskUserQuestion",
+            input: {
+              questions: [
+                {
+                  question: "Which zoom should focus mode use?",
+                  header: "Focus zoom",
+                  multiSelect: false,
+                  options: [
+                    { label: "UI 1x, page keeps zoom", description: "App at actual size.", preview: "PAGE 0.83x" },
+                    { label: "Everything 1x", description: "Old behaviour." },
+                  ],
+                },
+                {
+                  question: "Where should Ctrl+arrows switch apps?",
+                  header: "Ctrl+arrows",
+                  multiSelect: true,
+                  options: [
+                    { label: "Canvas", description: "Outside text fields." },
+                    { label: "Browser pages", description: "Needs a restart." },
+                    { label: "Timeline", description: "Call rows." },
+                  ],
+                },
+              ],
+            },
+          },
+        });
+        return;
+      }
       emit({
         type: "stream_event",
         event: {
@@ -279,6 +314,17 @@ if (args[1] === "status") {
           input: { file_path: "fixture.txt" },
         },
       });
+    }
+    if (packet.type === "control_response" && packet.response.request_id === "question-1") {
+      const { behavior, updatedInput } = packet.response.response;
+      const result =
+        behavior === "allow"
+          ? `Answers ${JSON.stringify(updatedInput.answers)} notes ${JSON.stringify(updatedInput.annotations ?? {})}`
+          : "Questions skipped";
+      save("assistant", result);
+      emit({ type: "assistant", message: { content: [{ type: "text", text: result }] } });
+      emit({ type: "result", subtype: "success", session_id: claudeId });
+      return;
     }
     if (packet.type === "control_response") {
       const { behavior, updatedInput } = packet.response.response;

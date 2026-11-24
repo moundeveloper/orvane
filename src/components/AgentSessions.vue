@@ -20,6 +20,7 @@ import ExpositionView from "./ExpositionView.vue";
 import Icon from "./Icon.vue";
 import ChatMarkdown from "./ChatMarkdown.vue";
 import AgentRunActivity from "./AgentRunActivity.vue";
+import AgentQuestions from "./AgentQuestions.vue";
 import ThinkingTrail from "./ThinkingTrail.vue";
 import AgentSettings from "./AgentSettings.vue";
 import AgentUsage from "./AgentUsage.vue";
@@ -66,6 +67,7 @@ import {
   agentBusy,
   agentNames,
   agentPermissions,
+  askedQuestions,
   summarizeAgentRun,
   type AgentRunSummary,
   type AgentProvider,
@@ -393,7 +395,8 @@ const runStripAt = computed(() => {
 // Head of the thinking trail: what the run is doing as a whole.
 const trailLabel = computed(() => {
   if (!run.value) return "";
-  if (run.value.permissions.length) return "Waiting for your approval";
+  if (run.value.permissions.length)
+    return askedQuestions(run.value.permissions[0]!) ? "Waiting for your answers" : "Waiting for your approval";
   if (run.value.status === "stopping") return "Stopping…";
   // A tool step is running: the steps below say which. Text written before
   // a tool call ("I'll check…") is not the answer yet.
@@ -2572,9 +2575,16 @@ onBeforeUnmount(() => {
               @restore="restoreCheckpoint"
               @close="closeRewind"
             />
+            <template v-for="permission in run?.permissions" :key="permission.id">
+            <AgentQuestions
+              v-if="askedQuestions(permission)"
+              :questions="askedQuestions(permission)!"
+              :who="agentNames[run!.provider]"
+              @answer="runCommand('permission', { requestId: permission.id, allow: true, ...$event })"
+              @skip="runCommand('permission', { requestId: permission.id, allow: false })"
+            />
             <div
-              v-for="permission in run?.permissions"
-              :key="permission.id"
+              v-else
               class="cs-permission"
               role="group"
               :aria-label="`Permission request for ${permission.tool}`"
@@ -2642,6 +2652,7 @@ onBeforeUnmount(() => {
                 </button>
               </div>
             </div>
+            </template>
             <p v-if="notice" class="cs-notice" role="status">{{ notice }}</p>
             <p v-if="forking" class="cs-notice cs-forking" role="status">
               <Icon name="git" :size="12" />The next message starts a new session branched from this one.
@@ -2791,7 +2802,7 @@ onBeforeUnmount(() => {
                   role="status"
                   >{{
                     run?.permissions.length
-                      ? "Waiting for approval"
+                      ? askedQuestions(run.permissions[0]!) ? "Waiting for your answers" : "Waiting for approval"
                       : run?.status === "stopping"
                         ? "Stopping…"
                         : "Running · Enter queues"

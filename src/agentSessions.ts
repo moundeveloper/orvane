@@ -178,11 +178,52 @@ export type AgentRunSummary = Pick<
   title: string;
   awaitingApproval: boolean;
   /** The first approval the run waits for. */
-  approval?: { id: string; tool: string; detail: string };
+  approval?: { id: string; tool: string; detail: string; questions?: boolean };
   startedAt?: number;
   endedAt?: number;
 };
 /** One line describing what an approval request would do. */
+/** One question from Claude's AskUserQuestion tool. */
+export interface AgentQuestion {
+  question: string;
+  header: string;
+  multiSelect: boolean;
+  options: { label: string; description: string; preview?: string }[];
+}
+/** Answers for AskUserQuestion, keyed by question text: an option label,
+ * labels joined with ", " (multiSelect) or the owner's own text. */
+export interface AgentAnswer {
+  answers: Record<string, string>;
+  annotations?: Record<string, { notes?: string; preview?: string }>;
+}
+/** The questions of an AskUserQuestion request, or null when the request is
+ * something else (or its input is not the expected shape). */
+export function askedQuestions(permission: { tool: string; input: string }): AgentQuestion[] | null {
+  if (permission.tool !== "AskUserQuestion" || !permission.input) return null;
+  try {
+    const value = JSON.parse(permission.input) as { questions?: unknown };
+    if (!Array.isArray(value.questions) || !value.questions.length) return null;
+    const text = (v: unknown) => (typeof v === "string" ? v : "");
+    const questions = value.questions.map((raw: any): AgentQuestion | null => {
+      const question = text(raw?.question);
+      if (!question || !Array.isArray(raw.options)) return null;
+      const options = raw.options
+        .map((o: any) => ({ label: text(o?.label), description: text(o?.description), ...(text(o?.preview) ? { preview: text(o.preview) } : {}) }))
+        .filter((o: { label: string }) => o.label);
+      return { question, header: text(raw.header) || question.slice(0, 12), multiSelect: raw.multiSelect === true, options };
+    });
+    return questions.every(Boolean) ? (questions as AgentQuestion[]) : null;
+  } catch {
+    return null;
+  }
+}
+/** "2 questions · Focus mode zoom: …" for an AskUserQuestion request. */
+function questionDetail(permission: { tool: string; input: string }) {
+  const questions = askedQuestions(permission);
+  if (!questions) return null;
+  const count = questions.length === 1 ? "1 question" : `${questions.length} questions`;
+  return `${count} · ${questions[0]!.question}`.slice(0, 160);
+}
 export function approvalDetail(input: string) {
   try {
     const value = JSON.parse(input) as Record<string, unknown>;
@@ -205,7 +246,9 @@ export function summarizeAgentRun(run: AgentRun): AgentRunSummary {
           approval: {
             id: run.permissions[0].id,
             tool: run.permissions[0].tool,
-            detail: approvalDetail(run.permissions[0].input),
+            detail: questionDetail(run.permissions[0]) ?? approvalDetail(run.permissions[0].input),
+            // Questions need their own card: the bell opens the session.
+            ...(askedQuestions(run.permissions[0]) ? { questions: true } : {}),
           },
         }
       : {}),

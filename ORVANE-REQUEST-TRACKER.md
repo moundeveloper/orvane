@@ -28,6 +28,10 @@ Reports from 19 November 2026. The images are evidence for the reports below. Ke
 - [x] **Expose removal for Actions.** The owner reports Actions have no remove button. Locate the affected action editor and verify an action can be removed and stays removed after reopening.
 - [x] **Replace the dock's horizontal scrollbar with an overflow control.** Attachment 1 shows the bottom app dock with a long native-looking horizontal scrollbar below the app tabs. When the row reaches its limit, show an overflow icon that opens a second layer with the remaining selectable apps. Keep the control visually consistent with Orvane. Verify resizing, narrow windows, focus, Escape, selecting an overflow app, and existing management/reordering interactions.
 
+## Agent sessions
+
+- [ ] **Codex questions (request_user_input) in Agent sessions.** The Claude half is built (`AgentQuestions.vue`, UI Maker "Agent questions" r1, variant Claude asks). Codex only sends questions through `codex app-server` (server request `item/tool/requestUserInput`, EXPERIMENTAL in codex-cli 0.171.0: questions keyed by `id`, single choice, `isOther`, `isSecret`, `options` may be null, `isBlocking`; reply `{ answers: { <id>: { answers: [...] } } }`). Orvane runs Codex with `codex exec --json -a never`, which has no reply channel. Move Codex runs onto app-server, then reuse the card with the Codex rules (variant Codex asks): masked secret answers kept out of the chat and the run log. Check first whether `exec` hides the tool or auto-answers it.
+
 ## Work log
 
 - The existing checkout is `codex/terminal-live-split-drag`. It contains local edits in App, browser/Electron, Actions, and tests, among other files. Keep those edits intact and inspect the current diff before touching overlapping code. Work in `C:\Projects\Orvane`.

@@ -467,9 +467,22 @@ export function agentSessionsApi(directory: string): Plugin {
             id,
             requestId: z.string().min(1).max(300),
             allow: z.boolean(),
+            // AskUserQuestion answers, keyed by question text.
+            answers: z.record(z.string().max(2000), z.string().max(20_000)).optional(),
+            annotations: z
+              .record(
+                z.string().max(2000),
+                z.object({ notes: z.string().max(20_000).optional(), preview: z.string().max(50_000).optional() }),
+              )
+              .optional(),
           })
           .parse(args);
-        runner.decide(decision.id, decision.requestId, decision.allow);
+        runner.decide(
+          decision.id,
+          decision.requestId,
+          decision.allow,
+          decision.answers ? { answers: decision.answers, annotations: decision.annotations } : undefined,
+        );
         return reply(200, {});
       }
       return reply(404, { error: "Unknown session operation." });

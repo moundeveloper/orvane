@@ -231,7 +231,11 @@ function compare(runs: AgentRunSummary[]) {
     const before = previous.get(run.id);
     const name = agentNames[run.provider];
     if (run.awaitingApproval && run.approval && before?.approval?.id !== run.approval.id && busy(run))
-      alert(run, `${name} needs your approval`, `${run.title} · ${run.approval.tool}: ${run.approval.detail}`);
+      alert(
+        run,
+        run.approval.questions ? `${name} has a question` : `${name} needs your approval`,
+        run.approval.questions ? `${run.title} · ${run.approval.detail}` : `${run.title} · ${run.approval.tool}: ${run.approval.detail}`,
+      );
     if (before && busy(before) && !busy(run)) {
       if (run.status === "completed") alert(run, `${name} finished`, run.title);
       else if (run.status === "failed") alert(run, `${name} stopped with an error`, run.title);

@@ -81,6 +81,7 @@ function ago(run: AgentRunSummary) {
   return minutes < 1 ? "now" : minutes < 60 ? `${minutes}m` : `${Math.round(minutes / 60)}h`;
 }
 function detail(run: AgentRunSummary) {
+  if (run.approval?.questions) return run.approval.detail;
   if (run.approval) return `${run.approval.tool}: ${run.approval.detail}`;
   if (run.status === "failed") return "Stopped with an error";
   if (run.status === "stopped") return "Stopped";
@@ -184,7 +185,10 @@ defineExpose({ show });
                 <span :title="detail(run)">{{ detail(run) }}</span>
               </span>
             </button>
-            <span v-if="section.id === 'waiting' && run.approval" class="aa-actions">
+            <span v-if="section.id === 'waiting' && run.approval?.questions" class="aa-actions">
+              <button type="button" class="aa-btn aa-allow" @click="openRun(run)">Answer</button>
+            </span>
+            <span v-else-if="section.id === 'waiting' && run.approval" class="aa-actions">
               <button type="button" class="aa-btn aa-allow" :disabled="deciding === run.id" @click="decide(run, true)">
                 Allow once
               </button>

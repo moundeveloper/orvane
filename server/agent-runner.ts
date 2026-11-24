@@ -13,6 +13,7 @@ import {
   claudeContext,
   summarizeAgentRun,
   type AgentActivity,
+  type AgentAnswer,
   type AgentEditMode,
   type AgentEffort,
   type AgentProvider,
@@ -732,7 +733,9 @@ export class AgentRunner {
     );
   }
 
-  decide(id: string, requestId: string, allow: boolean) {
+  /** Allow or deny a request. Claude's AskUserQuestion is allowed with the
+   * owner's answers, which Claude reads from the tool's updated input. */
+  decide(id: string, requestId: string, allow: boolean, answer?: AgentAnswer) {
     const run = this.runs.get(id);
     const request = run?.view.permissions.find(
       (permission) => permission.id === requestId,
@@ -744,7 +747,20 @@ export class AgentRunner {
       (allow && !request.input)
     )
       throw Error("This approval request is unavailable.");
-    const input = run.inputs.get(requestId);
+    const asks = request.tool === "AskUserQuestion";
+    if (answer && !asks) throw Error("Only questions take answers.");
+    if (allow && asks && !answer) throw Error("Answer the questions first.");
+    const original = run.inputs.get(requestId);
+    const input =
+      allow && answer
+        ? {
+            ...(original ?? {}),
+            answers: answer.answers,
+            ...(answer.annotations && Object.keys(answer.annotations).length
+              ? { annotations: answer.annotations }
+              : {}),
+          }
+        : original;
     this.removePermission(run, requestId);
     run.decisions.push({ tool: request.tool, allowed: allow, at: new Date().toISOString() });
     this.write(run, {
