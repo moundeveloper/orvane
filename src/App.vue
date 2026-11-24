@@ -16,7 +16,7 @@ import { WorkspaceStorage, LEGACY_STORAGE } from "./storage";
 import { trackWorkspace } from "./workspaceTracking";
 import { connectMcpBridge, type BridgeRequest } from "./mcpBridge";
 import { applyCommands, duplicateApp, type RunRequest } from "./automation";
-import { runBrowserAgent, setBrowserAgentContext } from "./browserAgent";
+import { runBrowserAgent, runHostBrowser, setBrowserAgentContext } from "./browserAgent";
 import { parseWorkspace, referenceIssues } from "./validation";
 import { mergeWorkspace } from "./imports";
 import { executeGraph } from "./flow";
@@ -89,6 +89,7 @@ const desktopWindow = (
     orvaneDesktop?: {
       frameless?: boolean;
       closeWindow?: () => void;
+      restartDesktop?: (action: "schedule" | "status" | "cancel") => Promise<unknown>;
       isWindowMaximized?: () => Promise<boolean>;
       toggleWindowMaximized?: () => Promise<void>;
       onWindowMaximized?: (callback: (maximized: boolean) => void) => () => void;
@@ -4044,6 +4045,8 @@ async function executeMcp(request: BridgeRequest, revision: string) {
     throw Error("This tab cannot edit the workspace.");
   // Browser control acts in pages, not on the workspace: never "busy".
   if (request.run?.kind === "browser") return { revision, ...(await browserForMcp(request.run)) };
+  if (request.run?.kind === "agent-delegation" || request.run?.kind === "host-browser")
+    return { revision, ...(await runForMcp(request.run)) };
   if (importBusy.value || activeExecutions.value || gesture)
     throw Error(
       "The workspace is busy with a gesture, action, import or recovery. Finish it before editing through MCP.",
@@ -4207,6 +4210,15 @@ setBrowserAgentContext(browserAgentContext);
  * person would in this window. Errors are returned, never retried. */
 async function runForMcp(request: RunRequest) {
   if (request.kind === "browser") return browserForMcp(request);
+  if (request.kind === "desktop-restart") {
+    if (!desktopWindow?.restartDesktop) throw Error("Open the updated Orvane desktop app to schedule a restart.");
+    if (request.action === "schedule") flushSave();
+    return { restart: await desktopWindow.restartDesktop(request.action) };
+  }
+  if (request.kind === "agent-delegation")
+    return { delegation: await agentRequest("delegation", request.request) };
+  if (request.kind === "host-browser")
+    return { browser: await runHostBrowser(request.request, browserAgentContext) };
   if (request.kind === "uimaker-open") {
     const targets = liveApps.value.flatMap((app) =>
       flatten(app.blocks).filter((block) => block.kind === "uimaker").map((block) => ({ app, block })),

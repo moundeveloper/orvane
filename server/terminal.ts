@@ -11,10 +11,10 @@ import type { Plugin } from "vite";
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { execFile } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import * as pty from "node-pty";
 
@@ -302,13 +302,53 @@ export async function terminalProfiles() {
 // ---- Sessions ----
 interface Session {
   id: string;
+  folder: string;
+  profile: string;
   proc: pty.IPty;
   output: string;
+  cursor: number;
   clients: Set<WebSocket>;
   inputClient?: WebSocket;
   idle?: ReturnType<typeof setTimeout>;
 }
 const sessions = new Map<string, Session>();
+const hostId = (session: Session) => createHash("sha256").update(session.id).digest("hex");
+
+/** The laptop may attach to a shared desktop terminal. Terminal creation and
+ * lifecycle remain with the desktop app, and no local protocol IDs leave it. */
+export async function hostTerminals(allowed: (folder: string) => Promise<string | undefined>) {
+  const visible = await Promise.all([...sessions.values()].map(async (session) =>
+    await allowed(session.folder) ? {
+      id: hostId(session), label: session.profile, folder: basename(session.folder) || "Shared folder",
+    } : null));
+  return visible.filter((session) => session !== null);
+}
+
+async function hostTerminal(id: string, allowed: (folder: string) => Promise<string | undefined>) {
+  const session = [...sessions.values()].find((value) => hostId(value) === id);
+  return session && await allowed(session.folder) && sessions.get(session.id) === session ? session : undefined;
+}
+
+export async function hostTerminalOutput(id: string, cursor: number, allowed: (folder: string) => Promise<string | undefined>) {
+  const session = await hostTerminal(id, allowed);
+  if (!session) return;
+  if (!session.clients.size) {
+    clearTimeout(session.idle);
+    session.idle = setTimeout(() => end(session), SESSION_IDLE_MS);
+  }
+  const first = session.cursor - session.output.length;
+  const reset = cursor < first || cursor > session.cursor;
+  return { cursor: session.cursor, reset, output: reset ? session.output : session.output.slice(cursor - first),
+    cols: session.proc.cols, rows: session.proc.rows };
+}
+
+export async function writeHostTerminal(id: string, value: string, allowed: (folder: string) => Promise<string | undefined>) {
+  const session = await hostTerminal(id, allowed);
+  if (!session) return false;
+  session.proc.write(value);
+  return true;
+}
+
 const send = (ws: WebSocket, message: unknown) => {
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(message));
 };
@@ -406,7 +446,7 @@ async function open(ws: WebSocket, message: Record<string, unknown>) {
   } catch (error) {
     return send(ws, { t: "error", id, message: `Could not start ${profile.name}: ${error instanceof Error ? error.message : error}` });
   }
-  const session: Session = { id, proc, output: "", clients: new Set([ws]) };
+  const session: Session = { id, proc, folder: cwd, profile: profile.name, output: "", cursor: 0, clients: new Set([ws]) };
   sessions.set(id, session);
   const readOutput = terminalOutput(pinToken, (path) => {
     if (session.inputClient) send(session.inputClient, { t: "pin", id, path });
@@ -414,6 +454,7 @@ async function open(ws: WebSocket, message: Record<string, unknown>) {
   proc.onData((chunk) => {
     const data = readOutput(chunk);
     if (!data) return;
+    session.cursor += data.length;
     session.output += data;
     if (session.output.length > SCROLLBACK_CHARS * 1.2) session.output = session.output.slice(-SCROLLBACK_CHARS);
     for (const client of session.clients) send(client, { t: "o", id, d: data });

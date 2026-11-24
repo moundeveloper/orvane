@@ -382,7 +382,7 @@ onBeforeUnmount(() => {
   clearTimeout(hintTimer);
   endDrag(false);
 });
-defineExpose({ rects: () => layout.value.rects });
+defineExpose({ rects: () => layout.value.rects, focusPane });
 </script>
 
 <template>
@@ -401,6 +401,7 @@ defineExpose({ rects: () => layout.value.rects });
         :class="{ focused: id === focus, lifted: drag?.started && drag.id === id }"
         :data-tile="id"
         :style="tileStyle(id)"
+        tabindex="-1"
         @pointerdown.capture="tileDown($event, id)"
         @focusin="focusPane(id)"
       >

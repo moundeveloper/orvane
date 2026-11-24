@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
   /** The window has no system title bar; Orvane draws its own controls. */
   frameless: true,
   closeWindow: () => ipcRenderer.invoke("orvane:window-close"),
+  restartDesktop: (action) => ipcRenderer.invoke("orvane:desktop-restart", action),
   isWindowMaximized: () => ipcRenderer.invoke("orvane:window-maximized"),
   toggleWindowMaximized: () => ipcRenderer.invoke("orvane:window-toggle-maximize"),
   onWindowMaximized(callback) {

@@ -160,6 +160,10 @@ export class LocalDatabase {
       )
       .run(key, JSON.stringify(value));
   }
+  reserveAppData(key: string, value: unknown) {
+    return this.db.prepare("INSERT OR IGNORE INTO app_data (key, data) VALUES (?, ?)")
+      .run(key, JSON.stringify(value)).changes === 1;
+  }
   saveApiKeyVault(expectedRevision: number, envelope: unknown) {
     return this.db.transaction(() => {
       const current = this.appData("api-key-vault") as

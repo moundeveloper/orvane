@@ -1,11 +1,11 @@
 import { test, expect } from "./fixtures";
 
 const page = (text: string) =>
-  `<!doctype html><html><body style="margin:0;display:grid;place-items:center;height:100vh"><div id="card">${text}</div></body></html>`;
+  `<!doctype html><html><body style="margin:0;display:grid;place-items:center;height:100vh"><button id="card" onclick="this.dataset.clicked = 'yes'">${text}</button></body></html>`;
 
 const labels = ["Thinking trail", "Effort and mode", "Slash skills", "Files changed", "Message actions", "Session timeline", "Workflow library"];
 
-test("UI Maker Lab wraps many variant tabs instead of running under the Pick button and Rounds panel", async ({ page: p }) => {
+test("UI Maker Lab wraps its tabs and zooms live variants", async ({ page: p }, info) => {
   test.setTimeout(90_000);
   await p.setViewportSize({ width: 1500, height: 900 });
   await p.goto("/");
@@ -61,5 +61,58 @@ test("UI Maker Lab wraps many variant tabs instead of running under the Pick but
   await p.keyboard.press("2");
   await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
   await expect(tabs.nth(6)).toHaveAttribute("aria-selected", "false");
+  const frame = app.locator(".lab-stage iframe");
+  const card = frame.contentFrame().locator("#card");
+  await expect(card).toHaveText("Effort and mode");
+  const width = (await card.boundingBox())!.width;
+  const viewport = () => frame.evaluate((el: HTMLIFrameElement) => el.contentWindow?.innerWidth);
+  const previewWidth = await viewport();
+  const canvasScale = () => app.evaluate(el => el.getBoundingClientRect().width / (el as HTMLElement).offsetWidth);
+  const before = await canvasScale();
+  await frame.hover();
+  await p.keyboard.down("Control");
+  await p.mouse.wheel(0, -240);
+  await p.keyboard.up("Control");
+  await expect.poll(canvasScale).toBeGreaterThan(before * 1.1);
+  await p.keyboard.down("Control");
+  await p.mouse.wheel(0, 240);
+  await p.keyboard.up("Control");
+  await expect.poll(canvasScale).toBeLessThan(before * 1.02);
+
+  const previewScale = () => frame.evaluate(el => new DOMMatrixReadOnly(getComputedStyle(el).transform).a);
+  await app.getByRole("button", { name: "Zoom preview out" }).click();
+  await expect.poll(previewScale).toBeCloseTo(0.8, 2);
+  expect(await viewport()).toBe(previewWidth);
+  expect((await card.boundingBox())!.width).toBeLessThan(width);
+  await card.click();
+  await expect(card).toHaveAttribute("data-clicked", "yes");
+  await p.screenshot({ path: info.outputPath("lab-zoomed-out.png"), animations: "disabled" });
+  await app.getByRole("button", { name: "Zoom preview in" }).click();
+  await app.getByRole("button", { name: "Zoom preview in" }).click();
+  await expect.poll(previewScale).toBeCloseTo(1.25, 2);
+  expect(await viewport()).toBe(previewWidth);
+  await app.getByRole("button", { name: "Reset preview zoom" }).click();
+  await expect.poll(previewScale).toBeCloseTo(1, 2);
+  await expect(card).toHaveAttribute("data-clicked", "yes");
+
+  // Canvas panning works even when the live preview owns the pointer or focus.
+  const appLeft = async () => (await app.boundingBox())!.x;
+  await card.hover();
+  const start = (await card.boundingBox())!;
+  const center = { x: start.x + start.width / 2, y: start.y + start.height / 2 };
+  const beforeDrag = await appLeft();
+  await p.mouse.down({ button: "middle" });
+  await p.mouse.move(center.x + 70, center.y + 20, { steps: 5 });
+  await p.mouse.up({ button: "middle" });
+  await expect.poll(appLeft).toBeGreaterThan(beforeDrag + 50);
+  await card.click();
+  await expect(card).toBeFocused();
+  const next = (await card.boundingBox())!;
+  const beforeSpace = await appLeft();
+  await p.keyboard.down("Space");
+  await p.mouse.move(next.x - 60, next.y + 20, { steps: 5 });
+  await p.keyboard.up("Space");
+  await expect.poll(appLeft).toBeLessThan(beforeSpace - 40);
+  await expect(p.locator(".pan-shield")).not.toHaveClass(/armed/);
   await p.screenshot({ path: "artifacts/uimaker-lab-tabs.png" });
 });

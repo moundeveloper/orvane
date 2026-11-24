@@ -214,6 +214,19 @@ const rawPermissions = ref(new Set<string>());
 const menuOpen = ref(false);
 const menuButton = ref<HTMLButtonElement>();
 const menu = ref<HTMLElement>();
+const tilePopover = ref<{ key?: string; x: number; y: number }>();
+const tilePopup = ref<HTMLElement>();
+const tileAlreadyOpen = computed(() => !!tilePopover.value?.key && !!findOpenPane(tilePopover.value.key));
+let tileTrigger: HTMLElement | undefined;
+const tileShortcuts = [
+  ["Open session in a new pane", "Ctrl+click"],
+  ["Split the focused pane", "Alt+Shift+D"],
+  ["Split right", "Alt+Shift+="],
+  ["Split down", "Alt+Shift+-"],
+  ["Focus another pane", "Alt+Arrow"],
+  ["Swap panes", "Alt+Shift+Arrow"],
+  ["Close the focused pane", "Ctrl+Shift+W"],
+];
 const modelCatalogues = ref<
   Partial<Record<AgentProvider, { value: string; label: string }[]>>
 >({});
@@ -848,22 +861,64 @@ function closeMenu(restore = false) {
   menuOpen.value = false;
   if (restore) menuButton.value?.focus({ preventScroll: true });
 }
-function menuKey(event: KeyboardEvent) {
+function menuKey(event: KeyboardEvent, close = closeMenu) {
   const items = [
-    ...(menu.value?.querySelectorAll<HTMLElement>("[role=menuitem]") ?? []),
+    ...((event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>("[role=menuitem]")),
   ];
   const index = items.indexOf(document.activeElement as HTMLElement);
-  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+  if (items.length && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
     event.preventDefault();
     const step = event.key === "ArrowDown" ? 1 : -1;
     items[(index + step + items.length) % items.length]?.focus();
   } else if (event.key === "Escape") {
     event.preventDefault();
     event.stopPropagation();
-    closeMenu(true);
-  } else if (event.key === "Tab") closeMenu();
+    close(true);
+  } else if (event.key === "Tab") close();
+}
+async function showTilePopover(event: MouseEvent, key?: string) {
+  if (!key && tilePopover.value && !tilePopover.value.key) {
+    closeTilePopover();
+    return;
+  }
+  const app = root.value;
+  if (!app) return;
+  tileTrigger = event.currentTarget as HTMLElement;
+  const bounds = app.getBoundingClientRect();
+  const trigger = tileTrigger.getBoundingClientRect();
+  const scale = bounds.width / app.offsetWidth || 1;
+  const atPointer = key && (event.clientX || event.clientY);
+  const popup = {
+    key,
+    x: ((atPointer ? event.clientX : trigger.left) - bounds.left) / scale,
+    y: ((atPointer ? event.clientY : trigger.bottom) - bounds.top) / scale + 4,
+  };
+  tilePopover.value = popup;
+  await nextTick();
+  const element = tilePopup.value;
+  if (!element) return;
+  tilePopover.value = {
+    ...popup,
+    x: Math.max(4, Math.min(popup.x, app.clientWidth - element.offsetWidth - 4)),
+    y: Math.max(4, Math.min(popup.y, app.clientHeight - element.offsetHeight - 4)),
+  };
+  (element.querySelector<HTMLButtonElement>("[role=menuitem]") ?? element).focus({ preventScroll: true });
+}
+function closeTilePopover(restore = false) {
+  tilePopover.value = undefined;
+  if (restore) tileTrigger?.focus({ preventScroll: true });
+  tileTrigger = undefined;
+}
+function tileSession(dir: "row" | "column" | "auto") {
+  const key = tilePopover.value?.key;
+  closeTilePopover();
+  if (key) splitPane(dir, { key });
 }
 function outsideMenu(event: Event) {
+  if (tilePopover.value) {
+    const path = event.composedPath();
+    if (![tilePopup.value, tileTrigger].some((el) => el && path.includes(el))) closeTilePopover();
+  }
   if (continueOpen.value) {
     const path = event.composedPath();
     const inside = [continueMenu.value?.$el as HTMLElement | undefined, menuButton.value, continuePill.value]
@@ -2158,9 +2213,15 @@ function paneOrigin(id: string): PaneSession {
     folder: session?.project || pane.folder,
   };
 }
+function findOpenPane(key: string) {
+  if (active.value === key) return HOST;
+  return Object.keys(tiles.value.panes).find((id) => tiles.value.panes[id]?.key === key);
+}
 // Like a Terminal split: the new pane starts a session with the same
 // provider and folder as the focused one, unless it is given a session.
 function splitPane(dir: "row" | "column" | "auto", open?: PaneSession) {
+  const existing = open?.key && findOpenPane(open.key);
+  if (existing) return tileView.value?.focusPane(existing, true);
   const from = tiles.value.focus;
   if (dir === "auto") {
     const rect = tileView.value?.rects().get(from);
@@ -2201,10 +2262,14 @@ function closePane(id: string) {
         if (session.folder) folder.value = session.folder;
       });
     } else back();
+    tileView.value?.focusPane(HOST, true);
   } else {
     tiles.value.root = replaceLeaf(tiles.value.root, id, null)!;
     delete tiles.value.panes[id];
-    if (tiles.value.focus === id) tiles.value.focus = nearest(leaves(tiles.value.root));
+    if (tiles.value.focus === id) {
+      tiles.value.focus = nearest(leaves(tiles.value.root));
+      tileView.value?.focusPane(tiles.value.focus, true);
+    }
   }
   saveBlock();
 }
@@ -2213,9 +2278,7 @@ function openFromList(key: string, event?: MouseEvent) {
   if (event && (event.ctrlKey || event.metaKey)) return splitPane("auto", { key });
   // Already open in a pane: go there.
   if (splitOn.value) {
-    const open = active.value === key
-      ? HOST
-      : Object.keys(tiles.value.panes).find((id) => tiles.value.panes[id]!.key === key);
+    const open = findOpenPane(key);
     if (open) {
       tiles.value.focus = open;
       return;
@@ -2532,6 +2595,17 @@ onBeforeUnmount(() => {
       <button
         class="cs-btn cs-icon cs-ghost"
         type="button"
+        title="Session shortcuts"
+        aria-label="Session shortcuts"
+        aria-haspopup="dialog"
+        :aria-expanded="!!tilePopover && !tilePopover.key"
+        @click="showTilePopover($event)"
+      >
+        <Icon name="keyboard" :size="14" />
+      </button>
+      <button
+        class="cs-btn cs-icon cs-ghost"
+        type="button"
         title="Refresh"
         aria-label="Refresh agent sessions"
         @click="refresh"
@@ -2605,6 +2679,7 @@ onBeforeUnmount(() => {
               :aria-current="shownKey === s.key ? 'true' : undefined"
               :disabled="sending || (!!newProvider && busy)"
               @click="openFromList(s.key, $event)"
+              @contextmenu.prevent.stop="showTilePopover($event, s.key)"
             >
               <strong :title="s.title">{{ s.title }}</strong
               ><time :datetime="new Date(s.updatedAt).toISOString()">{{
@@ -3429,6 +3504,32 @@ onBeforeUnmount(() => {
         </template>
       </AgentTiles>
     </div>
+    <div
+      v-if="tilePopover"
+      ref="tilePopup"
+      class="cs-menu cs-tile-popover select-popover"
+      :role="tilePopover.key ? 'menu' : 'dialog'"
+      :aria-label="tilePopover.key ? 'Open session in a tile' : 'Session shortcuts'"
+      :style="{ left: tilePopover.x + 'px', top: tilePopover.y + 'px' }"
+      tabindex="-1"
+      @keydown="menuKey($event, closeTilePopover)"
+    >
+      <button v-if="tileAlreadyOpen" type="button" role="menuitem" @click="tileSession('auto')">
+        <Icon name="layers" :size="14" />Focus existing pane<kbd class="cs-menu-kbd">Ctrl+click</kbd>
+      </button>
+      <template v-else-if="tilePopover.key">
+        <button type="button" role="menuitem" @click="tileSession('auto')">
+          <Icon name="layers" :size="14" />Open in new pane<kbd class="cs-menu-kbd">Ctrl+click</kbd>
+        </button>
+        <button type="button" role="menuitem" @click="tileSession('row')">Open to the right</button>
+        <button type="button" role="menuitem" @click="tileSession('column')">Open below</button>
+      </template>
+      <dl v-else class="cs-tile-shortcuts">
+        <div v-for="[label, shortcut] in tileShortcuts" :key="label">
+          <dt>{{ label }}</dt><dd><kbd>{{ shortcut }}</kbd></dd>
+        </div>
+      </dl>
+    </div>
   </div>
 </template>
 <style scoped>
@@ -3853,6 +3954,31 @@ onBeforeUnmount(() => {
 .cs-menu .cs-menu-kbd {
   margin-left: auto;
   padding-left: 12px;
+  white-space: nowrap;
+}
+.cs-tile-popover {
+  right: auto;
+  z-index: 20;
+  width: max-content;
+  min-width: min(210px, calc(100% - 8px));
+  max-width: calc(100% - 8px);
+  max-height: calc(100% - 8px);
+  overflow: auto;
+}
+.cs-tile-shortcuts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 8px;
+}
+.cs-tile-shortcuts > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.cs-tile-shortcuts dd {
+  margin: 0;
   white-space: nowrap;
 }
 .cs-continue-pop {

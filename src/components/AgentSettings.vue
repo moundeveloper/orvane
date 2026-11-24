@@ -13,6 +13,7 @@ import {
 import { harness } from "../agentHarness";
 import { agentRequest } from "../exposition";
 import Icon from "./Icon.vue";
+import HostSettings from "./HostSettings.vue";
 
 type McpRow = {
   provider: AgentProvider;
@@ -112,6 +113,8 @@ defineExpose({ focus: () => root.value?.focus() });
   <section ref="root" class="as-settings" tabindex="-1" aria-label="Settings">
     <h1>Settings</h1>
     <p class="as-sub">For the Claude and Codex sessions Orvane starts on this computer.</p>
+
+    <HostSettings />
 
     <h2>Orvane MCP</h2>
     <p v-if="loading && !rows.length" class="as-note">Checking the CLIs…</p>

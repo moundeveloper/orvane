@@ -174,7 +174,7 @@ export function agentEnvironment() {
     "CLAUDE_CODE_ENTRYPOINT",
   ]);
   for (const key of Object.keys(env))
-    if (removed.has(key.toUpperCase())) delete env[key];
+    if (removed.has(key.toUpperCase()) || key.toUpperCase().startsWith("ORVANE_HOST_")) delete env[key];
   return env;
 }
 

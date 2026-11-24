@@ -19,6 +19,7 @@ import {
 } from "./browserAgentPage";
 import { setLiveRun } from "./flowTestsLive";
 import type { LiveRun } from "./flowRunner";
+import type { HostBrowserInput } from "./hostBrowser";
 
 /** The window's own browser operations (the Test runs app runs tests
  * without an AI): App.vue registers how to find Browser apps. */
@@ -314,6 +315,70 @@ async function screenshot(id: number, deadline: number) {
   } catch {
     return { screenshotWarning: "The Browser could not capture the page image." };
   }
+}
+
+/** Owner-driven Browser controls for Host. AI-controlled and unshared tabs
+ * stay out of the remote view. No page scripts or selectors come from LAN. */
+export async function runHostBrowser(request: HostBrowserInput, context: Parameters<typeof runBrowserAgent>[1]) {
+  if (!desktop()?.pageAgent) throw Error("Open Orvane Desktop to control its Browser.");
+  const blocks = context.browserBlocks();
+  if (request.action === "list") return {
+    tabs: blocks.flatMap(({ blockId, app }) => (hosts.get(blockId)?.tabs() ?? [])
+      .filter(({ access, url }) => access === "granted" && /^https?:\/\//.test(url))
+      .map(({ tabId, title, url, active }) => ({ tabId, title, url, active, app }))),
+  };
+  if (request.action === "open") {
+    const block = blocks[0];
+    if (!block) throw Error("Create a Browser app on the desktop first.");
+    context.mount(block.appId);
+    const until = Date.now() + 4000;
+    let host = hosts.get(block.blockId);
+    while (!host && Date.now() < until) {
+      await sleep(75);
+      host = hosts.get(block.blockId);
+    }
+    if (!host) throw Error("The desktop Browser is still opening.");
+    const tabId = host.open(request.url);
+    host.setAccess(tabId, "granted");
+    return { tabId };
+  }
+  const host = hostOfTab(request.tab);
+  if (host.access(request.tab) !== "granted")
+    throw Error("This tab is in use or no longer shared. Share it again from the desktop Browser tab menu.");
+  if (request.action === "select") {
+    host.select(request.tab);
+    return { selected: true };
+  }
+  const id = host.page(request.tab);
+  if (id === undefined) throw Error("The selected tab is still loading.");
+  const stamp = () => run<{ url: string; title: string; width: number; height: number }>(
+    id, "({ url: location.href, title: document.title, width: innerWidth, height: innerHeight })", 2500,
+  );
+  if (request.action === "view") {
+    const details = await stamp();
+    if (!/^https?:\/\//.test(details.url)) throw Error("Only HTTP and HTTPS pages can be viewed on the laptop.");
+    return { ...details, ...(await screenshot(id, Date.now() + 2500)) };
+  }
+  if (request.action === "navigate") {
+    await op(id, { type: "navigate", action: "url", url: request.url, timeoutMs: 6000 });
+    return { ok: true };
+  }
+  if (request.action === "back" || request.action === "forward" || request.action === "reload") {
+    await op(id, { type: "navigate", action: request.action, timeoutMs: 6000 });
+    return { ok: true };
+  }
+  const details = await stamp();
+  if (host.access(request.tab) !== "granted" || !("page" in request) || details.url !== request.page)
+    throw Error("The desktop page changed. Refresh the preview before interacting.");
+  if (request.action === "click" || request.action === "scroll") {
+    const x = Math.min(details.width - 1, Math.floor(details.width * request.x));
+    const y = Math.min(details.height - 1, Math.floor(details.height * request.y));
+    await op(id, request.action === "click"
+      ? { type: "mouse", action: "click", x, y }
+      : { type: "wheel", dx: 0, dy: request.dy, x, y });
+  } else if (request.action === "text") await op(id, { type: "text", text: request.value });
+  else if (request.action === "key") await op(id, { type: "key", key: request.key });
+  return { ok: true };
 }
 
 async function act(args: Record<string, unknown>) {

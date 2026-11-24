@@ -160,6 +160,22 @@ export function boardBounds(o, title) {
 }
 
 // ---------- iframe helpers ----------
+// Ctrl+wheel lands inside a live iframe. Replay it at the same screen point
+// so the canvas handles zoom, while plain wheel stays with the preview.
+export function forwardCanvasZoom(frame) {
+  frame.contentDocument?.addEventListener('wheel', e => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    const bounds = frame.getBoundingClientRect();
+    const scale = frame.offsetWidth ? bounds.width / frame.offsetWidth : 1;
+    frame.dispatchEvent(new WheelEvent('wheel', {
+      clientX: bounds.left + e.clientX * scale, clientY: bounds.top + e.clientY * scale,
+      deltaX: e.deltaX, deltaY: e.deltaY, deltaMode: e.deltaMode,
+      ctrlKey: e.ctrlKey, metaKey: e.metaKey, bubbles: true, cancelable: true,
+    }));
+  }, { passive: false });
+}
+
 export function measureFrame(frame) {
   const d = frame.contentDocument;
   frame.style.height = '10px';

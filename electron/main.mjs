@@ -225,11 +225,20 @@ async function startServer() {
   throw Error("The Orvane server did not answer within 60 seconds.");
 }
 function stopServer() {
+  const child = server;
   const closing = netSuiteBroker?.close().catch(error => console.error("NetSuite broker close failed:", error.message));
   netSuiteBroker = undefined;
-  server?.stdin.end();
-  server = undefined;
-  return closing;
+  const stopped = child && new Promise((resolve) => {
+    // The stdin pipe can fail to signal EOF on Windows. Wait for the actual
+    // exit so a relaunched desktop cannot attach to its previous server.
+    const timeout = setTimeout(() => child.kill(), 2500);
+    child.once("exit", () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+    child.stdin.end();
+  });
+  return Promise.all([closing, stopped]);
 }
 
 function secure() {
@@ -1032,6 +1041,32 @@ ipcMain.handle("orvane:notify", (event, data) => {
 // Agent sessions: Windows does not sleep while a turn runs. The screen can
 // still turn off and lock.
 let keepAwakeId = -1;
+let hostAwakeId = -1;
+let hostAwakeTimer;
+function monitorHostAwake() {
+  async function check() {
+    if (quitting) return;
+    let awake = false;
+    try {
+      const response = await fetch(`${origin}/__orvane/agents/host-awake`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: "{}", signal: AbortSignal.timeout(1000),
+      });
+      awake = response.ok && (await response.json()).keepAwake === true;
+    } catch {
+      // A stopped local server cannot be hosting.
+    }
+    if (quitting) return;
+    if (awake && hostAwakeId < 0) hostAwakeId = powerSaveBlocker.start("prevent-app-suspension");
+    else if (!awake && hostAwakeId >= 0) {
+      powerSaveBlocker.stop(hostAwakeId);
+      hostAwakeId = -1;
+    }
+    hostAwakeTimer = setTimeout(check, 2500);
+    hostAwakeTimer.unref();
+  }
+  void check();
+}
 ipcMain.handle("orvane:keep-awake", (event, on) => {
   if (!isOrvane(event.senderFrame?.url || "")) return false;
   if (on && keepAwakeId < 0) keepAwakeId = powerSaveBlocker.start("prevent-app-suspension");
@@ -1043,6 +1078,8 @@ ipcMain.handle("orvane:keep-awake", (event, on) => {
 });
 app.on("will-quit", () => {
   if (keepAwakeId >= 0) powerSaveBlocker.stop(keepAwakeId);
+  clearTimeout(hostAwakeTimer);
+  if (hostAwakeId >= 0) powerSaveBlocker.stop(hostAwakeId);
 });
 // A picture of part of Orvane's own window (an app on the canvas), for an
 // agent snapshot. Browser pages use orvane:page-capture instead.
@@ -1422,6 +1459,57 @@ ipcMain.handle("orvane:page-snapshot", async (event, id, picture) => {
 // Quitting (tray menu, or the system shutting down) really closes the window,
 // still waiting for the last save as before.
 let quitting = false;
+let restart = { state: "idle" };
+let restartTimer;
+let shutdownStarted = false;
+let shutdownReady = false;
+
+function queueDesktopRestart(window, request) {
+  clearTimeout(restartTimer);
+  restartTimer = setTimeout(async () => {
+    if (restart !== request || quitting || window.isDestroyed()) return;
+    const [ready, saved] = await Promise.all([
+      fetch(`${origin}/__orvane/agents/desktop-restart-ready`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: "{}", signal: AbortSignal.timeout(1500),
+      }).then(async response => response.ok ? (await response.json()).ready : undefined).catch(() => undefined),
+      workspaceSaved(window),
+    ]);
+    if (restart !== request || quitting || window.isDestroyed()) return;
+    if (ready === true && saved) {
+      restart = { state: "restarting" };
+      app.quit();
+      return;
+    }
+    request.waitingFor = ready === undefined ? "local-server" : ready !== true ? "agent-turns" : "workspace-save";
+    queueDesktopRestart(window, request);
+  }, 1000);
+}
+
+function workspaceSaved(window) {
+  return window.webContents.executeJavaScript(
+    'document.querySelector("main")?.dataset.saved === "true"',
+  ).catch(() => false);
+}
+
+ipcMain.handle("orvane:desktop-restart", (event, action) => {
+  const window = workspaceWindow(event);
+  if (!window) throw Error("Restart requires the Orvane desktop workspace.");
+  if (action === "schedule") {
+    if (quitting || restart.state === "pending") return restart;
+    restart = { state: "pending" };
+    queueDesktopRestart(window, restart);
+  } else if (action === "cancel") {
+    if (restart.state === "pending") {
+      clearTimeout(restartTimer);
+      restart = { state: "cancelled" };
+    }
+  } else if (action !== "status") {
+    throw Error("Unknown desktop restart action.");
+  }
+  return restart;
+});
+
 let tray;
 // Started by "Launch at login": stay in the tray until shown.
 const startedFromLogin = process.argv.includes("--from-login");
@@ -1544,6 +1632,19 @@ function createWindow() {
     event.preventDefault();
     closing = true;
     void (async () => {
+      if (restart.state === "restarting") {
+        const savedForRestart = await workspaceSaved(window);
+        if (window.isDestroyed()) return;
+        if (!savedForRestart) {
+          closing = false;
+          quitting = false;
+          restart = { state: "pending", waitingFor: "workspace-save" };
+          queueDesktopRestart(window, restart);
+          return;
+        }
+        window.close();
+        return;
+      }
       for (let i = 0; i < 30 && !(await saved()); i++)
         await new Promise((done) => setTimeout(done, 100));
       if (window.isDestroyed()) return;
@@ -1599,13 +1700,41 @@ app.on("browser-window-created", (_event, window) => {
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on("second-instance", showWindow);
-  app.on("before-quit", () => (quitting = true));
+  app.on("before-quit", () => {
+    quitting = true;
+    if (restart.state === "pending") {
+      clearTimeout(restartTimer);
+      restart = { state: "cancelled" };
+    }
+  });
   app.on("window-all-closed", () => app.quit());
   app.on("will-quit", event => {
-    if (netSuiteBroker) {
-      event.preventDefault();
-      void stopServer().finally(() => app.quit());
-    } else stopServer();
+    if (shutdownReady) return;
+    event.preventDefault();
+    if (shutdownStarted) return;
+    shutdownStarted = true;
+    void (async () => {
+      if (restart.state === "restarting" && !server) {
+        // Leave a separately launched Vite server alone, but disconnect Host.
+        try {
+          const response = await fetch(`${origin}/__orvane/agents/host-settings`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "stop" }), signal: AbortSignal.timeout(3000),
+          });
+          if (!response.ok) throw Error(`HTTP ${response.status}`);
+        } catch (error) {
+          console.error("Orvane Host could not stop:", error.message);
+        }
+      }
+      await stopServer();
+      if (restart.state === "restarting") {
+        // A restart should reopen the window and require Host to be enabled again.
+        process.env.ORVANE_HOST_ENABLED = "0";
+        app.relaunch({ args: process.argv.slice(1).filter(arg => arg !== "--from-login") });
+      }
+      shutdownReady = true;
+      app.quit();
+    })();
   });
   app
     .whenReady()
@@ -1613,6 +1742,7 @@ else {
       secure();
       installMenu();
       await startServer();
+      monitorHostAwake();
       createWindow();
       createTray();
       globalShortcut.register("CommandOrControl+Alt+I", captureClipboard);

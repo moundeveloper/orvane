@@ -40,6 +40,7 @@ import { Checkpoints } from "./checkpoints.ts";
 type Target = {
   provider: AgentProvider;
   folder: string;
+  delegationId?: string;
   key?: string;
   sessionId?: string;
   model?: string;
@@ -152,6 +153,10 @@ export class AgentRunner {
       .map(({ view }) => summarizeAgentRun(view));
   }
 
+  hasActiveTurns() {
+    return [...this.runs.values()].some(({ view }) => agentBusy(view));
+  }
+
   inspect(id: string) {
     return this.runs.get(id)?.view ?? null;
   }
@@ -231,13 +236,13 @@ export class AgentRunner {
     return [...found.values()].sort((a, b) => a.at.localeCompare(b.at));
   }
 
-  async start(target: Target, message: string) {
+  async start(target: Target, message: string, runId?: string) {
     if (!isAbsolute(target.folder))
       throw Error("Choose an absolute project folder.");
     const folder = await realpath(target.folder).catch(() => "");
     if (!folder || !(await stat(folder)).isDirectory())
       throw Error("Project folder was not found.");
-    return this.startInFolder({ ...target, folder }, message);
+    return this.startInFolder({ ...target, folder }, message, undefined, undefined, runId);
   }
 
   async rewrite(folder: string, message: string, signal: AbortSignal) {
@@ -274,11 +279,11 @@ export class AgentRunner {
     }
   }
 
-  private startInFolder(target: Target, message: string, textDone?: Entry["textDone"], job?: TextJob) {
+  private startInFolder(target: Target, message: string, textDone?: Entry["textDone"], job?: TextJob, id: string = randomUUID()) {
     if (target.sessionId && !sessionIdPattern.test(target.sessionId))
       throw Error("Invalid session ID.");
     if (this.closed) throw Error("The session runner is closing.");
-    const id = randomUUID();
+    if (this.runs.has(id)) throw Error("This run ID is already in use.");
     const lock = job ? job.lock : `${target.provider}:${target.sessionId?.toLowerCase() || id}`;
     if (this.locks.has(lock))
       throw Error(job ? job.busy : "This session already has a running message.");
@@ -395,6 +400,7 @@ export class AgentRunner {
   private async launch(run: Entry, command: ReturnType<typeof findAgent>) {
     const { provider, folder, message, sessionId } = run.view;
     const env = agentEnvironment();
+    if (run.view.delegationId) env.ORVANE_DELEGATED_RUN = run.view.delegationId;
     const codexPlan = provider === "codex" && run.view.mode === "plan";
     const images = provider === "codex"
       ? splitAttachments(message).paths.filter((path) => isAbsolute(path) && attachmentPicture(path))
@@ -1080,7 +1086,7 @@ export class AgentRunner {
 
   /** Start a queued message in the same session; the rest of the queue moves with it. */
   private followUp(run: Entry, item: AgentQueued) {
-    const { provider, folder, key, sessionId, model, effort, mode } = run.view;
+    const { provider, folder, key, sessionId, model, effort, mode, delegationId } = run.view;
     if (!sessionId) {
       run.view.queued = [item, ...(run.view.queued ?? [])];
       throw Error("The session has no ID yet, so the queued message was kept.");
@@ -1089,7 +1095,7 @@ export class AgentRunner {
       // This folder was resolved when the first message started. Hand over the
       // queue before clients can see the finished run or start another message.
       const next = this.startInFolder(
-        { provider, folder, key, sessionId, model, effort, mode },
+        { provider, folder, key, sessionId, model, effort, mode, delegationId },
         item.text,
       );
       if (run.view.queued?.length) next.queued = run.view.queued;

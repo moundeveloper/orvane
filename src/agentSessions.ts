@@ -138,6 +138,7 @@ export interface AgentCheckpoint {
 
 export interface AgentRun {
   id: string;
+  delegationId?: string;
   provider: AgentProvider;
   folder: string;
   model?: string;

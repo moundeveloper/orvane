@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { referenceReviewRequest } from "./uimakerReferenceReview";
+import { agentDelegationSchema } from "./agentDelegation";
+import { hostBrowserInput } from "./hostBrowser";
 import {
   emptyWorkspace,
   appMinimum,
@@ -286,6 +288,9 @@ export const operationSchemas = {
 export type Operation = keyof typeof operationSchemas;
 /** Runs something in the live editing window, the way a person would. */
 export const runSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("agent-delegation"), request: agentDelegationSchema }),
+  z.strictObject({ kind: z.literal("desktop-restart"), action: z.enum(["schedule", "status", "cancel"]) }),
+  z.strictObject({ kind: z.literal("host-browser"), request: hostBrowserInput }),
   z
     .object({
       kind: z.literal("workflow"),

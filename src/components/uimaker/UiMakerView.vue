@@ -18,6 +18,10 @@ import { onOpenRequest } from '../../commands';
 const props = defineProps({ block: Object });
 const model = createEditorModel();
 const { ui } = model;
+const labZoom = ref(1);
+function zoomLab(factor) {
+  labZoom.value = Math.max(0.25, Math.min(4, labZoom.value * factor));
+}
 const root = ref(null);
 const editor = shallowRef(null);
 const pendingReview = shallowRef(null);
@@ -320,6 +324,12 @@ watch(() => [component.value?.width, component.value?.height, ui.h], () => {
           <button data-el="zOut" title="Zoom out">−</button><span>{{ Math.round(ui.zoom * 100) }}%</span>
           <button data-el="zIn" title="Zoom in">+</button><button data-el="zFit">Fit</button>
         </div>
+        <div v-if="ui.mode === 'lab'" class="field zoom" role="group" aria-label="Preview zoom">
+          <button type="button" aria-label="Zoom preview out" title="Zoom preview out" :disabled="labZoom <= 0.25" @click="zoomLab(1 / 1.25)">−</button>
+          <span aria-live="polite">{{ Math.round(labZoom * 100) }}%</span>
+          <button type="button" aria-label="Zoom preview in" title="Zoom preview in" :disabled="labZoom >= 4" @click="zoomLab(1.25)">+</button>
+          <button type="button" aria-label="Reset preview zoom" @click="labZoom = 1">Reset</button>
+        </div>
       </div>
     </header>
 
@@ -336,7 +346,7 @@ watch(() => [component.value?.width, component.value?.height, ui.h], () => {
       <p v-else class="empty">No components yet.</p>
     </section>
 
-    <LabView v-if="!model.library && component && ui.mode === 'lab'" :model="model" :editor="editor" />
+    <LabView v-if="!model.library && component && ui.mode === 'lab'" :model="model" :editor="editor" :zoom="labZoom" />
     <section v-show="!model.library && ui.mode !== 'lab'" class="viewport" data-el="viewport">
       <div class="stage" data-el="stage">
         <div class="artboard" data-el="artboard" :style="{ minHeight: comparedHeight + 'px', '--handle-scale': 1 / ui.zoom }">

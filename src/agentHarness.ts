@@ -216,6 +216,13 @@ watch(
     } catch {}
   },
 );
+// The server keeps a copy so Host access sends from a laptop start in the
+// same edit mode as a new desktop chat.
+watch(
+  () => harness.settings.defaultModes,
+  (modes) => void agentRequest("default-modes", { ...modes }).catch(() => undefined),
+  { immediate: true },
+);
 
 export function markSeen(...ids: string[]) {
   let changed = false;

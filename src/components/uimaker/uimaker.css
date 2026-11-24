@@ -272,8 +272,17 @@
 .uimaker .lab-about .btn { flex: none; }
 .uimaker .lab-about p { max-height: 45vh; margin: 0; overflow: auto; white-space: pre-line; color: var(--um-ink); }
 .uimaker .lab-about.folded p { max-height: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.uimaker .lab-stage { position: relative; flex: 1; min-height: 0; background: var(--um-canvas); }
-.uimaker .lab-stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--um-card); }
+.uimaker .lab-stage { position: relative; flex: 1; min-height: 0; background: var(--um-canvas); container-type: size; }
+.uimaker .lab-scroll { position: absolute; inset: 0; overflow: auto; }
+.uimaker .lab-preview {
+  position: relative; overflow: hidden; margin-inline: auto;
+  width: calc(100cqw * var(--lab-zoom)); height: calc(100cqh * var(--lab-zoom));
+  top: max(0px, calc(50cqh * (1 - var(--lab-zoom))));
+}
+.uimaker .lab-stage iframe {
+  display: block; width: 100cqw; height: 100cqh; border: 0; background: var(--um-card);
+  transform: scale(var(--lab-zoom)); transform-origin: top left;
+}
 .uimaker .lab-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--um-dim); }
 /* In the Lab the side panel shows only the rounds. */
 .uimaker .right.lab-side > :not(.lab-rounds) { display: none !important; }

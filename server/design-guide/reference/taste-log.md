@@ -76,3 +76,7 @@ Quotes are the owner's own words (typos kept out). Newest last. Add to this file
 
 - After Codex's two mocks, picked Claude's round r3 ("Where you land, how you find the source") and asked to build both variants, **Sessions app** and **Pinned chat**: "you mogged him". What won: the ⋯ menu turning into a searchable model list whose footer names the destination, the draft landing beside the source (split tile) or in the panel, a reference card with the last request/reply/files/open question and an inline transcript, the `@session` chip marked full transcript, two-way header links (from … / continued in …), indenting in the session list, a Back to draft bar in the pinned chat, and a first turn whose reference shows as a chip.
 - Split session tiles resize by dragging the empty gap between them, like the Terminal's splits. No drawn handle or grip.
+
+## Orvane Host (24.11.2026)
+
+- Rejected the first laptop Host UI because it did not look like Orvane. Use desktop Agent Sessions as the reference for the Host shell, session list, transcript and composer.

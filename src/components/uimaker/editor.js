@@ -8,7 +8,7 @@
 // - the open component/version is kept in the block value.
 import { reactive } from 'vue';
 import { ICONS } from './icons.js';
-import { renderOverlay, applyTweaks, measureFrame, describe, rectOf, cssPath, noteName,
+import { renderOverlay, applyTweaks, measureFrame, forwardCanvasZoom, describe, rectOf, cssPath, noteName,
   ensureBoard, renderBoardSvg, renderBoardPins, boardBounds, drawEdge, toWorld, refH, CAP, sv } from './overlay.js';
 
 export const API = '/__orvane/uimaker/';
@@ -191,16 +191,7 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
       if (!d) return;
       // Live mode (I) lets the pointer reach the component, so its Ctrl+wheel
       // lands inside the iframe; replay it on the frame so the canvas zooms.
-      d.addEventListener('wheel', e => {
-        if (!e.ctrlKey && !e.metaKey) return;
-        e.preventDefault();
-        const r = frame.getBoundingClientRect(), k = frame.offsetWidth ? r.width / frame.offsetWidth : 1;
-        frame.dispatchEvent(new WheelEvent('wheel', {
-          clientX: r.left + e.clientX * k, clientY: r.top + e.clientY * k,
-          deltaX: e.deltaX, deltaY: e.deltaY, deltaMode: e.deltaMode,
-          ctrlKey: e.ctrlKey, metaKey: e.metaKey, bubbles: true, cancelable: true,
-        }));
-      }, { passive: false });
+      forwardCanvasZoom(frame);
       const settle = final => {
         applyTweaks(d, cur(model.state.tweaks));
         ui.h = c.height || measureFrame(frame);

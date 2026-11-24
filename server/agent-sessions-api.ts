@@ -1,6 +1,7 @@
 import type { Plugin, Connect } from "vite";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { z } from "zod";
@@ -11,6 +12,14 @@ import { listSkills, SavedPrompts } from "./agent-skills.ts";
 import { AgentSchedules } from "./agent-schedules.ts";
 import { mcpInstall, mcpRemove, mcpSetup, mcpStatus, mcpTest } from "./agent-mcp.ts";
 import { AgentUsageStore, claudeUsage, readCodexUsage } from "./agent-usage.ts";
+import { agentDelegationSchema } from "../src/agentDelegation.ts";
+import { AgentDelegations } from "./agent-delegation.ts";
+import { configuredOrvaneHost } from "./orvane-host.ts";
+import { defaultModesKey, HostAgentChat } from "./orvane-host-chat.ts";
+import { LocalDatabase } from "./database.ts";
+import { HostSettings, hostSettingsAction } from "./orvane-host-settings.ts";
+import { UiMakerService } from "./uimaker.ts";
+import { HostBrowser } from "./orvane-host-browser.ts";
 
 const base = "/__orvane/agents/";
 const key = z.string().min(1).max(1000);
@@ -54,6 +63,7 @@ export function agentSessionsApi(directory: string): Plugin {
       claude: SessionTranscripts;
       codex: SessionTranscripts;
       runner: AgentRunner;
+      delegations: AgentDelegations;
       surveying: string;
       prompts: SavedPrompts;
       schedules: AgentSchedules;
@@ -63,6 +73,7 @@ export function agentSessionsApi(directory: string): Plugin {
     }
   >();
   let testing = false;
+  const hostControllers = new Map<string, HostSettings>();
   let scheduler: ReturnType<typeof setInterval> | undefined;
   const catalogues = new Map<
     "codex" | "claude",
@@ -110,6 +121,10 @@ export function agentSessionsApi(directory: string): Plugin {
       };
       service = {
         usage,
+        delegations: new AgentDelegations(workspaceFile, dir, runner, async (provider, id) => {
+          const sessions = await (provider === "codex" ? codex : claude).list();
+          return sessions.find((session) => session.sessionId === id)?.key;
+        }),
         codexSessions: testing
           ? join(dir, "codex-sessions")
           : join(process.env.CODEX_HOME || join(homedir(), ".codex"), "sessions"),
@@ -136,6 +151,31 @@ export function agentSessionsApi(directory: string): Plugin {
       services.set(namespace, service);
     }
     return service;
+  }
+  function hostChat(namespace: string, projects: string[], approvals: boolean) {
+    const service = serviceFor(namespace);
+    return new HostAgentChat(projects, service, service.runner, workspacePath(namespace).file, approvals);
+  }
+  function workspacePath(namespace: string) {
+    const filename = testing ? `tests/${namespace}.sqlite` : "workspace.sqlite";
+    return { filename, file: join(directory, filename), data: testing ? join(directory, "tests", namespace) : directory };
+  }
+  function hostSettingsFor(namespace: string) {
+    let settings = hostControllers.get(namespace);
+    if (!settings) {
+      const data = workspacePath(namespace);
+      settings = new HostSettings(data.data, data.file, (projects, approvals, maker, terminal, browserOrigin) => ({
+        recent: () => serviceFor(namespace).runner.recent(),
+        chat: hostChat(namespace, projects, approvals),
+        ...(maker ? { maker: new UiMakerService(directory, data.filename) } : {}),
+        terminal,
+        ...(browserOrigin ? { browser: new HostBrowser(
+          process.env.ORVANE_MCP_STATE_DIR || fileURLToPath(new URL("../.orvane", import.meta.url)), browserOrigin,
+        ) } : {}),
+      }));
+      hostControllers.set(namespace, settings);
+    }
+    return settings;
   }
   const middleware: Connect.NextHandleFunction = async (req, res, next) => {
     if (!req.url?.startsWith(base)) return next();
@@ -179,9 +219,12 @@ export function agentSessionsApi(directory: string): Plugin {
       : "workspace";
     if (typeof namespace !== "string" || !/^[-\w]{1,80}$/.test(namespace))
       return reply(400, { error: "An isolated test workspace is required." });
+    if (op === "host-awake") return reply(200, { keepAwake: hostControllers.get(namespace)?.keepAwake ?? false });
+    if (op === "desktop-restart-ready")
+      return reply(200, { ready: ![...services.values()].some(({ runner }) => runner.hasActiveTurns()) });
     try {
       const service = serviceFor(namespace);
-      const { claude, codex, runner, surveying, prompts, schedules, skillsHome } = service;
+      const { claude, codex, runner, surveying, prompts, schedules, skillsHome, delegations } = service;
       if (picture) {
         const name = url.searchParams.get("name") ?? "";
         // Only names attachment-save makes: no paths, nothing else on disk.
@@ -205,7 +248,7 @@ export function agentSessionsApi(directory: string): Plugin {
         const limit =
           op === "attachment-save"
             ? 12_000_000
-            : ["start", "queue", "schedule-save", "notes-rewrite", "suggest"].includes(op)
+            : ["start", "queue", "schedule-save", "notes-rewrite", "suggest", "delegation"].includes(op)
               ? 96_000
               : 16_000;
         if (length > limit)
@@ -213,6 +256,19 @@ export function agentSessionsApi(directory: string): Plugin {
         chunks.push(Buffer.from(chunk));
       }
       const args = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+      if (op === "host-settings")
+        return reply(200, await hostSettingsFor(namespace).execute(hostSettingsAction.parse(args), `${protocol}://${host}`));
+      if (op === "delegation") return reply(200, await delegations.execute(agentDelegationSchema.parse(args)));
+      // Settings → Sessions default edit modes, so Host access sends use them too.
+      if (op === "default-modes") {
+        const modes = z.strictObject({
+          claude: z.enum(["ask", "auto", "plan", "full"]).optional(),
+          codex: z.enum(["auto", "plan", "full"]).optional(),
+        }).parse(args);
+        const db = new LocalDatabase(workspacePath(namespace).file);
+        try { db.saveAppData(defaultModesKey, modes); } finally { db.close(); }
+        return reply(200, { ok: true });
+      }
       const transcripts = (value: string) =>
         value.startsWith("codex:") ? codex : claude;
       if (op === "sessions") {
@@ -530,12 +586,27 @@ export function agentSessionsApi(directory: string): Plugin {
   const endChildren = () => {
     for (const { runner } of services.values()) runner.emergencyClose();
   };
+  const startHost = () => {
+    if (testing || process.env.ORVANE_HOST_ENABLED !== "1") return;
+    void hostSettingsFor("workspace").adopt(async () => {
+      const listener = await configuredOrvaneHost(() => serviceFor("workspace").runner.recent(),
+        (projects, approvals) => hostChat("workspace", projects, approvals), () => new UiMakerService(directory));
+      if (listener) console.info(`Orvane Host listening at ${listener.url}`);
+      return listener;
+    }, process.env.ORVANE_HOST_KEEP_AWAKE === "1").catch((error: unknown) => {
+      console.error("Orvane Host could not start:", error);
+    });
+  };
   const close = () => {
     clearInterval(scheduler);
     scheduler = undefined;
-    for (const { claude, codex, runner, prompts, schedules } of services.values()) {
+    for (const host of hostControllers.values())
+      void host.close().catch((error) => console.error("Orvane Host could not close:", error));
+    hostControllers.clear();
+    for (const { claude, codex, runner, prompts, schedules, delegations } of services.values()) {
       prompts.close();
       schedules.close();
+      delegations.close();
       runner.close();
       claude.close();
       codex.close();
@@ -552,12 +623,14 @@ export function agentSessionsApi(directory: string): Plugin {
       process.once("exit", endChildren);
       s.middlewares.use(middleware);
       startScheduler();
+      startHost();
       s.httpServer?.once("close", close);
     },
     configurePreviewServer(s) {
       process.once("exit", endChildren);
       s.middlewares.use(middleware);
       startScheduler();
+      startHost();
       s.httpServer.once("close", close);
     },
   };

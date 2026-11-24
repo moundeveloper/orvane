@@ -360,6 +360,50 @@ test("queued follow-ups drain in order and keep the Codex session", async ({ pag
   expect(resumed.args).toEqual(expect.arrayContaining(["resume", codexId]));
 });
 
+test("session row menu tiles a session and the toolbar shows split shortcuts", async ({ page, context }, info) => {
+  test.setTimeout(90_000);
+  const { directory, project } = await fixture(context);
+  const secondId = "33333333-3333-4333-8333-333333333333";
+  await writeFile(join(directory, "claude-projects", "test-project", secondId + ".jsonl"), JSON.stringify({
+    type: "user", sessionId: secondId, cwd: project, message: { content: "Second Claude project" },
+  }) + "\n");
+  const app = await openApp(page);
+  const row = app.getByRole("button", { name: /Existing Claude project/ });
+  const second = app.getByRole("button", { name: /Second Claude project/ });
+  await row.click();
+  await row.click({ modifiers: ["Control"] });
+  const tiles = app.locator(".cs-tiles").first().locator(":scope > .agent-tiles-layer > .agent-tile");
+  await expect(tiles).toHaveCount(1);
+  await second.click({ button: "right" });
+  const menu = app.getByRole("menu", { name: "Open session in a tile" });
+  const open = menu.getByRole("menuitem", { name: /Open in new pane/ });
+  await expect(open).toContainText("Ctrl+click");
+  await expect(open).toBeFocused();
+  await menu.screenshot({ path: info.outputPath("session-row-menu.png"), animations: "disabled" });
+  await page.keyboard.press("Escape");
+  await expect(second).toBeFocused();
+
+  const shortcutButton = app.getByRole("button", { name: "Session shortcuts" });
+  await shortcutButton.click();
+  const guide = app.getByRole("dialog", { name: "Session shortcuts" });
+  await expect(guide).toContainText("Alt+Shift+D");
+  await expect(guide).toContainText("Ctrl+Shift+W");
+  await guide.screenshot({ path: info.outputPath("session-shortcuts.png"), animations: "disabled" });
+  await second.click({ button: "right" });
+  await expect(guide).toHaveCount(0);
+  await open.click();
+  await expect(menu).toHaveCount(0);
+  await expect(tiles).toHaveCount(2);
+  await expect(tiles.nth(1).locator(".cs-session-header strong").first()).toHaveText(/Second Claude project/);
+  await row.click({ modifiers: ["Control"] });
+  await expect(tiles.nth(0)).toHaveClass(/focused/);
+  await second.click({ button: "right" });
+  await expect(open).toHaveCount(0);
+  await menu.getByRole("menuitem", { name: /Focus existing pane/ }).click();
+  await expect(tiles).toHaveCount(2);
+  await expect(tiles.nth(1)).toHaveClass(/focused/);
+});
+
 test("sessions split into Hyprland-style tiles that resize, swap, close and persist", async ({ page, context }, info) => {
   test.setTimeout(90_000);
   await fixture(context);
@@ -444,9 +488,12 @@ test("sessions split into Hyprland-style tiles that resize, swap, close and pers
   await expect(hostTile.locator(".cs-session-header strong").first()).toHaveText(/Existing Claude project/);
   expect((await box(hostTile)).x).toBeGreaterThan((await box(pane)).x);
 
-  // Ctrl+Shift+W closes the focused pane; the other fills the app again.
-  await pane.getByRole("textbox", { name: "Project folder" }).click();
-  await expect(pane).toHaveClass(/focused/);
+  // Ctrl+Shift+W can close successive panes without another click.
+  await pane.getByRole("textbox", { name: "Project folder" }).press("Alt+Shift+Minus");
+  await expect(tile).toHaveCount(3);
+  await expect(tiles.locator(top + ".agent-tile.focused").getByRole("textbox", { name: "Project folder" })).toBeFocused();
+  await page.keyboard.press("Control+Shift+W");
+  await expect(tile).toHaveCount(2);
   await page.keyboard.press("Control+Shift+W");
   await expect(tile).toHaveCount(1);
   await page.waitForTimeout(600);
