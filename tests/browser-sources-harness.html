@@ -1,0 +1,18 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Browser source widget fixture</title></head>
+<body><div id="app"></div><script type="module">
+import {createApp,h,reactive,ref} from "vue";
+import BrowserSources from "/src/components/BrowserSources.vue";
+import "/src/scrollbars.css";
+const tab=ref("one"),visible=ref(true),open=reactive({one:true,two:false});
+const sets=reactive({one:{url:"https://fixture.test/backups",title:"Backups and restore",selected:"retention",passages:[
+{id:"schedule",label:"Schedule",quote:"A backup runs once a day while the app is open.",text:"A backup runs once a day while the app is open.",found:true,matches:1},
+{id:"retention",label:"Retention",quote:"The newest 14 copies are kept.",text:"The newest 14 copies are kept.",found:true,matches:1},
+{id:"restore",label:"Restore safety",quote:"A previous exact source quote.",text:"A previous exact source quote.",found:false,matches:0}
+]},two:{url:"https://fixture.test/other",title:"Another tab",selected:"other",passages:[
+{id:"other",quote:"Another tab's own passage.",text:"Another tab's own passage.",found:true,matches:1}]}});
+window.setSourceTab=id=>{tab.value=id};
+createApp({render:()=>h("div",{id:"stage",style:"position:relative;width:760px;height:480px;background:white;overflow:hidden"},[
+h("button",{id:"outside"},"Outside"),h("article",{style:"padding:40px;width:400px"},[h("h2","Retention"),h("p","The newest 14 copies are kept.")]),
+visible.value?h(BrowserSources,{key:tab.value,sources:sets[tab.value],open:open[tab.value],"onUpdate:open":v=>{open[tab.value]=v},onJump:id=>{sets[tab.value].selected=id},onClear:()=>{visible.value=false}}):null
+])}).mount("#app");
+</script><style>body{margin:24px;background:#e9edf0;font:13px Inter,sans-serif;color:#455968}*{box-sizing:border-box}</style></body></html>

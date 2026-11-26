@@ -627,6 +627,24 @@ ipcMain.handle("orvane:page-run", async (event, id, code) => {
   if (!guest || typeof code !== "string" || code.length > 100_000) throw Error("No such page.");
   return guest.mainFrame.executeJavaScript(code, false);
 });
+// Fixed source-mark styling also works on pages whose CSP rejects inline CSS.
+const sourceStyles = new Map();
+const sourceStyleGuests = new WeakSet();
+ipcMain.handle("orvane:source-style", async (event, id) => {
+  const guest = ownGuest(event, id);
+  if (!guest) throw Error("No such page.");
+  if (!sourceStyleGuests.has(guest)) {
+    sourceStyleGuests.add(guest);
+    guest.once("destroyed", () => sourceStyles.delete(id));
+    guest.on("did-navigate", () => sourceStyles.delete(id));
+  }
+  if (!sourceStyles.has(id)) {
+    const pending = guest.insertCSS("::highlight(orvane-source){background-color:#e1eef0;text-decoration:underline 1px #87b0b8}::highlight(orvane-source-active){background-color:#c3dde8;color:#17303e;text-decoration:underline 2px #365f78}");
+    sourceStyles.set(id, pending);
+    pending.catch(() => { if (sourceStyles.get(id) === pending) sourceStyles.delete(id); });
+  }
+  await sourceStyles.get(id);
+});
 // A web image pasted or dropped on the canvas by address only: the local
 // server downloads it without any sign-in, so a picture behind a login
 // fails there. Fetch it again with the Browser's cookies (the user's
@@ -1443,16 +1461,18 @@ ipcMain.handle("orvane:page-snapshot", async (event, id, picture) => {
   if (!guest) return null;
   resumeGuest(guest);
   let timer;
-  const edited = await Promise.race([
+  const snapshot = await Promise.race([
     guest
-      .executeJavaScriptInIsolatedWorld(EDITED_WORLD, [{ code: EDITED_FIELDS }])
-      .catch(() => true),
-    new Promise((done) => (timer = setTimeout(() => done(true), 2000))),
+      .executeJavaScriptInIsolatedWorld(EDITED_WORLD, [{
+        code: `(() => ({ edited: ${EDITED_FIELDS}, scroll: { x: scrollX, y: scrollY } }))()`,
+      }])
+      .catch(() => ({ edited: true })),
+    new Promise((done) => (timer = setTimeout(() => done({ edited: true }), 2000))),
   ]);
   clearTimeout(timer);
   // Unknown (no answer) counts as edited: never drop work we can't see.
-  if (edited !== false || guest.isDestroyed()) return { edited: true };
-  return { edited: false, image: (picture === true && pictures.get(guest.id)) || "" };
+  if (snapshot?.edited !== false || guest.isDestroyed()) return { edited: true };
+  return { edited: false, scroll: snapshot.scroll, image: (picture === true && pictures.get(guest.id)) || "" };
 });
 
 // ---- Tray: closing the window hides Orvane there; Quit is in its menu ----

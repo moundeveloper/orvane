@@ -29,7 +29,7 @@ const bySessionId = new Set(["session-approvals", "checkpoints", "checkpoint-pre
  */
 export function hostAgentGateway(
   chat: HostAgentChat,
-  transcripts: Record<"claude" | "codex", SessionTranscripts>,
+  transcripts: Record<"claude" | "codex", Pick<SessionTranscripts, "list" | "find">>,
   runner: Pick<AgentRunner, "inspect">,
   operate: AgentOperate,
   dataDirectory: string,
@@ -45,9 +45,11 @@ export function hostAgentGateway(
     const session = await (key.startsWith("codex:") ? transcripts.codex : transcripts.claude).find(key);
     await within(session.project);
   };
-  const sessionById = async (id: unknown) => {
+  const sessionById = async (args: Record<string, any>) => {
     const lists = await Promise.all([transcripts.claude.list(), transcripts.codex.list()]);
-    const session = lists.flat().find((item) => item.sessionId === id);
+    const session = lists.flat().find((item) => item.sessionId === args.sessionId &&
+      (item.provider ?? "claude") === (args.provider ?? "claude") &&
+      (item.provider === "codex" || (item.profileId ?? "default") === (args.profileId ?? "default")));
     if (!session) throw denied();
     await within(session.project);
   };
@@ -82,6 +84,16 @@ export function hostAgentGateway(
   return {
     approvals: chat.approvals,
     async agents(op: string, args: Record<string, any>, url: URL, res: ServerResponse, reply: HostReply) {
+      if (op === "claude-profiles") {
+        // The shared desktop view needs account names/availability. Keep local
+        // configuration paths and account-management capabilities on desktop.
+        return operate(op, {}, url, res, (status, value) => {
+          if (status !== 200) return reply(status, value);
+          const data = value as { profiles?: Record<string, unknown>[]; newChatProfileId?: string };
+          reply(200, { newChatProfileId: data.newChatProfileId, draft: null,
+            profiles: (data.profiles ?? []).map((profile) => ({ ...profile, folder: "", sessions: 0, running: 0, mcp: false })) });
+        });
+      }
       if (op === "sessions" || op === "runs") {
         // Only the shared projects' sessions and runs reach the laptop.
         let listed: { sessions?: AgentSession[]; runs?: AgentRunSummary[] } | undefined;
@@ -108,7 +120,7 @@ export function hostAgentGateway(
         await runById(op === "run-events" ? url.searchParams.get("id") : args.id);
         if (op === "queue") await attachmentsAllowed(args.message);
       } else if (bySessionKey.has(op)) await sessionByKey(args.key);
-      else if (bySessionId.has(op)) await sessionById(args.sessionId);
+      else if (bySessionId.has(op)) await sessionById(args);
       else if (!free.has(op)) throw new HostChatError(404, "This action is only available on the desktop.");
       await operate(op, args, url, res, reply);
     },

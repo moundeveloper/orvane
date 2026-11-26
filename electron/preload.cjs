@@ -72,6 +72,9 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
   runInPage(webContentsId, code) {
     return ipcRenderer.invoke("orvane:page-run", webContentsId, code);
   },
+  sourceStyle(webContentsId) {
+    return ipcRenderer.invoke("orvane:source-style", webContentsId);
+  },
   // AI control: trusted input, typing and pictures for one Browser page.
   pageAgent(webContentsId, op) {
     return ipcRenderer.invoke("orvane:page-agent", webContentsId, op);

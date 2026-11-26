@@ -1,0 +1,24 @@
+# Browser loading, recovery and sources
+
+The owner asked Claude to design the loading control and source-highlight UI before implementation. Claude authored the four HTML files in this folder. Codex uploaded them to UI Maker, rendered them and independently tested the interactions. The owner picked **Ring stop** (`browser-loading/r1/ring-stop`, saved as v2) and **Source widget** (`browser-source-highlights/r1/source-widget`, saved as v2). Other variants remain unselected, not rejected.
+
+## Implemented
+
+- Loading is per tab: the existing toolbar slot shows a rotating ring and Stop X until loading stops, completes or fails. The tab tile has its corresponding ring. State does not leak across tabs, and controls do not move. Reduced motion and off-canvas pause are respected. Escape in the toolbar stops loading after existing popovers/dialogs/find/text fields take priority.
+- A discarded page automatically revives when its selected Browser app returns to view. Its address and captured scroll position are restored, without stealing focus during camera movement. Paused pages retain their document; edited forms remain protected from unloading. Reloading a discarded document cannot reconstruct arbitrary JavaScript memory or native back/forward history; Keep tab live remains available for that state.
+- `browser_highlight` is a named built-in MCP action with set/jump/list/clear. Only exact matched quotes become sources, optional context disambiguates repeated text, and unmatched requests are reported separately. CSS Highlight ranges preserve original text, links, form values and native selection/Ctrl+F. A fixed, ownership-checked Electron CSS bridge supports pages with strict CSP.
+- Source widget follows the chosen design: current page title/address, exact excerpts, selected passage/count, next/previous, clear, linked page marks, keyboard list navigation, outside dismissal including guest-page clicks, and a bounded popover. It closes if a jump would leave the passage underneath it. Source metadata is saved locally per tab and URL and rechecked after navigation, restore and DOM changes. Changed passages retain their previously matched quote with No longer found. First-time unmatched requests are not presented as sources. Main-document HTML only; PDFs, shadow roots and cross-origin frames are not searched.
+
+## Verification
+
+- Recovery regression reproduced the visible discarded placeholder before the fix. Native Electron tests pass for pause/resume, listener cleanup, live-page budget, edited forms, automatic recovery and restored scroll position.
+- Loading regression first failed because no Stop control existed. Both loading/shortcut tests now pass for streaming pages, Stop, completion, failure, background tab state, fixed control geometry and page/canvas shortcuts.
+- Final native Browser run: **7 passed** across `browser-find.spec.ts`, `browser-loading-shortcuts.spec.ts`, `browser-throttle.spec.ts` and `browser-sources.spec.ts`, one Electron instance at a time.
+- Source matching/widget checks: **3 passed** in `browser-highlights.spec.ts` for exact inline text/context, preserving forms/selection/links, mutation/missing/reappearance, observer cleanup, tab scope, keyboard controls, outside dismissal and compact geometry. The separate source MCP/ Electron test passes on a strict-CSP page, including unmatched quote rejection, ownership checks, widget jumps, missing text, navigation/back, another tab and clear. Local fixture screenshots were inspected.
+- Native guest captures exposed that filled custom highlights did not paint with the initial user-origin/important CSS injection on CSP pages. The fixed stylesheet is now inserted at the ordinary author origin; a native bitmap assertion requires the selected blue fill to be painted (rather than accepting only computed styles). The native capture and this regression pass.
+- Production build, TypeScript checks and `git diff --check` pass. CSS guard retains exactly the existing four scrollbar violations in `FlowTestsView.vue`; no new violations.
+- The broader `browser-agent.spec.ts` failed its navigation-cancellation check. An untouched copy of the original test reproduced the same failure on the combined code; the temporary copy was removed. This has not been represented as a green full suite or fixed outside scope.
+
+Everything was checked with isolated test data and local pages, not the owner's live accounts or workspace. A full Orvane restart is needed for Electron/preload changes, and existing MCP clients must reconnect/reload their Orvane server to discover `browser_highlight`.
+
+Logs are under `%TEMP%`: `orvane-browser-final-tests.log`, `orvane-sources-check.log`, `orvane-browser-final-types.log`, `orvane-browser-final-build.log`, `orvane-browser-css.log`, `orvane-browser-agent-baseline.log` and `orvane-sources-visual.log`.

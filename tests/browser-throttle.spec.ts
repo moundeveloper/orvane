@@ -23,6 +23,7 @@ async function site() {
     response.setHeader("content-type", "text/html");
     response.end(
       `<!doctype html><title>Fixture ${name}</title><h1>${name}</h1>` +
+        (["b", "c"].includes(name) ? '<div style="height:6000px">A long source page</div>' : "") +
         (name === "form" ? `<input id="field" value="start">` : "") +
         FRAMES,
     );
@@ -320,7 +321,10 @@ test("Desktop Browser discards long-unseen pages beyond the live limit", async (
     // (It was paused; the edit check retries after the discard delay.)
     await expect.poll(() => liveGuests(app), { timeout: 15000 }).toEqual(["/b"]);
 
-    // An app panned away long enough shows a picture with "Click to reload".
+    // Returning to a discarded app revives it without clicking a blank
+    // placeholder, and restores the source page's reading position.
+    await inGuest(app, "/b", "scrollTo(0, 900); 1");
+    expect(await inGuest<number>(app, "/b", "scrollY")).toBe(900);
     await createBrowser(page, `${origin}/c`, "Fixture c");
     await page.locator(".canvas-background").click({ position: { x: 5, y: 5 } });
     // Over budget, pages on screen keep a picture (taken asynchronously; a
@@ -329,13 +333,9 @@ test("Desktop Browser discards long-unseen pages beyond the live limit", async (
     await pan(page, 8000);
     await expect.poll(async () => (await liveGuests(app)).length, { timeout: 10000 }).toBe(1);
     await pan(page, -8000);
-    const reload = page.locator(".browser-discarded:visible");
-    await expect(reload).toHaveCount(1);
-    await expect(reload).toContainText("Click to reload");
-    await expect(reload.locator("img")).toHaveCount(1);
-    // The newer app overlaps it on the canvas; click the button itself.
-    await reload.dispatchEvent("click");
-    await expect.poll(async () => (await liveGuests(app)).length, { timeout: 10000 }).toBeGreaterThanOrEqual(2);
+    await expect.poll(() => liveGuests(app), { timeout: 10000 }).toContain("/b");
+    await expect(page.locator(".browser-discarded:visible")).toHaveCount(0);
+    await expect.poll(() => inGuest<number>(app, "/b", "scrollY"), { timeout: 10000 }).toBe(900);
     await page.screenshot({ path: "artifacts/browser-discard.png" });
   } finally {
     await app.close();

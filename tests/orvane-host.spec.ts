@@ -101,6 +101,10 @@ test("Host serves the desktop Agent Sessions page and scopes its operations to s
   const calls: string[] = [];
   const operate: AgentOperate = async (op, _args, _url, _res, reply) => {
     calls.push(op);
+    if (op === "claude-profiles") return reply(200, {
+      newChatProfileId: "default", draft: { id: "new-account", folder: privateProject },
+      profiles: [{ id: "default", name: "Default", folder: privateProject, sessions: 42, running: 3, mcp: true }],
+    });
     if (op === "sessions")
       return reply(200, {
         sessions: [...await claude.list(), ...await codex.list()],
@@ -138,6 +142,11 @@ test("Host serves the desktop Agent Sessions page and scopes its operations to s
     expect(listed.sessions.map((session: { title: string }) => session.title)).toEqual(["Shared Claude work"]);
     expect(listed.runs.map((run: { title: string }) => run.title)).toEqual(["Shared run"]);
     const keys = Object.fromEntries((await claude.list()).map((session) => [session.title, session.key]));
+
+    const accounts = await (await call("agents", "claude-profiles")).json();
+    expect(accounts.draft).toBeNull();
+    expect(accounts.profiles).toEqual([{ id: "default", name: "Default", folder: "", sessions: 0, running: 0, mcp: false }]);
+    expect((await call("agents", "claude-profile-add", { name: "Work" })).status()).toBe(404);
 
     calls.length = 0;
     expect((await call("agents", "read", { key: keys["Private transcript"] })).status()).toBe(404);

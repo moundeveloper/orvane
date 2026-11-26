@@ -8,6 +8,7 @@ test("Ctrl+T and Ctrl+Shift+T work in a page that never finishes loading", async
   const site = createServer((request, response) => {
     if (request.url === "/never") return; // Left open until the test ends.
     response.setHeader("content-type", "text/html");
+    if (request.url === "/done") return response.end("<!doctype html><title>Finished</title><p>Loaded.</p>");
     response.end('<!doctype html><title>Still loading</title><p>Page</p><img src="/never" alt="">');
   });
   await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
@@ -49,6 +50,10 @@ test("Ctrl+T and Ctrl+Shift+T work in a page that never finishes loading", async
       await app.evaluate(({ webContents }, url) =>
         webContents.getAllWebContents().find((w) => w.getType() === "webview" && w.getURL() === url)!.isLoadingMainFrame(), url),
     ).toBe(true);
+    const stop = browser.getByRole("button", { name: "Stop loading", exact: true });
+    await expect(stop).toBeVisible();
+    await expect(browser.locator(".browser-tab.active .tab-load-ring")).toBeVisible();
+    const controlBox = await stop.boundingBox();
     const tabs = browser.locator(".browser-tab");
     await expect(tabs).toHaveCount(1);
     await expect
@@ -58,6 +63,8 @@ test("Ctrl+T and Ctrl+Shift+T work in a page that never finishes loading", async
       }, { timeout: 15000, intervals: [1000] })
       .toBeGreaterThan(1);
     const opened = await tabs.count();
+    await expect(browser.getByRole("button", { name: "Stop loading", exact: true })).toHaveCount(0);
+    await expect(browser.locator(".browser-tab:not(.active) .tab-load-ring")).toBeVisible();
     // Close the new tabs, back to the page, then reopen them from the page.
     for (let i = 1; i < opened; i++) {
       await addressBar.click();
@@ -70,6 +77,20 @@ test("Ctrl+T and Ctrl+Shift+T work in a page that never finishes loading", async
       await expect(tabs).toHaveCount(1 + i);
       await browser.locator(".browser-tab", { hasText: "Still loading" }).click();
     }
+    await stop.click();
+    const reload = browser.getByRole("button", { name: "Reload", exact: true });
+    await expect(reload).toBeVisible();
+    expect(await reload.boundingBox()).toEqual(controlBox);
+    await expect(browser.locator(".browser-tab.active .tab-load-ring")).toHaveCount(0);
+    await addressBar.fill(url + "done");
+    await addressBar.evaluate((input) => (input as HTMLInputElement).form!.requestSubmit());
+    await expect(browser.locator(".browser-tab.active")).toContainText("Finished");
+    await expect(reload).toBeVisible();
+    await addressBar.fill("http://127.0.0.1:1/");
+    await addressBar.evaluate((input) => (input as HTMLInputElement).form!.requestSubmit());
+    await expect(browser.locator(".browser-error")).toBeVisible();
+    await expect(reload).toBeVisible();
+    await expect(browser.locator(".browser-tab.active .tab-load-ring")).toHaveCount(0);
   } finally {
     await app.close();
     site.closeAllConnections();

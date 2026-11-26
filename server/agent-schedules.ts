@@ -27,6 +27,8 @@ export const scheduleInput = z.object({
     .max(12_000)
     .refine((text) => !!text.trim(), "Write the prompt."),
   provider: z.enum(["claude", "codex"]),
+  /** The Claude account the prompt runs on; the API fills in the New chats account. */
+  profileId: z.string().regex(/^[a-z0-9][a-z0-9-]{2,39}$/).optional(),
   folder: z
     .string()
     .min(1, "Choose a project folder.")
@@ -56,6 +58,8 @@ export const scheduleInput = z.object({
 type Start = (
   target: {
     provider: "claude" | "codex";
+    /** Pinned account; a removed or unknown one fails the run, never falls back. */
+    profileId?: string;
     folder: string;
     model?: string;
     effort?: AgentSchedule["effort"];
@@ -82,7 +86,23 @@ export class AgentSchedules {
   private read(): AgentSchedule[] {
     const saved = this.database().appData(KEY) as
       { schedules?: AgentSchedule[] } | undefined;
-    return saved?.schedules ?? [];
+    const schedules = saved?.schedules ?? [];
+    // Claude schedules saved before accounts existed ran on the inherited
+    // setup, which is the Default account: pin them to it (stored migration).
+    let migrated = false;
+    for (const item of schedules)
+      if (item.provider === "claude" && !item.profileId) {
+        item.profileId = "default";
+        migrated = true;
+      }
+    if (migrated) this.write(schedules);
+    return schedules;
+  }
+  /** Names of the prompts pinned to one Claude account. */
+  usingProfile(profileId: string) {
+    return this.read()
+      .filter((item) => item.provider === "claude" && item.profileId === profileId)
+      .map((item) => item.prompt.replace(/\s+/g, " ").slice(0, 40));
   }
   private write(schedules: AgentSchedule[]) {
     this.database().saveAppData(KEY, { schedules });
@@ -106,6 +126,8 @@ export class AgentSchedules {
       if (run.sessionId) {
         item.lastSessionId = run.sessionId;
         item.lastSessionProvider = run.provider;
+        if (run.provider === "claude") item.lastSessionProfileId = run.profileId ?? "default";
+        else delete item.lastSessionProfileId;
       }
       if (run.error) item.lastError = run.error.slice(0, 2000);
       else delete item.lastError;
@@ -130,9 +152,11 @@ export class AgentSchedules {
         : input.schedule.kind === "daily"
           ? { kind: "daily", time: input.schedule.time }
           : input.schedule;
+    if (input.provider === "claude" && !input.profileId) throw Error("Choose a Claude account for this prompt.");
     const fields = {
       prompt: input.prompt.trim(),
       provider: input.provider,
+      ...(input.provider === "claude" ? { profileId: input.profileId } : {}),
       folder: input.folder,
       schedule,
       ...(input.model ? { model: input.model } : {}),
@@ -147,7 +171,7 @@ export class AgentSchedules {
         existing.createdAt = Date.now();
         delete existing.lastOccurrence;
       }
-      for (const key of ["model", "effort", "mode"] as const)
+      for (const key of ["model", "effort", "mode", "profileId"] as const)
         delete existing[key];
       Object.assign(existing, fields);
       if (input.enabled !== undefined) existing.enabled = input.enabled;
@@ -194,6 +218,7 @@ export class AgentSchedules {
       const run = await this.start(
         {
           provider: item.provider,
+          ...(item.profileId ? { profileId: item.profileId } : {}),
           folder: item.folder,
           ...(item.model ? { model: item.model } : {}),
           ...(item.effort ? { effort: item.effort } : {}),
@@ -205,6 +230,7 @@ export class AgentSchedules {
         "lastStatus",
         "lastSessionId",
         "lastSessionProvider",
+        "lastSessionProfileId",
         "lastError",
       ]);
       return run;

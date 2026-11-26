@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Claude accounts in Settings</title>
+<style>
+:root{--canvas:#e9edf0;--app:#f7f9fa;--raised:#fbfcfd;--strong:#273f50;--text:#455968;--muted:#5d7381;--faint:#8296a2;--accent:#6f8998;--run:#365f78;--link:#385d76;--ok:#4f7d5f;--warn:#b08a4a;--fail:#a0624f;--line:#e3eaee;--border:#dbe5eb;--border-pop:#d3dee5;--select:#e4edf2;--hover:#eef3f6;--chip:#e6eef3;--mono:"Cascadia Code",Consolas,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font:13px/1.5 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;color:var(--text);background:var(--canvas);display:grid;place-items:center;-webkit-font-smoothing:antialiased}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+button:focus-visible{outline:2px solid #7b97a7;outline-offset:1px}
+svg{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+kbd{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 4px;border:1px solid #d6e0e6;border-bottom-width:2px;border-radius:4px;background:#fbfcfd;font:10.5px/1 var(--mono);color:var(--muted)}
+code{font:11.5px var(--mono);color:var(--strong)}
+.app{position:relative;width:1120px;height:680px;display:grid;grid-template-columns:248px 1fr;background:var(--app);border-radius:10px;box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c;overflow:hidden}
+.side{border-right:1px solid var(--line);padding:10px;display:flex;flex-direction:column;gap:2px}
+.nav{display:flex;align-items:center;gap:9px;height:32px;padding:0 8px;border:0;border-radius:6px;background:none;text-align:left;width:100%}
+.nav svg{color:var(--accent)}
+.nav span{margin-left:auto;color:var(--faint);font:11px var(--mono)}
+.nav.on{background:var(--select);color:var(--strong)}
+.search{display:flex;align-items:center;gap:8px;height:32px;margin:4px 0;padding:0 8px;border:1px solid var(--border);border-radius:7px;background:var(--raised);color:var(--faint)}
+.search kbd{margin-left:auto}
+.group{margin:10px 8px 2px;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#7a8f9b}
+.sess{display:grid;gap:1px;padding:6px 8px;border-radius:6px}
+.sess strong{font-weight:500;color:var(--strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--faint);white-space:nowrap}
+.meta .dot{color:#b4c3cc}
+.acct{display:inline-flex;align-items:center;gap:4px;color:var(--muted)}
+.acct i{width:6px;height:6px;border-radius:50%;background:var(--c)}
+.side .bottom{margin-top:auto}
+.main{overflow:auto;padding:26px 34px 30px;scrollbar-width:thin;scrollbar-color:#c9d6de transparent}
+.main::-webkit-scrollbar{width:8px}.main::-webkit-scrollbar-thumb{background:#c9d6de;border-radius:4px}.main::-webkit-scrollbar-button{display:none}
+h1{margin:0;font-size:17px;font-weight:600;color:var(--strong)}
+.lead{margin:4px 0 0;color:var(--muted)}
+.sec{display:flex;align-items:center;gap:10px;margin:22px 0 8px}
+.sec h2{margin:0;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#7a8f9b}
+.sec small{color:var(--faint);font-size:11.5px}
+.sec .btn{margin-left:auto}
+.btn{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px;border:1px solid var(--border-pop);border-radius:7px;background:var(--raised);font-size:12px;color:var(--text)}
+.btn:hover{background:var(--hover)}
+.btn.ghost{border-color:transparent;background:none;color:var(--muted)}
+.btn.ghost:hover{background:var(--hover)}
+.btn.primary{background:var(--run);border-color:var(--run);color:#fff}
+.btn.danger{color:var(--fail)}
+.btn svg{color:currentColor}
+.card{border:1px solid #dbe5ea;border-radius:10px;background:#f2f6f8;overflow:hidden}
+.row{display:grid;grid-template-columns:30px minmax(0,1fr) 120px 250px;align-items:center;gap:12px;min-height:62px;padding:10px 14px}
+.row + .row,.row + .more,.more + .row,.confirm + .row{border-top:1px solid #dde6eb}
+.logo{display:grid;place-items:center;width:30px;height:30px;border-radius:8px;background:#e3ecf1;position:relative}
+.logo i{width:10px;height:10px;border-radius:50%;background:var(--c)}
+.name{display:flex;align-items:baseline;gap:8px;min-width:0}
+.name b{font-weight:600;color:var(--strong)}
+.name small{font-size:12px;color:var(--faint)}
+.tag{display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:5px;background:var(--chip);color:var(--link);font-size:10.5px;font-weight:550}
+.line{font:11.5px var(--mono);color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.line .sep{color:#b4c3cc;margin:0 5px}
+.state{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;border-radius:7px;font-size:12px;white-space:nowrap}
+.state i{width:7px;height:7px;border-radius:50%;background:currentColor}
+.state.ok{background:#e4efe7;color:var(--ok)}
+.state.wait{background:#f5efe3;color:#8a6a33}
+.state.off{background:#eef3f6;color:var(--muted)}
+.acts{display:flex;align-items:center;justify-content:flex-end;gap:2px}
+.use{display:grid;gap:2px;width:120px}
+.use span{display:flex;justify-content:space-between;font-size:10.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+.use em{font-style:normal;color:var(--muted)}
+.meter{height:4px;border-radius:2px;background:#e3eaee;overflow:hidden}
+.meter i{display:block;height:100%;border-radius:2px;background:var(--accent)}
+.use.warn em{color:#8a6a33}.use.warn .meter i{background:var(--warn)}
+.more{padding:12px 14px 14px 56px;background:#f5f8fa;animation:in .18s ease-out}
+.more[hidden]{display:none}
+@keyframes in{from{opacity:0;transform:translateY(3px)}}
+.form{display:grid;grid-template-columns:200px 1fr;gap:10px;margin-bottom:12px}
+.f{display:grid;gap:4px}
+.f label{font-size:11.5px;color:var(--muted)}
+.input{display:flex;align-items:center;height:32px;padding:0 10px;border:1px solid var(--border);border-radius:7px;background:var(--raised);color:var(--strong);box-shadow:inset 0 -1px 0 #e3eaee}
+.input.mono{font:12px var(--mono)}
+.input:focus-within{border-color:#7b97a7;background:#fdfefe}
+.input input{border:0;outline:0;background:none;width:100%;padding:0;color:var(--strong)}
+.steps{display:grid;gap:2px;margin:0 0 10px;padding:0;list-style:none}
+.steps li{display:grid;grid-template-columns:18px 1fr auto;align-items:center;gap:10px;min-height:30px}
+.steps li b{font-weight:500;color:var(--strong)}
+.steps li small{color:var(--faint);font-size:12px}
+.tick{color:var(--ok)}
+.tick path{stroke-dasharray:20;stroke-dashoffset:0}
+.tick.draw path{stroke-dashoffset:20;animation:draw .26s .1s ease-out forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+.spin{width:12px;height:12px;border-radius:50%;border:1.6px solid #bfd0da;border-top-color:var(--run);animation:sp .9s linear infinite;justify-self:center}
+@keyframes sp{to{transform:rotate(360deg)}}
+.hollow{width:9px;height:9px;border-radius:50%;border:1.5px solid #b4c3cc;justify-self:center}
+.note{margin:0 0 10px;color:var(--muted);font-size:12px;max-width:64ch}
+.keys{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--faint)}
+.keys .sp{width:10px}
+.confirm{display:flex;align-items:center;gap:10px;padding:10px 14px 10px 56px;background:#fbf4f1;border-top:1px solid #f0dcd4;font-size:12.5px;color:var(--text);animation:in .16s ease-out}
+.confirm[hidden]{display:none}
+.confirm p{margin:0 auto 0 0;max-width:62ch}
+.foot{margin:10px 2px 0;font-size:12px;color:var(--faint);max-width:80ch}
+.default-pick{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 7px;border:0;border-radius:6px;background:none;font-size:11.5px;color:var(--faint)}
+.default-pick:hover{background:var(--hover)}
+.default-pick[aria-pressed="true"]{color:var(--link);background:var(--chip)}
+.default-pick[aria-pressed="false"]{opacity:0;transition:opacity .13s}
+.row:hover .default-pick,.default-pick:focus-visible{opacity:1}
+.default-pick[aria-pressed="true"]::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.tick.draw path{stroke-dashoffset:0}}
+</style></head>
+<body>
+<div class="app">
+  <nav class="side" aria-label="Agent sessions">
+    <button class="nav"><svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Scheduled<span>3</span></button>
+    <label class="search"><svg width="14" height="14" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m20 20-4-4"/></svg>Find a session<kbd>/</kbd></label>
+    <p class="group">Today</p>
+    <div class="sess"><strong>SDF deploy for QR Code bundle</strong><span class="meta">Claude<span class="dot">·</span><span class="acct" style="--c:#5f8a74"><i></i>Work</span><span class="dot">·</span>ctk-qrcode</span></div>
+    <div class="sess"><strong>Fix square composer corners</strong><span class="meta">Claude<span class="dot">·</span><span class="acct" style="--c:#6f8998"><i></i>Default</span><span class="dot">·</span>Orvane</span></div>
+    <div class="sess"><strong>Verifica il mio ultimo script in NetSuite Dev</strong><span class="meta">Codex<span class="dot">·</span>Surveying</span></div>
+    <p class="group">Yesterday</p>
+    <div class="sess"><strong>AP Clerk bill import from Excel</strong><span class="meta">Claude<span class="dot">·</span><span class="acct" style="--c:#5f8a74"><i></i>Work</span><span class="dot">·</span>ctk-apclerk</span></div>
+    <button class="nav on bottom"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Settings</button>
+  </nav>
+  <main class="main">
+    <h1>Settings</h1>
+    <p class="lead">For the Claude and Codex sessions Orvane starts on this computer.</p>
+
+    <div class="sec"><h2>Claude accounts</h2><small>Each one is its own Claude Code folder</small><button class="btn" id="addBtn"><svg width="13" height="13" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add account</button></div>
+    <div class="card" id="card">
+      <div class="row">
+        <span class="logo"><i style="--c:#6f8998"></i></span>
+        <div><div class="name"><b>Default</b><small>you@personal.example · Pro</small><button class="default-pick" aria-pressed="false" data-def>Use for new chats</button></div>
+          <div class="line">~\.claude<span class="sep">·</span>no CLAUDE_CONFIG_DIR<span class="sep">·</span>14 sessions</div></div>
+        <span class="use"><span>5-hour <em>39%</em></span><span class="meter"><i style="width:39%"></i></span></span>
+        <span class="acts"><span class="state ok"><i></i>Signed in</span><button class="btn ghost" title="Run claude auth status again">Check</button></span>
+      </div>
+      <div class="row" id="workRow">
+        <span class="logo"><i style="--c:#5f8a74"></i></span>
+        <div><div class="name"><b>Work</b><small>you@work.example · Max</small><button class="default-pick" aria-pressed="true" data-def>New chats</button></div>
+          <div class="line">~\.claude-profiles\work<span class="sep">·</span>MCP connected<span class="sep">·</span>2 running</div></div>
+        <span class="use warn"><span>5-hour <em>82%</em></span><span class="meter"><i style="width:82%"></i></span></span>
+        <span class="acts"><span class="state ok"><i></i>Signed in</span><button class="btn ghost" title="Run claude auth status again">Check</button><button class="btn ghost danger" id="removeBtn">Remove</button></span>
+      </div>
+      <div class="confirm" id="confirm" hidden>
+        <p><b style="font-weight:600;color:var(--strong)">Remove Work from Orvane?</b> Its 2 running chats finish first. Old chats stay readable. The folder <code>~\.claude-profiles\work</code> and its sign-in are kept; Orvane never signs out or deletes it.</p>
+        <button class="btn danger" id="doRemove">Remove</button><button class="btn ghost" id="cancelRemove">Cancel <kbd>Esc</kbd></button>
+      </div>
+      <div class="row" id="fitRow">
+        <span class="logo"><i style="--c:#a3927a"></i></span>
+        <div><div class="name"><b>Client FIT</b><small id="fitWho">Signing in…</small></div>
+          <div class="line">~\.claude-profiles\client-fit<span class="sep">·</span>new</div></div>
+        <span></span>
+        <span class="acts"><span class="state wait" id="fitState"><i></i>Waiting for sign-in</span><button class="btn ghost" aria-expanded="true" aria-label="Collapse"><svg width="13" height="13" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button></span>
+      </div>
+      <div class="more" id="fitMore">
+        <div class="form">
+          <div class="f"><label for="n">Name</label><div class="input"><input id="n" value="Client FIT"></div></div>
+          <div class="f"><label>Folder</label><div class="input mono">C:\Users\you\.claude-profiles\client-fit</div></div>
+        </div>
+        <ol class="steps">
+          <li><svg class="tick" width="14" height="14" viewBox="0 0 24 24"><path d="m5 12 4 4 10-10"/></svg><span><b>Folder ready</b> <small>new empty folder created by Orvane</small></span><span></span></li>
+          <li id="s2"><span class="spin" id="s2i"></span><span><b>Sign in in Terminal</b> <small><code>claude auth login</code> runs with this folder only</small></span><button class="btn" title="Show the Terminal tab">Show Terminal</button></li>
+          <li id="s3"><span class="hollow" id="s3i"></span><span><b id="s3t">Check the sign-in</b> <small id="s3s">Orvane runs <code>claude auth status</code>, reads nothing else</small></span><button class="btn primary" id="checkBtn">Check now</button></li>
+        </ol>
+        <p class="note">The browser sign-in and the stored token belong to Claude Code in this folder. Orvane keeps only the name, the folder and the colour.</p>
+        <div class="keys"><kbd>Enter</kbd>check now<span class="sp"></span><kbd>Esc</kbd>collapse</div>
+      </div>
+    </div>
+    <p class="foot">Existing chats keep their account. Choose another account for a new chat.</p>
+
+    <div class="sec"><h2>Orvane MCP</h2></div>
+    <div class="card"><div class="row" style="grid-template-columns:30px 1fr auto">
+      <span class="logo"><svg width="14" height="14" viewBox="0 0 24 24" style="color:var(--accent)"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/></svg></span>
+      <div><div class="name"><b>Claude Code</b><small>per account</small></div><div class="line">.claude.json in each account folder<span class="sep">·</span>2 of 3 connected</div></div>
+      <span class="acts"><span class="state off"><i></i>Client FIT not set up</span><button class="btn">Install</button></span>
+    </div></div>
+  </main>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const confirmBox=$('confirm');
+$('removeBtn').onclick=()=>{confirmBox.hidden=false;$('doRemove').focus()};
+$('cancelRemove').onclick=()=>{confirmBox.hidden=true;$('removeBtn').focus()};
+$('doRemove').onclick=()=>{confirmBox.hidden=true;$('workRow').style.opacity=.45;$('removeBtn').textContent='Removed';$('removeBtn').disabled=true};
+document.querySelectorAll('[data-def]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-def]').forEach(x=>{x.setAttribute('aria-pressed',String(x===b));x.textContent=x===b?'New chats':'Use for new chats'})});
+let checked=false;
+function check(){
+  if(checked)return; checked=true;
+  $('s2i').outerHTML='<svg class="tick draw" width="14" height="14" viewBox="0 0 24 24"><path d="m5 12 4 4 10-10"/></svg>';
+  $('s3i').outerHTML='<svg class="tick draw" width="14" height="14" viewBox="0 0 24 24"><path d="m5 12 4 4 10-10"/></svg>';
+  $('s3t').textContent='Signed in';$('s3s').textContent='you@client.example · Pro · claude.ai login';
+  $('checkBtn').textContent='Done';$('checkBtn').classList.remove('primary');
+  $('fitState').className='state ok';$('fitState').innerHTML='<i></i>Signed in';$('fitWho').textContent='you@client.example · Pro';
+}
+$('checkBtn').onclick=check;
+const editable=t=>t instanceof Element&&!!t.closest('input,textarea,select,[contenteditable="true"],[contenteditable=""]');
+document.addEventListener('keydown',e=>{
+  if(editable(e.target))return;
+  if(e.key==='Escape'){ if(!confirmBox.hidden){confirmBox.hidden=true;$('removeBtn').focus()} else $('fitMore').hidden=!$('fitMore').hidden }
+  else if(e.key==='Enter'&&document.activeElement.tagName!=='BUTTON'&&document.activeElement.tagName!=='INPUT'){check()}
+});
+</script>
+</body></html>

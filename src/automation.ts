@@ -337,7 +337,7 @@ export const runSchema = z.discriminatedUnion("kind", [
       op: z.enum([
         "tabs", "open", "group", "take", "release", "close", "act", "snapshot", "screenshot",
         "record-start", "record-status", "record-stop", "progress",
-        "netsuite-environments", "netsuite-open",
+        "netsuite-environments", "netsuite-open", "highlight",
       ]),
       args: z.record(z.string(), z.unknown()).default({}),
     })

@@ -3,6 +3,18 @@ import type { TriggerSchedule } from "./triggers.ts";
 export type AgentProvider = "claude" | "codex";
 
 export const agentNames = { claude: "Claude Code", codex: "Codex" };
+/** A UUID alone is not a session identity: accounts (and providers) can
+ * contain copies of it. Prefer the exact transcript key when both know it. */
+export function sameAgentSession(
+  a: { key?: string; provider?: AgentProvider; profileId?: string; sessionId?: string },
+  b: { key?: string; provider?: AgentProvider; profileId?: string; sessionId?: string },
+) {
+  const provider = a.provider ?? "claude";
+  return !!a.sessionId && !!b.sessionId && a.sessionId.toLowerCase() === b.sessionId.toLowerCase() &&
+    provider === (b.provider ?? "claude") &&
+    (provider !== "claude" || (a.profileId ?? "default") === (b.profileId ?? "default")) &&
+    (!a.key || !b.key || a.key === b.key);
+}
 export const agentPermissions = {
   claude:
     "Claude Code prompts in Orvane when its permission rules require approval.",
@@ -31,6 +43,8 @@ export interface AgentSchedule {
   id: string;
   prompt: string;
   provider: AgentProvider;
+  /** Claude account the prompt is pinned to. */
+  profileId?: string;
   folder: string;
   model?: string;
   effort?: AgentEffort;
@@ -44,6 +58,7 @@ export interface AgentSchedule {
   lastStatus?: AgentRun["status"];
   lastSessionId?: string;
   lastSessionProvider?: AgentProvider;
+  lastSessionProfileId?: string;
   lastError?: string;
 }
 
@@ -140,6 +155,8 @@ export interface AgentRun {
   id: string;
   delegationId?: string;
   provider: AgentProvider;
+  /** Claude account the run (and its queue) is bound to. */
+  profileId?: string;
   folder: string;
   model?: string;
   effort?: AgentEffort;
@@ -177,7 +194,7 @@ export const agentBusy = (run?: AgentRun | null) =>
 
 export type AgentRunSummary = Pick<
   AgentRun,
-  "id" | "provider" | "folder" | "status" | "sessionId"
+  "id" | "provider" | "folder" | "status" | "sessionId" | "profileId" | "key"
 > & {
   title: string;
   awaitingApproval: boolean;
@@ -278,6 +295,8 @@ export function summarizeAgentRun(run: AgentRun): AgentRunSummary {
     folder: run.folder,
     status: run.status,
     sessionId: run.sessionId,
+    ...(run.key ? { key: run.key } : {}),
+    ...(run.profileId ? { profileId: run.profileId } : {}),
     title: run.message.trim().split("\n", 1)[0]!.slice(0, 90),
     awaitingApproval: run.permissions.length > 0,
     ...(run.permissions[0]

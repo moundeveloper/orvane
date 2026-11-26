@@ -84,18 +84,46 @@ export async function readCodexUsage(sessions: string): Promise<AgentUsage | und
   }
 }
 
+/** One account's last reported limits and the sign-in they were reported for. */
+type ProfileUsage = { usage: AgentUsage; fingerprint: string };
+type Saved = { claudeProfiles?: Record<string, ProfileUsage>; legacyClaudeUnknown?: boolean; [key: string]: unknown };
+
 export class AgentUsageStore {
   private db?: LocalDatabase;
   constructor(private file: string) {}
   private database() {
     return (this.db ||= new LocalDatabase(this.file));
   }
-  claude(): AgentUsage | undefined {
-    return (this.database().appData(KEY) as { claude?: AgentUsage } | undefined)?.claude;
+  /**
+   * The old provider-wide entry has no folder or account behind it, so it is
+   * never shown as any account's usage: it becomes unknown until a run reports.
+   */
+  private read(): Saved {
+    const saved = (this.database().appData(KEY) as Saved | undefined) ?? {};
+    if ("claude" in saved) {
+      delete saved.claude;
+      saved.legacyClaudeUnknown = true;
+      this.database().saveAppData(KEY, saved);
+    }
+    return saved;
   }
-  saveClaude(usage: AgentUsage) {
-    const saved = (this.database().appData(KEY) as Record<string, unknown> | undefined) ?? {};
-    this.database().saveAppData(KEY, { ...saved, claude: usage });
+  claude(profileId: string): ProfileUsage | undefined {
+    return this.read().claudeProfiles?.[profileId];
+  }
+  claudeAll(): Record<string, ProfileUsage> {
+    return { ...this.read().claudeProfiles };
+  }
+  saveClaude(profileId: string, fingerprint: string, usage: AgentUsage) {
+    const saved = this.read();
+    this.database().saveAppData(KEY, { ...saved, claudeProfiles: { ...saved.claudeProfiles, [profileId]: { usage, fingerprint } } });
+  }
+  /** The account's sign-in or folder changed: its old limits no longer apply. */
+  dropClaude(profileId: string) {
+    const saved = this.read();
+    if (!saved.claudeProfiles?.[profileId]) return;
+    const next = { ...saved.claudeProfiles };
+    delete next[profileId];
+    this.database().saveAppData(KEY, { ...saved, claudeProfiles: next });
   }
   close() {
     this.db?.close();

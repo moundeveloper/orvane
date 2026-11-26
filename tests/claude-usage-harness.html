@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Claude usage isolation fixture</title></head>
+<body>
+<div id="app"></div>
+<script type="module">
+  import { createApp, h, ref } from "vue";
+  import AgentUsage from "/src/components/AgentUsage.vue";
+  import SessionList from "/src/components/SessionList.vue";
+  const profileId = ref("default");
+  window.selectUsageProfile = (id) => { profileId.value = id; };
+  const sessionList = new URLSearchParams(location.search).has("sessions");
+  createApp({ render: () => sessionList ? h(SessionList) : h(AgentUsage, { provider: "claude", profileId: profileId.value }) }).mount("#app");
+</script>
+</body>
+</html>

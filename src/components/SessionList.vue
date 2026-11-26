@@ -5,7 +5,8 @@
 // title and folder; / jumps to it. The host can fold the rows away
 // (collapsed), leaving the search field.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { agentNames, type AgentRunSummary } from "../agentSessions";
+import { agentNames, sameAgentSession, type AgentRunSummary } from "../agentSessions";
+import { accountColor, accountLabel, activeAccounts, claudeAccounts, loadAccounts } from "../claudeAccounts";
 import { agentRequest, type AgentSession } from "../exposition";
 import DnaLoader from "./DnaLoader.vue";
 
@@ -42,11 +43,12 @@ async function load() {
   }
 }
 const runOf = (s: AgentSession) =>
-  runs.value.find((r) => r.sessionId === s.sessionId && (r.status === "running" || r.status === "stopping"));
+  runs.value.find((r) => sameAgentSession(s, r) && (r.status === "running" || r.status === "stopping"));
+const showAccounts = computed(() => activeAccounts().length > 1 || claudeAccounts.list.some((account) => account.removed));
 const rows = computed(() => {
   const words = query.value.toLowerCase().split(/\s+/).filter(Boolean);
   const matches = (s: AgentSession) => {
-    const text = `${s.title} ${s.project}`.toLowerCase();
+    const text = `${s.title} ${s.project} ${(s.provider ?? "claude") === "claude" ? accountLabel(s.profileId) : ""}`.toLowerCase();
     return words.every((word) => text.includes(word));
   };
   const all = sessions.value.filter(matches).map((s) => ({ session: s, run: runOf(s) }));
@@ -141,6 +143,7 @@ watch(query, (value) => {
 const root = ref<HTMLElement>();
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
+  void loadAccounts();
   void load();
   timer = setInterval(() => document.visibilityState === "visible" && void load(), 5000);
 });
@@ -184,7 +187,8 @@ defineExpose({ key, focusRows: () => root.value?.querySelector<HTMLElement>(".se
         <span class="session-provider" :class="row.session.provider ?? 'claude'" :title="agentNames[row.session.provider ?? 'claude']">
           {{ (row.session.provider ?? "claude") === "claude" ? "C" : "X" }}
         </span>
-        <span class="session-title"><b>{{ row.session.title || "Untitled session" }}</b><span>{{ folder(row.session.project) }}</span></span>
+        <span class="session-title"><b>{{ row.session.title || "Untitled session" }}</b><span><template v-if="showAccounts && (row.session.provider ?? 'claude') === 'claude'"
+          ><i class="session-account-dot" :style="{ background: accountColor(row.session.profileId) }" />{{ accountLabel(row.session.profileId) }} · </template>{{ folder(row.session.project) }}</span></span>
         <span v-if="row.run?.awaitingApproval" class="session-state waiting">
           <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" /><path d="M8 5v3.5M8 11h.01" /></svg>waiting for you
         </span>
@@ -328,6 +332,13 @@ defineExpose({ key, focusRows: () => root.value?.querySelector<HTMLElement>(".se
 }
 .session-provider.codex {
   background: #3c4a55;
+}
+.session-account-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  border-radius: 50%;
 }
 .session-title {
   display: flex;

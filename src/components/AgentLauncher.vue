@@ -26,6 +26,7 @@ import {
 } from "./files/explorer";
 import CustomSelect from "./CustomSelect.vue";
 import Icon from "./Icon.vue";
+import { accountById, accountDetail, accountReady, activeAccounts, claudeAccounts, loadAccounts } from "../claudeAccounts";
 import SessionChat from "./SessionChat.vue";
 import type { AgentDraft } from "../agentNavigation";
 import SessionList from "./SessionList.vue";
@@ -94,7 +95,8 @@ function pinChosen() {
   if (mode.value === "new") {
     if (busy.value || !surveying.value) return false;
     emit("pin-draft", { provider: provider.value, folder: folder.value || surveying.value,
-      text: draft.value, paths: paths.value, model: model.value.trim() });
+      text: draft.value, paths: paths.value, model: model.value.trim(),
+      ...(provider.value === "claude" ? { profileId: profileId.value } : {}) });
     draft.value = "";
     return true;
   }
@@ -144,9 +146,7 @@ const panel = ref<HTMLElement>();
 const prompt = ref<HTMLTextAreaElement>();
 const attachmentInput = ref<HTMLInputElement>();
 const customModel = ref(false);
-const modelCatalogues = ref<
-  Partial<Record<AgentProvider, { value: string; label: string }[]>>
->({});
+const modelCatalogues = ref<Record<string, { value: string; label: string }[]>>({});
 const previous =
   document.activeElement instanceof HTMLElement ? document.activeElement : null;
 let browseSequence = 0;
@@ -162,8 +162,21 @@ const providerOptions = Object.entries(agentNames).map(([value, label]) => ({
   value,
   label,
 }));
+// Claude account for this task: the New chats account unless picked here
+// (the pick is not remembered; Settings decides the default).
+const accountPick = ref("");
+const profileId = computed(() => accountPick.value || claudeAccounts.newChatProfileId);
+const accountOptions = computed(() =>
+  activeAccounts().map((account) => ({
+    value: account.id,
+    label: `${account.name} · ${accountDetail(account)}`,
+    disabled: !accountReady(account),
+  })),
+);
+const catalogueKey = computed(() => (provider.value === "claude"
+  ? `claude:${profileId.value}:${accountById(profileId.value)?.auth?.checkedAt ?? 0}` : provider.value));
 const modelOptions = computed(() => {
-  const listed = modelCatalogues.value[provider.value];
+  const listed = modelCatalogues.value[catalogueKey.value];
   const options = listed?.length
     ? listed
     : provider.value === "claude"
@@ -296,6 +309,7 @@ async function start() {
       message,
       target: {
         provider: provider.value,
+        ...(provider.value === "claude" ? { profileId: profileId.value } : {}),
         folder: folder.value || undefined,
         model: model.value.trim() || undefined,
         // The default edit mode from Agent sessions → Settings.
@@ -365,22 +379,23 @@ function promptKey(event: KeyboardEvent) {
   }
 }
 watch(
-  provider,
-  (kind) => {
-    customModel.value = false;
-    if (!modelCatalogues.value[kind]) {
+  [provider, catalogueKey],
+  ([kind, key], before) => {
+    if (kind !== before?.[0]) customModel.value = false;
+    if (!modelCatalogues.value[key]) {
       void agentRequest<{ models: { value: string; label: string }[] }>(
         "models",
-        { provider: kind },
+        { provider: kind, ...(kind === "claude" ? { profileId: profileId.value } : {}) },
       )
         .then(({ models: listed }) => {
-          modelCatalogues.value[kind] = listed;
+          modelCatalogues.value[key] = listed;
         })
         .catch(() => {});
     }
   },
   { immediate: true },
 );
+void loadAccounts();
 onMounted(async () => {
   document.addEventListener("pointerdown", outside, true);
   window.addEventListener("orvane:guest-pointer-down", dismiss);
@@ -550,6 +565,17 @@ onBeforeUnmount(() => {
             prefer-above
             :teleport-to="popovers"
             :disabled="busy"
+          />
+          <CustomSelect
+            v-if="provider === 'claude' && accountOptions.length > 1"
+            :model-value="profileId"
+            aria-label="Claude account"
+            :options="accountOptions"
+            trigger-icon="lock"
+            prefer-above
+            :teleport-to="popovers"
+            :disabled="busy"
+            @update:model-value="accountPick = $event"
           />
           <CustomSelect
             :model-value="model"

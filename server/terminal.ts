@@ -17,6 +17,7 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import * as pty from "node-pty";
+import { claimLogin, LOGIN_PREFIX } from "./claude-login.ts";
 
 export interface TerminalProfile {
   id: string;
@@ -305,6 +306,9 @@ interface Session {
   folder: string;
   profile: string;
   proc: pty.IPty;
+  /** `claude-login:<ticket>` for a Claude account sign-in; a pane may only
+   * re-attach to a session that was opened for the same purpose. */
+  purpose?: string;
   output: string;
   cursor: number;
   clients: Set<WebSocket>;
@@ -318,7 +322,7 @@ const hostId = (session: Session) => createHash("sha256").update(session.id).dig
  * lifecycle remain with the desktop app, and no local protocol IDs leave it. */
 export async function hostTerminals(allowed: (folder: string) => Promise<string | undefined>) {
   const visible = await Promise.all([...sessions.values()].map(async (session) =>
-    await allowed(session.folder) ? {
+    !session.purpose?.startsWith(LOGIN_PREFIX) && await allowed(session.folder) ? {
       id: hostId(session), label: session.profile, folder: basename(session.folder) || "Shared folder",
     } : null));
   return visible.filter((session) => session !== null);
@@ -326,7 +330,7 @@ export async function hostTerminals(allowed: (folder: string) => Promise<string 
 
 async function hostTerminal(id: string, allowed: (folder: string) => Promise<string | undefined>) {
   const session = [...sessions.values()].find((value) => hostId(value) === id);
-  return session && await allowed(session.folder) && sessions.get(session.id) === session ? session : undefined;
+  return session && !session.purpose?.startsWith(LOGIN_PREFIX) && await allowed(session.folder) && sessions.get(session.id) === session ? session : undefined;
 }
 
 export async function hostTerminalOutput(id: string, cursor: number, allowed: (folder: string) => Promise<string | undefined>) {
@@ -414,6 +418,9 @@ async function open(ws: WebSocket, message: Record<string, unknown>) {
   const cols = size(message.cols, 1000),
     rows = size(message.rows, 500);
   const existing = sessions.get(id);
+  const login = typeof message.profile === "string" && message.profile.startsWith(LOGIN_PREFIX) ? message.profile : undefined;
+  if (existing && existing.purpose !== login)
+    return send(ws, { t: "error", id, message: "This terminal belongs to another session." });
   if (existing) {
     clearTimeout(existing.idle);
     existing.clients.add(ws);
@@ -424,6 +431,7 @@ async function open(ws: WebSocket, message: Record<string, unknown>) {
     }
     return send(ws, { t: "attached", id, replay: existing.output });
   }
+  if (login) return openLogin(ws, id, login, cols, rows);
   const profiles = await terminalProfiles();
   const profile = profiles.find((p) => p.id === message.profile) ?? profiles[0];
   if (!profile) return send(ws, { t: "error", id, message: "No shell was found on this computer." });
@@ -466,6 +474,37 @@ async function open(ws: WebSocket, message: Record<string, unknown>) {
     for (const client of session.clients) send(client, { t: "exit", id, code: exitCode });
   });
   send(ws, { t: "started", id, profile: profile.id, name: profile.name });
+}
+/** A Claude account sign-in: exactly the executable and arguments the agents
+ * API prepared for that account (no shell, no renderer-supplied env). */
+function openLogin(ws: WebSocket, id: string, purpose: string, cols: number, rows: number) {
+  const claim = claimLogin(purpose.slice(LOGIN_PREFIX.length));
+  if (!claim) return send(ws, { t: "error", id, message: "This sign-in has ended. Start it again from Agent sessions → Settings." });
+  const { launch } = claim;
+  let proc: pty.IPty;
+  try {
+    proc = pty.spawn(launch.file, launch.args, { name: "xterm-256color", cols, rows, cwd: launch.cwd, env: launch.env });
+  } catch (error) {
+    claim.ended(null);
+    return send(ws, { t: "error", id, message: `Could not start Claude Code: ${error instanceof Error ? error.message : error}` });
+  }
+  const session: Session = { id, proc, purpose, folder: launch.cwd, profile: launch.name, cursor: 0, output: "", clients: new Set([ws]) };
+  sessions.set(id, session);
+  claim.started(() => end(session));
+  proc.onData((data) => {
+    session.cursor += data.length;
+    session.output += data;
+    if (session.output.length > SCROLLBACK_CHARS * 1.2) session.output = session.output.slice(-SCROLLBACK_CHARS);
+    for (const client of session.clients) send(client, { t: "o", id, d: data });
+  });
+  proc.onExit(({ exitCode }) => {
+    claim.ended(exitCode);
+    if (sessions.get(id) !== session) return;
+    clearTimeout(session.idle);
+    sessions.delete(id);
+    for (const client of session.clients) send(client, { t: "exit", id, code: exitCode });
+  });
+  send(ws, { t: "started", id, profile: purpose, name: launch.name });
 }
 function handle(ws: WebSocket, raw: string) {
   let message: Record<string, unknown>;

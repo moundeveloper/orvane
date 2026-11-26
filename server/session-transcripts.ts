@@ -23,6 +23,9 @@ const readSchema = z.object({
 export const visualTargetSchema = z.object({
   sessionId: z.string().min(1).max(200),
   projectPath: z.string().min(1).max(2000),
+  /** The Claude config folder from the SessionStart binding, when the CLI
+   * runs with CLAUDE_CONFIG_DIR (an added account). */
+  configDir: z.string().min(1).max(2000).optional(),
 });
 export const visualShowSchema = visualTargetSchema.extend({
   anchorId: z.string().min(1).max(300).optional(),
@@ -89,6 +92,9 @@ export class SessionTranscripts {
       ),
     database = "claude-visuals.sqlite",
     private readonly provider: "claude" | "codex" = "claude",
+    /** Claude account this root belongs to. Default keeps the legacy
+     * unprefixed keys (and their visuals); others are `claude@<id>:…`. */
+    readonly profileId = "default",
   ) {
     this.root = resolve(root);
     mkdirSync(directory, { recursive: true });
@@ -174,7 +180,9 @@ export class SessionTranscripts {
       )) {
         const name = relative(this.root, file).split(/[\\/]/).join("/");
         const encoded = Buffer.from(name).toString("base64url");
-        const key = this.provider === "codex" ? `codex:${encoded}` : encoded;
+        const key = this.provider === "codex"
+          ? `codex:${encoded}`
+          : this.profileId === "default" ? encoded : `claude@${this.profileId}:${encoded}`;
         try {
           await this.allowed(file);
           const info = await stat(file),
@@ -267,7 +275,7 @@ export class SessionTranscripts {
             path: file,
             info: {
               key,
-              ...(this.provider === "codex" ? { provider: this.provider } : {}),
+              ...(this.provider === "codex" ? { provider: this.provider } : { profileId: this.profileId }),
               sessionId,
               title:
                 title ||

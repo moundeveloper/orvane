@@ -16,8 +16,8 @@ const execute = promisify(execFile);
 export type AgentCommand = { file: string; args: string[] };
 type ModelOption = { value: string; label: string };
 
-export function claudeModels(): Promise<ModelOption[]> {
-  const command = findAgent("claude");
+/** The models a Claude account offers, asked with that account's env. */
+export function claudeModels(env: NodeJS.ProcessEnv = agentEnvironment(), command = findAgent("claude")): Promise<ModelOption[]> {
   return new Promise((resolve) => {
     const child = spawn(
       command.file,
@@ -36,7 +36,7 @@ export function claudeModels(): Promise<ModelOption[]> {
       ],
       {
         cwd: tmpdir(),
-        env: agentEnvironment(),
+        env: { ...env },
         windowsHide: true,
         stdio: ["pipe", "pipe", "ignore"],
       },
@@ -281,7 +281,7 @@ export async function verifyAgentLogin(
     if (
       status.loggedIn &&
       status.apiProvider === "firstParty" &&
-      ["claude.ai", "oauth"].includes(status.authMethod)
+      ["claude.ai", "oauth", "oauth_token"].includes(status.authMethod)
     )
       return;
   }

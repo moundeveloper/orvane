@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Two accounts at once</title>
+<style>
+:root{--canvas:#e9edf0;--app:#f7f9fa;--raised:#fbfcfd;--strong:#273f50;--text:#455968;--muted:#5d7381;--faint:#8296a2;--accent:#6f8998;--run:#365f78;--link:#385d76;--ok:#4f7d5f;--warn:#b08a4a;--fail:#a0624f;--line:#e3eaee;--border:#dbe5eb;--border-pop:#d3dee5;--select:#e4edf2;--hover:#eef3f6;--chip:#e6eef3;--mono:"Cascadia Code",Consolas,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font:13px/1.5 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;color:var(--text);background:var(--canvas);display:grid;place-items:center;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible{outline:2px solid #7b97a7;outline-offset:1px}
+svg{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+kbd{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 4px;border:1px solid #d6e0e6;border-bottom-width:2px;border-radius:4px;background:#fbfcfd;font:10.5px/1 var(--mono);color:var(--muted)}
+code{font:11.5px var(--mono);color:var(--strong)}
+.app{position:relative;width:1160px;height:690px;display:grid;grid-template-rows:44px 1fr;background:var(--app);border-radius:10px;box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c;overflow:hidden}
+.bar{display:flex;align-items:center;gap:6px;padding:0 12px;border-bottom:1px solid var(--line)}
+.title{display:flex;align-items:center;gap:8px;margin-right:auto;font-weight:600;color:var(--strong)}
+.title svg{color:var(--accent)}
+.btn{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px;border:1px solid var(--border-pop);border-radius:7px;background:var(--raised);font-size:12px;color:var(--text)}
+.btn:hover{background:var(--hover)}
+.btn.ghost{border-color:transparent;background:none;color:var(--muted)}
+.btn.icon{width:26px;padding:0;justify-content:center}
+.btn.primary{background:var(--run);border-color:var(--run);color:#fff}
+.layout{display:grid;grid-template-columns:240px 1fr;min-height:0}
+.side{border-right:1px solid var(--line);padding:10px;display:flex;flex-direction:column;gap:2px;min-height:0}
+.nav{display:flex;align-items:center;gap:9px;height:32px;padding:0 8px;border:0;border-radius:6px;background:none;text-align:left;width:100%}
+.nav svg{color:var(--accent)}
+.nav span{margin-left:auto;color:var(--faint);font:11px var(--mono)}
+.search{display:flex;align-items:center;gap:8px;height:32px;margin:4px 0;padding:0 8px;border:1px solid var(--border);border-radius:7px;background:var(--raised);color:var(--faint)}
+.search kbd{margin-left:auto}
+.group{display:flex;gap:6px;margin:10px 8px 2px;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#7a8f9b}
+.group b{font-weight:500;color:var(--faint)}
+.sess{display:grid;grid-template-columns:1fr auto;gap:1px 8px;padding:6px 8px;border-radius:6px}
+.sess.on{background:var(--select)}
+.sess strong{font-weight:500;color:var(--strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sess time{font:11px var(--mono);color:var(--faint)}
+.meta{grid-column:1/-1;display:flex;align-items:center;gap:5px;font-size:11px;color:var(--faint);white-space:nowrap}
+.meta .dot{color:#b4c3cc}
+.acct{display:inline-flex;align-items:center;gap:4px;color:var(--muted)}
+.acct i{width:6px;height:6px;border-radius:50%;background:var(--c)}
+.st{display:inline-flex;align-items:center;gap:5px;color:var(--run)}
+.st.wait{color:#8a6a33}
+.side .bottom{margin-top:auto}
+.tiles{display:grid;grid-template-columns:1.12fr 1fr;gap:10px;padding:10px;min-width:0;min-height:0}
+.tile{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;border:2px solid #e1e8ed;border-radius:10px;background:var(--app);transition:border-color .18s ease-out}
+.tile.focus{border-color:transparent;background:linear-gradient(var(--app),var(--app)) padding-box,linear-gradient(135deg,#7f9bab,#a9bfcc 55%,#c9d6de) border-box}
+.thead{display:flex;align-items:center;gap:8px;height:42px;padding:0 10px 0 14px;border-bottom:1px solid var(--line)}
+.thead b{font-weight:600;color:var(--strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.thead small{color:var(--faint);font-size:12px;white-space:nowrap}
+.thead .sp{flex:1}
+.achip{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px;border:1px solid var(--border);border-radius:7px;background:var(--raised);font-size:12px;color:var(--strong);white-space:nowrap}
+.achip i{width:7px;height:7px;border-radius:50%;background:var(--c)}
+.achip svg{color:var(--faint)}
+.achip:hover{background:var(--hover)}
+.achip[aria-expanded="true"]{background:var(--select);border-color:transparent}
+.body{flex:1;overflow:hidden;padding:14px 16px 0;display:grid;align-content:start;gap:12px}
+.user{justify-self:end;max-width:86%;padding:7px 11px;border-radius:12px 12px 3px 12px;background:#e4ecf1;color:var(--strong)}
+.who{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--faint)}
+.who strong{font-weight:600;color:var(--strong)}
+.steps{display:grid;gap:0;margin:0;padding:0;list-style:none}
+.steps li{display:grid;grid-template-columns:18px 1fr auto;align-items:center;gap:8px;min-height:28px;font-size:12.5px}
+.steps li span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.steps li em{font:normal 11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+.steps .tick{color:var(--ok);justify-self:center}
+.steps .now span{color:var(--strong)}
+.shimmer{background:linear-gradient(90deg,#273f50 0 40%,#b4cad6 50%,#273f50 60% 100%) 0 0/250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent!important;animation:sh 1.8s linear infinite}
+@keyframes sh{to{background-position:-150% 0}}
+.fchip{display:inline-flex;align-items:center;height:20px;padding:0 6px;border-radius:5px;background:var(--chip);color:var(--link);font:11px var(--mono)}
+.dna{position:relative;display:inline-block;width:16px;height:12px;overflow:hidden;justify-self:center}
+.dna>span{position:absolute;top:0;bottom:0;width:2px}
+.dna i{position:absolute;left:.2px;top:5.2px;width:1.6px;height:1.6px;border-radius:50%;background:#365f78;animation:dt 1.74s linear infinite;animation-delay:inherit}
+.dna i+i{animation-name:db}
+@keyframes dt{0%{transform:translateY(-5px)}15%{transform:translateY(-1.06px) scale(1.18)}26%,37%{transform:translateY(-.44px) scale(1.25)}58%{transform:translateY(-3.75px)}100%{transform:translateY(-5px)}}
+@keyframes db{0%{transform:translateY(5px)}15%{transform:translateY(1.06px) scale(1.18)}26%,37%{transform:translateY(.44px) scale(1.25)}58%{transform:translateY(3.75px)}100%{transform:translateY(5px)}}
+.approval{border:1px solid #e7d9bd;border-radius:10px;background:#fcfaf5;padding:10px 12px;display:grid;gap:6px}
+.approval header{display:flex;align-items:center;gap:8px;font-size:12px;color:#8a6a33;font-weight:550}
+.approval pre{margin:0;padding:7px 9px;border-radius:7px;background:#f6f1e6;font:11.5px var(--mono);color:var(--strong);white-space:pre-wrap}
+.approval .acts{display:flex;gap:6px;align-items:center}
+.approval .acts small{margin-left:auto;color:var(--faint);font-size:11px}
+.queued{display:flex;align-items:center;gap:8px;margin:0 12px 8px;padding:6px 10px;border:1px dashed #cdd9e0;border-radius:8px;font-size:12px;color:var(--muted)}
+.queued b{font-weight:500;color:var(--strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.queued small{margin-left:auto;color:var(--faint);white-space:nowrap}
+.composer{margin:0 10px 10px;padding:8px 8px 7px;border:1px solid #dbe5eb;border-radius:14px;background:#fbfcfd;box-shadow:inset 0 1px 3px #53738c12,0 6px 18px #263f5514}
+.field{min-height:24px;padding:1px 4px 6px;color:var(--faint);font-size:13px}
+.cbar{display:flex;align-items:center;gap:5px}
+.pill{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 8px;border:1px solid var(--border);border-radius:8px;background:var(--raised);font-size:11.5px;color:var(--muted);white-space:nowrap}
+.pill b{font-weight:550;color:var(--strong)}
+.pill.locked{border-style:dashed;background:none}
+.pill .d{width:7px;height:7px;border-radius:50%;background:var(--c)}
+.pill svg{color:var(--faint)}
+.grow{flex:1}
+.upill{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 7px;border-radius:7px;background:#eef3f6;color:var(--muted);font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.upill i{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.upill.warn{background:#f5efe3;color:#8a6a33}.upill.warn i{background:var(--warn)}
+.stop{display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:50%;background:#dfe8ee;color:var(--run);box-shadow:0 0 0 2px #fbfcfd,0 0 0 4px #9fb6c3}
+.stop i{width:9px;height:9px;border-radius:2px;background:var(--run)}
+.menu{position:absolute;top:38px;right:10px;width:330px;border:1px solid var(--border-pop);border-radius:10px;background:var(--raised);box-shadow:0 1px 2px #263f5514,0 12px 30px #263f5526;overflow:hidden;z-index:5;animation:in .15s ease-out}
+.menu[hidden]{display:none}
+@keyframes in{from{opacity:0;transform:translateY(3px)}}
+.mhead{padding:10px 12px 9px;border-bottom:1px solid var(--line)}
+.mhead p{margin:0;display:flex;align-items:center;gap:7px;color:var(--strong);font-weight:550}
+.mhead p i{width:8px;height:8px;border-radius:50%;background:var(--c)}
+.mhead small{display:block;margin-top:3px;font-size:11.5px;color:var(--faint);line-height:1.45}
+.mhead code{font-size:11px;color:var(--muted)}
+.sect{margin:8px 12px 2px;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#7a8f9b}
+.mlist{padding:2px 5px 5px}
+.mi{display:grid;grid-template-columns:16px auto 1fr auto;align-items:center;gap:9px;width:100%;height:32px;padding:0 8px;border:0;border-radius:6px;background:none;text-align:left;color:var(--text)}
+.mi:hover,.mi.active{background:var(--select)}
+.mi:focus-visible{outline:2px solid #7b97a7;outline-offset:-2px}
+.mi .d{width:8px;height:8px;border-radius:50%;background:var(--c);justify-self:center}
+.mi small{font-size:11px;color:var(--faint)}
+.mi[aria-disabled="true"]{color:var(--faint);cursor:default}
+.mi[aria-disabled="true"]:hover{background:none}
+.mi svg{color:var(--accent);justify-self:center}
+.mfoot{display:flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-top:1px solid var(--line);font-size:11px;color:var(--faint)}
+.mfoot span{margin-right:auto}
+.toast{position:absolute;left:50%;bottom:18px;transform:translate(-50%,3px);display:flex;align-items:center;gap:8px;height:30px;padding:0 11px;border:1px solid var(--border-pop);border-radius:8px;background:var(--raised);box-shadow:0 4px 12px #263f5518;font-size:12px;color:var(--muted);opacity:0;transition:opacity .14s ease-out,transform .14s ease-out;pointer-events:none;white-space:nowrap}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast b{font-weight:550;color:var(--strong)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.shimmer{color:var(--strong)!important;background:none}}
+</style></head>
+<body>
+<div class="app">
+  <header class="bar">
+    <span class="title"><svg width="16" height="16" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="3"/><path d="M8 21h8M8 9h5M8 13h8"/></svg>Agent sessions</span>
+    <button class="btn"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Claude</button>
+    <button class="btn"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Codex</button>
+    <button class="btn ghost icon" aria-label="Activity"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20h4"/></svg></button>
+  </header>
+  <div class="layout">
+    <nav class="side" aria-label="Agent sessions">
+      <button class="nav"><svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Scheduled<span>3</span></button>
+      <label class="search"><svg width="14" height="14" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m20 20-4-4"/></svg>Find a session<kbd>/</kbd></label>
+      <p class="group">Today <b>4</b></p>
+      <div class="sess on"><strong>SDF deploy for QR Code bundle</strong><time>11:32</time><span class="meta">Claude<span class="dot">·</span><span class="acct" style="--c:#5f8a74"><i></i>Work</span><span class="dot">·</span>ctk-qrcode<span class="dot">·</span><span class="st">Running</span></span></div>
+      <div class="sess on"><strong>README canvas section</strong><time>11:30</time><span class="meta">Claude<span class="dot">·</span><span class="acct" style="--c:#6f8998"><i></i>Default</span><span class="dot">·</span>Orvane<span class="dot">·</span><span class="st wait">Approval</span></span></div>
+      <div class="sess"><strong>AP Clerk bill import from Excel</strong><time>10:02</time><span class="meta">Claude<span class="dot">·</span><span class="acct" style="--c:#5f8a74"><i></i>Work</span><span class="dot">·</span>ctk-apclerk</span></div>
+      <div class="sess"><strong>Verifica il mio ultimo script in NetSuite Dev</strong><time>09:41</time><span class="meta">Codex<span class="dot">·</span>Surveying</span></div>
+      <p class="group">Scheduled today <b>1</b></p>
+      <div class="sess"><strong>Nightly bundle bughunt</strong><time>22:00</time><span class="meta">Claude<span class="dot">·</span><span class="acct" style="--c:#5f8a74"><i></i>Work</span><span class="dot">·</span>ctk-qrcode</span></div>
+      <button class="nav bottom"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Settings</button>
+    </nav>
+    <div class="tiles">
+      <section class="tile focus" id="t1" aria-label="SDF deploy for QR Code bundle">
+        <div class="thead"><b>SDF deploy for QR Code bundle</b><small>ctk-qrcode</small><span class="sp"></span>
+          <button class="achip" id="chip1" aria-haspopup="menu" aria-expanded="true" style="--c:#5f8a74" title="Account of this chat"><i></i>Work<svg width="11" height="11" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></button>
+        </div>
+        <div class="menu" id="menu1" role="menu" aria-label="Account">
+          <div class="mhead" style="--c:#5f8a74"><p><i></i>Runs on Work</p><small>Resumes, queued messages, forks and checkpoints use <code>~\.claude-profiles\work</code>. This chat stays on Work.</small></div>
+          <p class="sect">Start a new chat on</p>
+          <div class="mlist">
+            <button class="mi active" role="menuitem" tabindex="-1" data-to="Default" style="--c:#6f8998"><span class="d"></span>Default <small>· 5h 39%</small><kbd>1</kbd></button>
+            <button class="mi" role="menuitem" tabindex="-1" aria-disabled="true" style="--c:#a3927a"><span class="d"></span>Client FIT <small>· not signed in</small><kbd>2</kbd></button>
+            <button class="mi" role="menuitem" tabindex="-1" data-settings><svg width="14" height="14" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Claude accounts <small>Settings</small><span></span></button>
+          </div>
+          <div class="mfoot"><span>Blank chat; nothing from this one is copied</span><kbd>↑</kbd><kbd>↓</kbd><kbd>Esc</kbd></div>
+        </div>
+        <div class="body">
+          <div class="user">Deploy the QR Code bundle to SB1 and check the deploy log.</div>
+          <div class="who"><strong>Claude</strong>Opus 5.5 · 11:32</div>
+          <ul class="steps">
+            <li><svg class="tick" width="13" height="13" viewBox="0 0 24 24"><path d="m5 12 4 4 10-10"/></svg><span>Read <span class="fchip">manifest.xml</span></span><em>0:02</em></li>
+            <li><svg class="tick" width="13" height="13" viewBox="0 0 24 24"><path d="m5 12 4 4 10-10"/></svg><span>Validated project · 14 objects</span><em>0:19</em></li>
+            <li class="now"><span class="dna"><span style="left:0;animation-delay:-.99s"><i></i><i></i></span><span style="left:4.2px;animation-delay:-.75s"><i></i><i></i></span><span style="left:8.4px;animation-delay:-.5s"><i></i><i></i></span><span style="left:12.6px;animation-delay:-.25s"><i></i><i></i></span></span><span class="shimmer">Running <code style="color:inherit">suitecloud project:deploy</code></span><em>0:41</em></li>
+          </ul>
+        </div>
+        <div class="queued"><svg width="13" height="13" viewBox="0 0 24 24" style="color:var(--accent)"><path d="M4 6h16M4 12h10M4 18h7"/></svg><b>Then open the deploy log in NetSuite SB1</b><small>queued · Work</small></div>
+        <div class="composer">
+          <div class="field">Message Claude…</div>
+          <div class="cbar"><span class="pill locked" style="--c:#5f8a74" title="Set when the chat started"><span class="d"></span><b>Work</b><svg width="11" height="11" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span><span class="pill">Model <b>Opus 5.5</b></span><span class="grow"></span><span class="upill warn"><i></i>Work · 5h 82%</span><button class="stop" aria-label="Stop"><i></i></button></div>
+        </div>
+      </section>
+      <section class="tile" id="t2" aria-label="README canvas section">
+        <div class="thead"><b>README canvas section</b><small>Orvane</small><span class="sp"></span>
+          <button class="achip" style="--c:#6f8998" aria-haspopup="menu" aria-expanded="false"><i></i>Default<svg width="11" height="11" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></button>
+        </div>
+        <div class="body">
+          <div class="user">Rewrite the canvas section of the README to match the current gestures.</div>
+          <div class="who"><strong>Claude</strong>Sonnet 5.5 · 11:30</div>
+          <ul class="steps">
+            <li><svg class="tick" width="13" height="13" viewBox="0 0 24 24"><path d="m5 12 4 4 10-10"/></svg><span>Read <span class="fchip">README.md</span></span><em>0:01</em></li>
+            <li><svg class="tick" width="13" height="13" viewBox="0 0 24 24"><path d="m5 12 4 4 10-10"/></svg><span>Searched <span class="fchip">canvas-input.ts</span></span><em>0:03</em></li>
+          </ul>
+          <div class="approval">
+            <header><svg width="13" height="13" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>Edit README.md · 38 lines</header>
+            <pre>## Canvas
+- Ctrl+scroll and pinch zoom.
+- Plain scroll over an app scrolls that app.</pre>
+            <div class="acts"><button class="btn primary">Allow</button><button class="btn">Deny</button><small><kbd>Y</kbd> <kbd>N</kbd></small></div>
+          </div>
+        </div>
+        <div class="composer">
+          <div class="field">Message Claude…</div>
+          <div class="cbar"><span class="pill locked" style="--c:#6f8998"><span class="d"></span><b>Default</b><svg width="11" height="11" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span><span class="pill">Model <b>Sonnet 5.5</b></span><span class="grow"></span><span class="upill"><i></i>Default · 5h 39%</span><button class="stop" aria-label="Stop"><i></i></button></div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status"><svg width="13" height="13" viewBox="0 0 24 24" style="color:var(--ok)"><path d="m5 12 4 4 10-10"/></svg>New blank chat on <b>Default</b> · this chat keeps running on Work</div>
+</div>
+<script>
+// Keys act only inside the open menu; no global chord, text fields untouched.
+const chip=document.getElementById('chip1'),menu=document.getElementById('menu1');
+const items=[...menu.querySelectorAll('.mi')];let active=0;
+function setActive(i,focus){active=i;items.forEach((x,k)=>x.classList.toggle('active',k===i));if(focus)items[i].focus()}
+function open(v,viaKey){menu.hidden=!v;chip.setAttribute('aria-expanded',String(v));if(v)setActive(0,viaKey)}
+chip.addEventListener('click',e=>open(menu.hidden,e.detail===0));
+chip.addEventListener('keydown',e=>{if(e.key==='ArrowDown'){e.preventDefault();open(true,true)}});
+document.addEventListener('pointerdown',e=>{if(!menu.hidden&&!menu.contains(e.target)&&!chip.contains(e.target))open(false)},true);
+function newChat(){open(false);chip.focus();const t=document.getElementById('toast');t.classList.add('show');clearTimeout(newChat.t);newChat.t=setTimeout(()=>t.classList.remove('show'),1800)}
+function run(x){if(!x||x.getAttribute('aria-disabled')==='true')return;if(x.dataset.to)newChat();else{open(false);chip.focus()}}
+items.forEach((x,k)=>{x.addEventListener('mouseenter',()=>setActive(k,false));x.addEventListener('click',()=>run(x))});
+menu.addEventListener('keydown',e=>{
+  const n=items.length;
+  if(e.key==='Escape'){e.preventDefault();open(false);chip.focus()}
+  else if(e.key==='ArrowDown'){e.preventDefault();setActive((active+1)%n,true)}
+  else if(e.key==='ArrowUp'){e.preventDefault();setActive((active+n-1)%n,true)}
+  else if(e.key==='Enter'||e.key===' '){e.preventDefault();run(items[active])}
+  else if((e.key==='1'||e.key==='2')&&!e.ctrlKey&&!e.altKey&&!e.metaKey){e.preventDefault();run(items[+e.key-1])}
+  else if(e.key==='Tab'){open(false)}
+});
+document.querySelectorAll('.tile').forEach(t=>t.addEventListener('pointerdown',()=>{document.querySelectorAll('.tile').forEach(x=>x.classList.toggle('focus',x===t))}));
+</script>
+</body></html>

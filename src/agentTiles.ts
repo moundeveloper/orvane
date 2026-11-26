@@ -12,7 +12,8 @@ export type TileRect = { x: number; y: number; w: number; h: number };
 export type TileGap = TileRect & { id: string; dir: "row" | "column"; box: TileRect };
 export type TileEdge = "left" | "right" | "top" | "bottom";
 /** What a pane other than the host shows: a session, or a new one being set up. */
-export type PaneSession = { key?: string; provider?: AgentProvider; folder?: string; initialDraft?: AgentDraft };
+/** profileId: the Claude account of a new chat being set up (an open chat's key carries its own). */
+export type PaneSession = { key?: string; provider?: AgentProvider; folder?: string; profileId?: string; initialDraft?: AgentDraft };
 export type TilesState = { root: TileNode; focus: string; panes: Record<string, PaneSession> };
 
 export const HOST = "host";
@@ -128,6 +129,7 @@ export function readTiles(value: unknown): TilesState | null {
       key: typeof pane?.key === "string" ? pane.key : undefined,
       provider: pane?.provider === "claude" || pane?.provider === "codex" ? pane.provider : undefined,
       folder: typeof pane?.folder === "string" ? pane.folder : undefined,
+      ...(typeof pane?.profileId === "string" && /^[a-z0-9][a-z0-9-]{2,39}$/.test(pane.profileId) ? { profileId: pane.profileId } : {}),
     };
   }
   (function clamp(n: TileNode) {

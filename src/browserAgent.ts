@@ -75,6 +75,7 @@ export interface BrowserAgentHost {
   page(tabId: string): number | undefined;
   navigationUrl(tabId: string, url: string): string;
   select(tabId: string): void;
+  highlight?(tabId: string, args: Record<string, unknown>): Promise<Record<string, unknown>>;
   close(tabId: string): void;
   /** Tab groups in the current space, with their tabs. */
   groups(): { name: string; tabIds: string[] }[];
@@ -129,7 +130,7 @@ export type BrowserRequest = {
   op:
     | "tabs" | "open" | "group" | "take" | "release" | "close" | "act" | "snapshot" | "screenshot"
     | "record-start" | "record-status" | "record-stop" | "progress"
-    | "netsuite-environments" | "netsuite-open";
+    | "netsuite-environments" | "netsuite-open" | "highlight";
   args: Record<string, unknown>;
 };
 
@@ -646,6 +647,16 @@ export async function runBrowserAgent(
     host.setAccess(tabId, "controlled");
     if (args.select !== false) host.select(tabId);
     return { tabId, access: "controlled" };
+  }
+  if (request.op === "highlight") {
+    const { host } = await controlled(tabId);
+    if (!host.highlight) throw Error("Source highlighting needs the desktop Browser.");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([host.highlight(tabId, args), new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(Error("Source highlighting did not answer in time.")), PAGE_LIMIT_MS);
+      })]);
+    } finally { clearTimeout(timer); }
   }
   if (request.op === "snapshot") {
     const { id } = await controlled(tabId);

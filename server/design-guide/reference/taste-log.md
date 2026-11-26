@@ -80,3 +80,14 @@ Quotes are the owner's own words (typos kept out). Newest last. Add to this file
 ## Orvane Host (24.11.2026)
 
 - Rejected the first laptop Host UI because it did not look like Orvane. Use desktop Agent Sessions as the reference for the Host shell, session list, transcript and composer.
+## Multiple Claude subscriptions (25.11.2026)
+
+- Approved Claude's three mocks in UI Maker `claude-accounts`, round r1: **Account pill**, **Settings accounts**, and **Two at once**. The owner said "I love his mocks implement them". Implement their existing composer account picker, inline profile setup/sign-in in Settings, and profile-bound concurrent session labels literally. Switching the account starts a blank new chat; existing chats keep their original account.
+
+## Choosing a Claude account (26.11.2026)
+
+- Asked to improve choosing which Claude profile new chats use and said "make them in ui mock first". Picked **Row choice** in UI Maker `claude-accounts`, round r2 (saved as v2): always-visible radio controls per row, the selected row marked New chats, account details on their own line and an inline rename pencil. Also asked for renaming existing profiles and a clear gap between the session list and the Settings footer. **Default picker** was unselected, not explicitly rejected.
+
+## Browser loading and source passages (26.11.2026)
+
+- Asked Claude to mock both features first. Picked **Ring stop** in UI Maker `browser-loading/r1` and **Source widget** in `browser-source-highlights/r1` (both saved as v2). Loading uses a thin ring around the toolbar X and tab tile, returning to Reload. Source excerpts use a compact stepper/popover with exact quotes, click-to-scroll, current-tab scope and an honest missing-passage state. Wants this as a baked-in browser capability agents can invoke, rather than one-off page code. Also wants discarded tabs to revive automatically on return, retaining the reading position. The other mock variants were unselected, not explicitly rejected.

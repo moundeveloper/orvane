@@ -35,6 +35,11 @@ export type McpSetup = {
   cli(provider: AgentProvider): AgentCommand;
   /** The Orvane server command Install registers. */
   server: McpServer;
+  /** The child env for the CLI's `mcp` commands: a Claude account's own
+   * env, so `claude mcp add -s user` writes only that account's file. */
+  env?: Readonly<NodeJS.ProcessEnv>;
+  /** How the Claude entry's location reads in Settings. */
+  claudeWhere?: string;
 };
 
 export function mcpSetup(dataDir: string): McpSetup {
@@ -52,7 +57,7 @@ export function mcpSetup(dataDir: string): McpSetup {
 async function run(setup: McpSetup, provider: AgentProvider, args: string[]) {
   const command = setup.cli(provider);
   const { stdout } = await execute(command.file, [...command.args, ...args], {
-    env: agentEnvironment(),
+    env: { ...(setup.env ?? agentEnvironment()) },
     timeout: 20_000,
     windowsHide: true,
     maxBuffer: 256 * 1024,
@@ -101,9 +106,12 @@ async function configured(setup: McpSetup, provider: AgentProvider): Promise<Mcp
   }
 }
 
-export async function mcpStatus(setup: McpSetup): Promise<McpRow[]> {
+export async function mcpStatus(
+  setup: McpSetup,
+  providers: readonly AgentProvider[] = ["claude", "codex"],
+): Promise<McpRow[]> {
   return Promise.all(
-    (["claude", "codex"] as const).map(async (provider) => {
+    providers.map(async (provider) => {
       const cli = hasCli(setup, provider);
       const server = cli ? await configured(setup, provider) : undefined;
       return {
@@ -111,7 +119,7 @@ export async function mcpStatus(setup: McpSetup): Promise<McpRow[]> {
         cli,
         installed: !!server,
         where: provider === "claude"
-          ? `~/.claude.json · mcpServers.${NAME} · user scope`
+          ? `${setup.claudeWhere ?? "~/.claude.json"} · mcpServers.${NAME} · user scope`
           : `~/.codex/config.toml · [mcp_servers.${NAME}]`,
         preview: preview(provider, setup.server),
         ...(server ? { server } : {}),
@@ -145,7 +153,7 @@ export async function mcpTest(setup: McpSetup, provider: AgentProvider) {
     args: server.args,
     env: {
       ...Object.fromEntries(
-        Object.entries(agentEnvironment()).filter((entry): entry is [string, string] => entry[1] !== undefined),
+        Object.entries(setup.env ?? agentEnvironment()).filter((entry): entry is [string, string] => entry[1] !== undefined),
       ),
       ...server.env,
     },

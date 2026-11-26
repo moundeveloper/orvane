@@ -29,6 +29,7 @@ export class AgentDelegations {
     private directory: string,
     private runner: AgentRunner,
     private sessionKey: (provider: AgentRun["provider"], id: string) => Promise<string | undefined>,
+    private bindTarget: (target: Parameters<AgentRunner["start"]>[0]) => Parameters<AgentRunner["start"]>[0] = (target) => target,
   ) {}
 
   private database() {
@@ -124,7 +125,7 @@ export class AgentDelegations {
     }
     this.starting.add(requestId);
     try {
-      await this.runner.start({
+      await this.runner.start(this.bindTarget({
         provider: receipt.provider,
         folder: receipt.folder,
         model: receipt.model,
@@ -133,7 +134,7 @@ export class AgentDelegations {
         key,
         sessionId,
         delegationId: receipt.delegationId,
-      }, input.message, requestId);
+      }), input.message, requestId);
     } catch (error) {
       receipt.error = error instanceof Error ? error.message : String(error);
       this.database().saveAppData(receiptKey(requestId), receipt);

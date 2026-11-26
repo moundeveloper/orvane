@@ -18,6 +18,7 @@ import {
 } from "../triggers";
 import CustomNumber from "./CustomNumber.vue";
 import CustomSelect from "./CustomSelect.vue";
+import { accountDetail, accountLabel, accountReady, activeAccounts, claudeAccounts, loadAccounts } from "../claudeAccounts";
 import Icon from "./Icon.vue";
 import TimePicker from "./pickers/TimePicker.vue";
 
@@ -27,7 +28,7 @@ const props = defineProps<{
   modelOptions: (provider: AgentProvider) => { value: string; label: string }[];
 }>();
 const emit = defineEmits<{
-  openSession: [id: string, provider: AgentProvider];
+  openSession: [id: string, provider: AgentProvider, profileId?: string];
   loadModels: [provider: AgentProvider];
 }>();
 
@@ -59,6 +60,8 @@ const draft = ref<{
   id?: string;
   prompt: string;
   provider: AgentProvider;
+  /** Claude account the prompt is pinned to; it never falls back to another. */
+  profileId: string;
   folder: string;
   kind: TriggerSchedule["kind"];
   minutes: number;
@@ -74,6 +77,18 @@ const editModes = computed(() =>
     label: agentEditModeNames[value],
   })),
 );
+const accountOptions = computed(() => {
+  const options = activeAccounts().map((account) => ({
+    value: account.id,
+    label: `${account.name} · ${accountDetail(account)}`,
+    disabled: !accountReady(account),
+  }));
+  // A prompt pinned to a removed account keeps showing it until moved.
+  const pinned = draft.value?.profileId;
+  return pinned && !options.some((o) => o.value === pinned)
+    ? [...options, { value: pinned, label: `${accountLabel(pinned)} · removed`, disabled: true }]
+    : options;
+});
 const modelOptions = computed(() => {
   if (!draft.value) return [];
   const { provider, model } = draft.value;
@@ -162,11 +177,13 @@ function edit(item?: AgentSchedule) {
   if (pending.value) return;
   const provider = item?.provider ?? "claude";
   emit("loadModels", provider);
+  void loadAccounts();
   error.value = "";
   draft.value = {
     id: item?.id,
     prompt: item?.prompt ?? "",
     provider,
+    profileId: item?.profileId ?? claudeAccounts.newChatProfileId,
     folder: item?.folder ?? "",
     kind: item?.schedule.kind ?? "daily",
     minutes: item?.schedule.kind === "interval" ? item.schedule.minutes : 60,
@@ -207,6 +224,7 @@ async function save() {
     id,
     prompt,
     provider,
+    profileId,
     folder,
     kind,
     minutes,
@@ -224,6 +242,7 @@ async function save() {
       id,
       prompt,
       provider,
+      ...(provider === "claude" ? { profileId } : {}),
       folder: folder.trim(),
       schedule,
       model: model.trim() || undefined,
@@ -352,6 +371,12 @@ defineExpose({
             :options="providers"
             aria-label="Provider"
             @update:model-value="changeProvider($event as AgentProvider)"
+        /></label>
+        <label v-if="draft.provider === 'claude' && accountOptions.length > 1"
+          >Account<CustomSelect
+            v-model="draft.profileId"
+            :options="accountOptions"
+            aria-label="Claude account"
         /></label>
         <label
           >Model<CustomSelect
@@ -488,7 +513,9 @@ defineExpose({
             <div class="sp-facts">
               <span>{{ describeSchedule(item.schedule) }}</span>
               <span
-                >{{ agentNames[item.provider] }} ·
+                >{{ agentNames[item.provider] }}<template v-if="item.provider === 'claude' && item.profileId"
+                  > on <b>{{ accountLabel(item.profileId) }}</b></template
+                > ·
                 <b>{{ item.model || "Provider default" }}</b></span
               >
               <span
@@ -546,6 +573,7 @@ defineExpose({
                     'openSession',
                     item.lastSessionId,
                     item.lastSessionProvider ?? item.provider,
+                    item.lastSessionProfileId ?? item.profileId,
                   )
                 "
               >

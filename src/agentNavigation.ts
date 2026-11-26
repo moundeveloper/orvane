@@ -4,6 +4,8 @@ import type { AgentQuote } from "./agentHarness";
 
 export interface AgentDraft {
   provider: AgentProvider;
+  /** Claude account the draft will start on (pinning, splitting, continuing keep it). */
+  profileId?: string;
   folder: string;
   text: string;
   paths: string[];

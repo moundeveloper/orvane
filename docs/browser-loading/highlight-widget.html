@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Source widget</title>
+<style>
+:root{--canvas:#e9edf0;--strong:#273f50;--mono:"Cascadia Code",Consolas,monospace;
+--accent:#6e91a6;--surface:#f8fafb;--line:#d5e1e8;--side-bg:#eaf0f4;--low:#f1f5f7;--hover:#e1eaf0;--ink:#425b6c;--sub:#6c8594;--faint:#96aab6;--soft:rgb(121 151 170 / 17%);--selection:#d9e7ef;
+--floating:0 22px 56px rgb(52 79 97 / 16%),0 3px 10px rgb(52 79 97 / 8%)}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font:12px/1.5 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;color:var(--ink);background:var(--canvas);display:grid;place-items:center;-webkit-font-smoothing:antialiased;overflow:hidden}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;padding:0}
+button:disabled{cursor:default;opacity:.45}
+input{font:inherit;color:inherit}
+[hidden]{display:none!important}
+:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+*{scrollbar-width:thin;scrollbar-color:rgb(108 143 164 / 35%) transparent}
+svg{width:15px;height:15px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.app{width:min(1180px,calc(100vw - 32px));height:min(720px,calc(100vh - 32px));display:grid;grid-template-columns:200px minmax(0,1fr);grid-template-rows:48px minmax(0,1fr);background:var(--surface);border-radius:10px;overflow:hidden;box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c}
+.side{grid-row:1/-1;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);border-right:1px solid var(--soft)}
+.side-head{display:flex;align-items:center;gap:9px;height:44px;padding:12px 10px 0 12px}
+.initial{display:grid;place-items:center;width:25px;height:25px;flex:none;border-radius:7px;color:#527b92;background:#d6e4ec;font-weight:690;font-size:11px}
+.space-label{font-size:13.5px;font-weight:630;letter-spacing:-.32px;flex:1}
+.spaces{display:flex;gap:5px;padding:8px 12px 3px}
+.space{display:grid;place-items:center;width:30px;height:28px;border-radius:7px;font-size:11px;font-weight:630;color:var(--faint)}
+.space.active{color:#527b92;background:#d6e4ec}
+.side-title{display:flex;align-items:center;gap:6px;height:28px;margin:12px 12px 0;padding:0 7px;color:var(--faint);font-size:10px;font-weight:620;letter-spacing:.35px;text-transform:uppercase}
+.side-title span:first-child{flex:1}
+.tabs{padding:0 12px}
+.tab{position:relative;display:flex;align-items:center;gap:9px;width:100%;height:33px;margin:2px 0;padding:0 8px 0 10px;border-radius:7px;color:var(--sub);text-align:left}
+.tab:hover{background:rgb(132 162 182 / 10%);color:var(--ink)}
+.tab[aria-selected=true]{background:var(--selection);color:var(--ink);font-weight:570}
+.tab[aria-selected=true]::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:2px;border-radius:10px;background:var(--accent)}
+.favicon{display:grid;place-items:center;width:16px;height:16px;flex:none;border-radius:4px;font-size:10px;font-weight:700;color:#607f91;background:#dbe7ee}
+.tab[aria-selected=true] .favicon{background:#f8fafb}
+.tab-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tab-count{display:flex;align-items:center;gap:3px;font-size:10.5px;font-weight:500;color:var(--sub);font-variant-numeric:tabular-nums}
+.tab-count svg{width:11px;height:11px}
+.foot{display:flex;align-items:center;gap:3px;margin-top:auto;padding:8px 11px 10px;border-top:1px solid var(--soft);color:var(--sub)}
+.foot-link{display:flex;align-items:center;gap:10px;flex:1;height:30px;padding:0 9px;border-radius:7px}
+.bar{display:flex;align-items:center;gap:2px;height:48px;padding:0 14px;background:var(--surface);border-bottom:1px solid var(--soft);min-width:0}
+.icon-button{position:relative;display:grid;place-items:center;width:28px;height:28px;flex:none;border-radius:7px;color:var(--sub);transition:background .18s,color .18s}
+.icon-button:hover:not(:disabled),.foot-link:hover{background:var(--hover);color:var(--ink)}
+.icon-button.on{background:var(--selection);color:var(--ink)}
+.address-shell{display:flex;align-items:center;gap:8px;flex:1;min-width:80px;height:31px;margin:0 6px;padding:0 5px 0 10px;border:1px solid var(--soft);border-radius:7px;background:var(--low);overflow:hidden}
+.address-shell>svg{width:14px;height:14px;color:var(--faint)}
+.address-shell input{flex:1;min-width:0;border:0;background:none;outline:0;padding:0}
+.address-shell .icon-button{width:23px;height:23px}
+.divider{flex:0 0 1px;height:16px;margin-inline:3px;background:var(--soft)}
+.badge{position:absolute;right:0;top:0;min-width:13px;height:13px;padding:0 3px;border-radius:7px;background:#365f78;color:#fff;font:600 9px/13px "Inter Variable",Inter,sans-serif;font-variant-numeric:tabular-nums}
+.body{display:flex;min-width:0;min-height:0}
+.page{position:relative;flex:1;min-width:0;background:#fff;overflow:hidden}
+.doc{position:absolute;inset:0;overflow:auto;color:#354854;font-size:14px;line-height:1.7}
+.doc-inner{position:relative;min-height:100%}
+.doc-top{display:flex;align-items:center;gap:18px;height:46px;padding:0 48px;border-bottom:1px solid #edf1f3;font-size:12.5px;color:#677b87;white-space:nowrap;overflow:hidden}
+.doc-top b{color:#22343f;font-weight:650;margin-right:6px}
+.doc a{color:#2f6384;text-decoration:underline;text-decoration-color:#a9c2d1;text-underline-offset:3px}
+.doc article{max-width:608px;padding:26px 20px 320px 48px}
+.doc h1{margin:0 0 4px;font-size:26px;line-height:1.3;letter-spacing:-.5px;color:#1f313c}
+.doc h2{margin:30px 0 8px;font-size:17px;letter-spacing:-.2px;color:#1f313c}
+.doc p{margin:0 0 14px}
+.doc .meta{font-size:12px;color:#8296a2;margin-bottom:20px}
+.doc code{font:12.5px var(--mono);background:#f0f4f6;border-radius:4px;padding:1px 4px}
+.doc pre{margin:0 0 16px;padding:12px 14px;background:#f5f7f8;border-radius:8px;font:12.5px/1.6 var(--mono);overflow:auto}
+.doc form{display:flex;align-items:center;gap:8px;margin-top:30px;padding-top:18px;border-top:1px solid #edf1f3;font-size:12.5px}
+.doc form input{height:30px;flex:1;min-width:0;padding:0 10px;border:1px solid #dbe5eb;border-radius:7px;background:#fbfcfd}
+.doc form button{height:30px;padding:0 12px;border:1px solid #d3dee5;border-radius:7px;background:#fbfcfd}
+.doc form output{color:#4f7d5f}
+/* Marks are painted by the Custom Highlight API: the page DOM is never rewritten. */
+::highlight(orvane-source){background-color:#e1eef0;text-decoration:underline 1px #87b0b8;text-underline-offset:4px}
+::highlight(orvane-source-active){background-color:#c3dde8;color:#17303e;text-decoration:underline 2px #365f78;text-underline-offset:4px}
+.markers{position:absolute;inset:0;pointer-events:none}
+.marker{position:absolute;left:18px;display:grid;place-items:center;width:19px;height:19px;border-radius:6px;background:#e1eef0;color:#456d7c;font:600 10.5px/1 "Inter Variable",Inter,sans-serif;pointer-events:auto}
+.marker[aria-current=true]{background:#365f78;color:#fff}
+/* Source list */
+.src-head{display:flex;align-items:center;gap:8px;height:38px;flex:none;padding:0 6px 0 12px}
+.src-head h2{margin:0;font-size:12.5px;font-weight:600;color:var(--strong)}
+.src-count{flex:1;min-width:0;font-size:11.5px;color:#738894;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.src-head .icon-button{width:26px;height:26px}
+.src-head svg{width:13px;height:13px}
+.src-page{display:grid;grid-template-columns:16px minmax(0,1fr);gap:0 9px;align-items:center;flex:none;padding:2px 12px 10px;border-bottom:1px solid #e3eaee}
+.src-page strong,.src-page span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.src-page strong{font-weight:550;color:var(--strong)}
+.src-page span:last-child{grid-column:2;font:10.5px var(--mono);color:#738894}
+.src-list{list-style:none;margin:0;padding:6px;overflow:auto;min-height:0}
+.src-item{display:grid;grid-template-columns:19px minmax(0,1fr);gap:4px 9px;width:100%;padding:8px;border-radius:7px;text-align:left}
+.src-item:hover{background:#eef3f6}
+.src-item[aria-current=true]{background:#e4edf2}
+.src-num{display:grid;place-items:center;width:19px;height:19px;border-radius:6px;background:#e1eef0;color:#456d7c;font-size:10.5px;font-weight:600}
+[aria-current=true]>.src-num{background:#365f78;color:#fff}
+.src-label{min-width:0;font-size:11px;font-weight:550;color:#5d7381;line-height:19px}
+.src-quote{grid-column:2;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;font-size:12px;line-height:1.55;color:#455968}
+[aria-current=true]>.src-quote{-webkit-line-clamp:unset;color:var(--strong)}
+.src-item.missing{cursor:default}
+.src-item.missing:hover{background:none}
+.src-item.missing .src-num{background:none;border:1px dashed #b9a183;color:#8a6c42}
+.src-item.missing .src-quote{color:#6c8190;padding-left:8px;border-left:2px dashed #d5c6ae}
+.src-missing{grid-column:2;font-size:11px;color:#8a6430}
+.src-empty{margin:0;padding:18px 14px 22px;color:#6c8594}
+.src-foot{display:flex;align-items:center;gap:5px;flex:none;height:32px;padding:0 10px 0 12px;border-top:1px solid #e3eaee;color:#738894;font-size:11px;white-space:nowrap}
+.src-foot span{margin-right:auto}
+kbd{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 4px;border:1px solid #d6e0e6;border-bottom-width:2px;border-radius:4px;background:#fbfcfd;font:10.5px/1 var(--mono);color:#5d7381}
+.tip{position:fixed;z-index:30;display:flex;gap:8px;align-items:center;padding:4px 8px;border-radius:6px;background:#344d5b;color:#fff;font-size:11px;pointer-events:none;white-space:nowrap}
+.tip kbd{background:none;border-color:#ffffff45;color:#fff}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+/* Stepper stays on the page; the list is a popover above it. */
+.widget{position:absolute;right:16px;bottom:16px;z-index:4;display:flex;align-items:center;gap:2px;height:38px;padding:0 5px;border:1px solid #d3dee5;border-radius:10px;background:rgb(247 250 252 / 88%);backdrop-filter:blur(8px) saturate(120%);box-shadow:0 1px 2px #263f5514,0 12px 30px #263f5526}
+.widget .icon-button{width:26px;height:26px;border-radius:6px}
+.widget .icon-button svg{width:13px;height:13px}
+.widget .open{display:flex;align-items:center;gap:8px;height:28px;padding:0 9px 0 7px;border-radius:6px;color:var(--strong);font-weight:550;white-space:nowrap;font-variant-numeric:tabular-nums}
+.widget .open svg{color:var(--accent)}
+.widget .open:hover,.widget .open[aria-expanded=true]{background:#e4edf2}
+.widget .sep{width:1px;height:18px;margin:0 3px;background:#e3eaee}
+.popover{position:absolute;right:16px;bottom:62px;z-index:5;display:flex;flex-direction:column;width:min(320px,calc(100% - 32px));max-height:calc(100% - 74px);overflow:hidden;border:1px solid var(--line);border-radius:11px;background:var(--surface);box-shadow:var(--floating);animation:pop .14s ease-out}
+@keyframes pop{from{opacity:0;transform:translateY(4px)}}
+@media (max-width:860px){.popover{width:min(290px,calc(100% - 32px))}.app{grid-template-columns:58px minmax(0,1fr)}.side :is(.space-label,.collapse,.side-title,.tab-text,.tab-count,.foot-link span,.spaces){display:none}.side-head{justify-content:center;padding-inline:0}.tab{justify-content:center;padding:0}.foot{flex-direction:column}.bar .extra{display:none}.doc-top,.doc article{padding-left:40px}.marker{left:11px}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style></head>
+<body>
+<svg style="display:none">
+<symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></symbol>
+<symbol id="i-forward" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.5 6.2L3 16M3 21v-5h5"/></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18"/></symbol>
+<symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9z"/></symbol>
+<symbol id="i-mark" viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></symbol>
+<symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="5"/><path d="m11.5 11.5 8-8M16 7l3 3"/></symbol>
+<symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v7H4V6h7"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-columns" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01"/></symbol>
+<symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></symbol>
+<symbol id="i-library" viewBox="0 0 24 24"><path d="M5 19V5a2 2 0 0 1 2-2h12v18H7a2 2 0 0 1-2-2 2 2 0 0 1 2-2h12M10 3v8l2-2 2 2V3"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+<symbol id="i-clear" viewBox="0 0 24 24"><path d="m7 21-4-4a2 2 0 0 1 0-3L13 4a2 2 0 0 1 3 0l5 5a2 2 0 0 1 0 3l-9 9zM22 21H7M8 9l8 8"/></symbol>
+</svg>
+
+<div class="app" aria-label="Web browser">
+  <aside class="side" aria-label="Browser tabs">
+    <div class="side-head"><span class="initial">W</span><span class="space-label">Work</span><button type="button" class="icon-button collapse" aria-label="Collapse sidebar"><svg><use href="#i-sidebar"/></svg></button></div>
+    <div class="spaces"><span class="space active">W</span><span class="space">R</span></div>
+    <div class="side-title"><span>Tabs</span><span>Ctrl T</span></div>
+    <div class="tabs" role="tablist" aria-orientation="vertical" id="tabs"></div>
+    <div class="foot"><button type="button" class="foot-link"><svg><use href="#i-library"/></svg><span>Library</span></button><button type="button" class="icon-button" aria-label="Preferences"><svg><use href="#i-settings"/></svg></button></div>
+  </aside>
+  <div class="bar" role="toolbar" aria-label="Browser toolbar">
+    <button type="button" class="icon-button" aria-label="Back" disabled><svg><use href="#i-back"/></svg></button>
+    <button type="button" class="icon-button" aria-label="Forward" disabled><svg><use href="#i-forward"/></svg></button>
+    <button type="button" class="icon-button" aria-label="Reload" id="reload" data-tip="Reload"><svg><use href="#i-refresh"/></svg></button>
+    <button type="button" class="icon-button extra" aria-label="Start page"><svg><use href="#i-home"/></svg></button>
+    <div class="address-shell"><svg><use href="#i-globe"/></svg><input id="address" aria-label="Address" readonly><button type="button" class="icon-button" aria-label="Bookmark this page"><svg><use href="#i-star"/></svg></button></div>
+    <button type="button" class="icon-button" id="toggle" aria-label="Source highlights" aria-controls="sources" aria-keyshortcuts="Alt+H" data-tip="Source highlights" data-key="Alt H"><svg><use href="#i-mark"/></svg><span class="badge" id="badge"></span></button>
+    <button type="button" class="icon-button extra" aria-label="Saved passwords"><svg><use href="#i-key"/></svg></button>
+    <button type="button" class="icon-button extra" aria-label="Open in your browser"><svg><use href="#i-external"/></svg></button>
+    <button type="button" class="icon-button extra" aria-label="Peek a link"><svg><use href="#i-eye"/></svg></button>
+    <button type="button" class="icon-button extra" aria-label="Toggle Split View"><svg><use href="#i-columns"/></svg></button>
+    <span class="divider" aria-hidden="true"></span>
+    <button type="button" class="icon-button" aria-label="Command palette"><svg><use href="#i-search"/></svg></button>
+    <button type="button" class="icon-button" aria-label="Browser menu"><svg><use href="#i-more"/></svg></button>
+  </div>
+  <div class="body">
+    <main class="page" id="page">
+
+<div class="doc" data-tab="backups" tabindex="0" aria-label="Web page: Backups and restore"><div class="doc-inner">
+<div class="doc-top"><b>Fieldnotes Handbook</b><a href="#" data-goto="releases">Releases</a><a href="#restore">Restore</a><a href="#schedule">Schedule</a></div>
+<article>
+<h1>Backups and restore</h1>
+<p class="meta">Operations · Revision 14</p>
+<p>Fieldnotes keeps every notebook in one database file on this computer. A backup is a second copy of that file, taken while the app is running, together with the attachments folder.</p>
+<h2 id="location">Where backups live</h2>
+<p>By default, copies are written to the <code>backups</code> folder beside the database. You can point them at another drive in the settings file.</p>
+<pre>[backup]
+directory = "D:/Backups/fieldnotes"
+every = "1d"
+keep = 14</pre>
+<p>The directory is created on the first run. If the drive is missing, the app reports the failure and tries again at the next scheduled time.</p>
+<h2 id="schedule">Schedule</h2>
+<p>Pick an interval that matches how much work you can afford to redo. <span data-p="a">A backup runs once a day while the app is open, using SQLite's <a href="#location">online backup</a> so that writes can continue during the copy.</span> A run that was missed while the app was closed starts shortly after the next launch.</p>
+<p>Large notebooks take longer to copy. Progress is shown in the status area, and closing the window waits until the current copy has finished.</p>
+<p>Attachments are copied after the database. Only files that changed since the previous run are written again, so a daily backup of an unchanged library is close to instant.</p>
+<h2 id="retention">Retention</h2>
+<p><span data-p="b">The newest 14 copies are kept. Older copies are removed only after a new backup has been written and passed its integrity check, so a failed run never reduces the number of good copies you have.</span></p>
+<p>Copies you rename are left alone. Use this to hold on to a snapshot from before a large import or a migration.</p>
+<p>The integrity check opens the new copy read-only and verifies every table and index. A copy that fails is kept with a <code>.failed</code> suffix for inspection.</p>
+<h2 id="restore">Restore</h2>
+<p>Restoring replaces the whole database, not individual notes. Close other windows first.</p>
+<p id="p3">Choose a copy from the list and confirm. <span data-p="c">Before restoring, the app saves the current database as a safety copy named with the restore time.</span> If the restored data is not what you expected, restore that safety copy.</p>
+<p>After the restore the app restarts and rebuilds its search index. Searching works again once the rebuild is complete.</p>
+<h2>Moving to another computer</h2>
+<p>Copy the newest backup and the attachments folder to the new machine, then choose Restore on first launch. Settings are not part of the backup.</p>
+<form><label for="q">Search the handbook</label><input id="q" placeholder="integrity check"><button>Search</button><output></output></form>
+</article><div class="markers"></div></div></div>
+
+<div class="doc" data-tab="releases" tabindex="0" aria-label="Web page: Release notes" hidden><div class="doc-inner">
+<div class="doc-top"><b>Fieldnotes Handbook</b><a href="#" data-goto="backups">Backups</a></div>
+<article>
+<h1>Release notes</h1>
+<p class="meta">Version 3.8</p>
+<h2>Backups</h2>
+<p><span data-p="d">Backups now include the attachments folder, and unchanged files are skipped.</span> The first run after updating copies everything once.</p>
+<p>The restore list shows the size of each copy and whether it passed the integrity check.</p>
+<h2>Editor</h2>
+<p>Pasting a table keeps its column alignment. Long code blocks scroll inside the note.</p>
+</article><div class="markers"></div></div></div>
+
+<div class="doc" data-tab="shortcuts" tabindex="0" aria-label="Web page: Keyboard shortcuts" hidden><div class="doc-inner">
+<div class="doc-top"><b>Fieldnotes Handbook</b><a href="#" data-goto="backups">Backups</a></div>
+<article><h1>Keyboard shortcuts</h1><p class="meta">Reference</p><p>Press <code>Ctrl</code> <code>N</code> for a new note and <code>Ctrl</code> <code>P</code> to jump to any notebook.</p></article><div class="markers"></div></div></div>
+
+      <div class="popover" id="sources" role="dialog" aria-label="Source highlights on this tab">
+        <div class="src-head"><h2>Sources</h2><span class="src-count" id="src-count"></span><button type="button" class="icon-button" id="clear" aria-label="Clear highlights on this tab" data-tip="Clear highlights on this tab"><svg><use href="#i-clear"/></svg></button><button type="button" class="icon-button" id="close" aria-label="Close sources" data-tip="Close" data-key="Esc"><svg><use href="#i-close"/></svg></button></div>
+        <div class="src-page"><span class="favicon">F</span><strong id="src-title"></strong><span id="src-url"></span></div>
+        <ol class="src-list" id="src-list" aria-label="Highlighted passages"></ol>
+        <p class="src-empty" id="src-empty" hidden>No source highlights on this tab.</p>
+        <div class="src-foot"><span>Exact page text</span><kbd>↑ ↓</kbd>move<kbd>Enter</kbd>jump</div>
+      </div>
+      <div class="widget" id="widget" role="toolbar" aria-label="Source stepper"><button type="button" class="open" id="open" aria-controls="sources" data-tip="Show all passages" data-key="Alt H"><svg><use href="#i-mark"/></svg><span id="position"></span></button><span class="sep"></span><button type="button" class="icon-button" id="prev" aria-label="Previous passage" data-tip="Previous passage" data-key="Alt ↑"><svg><use href="#i-up"/></svg></button><button type="button" class="icon-button" id="next" aria-label="Next passage" data-tip="Next passage" data-key="Alt ↓"><svg><use href="#i-down"/></svg></button></div>
+    </main>
+  </div>
+</div>
+<div class="tip" id="tip" role="tooltip" hidden></div>
+<div class="sr" aria-live="polite" id="live"></div>
+<script>
+(() => {
+'use strict';
+const $ = (s, root = document) => root.querySelector(s);
+const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+const tabs = {
+  backups: { title: 'Backups and restore', url: 'http://localhost:4173/handbook/backups' },
+  releases: { title: 'Release notes', url: 'http://localhost:4173/handbook/releases' },
+  shortcuts: { title: 'Keyboard shortcuts', url: 'http://localhost:4173/handbook/shortcuts' },
+};
+const docOf = id => $(`.doc[data-tab="${id}"]`);
+function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; }
+
+/* What was captured when the source was opened. The text is read from the page
+   itself, never written by hand or by a model. Labels are separate and optional. */
+const cap = (id, label) => {
+  const node = $(`[data-p="${id}"]`);
+  const before = node.previousSibling ? node.previousSibling.textContent : '';
+  return { label, quote: node.textContent.replace(/\s+/g, ' ').trim(), prefix: before.replace(/\s+/g, ' ').slice(-24), range: null };
+};
+tabs.backups.passages = [cap('a', 'Schedule'), cap('b', 'Retention'), cap('c', 'Restore safety')];
+// This tab was highlighted earlier; one sentence has been edited since.
+tabs.releases.passages = [cap('d', 'Attachments'), { label: 'Restore list', quote: 'The restore list shows the date of each copy and whether it passed the integrity check.', prefix: '', range: null }];
+tabs.shortcuts.passages = [];
+document.querySelectorAll('[data-p]').forEach(node => node.replaceWith(...node.childNodes)); // leave the page as authored
+document.querySelectorAll('article').forEach(a => a.normalize());
+
+/* Exact match across inline elements. Only runs of whitespace are folded, as the page renders them. */
+function locate(root, passage) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let text = '', node;
+  const map = [];
+  while ((node = walker.nextNode())) {
+    for (let i = 0; i < node.data.length; i++) {
+      const space = /\s/.test(node.data[i]);
+      if (space && text.endsWith(' ')) continue;
+      text += space ? ' ' : node.data[i];
+      map.push([node, i]);
+    }
+  }
+  const hits = [];
+  for (let at = text.indexOf(passage.quote); at >= 0; at = text.indexOf(passage.quote, at + 1)) hits.push(at);
+  // Repeated text is only accepted when its surroundings identify one occurrence.
+  const at = hits.length === 1 ? hits[0] : hits.find(h => passage.prefix && text.slice(0, h).endsWith(passage.prefix));
+  if (at === undefined) return null;
+  const range = new Range();
+  range.setStart(...map[at]);
+  const [end, offset] = map[at + passage.quote.length - 1];
+  range.setEnd(end, offset + 1);
+  return range;
+}
+
+let tab = 'backups';
+let open = true;
+const state = { backups: { selected: 1, scroll: 0, seen: true }, releases: { selected: 0, scroll: 0 }, shortcuts: { selected: -1, scroll: 0 } };
+const list = () => tabs[tab].passages;
+const toggle = $('#toggle'), panel = $('#sources'), listBox = $('#src-list'), widget = $('#widget');
+
+function match(id) { for (const p of tabs[id].passages) p.range = locate($('article', docOf(id)), p); }
+
+function paint() {
+  if (!window.Highlight || !CSS.highlights) return;
+  const sel = state[tab].selected;
+  const rest = list().filter((p, i) => p.range && i !== sel).map(p => p.range);
+  const on = list()[sel]?.range;
+  CSS.highlights.set('orvane-source', new Highlight(...rest));
+  const active = new Highlight(...(on ? [on] : []));
+  active.priority = 1;
+  CSS.highlights.set('orvane-source-active', active);
+}
+
+/* Numbers in the page margin, outside the text, tie each mark to its row. */
+function markers() {
+  const inner = $('.doc-inner', docOf(tab)), box = $('.markers', inner), base = inner.getBoundingClientRect();
+  // The stage may be scaled by the Lab; measure in the page's own pixels.
+  const scale = base.width / inner.offsetWidth || 1;
+  box.replaceChildren(...list().flatMap((p, i) => {
+    const r = p.range?.getClientRects()[0];
+    if (!r) return [];
+    const b = el('button', 'marker', i + 1);
+    b.type = 'button'; b.tabIndex = -1;
+    b.style.top = (r.top - base.top) / scale + (r.height / scale - 19) / 2 + 'px';
+    b.setAttribute('aria-label', `Source passage ${i + 1}: ${p.label}`);
+    b.setAttribute('aria-current', i === state[tab].selected);
+    b.onclick = () => select(i, false);
+    return [b];
+  }));
+}
+
+function syncOpen() {
+  toggle.classList.toggle('on', open);
+  toggle.setAttribute('aria-expanded', open);
+  $('#open').setAttribute('aria-expanded', open);
+  panel.hidden = !open;
+}
+
+function renderStepper() {
+  const items = list(), sel = state[tab].selected, found = items.filter(p => p.range).length;
+  widget.hidden = !items.length;
+  $('#position').textContent = (sel >= 0 ? `Source ${sel + 1} of ${items.length}` : `${items.length} sources`) + (found < items.length ? ` · ${items.length - found} missing` : '');
+  $('#prev').disabled = $('#next').disabled = !found;
+}
+
+function render() {
+  const items = list(), found = items.filter(p => p.range).length, sel = state[tab].selected;
+  $('#src-count').textContent = !items.length ? '' : found === items.length ? `${found} passage${found === 1 ? '' : 's'}` : `${found} of ${items.length} found`;
+  $('#src-title').textContent = tabs[tab].title;
+  $('#src-url').textContent = tabs[tab].url.replace('http://', '');
+  $('#src-url').title = tabs[tab].url;
+  $('#address').value = tabs[tab].url;
+  $('#badge').textContent = items.length; $('#badge').hidden = !items.length;
+  $('#clear').disabled = !items.length;
+  $('#src-empty').hidden = !!items.length;
+  listBox.hidden = !items.length;
+  const stop = Math.max(sel, 0);
+  listBox.replaceChildren(...items.map((p, i) => {
+    const li = el('li'), b = el('button', 'src-item' + (p.range ? '' : ' missing'));
+    b.type = 'button'; b.dataset.i = i;
+    b.tabIndex = i === stop ? 0 : -1;
+    b.setAttribute('aria-current', i === sel);
+    if (!p.range) b.setAttribute('aria-disabled', 'true');
+    b.append(el('span', 'src-num', i + 1), el('span', 'src-label', p.label), el('span', 'src-quote', p.quote));
+    if (!p.range) b.append(el('span', 'src-missing', 'No longer found on this page. Showing the earlier text.'));
+    b.onclick = () => p.range ? select(i, true) : say(`Passage ${i + 1} is no longer found on this page`);
+    li.append(b); return li;
+  }));
+  $('#tabs').replaceChildren(...Object.entries(tabs).map(([id, t]) => {
+    const b = el('button', 'tab'); b.type = 'button'; b.title = t.title;
+    b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', id === tab); b.tabIndex = id === tab ? 0 : -1;
+    b.append(el('span', 'favicon', 'F'), el('span', 'tab-text', t.title));
+    if (t.passages.length) {
+      const n = el('span', 'tab-count'); n.title = `${t.passages.length} source highlights`;
+      n.innerHTML = '<svg><use href="#i-mark"/></svg>'; n.append(String(t.passages.length)); b.append(n);
+    }
+    b.onclick = () => switchTab(id); return b;
+  }));
+  syncOpen(); paint(); markers(); renderStepper();
+}
+
+function say(text) { $('#live').textContent = ''; requestAnimationFrame(() => $('#live').textContent = text); }
+
+/* Where the page has to scroll to show the selected passage, within the page's scroll limits. */
+function landing() {
+  const p = list()[state[tab].selected]; if (!p?.range) return null;
+  const doc = docOf(tab), d = doc.getBoundingClientRect(), r = p.range.getBoundingClientRect();
+  const scale = d.height / doc.offsetHeight || 1;
+  const wanted = doc.scrollTop + (r.top - d.top) / scale - Math.max(24, (doc.clientHeight - r.height / scale) * .36);
+  const top = Math.max(0, Math.min(doc.scrollHeight - doc.clientHeight, wanted));
+  return { doc, top, scale, range: p.range };
+}
+
+function scrollToPassage(smooth) {
+  const to = landing();
+  to?.doc.scrollTo({ top: to.top, behavior: smooth && !reduce.matches ? 'smooth' : 'auto' });
+}
+
+/* The popover stays open after a jump unless it would cover the passage. */
+function wouldCover() {
+  const to = landing(); if (!to || !open) return false;
+  const c = panel.getBoundingClientRect(), shift = (to.top - to.doc.scrollTop) * to.scale;
+  return [...to.range.getClientRects()].some(q => q.right > c.left && q.left < c.right && q.bottom - shift > c.top && q.top - shift < c.bottom);
+}
+
+function select(i, jump) {
+  if (!list()[i]?.range) return;
+  const hadFocus = panel.contains(document.activeElement);
+  state[tab].selected = i;
+  render();
+  const row = $(`[data-i="${i}"]`, listBox);
+  if (hadFocus) row.focus({ preventScroll: true });
+  row.scrollIntoView({ block: 'nearest' });
+  if (jump) {
+    const covered = wouldCover();
+    scrollToPassage(true);
+    if (covered) { setOpen(false); if (hadFocus) $('#open').focus({ preventScroll: true }); }
+  }
+  say(`Passage ${i + 1} of ${list().length}`);
+}
+
+function step(dir) {
+  const found = list().map((p, i) => p.range ? i : -1).filter(i => i >= 0);
+  if (!found.length) return;
+  const sel = state[tab].selected;
+  const next = dir > 0 ? found.find(i => i > sel) ?? found[0] : [...found].reverse().find(i => i < sel) ?? found.at(-1);
+  select(next, true);
+}
+
+// Only the popover changes here, so a press elsewhere never replaces the thing being pressed.
+function setOpen(value) { open = value; syncOpen(); }
+const focusList = () => ($('.src-item[tabindex="0"]', panel) || $('#close')).focus({ preventScroll: true });
+
+function switchTab(id) {
+  if (id === tab) return;
+  state[tab].scroll = docOf(tab).scrollTop;
+  docOf(tab).hidden = true;
+  tab = id;
+  docOf(tab).hidden = false;
+  docOf(tab).scrollTop = state[tab].scroll;
+  render();
+  // A page seen for the first time opens on its selected passage.
+  if (!state[tab].seen) { state[tab].seen = true; scrollToPassage(false); }
+  $('#tabs [aria-selected="true"]').focus({ preventScroll: true });
+}
+
+function clearMarks() {
+  tabs[tab].passages = []; state[tab].selected = -1;
+  render(); say('Highlights cleared on this tab');
+  $('#close').focus({ preventScroll: true });
+}
+
+/* Reloading the first tab brings in an edited page, so one passage goes missing. */
+function reload() {
+  if (tab === 'backups') {
+    $('#p3').textContent = 'Choose a copy from the list and confirm. Before restoring, the app asks whether to save a safety copy of the current database. If the restored data is not what you expected, restore that safety copy.';
+    $('.meta', docOf(tab)).textContent = 'Operations · Revision 15';
+  }
+  match(tab);
+  if (state[tab].selected >= 0 && !list()[state[tab].selected]?.range) state[tab].selected = list().findIndex(p => p.range);
+  render(); scrollToPassage(false);
+  const lost = list().filter(p => !p.range).length;
+  say(lost ? `Page reloaded. ${lost} passage no longer found` : 'Page reloaded');
+}
+
+function toggleList() { setOpen(!open); if (open) focusList(); }
+toggle.onclick = () => setOpen(!open);
+$('#open').onclick = toggleList;
+$('#prev').onclick = () => step(-1);
+$('#next').onclick = () => step(1);
+$('#close').onclick = () => { setOpen(false); (widget.hidden ? toggle : $('#open')).focus({ preventScroll: true }); };
+$('#clear').onclick = clearMarks;
+$('#reload').onclick = reload;
+
+/* Outside pointerdown dismisses. The press carries on to its target and focus is left alone. */
+document.addEventListener('pointerdown', e => { if (open && !e.target.closest('#sources,#widget,#toggle')) setOpen(false); }, true);
+
+listBox.addEventListener('keydown', e => {
+  const items = [...listBox.querySelectorAll('.src-item')], at = items.indexOf(document.activeElement);
+  if (at < 0 || e.altKey) return;
+  const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[e.key];
+  if (to === undefined) return;
+  e.preventDefault();
+  const next = items[(to + items.length) % items.length];
+  items.forEach(b => b.tabIndex = b === next ? 0 : -1);
+  next.focus();
+});
+
+$('#tabs').addEventListener('keydown', e => {
+  if (e.altKey || !['ArrowUp', 'ArrowDown'].includes(e.key)) return;
+  e.preventDefault();
+  const ids = Object.keys(tabs);
+  switchTab(ids[(ids.indexOf(tab) + (e.key === 'ArrowDown' ? 1 : -1) + ids.length) % ids.length]);
+});
+
+document.addEventListener('keydown', e => {
+  if (e.target.matches('input:not([readonly]),textarea,[contenteditable="true"]') || e.ctrlKey || e.metaKey) return;
+  if (e.altKey && e.code === 'KeyH') {
+    e.preventDefault();
+    const inside = panel.contains(document.activeElement);
+    toggleList();
+    if (!open && inside) (widget.hidden ? toggle : $('#open')).focus({ preventScroll: true });
+  } else if (e.altKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    e.preventDefault(); step(e.key === 'ArrowDown' ? 1 : -1);
+  } else if (e.key === 'Escape' && open) {
+    e.preventDefault();
+    const inside = panel.contains(document.activeElement);
+    setOpen(false);
+    if (inside) (widget.hidden ? toggle : $('#open')).focus({ preventScroll: true });
+  }
+});
+
+/* Page links and forms keep working. A plain click on marked text also selects it in the list. */
+$('#page').addEventListener('click', e => {
+  const link = e.target.closest('.doc a');
+  if (link) {
+    e.preventDefault();
+    if (link.dataset.goto) switchTab(link.dataset.goto); // the mock's stand-in for page navigation
+    else $(link.getAttribute('href'), docOf(tab))?.scrollIntoView({ block: 'start', behavior: reduce.matches ? 'auto' : 'smooth' });
+    return;
+  }
+  if (!e.target.closest('article') || e.target.closest('form') || !getSelection().isCollapsed) return;
+  const i = list().findIndex(p => p.range && [...p.range.getClientRects()].some(r => e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom));
+  if (i >= 0) select(i, false);
+});
+document.querySelectorAll('.doc form').forEach(f => f.onsubmit = e => { e.preventDefault(); $('output', f).textContent = $('input', f).value ? 'Sent' : ''; });
+
+const tip = $('#tip');
+document.addEventListener('pointerover', e => {
+  const b = e.target.closest('[data-tip]');
+  if (!b || b.getAttribute('aria-expanded') === 'true') { tip.hidden = true; return; }
+  tip.replaceChildren(el('span', '', b.dataset.tip), ...(b.dataset.key ? [el('kbd', '', b.dataset.key)] : []));
+  tip.hidden = false;
+  const r = b.getBoundingClientRect();
+  tip.style.left = Math.max(6, Math.min(innerWidth - tip.offsetWidth - 6, r.left + r.width / 2 - tip.offsetWidth / 2)) + 'px';
+  tip.style.top = (r.bottom + 6 + tip.offsetHeight > innerHeight ? r.top - tip.offsetHeight - 6 : r.bottom + 6) + 'px';
+});
+document.addEventListener('pointerdown', () => tip.hidden = true, true);
+
+Object.keys(tabs).forEach(match);
+render();
+document.fonts.ready.then(() => {
+  if (location.hash === '#changed') reload(); else { markers(); scrollToPassage(false); }
+  const page = $('#page');
+  let width = page.clientWidth, height = page.clientHeight;
+  new ResizeObserver(() => {
+    markers();
+    if (page.clientWidth !== width || page.clientHeight !== height) {
+      width = page.clientWidth; height = page.clientHeight; scrollToPassage(false);
+    }
+  }).observe(page);
+});
+})();
+</script>
+</body></html>

@@ -180,6 +180,8 @@ export interface VisualRecord {
 }
 export interface AgentSession {
   provider?: "claude" | "codex";
+  /** Claude account the transcript belongs to ("default" for the legacy setup). */
+  profileId?: string;
   key: string;
   sessionId: string;
   title: string;

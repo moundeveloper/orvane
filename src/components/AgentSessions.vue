@@ -41,6 +41,19 @@ import ThinkingTrail from "./ThinkingTrail.vue";
 import DnaHelix from "./DnaHelix.vue";
 import AgentSettings from "./AgentSettings.vue";
 import AgentUsage from "./AgentUsage.vue";
+import AccountPicker from "./AccountPicker.vue";
+import AccountChip from "./AccountChip.vue";
+import {
+  accountColor,
+  accountById,
+  accountLabel,
+  activeAccounts,
+  accountReady,
+  claudeAccounts,
+  CLAUDE_ACCOUNTS_EVENT,
+  DEFAULT_ACCOUNT,
+  loadAccounts,
+} from "../claudeAccounts";
 import CustomSelect from "./CustomSelect.vue";
 import ContextPicker from "./ContextPicker.vue";
 import ComposerModes from "./ComposerModes.vue";
@@ -84,6 +97,7 @@ import { hostMode } from "../hostMode";
 import {
   agentBusy,
   agentNames,
+  sameAgentSession,
   askedQuestions,
   attachmentPicture,
   splitAttachments,
@@ -163,6 +177,8 @@ const composer = ref<HTMLTextAreaElement>();
 const folderInput = ref<HTMLInputElement>();
 const searchInput = ref<HTMLInputElement>();
 const newProvider = ref<AgentProvider>();
+/** The Claude account picked for a NEW chat ("" = the New chats account). */
+const newProfileId = ref("");
 const folder = ref("");
 const draft = ref("");
 const run = ref<AgentRun | null>(null);
@@ -228,9 +244,9 @@ const tileShortcuts = [
   ["Swap panes", "Alt+Shift+Arrow"],
   ["Close the focused pane", "Ctrl+Shift+W"],
 ];
-const modelCatalogues = ref<
-  Partial<Record<AgentProvider, { value: string; label: string }[]>>
->({});
+// Codex by provider; Claude per account (`claude:<id>`), as each account's sign-in reports them.
+const modelCatalogues = ref<Record<string, { value: string; label: string }[]>>({});
+
 const chosenModels = ref<Record<string, string>>({});
 // Effort and edit mode chosen per session, like the model.
 const chosenEfforts = ref<Record<string, AgentEffort | "">>({});
@@ -253,6 +269,7 @@ if (props.pane) {
   if (!props.pane.key && props.pane.provider) {
     newProvider.value = props.pane.provider;
     folder.value = props.pane.folder || "";
+    newProfileId.value = props.pane.profileId || "";
   }
 } else {
   try {
@@ -269,6 +286,30 @@ const provider = computed(
   () => newProvider.value || selected.value?.provider || "claude",
 );
 const busy = computed(() => sending.value || agentBusy(run.value));
+/** A continued draft whose source is a Claude chat stays on that chat's
+ * account: its transcript never moves to another account. */
+const lockedProfile = computed(() => {
+  const origin = newProvider.value === "claude" ? quotes.value.find((quote) => quote.origin)?.origin : undefined;
+  if (!origin || origin.provider !== "claude") return undefined;
+  const indexed = sessions.value.find((s) => s.key === origin.key)?.profileId;
+  if (indexed) return indexed;
+  // A reference may outlive its indexed source. Its account is still in the
+  // key; losing the index must never redirect a continued draft to Default.
+  return origin.key.startsWith("claude@") ? origin.key.slice(7).split(":", 1)[0] || "missing-account" : DEFAULT_ACCOUNT;
+});
+/** The Claude account of this chat: picked for a new one, fixed for an open one. */
+const chatProfile = computed(() =>
+  provider.value !== "claude"
+    ? undefined
+    : newProvider.value
+      ? lockedProfile.value ?? (newProfileId.value || claudeAccounts.newChatProfileId)
+      : selected.value?.profileId ?? DEFAULT_ACCOUNT,
+);
+const accountUnavailable = computed(() => provider.value === "claude" && claudeAccounts.loaded &&
+  !!(selected.value || run.value || lockedProfile.value) &&
+  (!accountById(chatProfile.value) || !!accountById(chatProfile.value)?.removed));
+/** Several accounts: rows and chips name theirs. */
+const manyAccounts = computed(() => activeAccounts().length > 1 || claudeAccounts.list.some((a) => a.removed));
 const usagePill = ref<InstanceType<typeof AgentUsage>>();
 // A finished run may have reported new subscription limits.
 watch(busy, (now, before) => {
@@ -316,8 +357,12 @@ const editMode = computed({
     chosenModes.value = { ...chosenModes.value, [modelKey.value]: value };
   },
 });
+const catalogueKey = (kind: AgentProvider, profile = chatProfile.value) => {
+  const id = profile ?? claudeAccounts.newChatProfileId;
+  return kind === "claude" ? `claude:${id}:${accountById(id)?.auth?.checkedAt ?? 0}` : kind;
+};
 function modelOptionsFor(kind: AgentProvider) {
-  const listed = modelCatalogues.value[kind];
+  const listed = modelCatalogues.value[catalogueKey(kind)];
   const options = listed?.length
     ? listed
     : kind === "claude"
@@ -334,20 +379,25 @@ function modelOptionsFor(kind: AgentProvider) {
   ];
 }
 const modelOptions = computed(() => modelOptionsFor(provider.value));
-const loadingModels = new Set<AgentProvider>();
+const loadingModels = new Set<string>();
 async function loadModels(kind: AgentProvider) {
-  if (modelCatalogues.value[kind] || loadingModels.has(kind)) return;
-  loadingModels.add(kind);
+  const profile = kind === "claude" ? chatProfile.value ?? claudeAccounts.newChatProfileId : undefined;
+  const key = catalogueKey(kind, profile);
+  if (modelCatalogues.value[key] || loadingModels.has(key)) return;
+  loadingModels.add(key);
   try {
-    const { models } = await agentRequest<{ models: { value: string; label: string }[] }>("models", { provider: kind });
-    modelCatalogues.value = { ...modelCatalogues.value, [kind]: models };
+    const { models } = await agentRequest<{ models: { value: string; label: string }[] }>("models", {
+      provider: kind,
+      ...(profile ? { profileId: profile } : {}),
+    });
+    modelCatalogues.value = { ...modelCatalogues.value, [key]: models };
   } catch {
     // Keep the built-in defaults available if catalogue loading fails.
   } finally {
-    loadingModels.delete(kind);
+    loadingModels.delete(key);
   }
 }
-watch(provider, loadModels, { immediate: true });
+watch([provider, chatProfile, () => accountById(chatProfile.value)?.auth?.checkedAt], () => void loadModels(provider.value), { immediate: true });
 type SessionState = "" | "running" | "approval" | "failed" | "stopped";
 function stateOf(summary?: AgentRunSummary): SessionState {
   if (!summary) return "";
@@ -364,9 +414,7 @@ function sessionState(s: AgentSession): SessionState {
   let found: AgentRunSummary | undefined;
   for (const summary of agentRunIndicators.values())
     if (
-      summary.sessionId &&
-      summary.sessionId === s.sessionId &&
-      summary.provider === (s.provider ?? "claude")
+      sameAgentSession(s, summary)
     )
       found = summary;
   return stateOf(found);
@@ -384,9 +432,7 @@ const pendingRuns = computed(() =>
       (stateOf(item) === "running" || stateOf(item) === "approval") &&
       !sessions.value.some(
         (s) =>
-          !!item.sessionId &&
-          s.sessionId === item.sessionId &&
-          (s.provider ?? "claude") === item.provider,
+          sameAgentSession(s, item),
       ),
   ),
 );
@@ -557,6 +603,7 @@ async function loadSlash() {
     }>("slash", {
       provider: provider.value,
       folder: selected.value?.project || run.value?.folder || folder.value.trim() || undefined,
+      ...(chatProfile.value ? { profileId: chatProfile.value } : {}),
     });
     savedPrompts.value = data.prompts;
     slashItems.value = [
@@ -703,11 +750,16 @@ const approvals = ref<SessionApproval[]>([]);
 async function openTimeline() {
   if (!selected.value) return;
   const sessionId = selected.value.sessionId;
+  const sessionKey = selected.value.key;
   approvals.value = [];
   timeline.value = true;
   try {
-    const found = await agentRequest<SessionApproval[]>("session-approvals", { sessionId });
-    if (timeline.value && selected.value?.sessionId === sessionId) approvals.value = found;
+    const found = await agentRequest<SessionApproval[]>("session-approvals", {
+      sessionId,
+      provider: provider.value,
+      ...(chatProfile.value ? { profileId: chatProfile.value } : {}),
+    });
+    if (timeline.value && selected.value?.key === sessionKey) approvals.value = found;
   } catch (cause) {
     showRunError(cause);
   }
@@ -1034,21 +1086,23 @@ function recordIndicator(summary: AgentRunSummary) {
     if (oldest) agentRunIndicators.delete(oldest);
   }
 }
+/** The listed session a run belongs to: the same Claude session UUID can
+ * exist in two accounts' folders, so the account must match too. */
+function sameSession(item: AgentSession, value: Pick<AgentRun, "provider" | "sessionId" | "profileId">) {
+  return sameAgentSession(item, value);
+}
 async function openRecent(id: string) {
   try {
     const value = await agentRequest<AgentRun | null>("inspect-run", { id });
     if (!value) throw Error("This run is no longer available.");
-    const session = sessions.value.find(
-      (item) =>
-        item.sessionId === value.sessionId &&
-        (item.provider ?? "claude") === value.provider,
-    );
+    const session = sessions.value.find((item) => sameSession(item, value));
     back();
     if (session && !agentBusy(value)) {
       await select(session.key);
       if (value.error) showRunError(value.error);
     } else {
       newProvider.value = value.provider;
+      newProfileId.value = value.profileId ?? "";
       folder.value = value.folder;
       watchRun(value);
     }
@@ -1101,11 +1155,14 @@ function closeBrowser() {
   browsing.value = false;
 }
 
-async function openNew(kind: AgentProvider) {
+/** A new chat; `profile` starts a Claude chat on that account (blank, from
+ * a chat's account menu); otherwise the New chats account. */
+async function openNew(kind: AgentProvider, profile = "") {
   if (sending.value || (newProvider.value && busy.value)) return;
   const project = selected.value?.project;
   back();
   newProvider.value = kind;
+  newProfileId.value = kind === "claude" ? profile : "";
   if (project) folder.value = project;
   await nextTick();
   folderInput.value?.focus();
@@ -1114,7 +1171,7 @@ async function openNew(kind: AgentProvider) {
 function currentDraft(kind: AgentProvider): AgentDraft {
   return { provider: kind, folder: folder.value, text: draft.value, paths: paths.value,
     quotes: quotes.value, model: model.value, effort: effort.value, mode: editMode.value,
-    runId: run.value?.id };
+    runId: run.value?.id, ...(kind === "claude" && chatProfile.value ? { profileId: chatProfile.value } : {}) };
 }
 function pinNew() {
   if (!newProvider.value || sending.value) return;
@@ -1125,6 +1182,7 @@ function pinNew() {
 async function loadPinnedDraft(value: AgentDraft) {
   back();
   newProvider.value = value.provider;
+  newProfileId.value = value.provider === "claude" ? value.profileId ?? "" : "";
   folder.value = value.folder;
   draft.value = value.text;
   paths.value = value.paths;
@@ -1262,6 +1320,11 @@ async function buildContinueDraft(choice: ContinueChoice): Promise<AgentDraft | 
   ].filter(Boolean).join("\n");
   return {
     provider: choice.provider,
+    // Same-account continue: a Claude source keeps its account (the
+    // transcript never goes to another account's chat).
+    ...(choice.provider === "claude"
+      ? { profileId: kind === "claude" ? s.profileId ?? DEFAULT_ACCOUNT : claudeAccounts.newChatProfileId }
+      : {}),
     folder: s.project,
     text: `Continue from "${s.title}". `,
     paths: [],
@@ -1375,11 +1438,7 @@ async function present(value: AgentRun) {
       draft.value = value.message;
     if (newProvider.value && value.sessionId) {
       await list();
-      const session = sessions.value.find(
-        (s) =>
-          (s.provider ?? "claude") === value.provider &&
-          s.sessionId === value.sessionId,
-      );
+      const session = sessions.value.find((s) => sameSession(s, value));
       if (session && ticket === revision) {
         // The mode picked for the new chat stays with the session it became.
         const picked = chosenModes.value[`new:${value.provider}`];
@@ -1546,6 +1605,7 @@ async function editQueued(item: AgentQueued) {
 }
 const queueLine = (text: string) => text.trim().split(/\r?\n/, 1)[0]!.slice(0, 240);
 async function send(messageOverride?: string) {
+  if (accountUnavailable.value) return;
   if (agentBusy(run.value) && !sending.value) return queueDraft();
   // Sending brings the view back to the end of the conversation.
   pinned = true;
@@ -1561,6 +1621,7 @@ async function send(messageOverride?: string) {
   }
   const ticket = revision;
   sending.value = true;
+  if (newProvider.value === "claude") newProfileId.value = chatProfile.value ?? DEFAULT_ACCOUNT;
   runError.value = "";
   try {
     const message = messageOverride ?? outgoing();
@@ -1573,8 +1634,14 @@ async function send(messageOverride?: string) {
     };
     const result = await agentRequest<AgentRun>("start", {
       message,
+      // A new Claude chat names its account; an open chat's key carries it.
       target: newProvider.value
-        ? { provider: newProvider.value, folder: folder.value.trim(), ...chosen }
+        ? {
+            provider: newProvider.value,
+            ...(newProvider.value === "claude" && chatProfile.value ? { profileId: chatProfile.value } : {}),
+            folder: folder.value.trim(),
+            ...chosen,
+          }
         : { key: active.value, ...chosen },
     });
     if (ticket !== revision) return;
@@ -1834,6 +1901,8 @@ watch(
       const { text } = await agentRequest<{ text: string }>("suggest", {
         message: value.message.slice(0, 12000),
         reply: reply.slice(-40000),
+        // Written by the chat's own account.
+        ...(value.provider === "claude" && value.profileId ? { profileId: value.profileId } : {}),
       });
       if (ticket === revision && run.value?.id === id && !draft.value && harness.settings.suggest)
         suggestion.value = text.trim();
@@ -1874,15 +1943,17 @@ async function loadCheckpoints() {
   try {
     const data = await agentRequest<{ checkpoints: SessionCheckpoint[] }>("checkpoints", {
       sessionId: session.sessionId,
+      provider: session.provider ?? "claude",
+      ...((session.provider ?? "claude") === "claude" ? { profileId: session.profileId ?? DEFAULT_ACCOUNT } : {}),
     });
-    if (selected.value?.sessionId === session.sessionId)
+    if (selected.value?.key === session.key)
       checkpoints.value = [...data.checkpoints].sort((a, b) => a.at.localeCompare(b.at));
   } catch {
     checkpoints.value = [];
   }
 }
 watch(
-  () => [selected.value?.sessionId ?? "", run.value && !agentBusy(run.value) ? run.value.id : ""] as const,
+  () => [selected.value?.key ?? "", run.value && !agentBusy(run.value) ? run.value.id : ""] as const,
   () => void loadCheckpoints(),
   { immediate: true },
 );
@@ -1911,6 +1982,7 @@ async function restoreCheckpoint(mode: RewindMode) {
         sessionId: session.sessionId,
         commit: checkpoint.commit,
         provider: kind,
+        ...(kind === "claude" ? { profileId: session.profileId ?? DEFAULT_ACCOUNT } : {}),
       });
       restored = result.files.length;
     }
@@ -1925,6 +1997,8 @@ async function restoreCheckpoint(mode: RewindMode) {
         const project = session.project;
         back();
         newProvider.value = "claude";
+        // The new session stays on the rewound chat's account.
+        newProfileId.value = session.profileId ?? DEFAULT_ACCOUNT;
         folder.value = project;
         draft.value = original;
       }
@@ -2166,10 +2240,10 @@ function closeSchedules() {
   schedulesOpen.value = false;
   void nextTick(() => scheduleButton.value?.focus({ preventScroll: true }));
 }
-async function openScheduledSession(id: string, kind: AgentProvider) {
+async function openScheduledSession(id: string, kind: AgentProvider, profileId?: string) {
   try {
     await list();
-    const session = sessions.value.find((item) => item.sessionId === id && (item.provider ?? "claude") === kind);
+    const session = sessions.value.find((item) => sameAgentSession(item, { sessionId: id, provider: kind, profileId }));
     if (!session) throw Error("The session transcript is not available yet.");
     await select(session.key);
   } catch (cause) {
@@ -2209,13 +2283,14 @@ function openInPane(id: string, session: PaneSession) {
 function paneOrigin(id: string): PaneSession {
   const pane: PaneSession =
     id === HOST
-      ? { key: active.value || undefined, provider: newProvider.value, folder: folder.value || undefined }
+      ? { key: active.value || undefined, provider: newProvider.value, folder: folder.value || undefined,
+          ...(newProvider.value === "claude" && chatProfile.value ? { profileId: chatProfile.value } : {}) }
       : tiles.value.panes[id] ?? {};
   const session = pane.key ? sessions.value.find((s) => s.key === pane.key) : undefined;
-  return {
-    provider: session ? session.provider ?? "claude" : pane.provider ?? provider.value,
-    folder: session?.project || pane.folder,
-  };
+  const kind = session ? session.provider ?? "claude" : pane.provider ?? provider.value;
+  // A split beside a Claude chat starts a new chat on the same account.
+  const profileId = kind === "claude" ? (session ? session.profileId ?? DEFAULT_ACCOUNT : pane.profileId) : undefined;
+  return { provider: kind, folder: session?.project || pane.folder, ...(profileId ? { profileId } : {}) };
 }
 function findOpenPane(key: string) {
   if (active.value === key) return HOST;
@@ -2262,7 +2337,7 @@ function closePane(id: string) {
     tiles.value.focus = HOST;
     if (session.key) void select(session.key).then(focusComposer);
     else if (session.provider) {
-      void openNew(session.provider).then(() => {
+      void openNew(session.provider, session.profileId).then(() => {
         if (session.folder) folder.value = session.folder;
       });
     } else back();
@@ -2294,16 +2369,25 @@ function openFromList(key: string, event?: MouseEvent) {
   if (!splitOn.value || at === HOST) return select(key);
   openInPane(at, { key });
 }
-function newInFocused(kind: AgentProvider) {
+function newInFocused(kind: AgentProvider, profile = "") {
   const at = tiles.value.focus;
-  if (!splitOn.value || at === HOST) return openNew(kind);
-  openInPane(at, { provider: kind, folder: paneOrigin(at).folder });
+  if (!splitOn.value || at === HOST) return openNew(kind, profile);
+  openInPane(at, { provider: kind, folder: paneOrigin(at).folder, ...(kind === "claude" && profile ? { profileId: profile } : {}) });
+}
+/** From a chat's account menu: a blank new chat on another account, where
+ * this chat is; nothing from this chat goes with it. */
+function newChatOn(profile: string) {
+  if (props.pane) return void openNew("claude", profile);
+  newInFocused("claude", profile);
 }
 if (props.pane) {
-  watch([active, newProvider, folder], () =>
+  watch([active, newProvider, folder, newProfileId], () =>
     emit(
       "pane-state",
-      active.value ? { key: active.value } : { provider: newProvider.value, folder: folder.value || undefined },
+      active.value
+        ? { key: active.value }
+        : { provider: newProvider.value, folder: folder.value || undefined,
+            ...(newProvider.value === "claude" && newProfileId.value ? { profileId: newProfileId.value } : {}) },
     ),
   );
   watch(
@@ -2323,7 +2407,7 @@ if (props.pane) {
           if (continued && !pane.quiet) return focusComposerEnd();
         });
       } else if (pane.provider) {
-        void openNew(pane.provider).then(() => {
+        void openNew(pane.provider, pane.profileId).then(() => {
           if (pane.folder) folder.value = pane.folder;
         });
       }
@@ -2389,6 +2473,25 @@ function sessionCommands() { return [
     blockId: props.block.id,
     run: showSettings,
   },
+  ...(props.pane
+    ? []
+    : [{
+        id: `agent-claude-accounts:${props.block.id}`,
+        title: "Claude accounts",
+        icon: "settings" as const,
+        blockId: props.block.id,
+        run: showSettings,
+      }]),
+  // One entry per signed-in account: a new Claude chat starts on it.
+  ...activeAccounts()
+    .filter((account) => manyAccounts.value && accountReady(account))
+    .map((account) => ({
+      id: `agent-new-claude:${props.block.id}:${account.id}`,
+      title: `New Claude session on ${account.name}`,
+      icon: "plus" as const,
+      blockId: props.block.id,
+      run: () => newChatOn(account.id),
+    })),
   ...(contextNow.value && !schedulesOpen.value
     ? [{
         id: `agent-context:${props.block.id}`,
@@ -2503,7 +2606,16 @@ function sessionCommands() { return [
   })),
 ]; }
 let unregisterComposer = () => {};
+// "Add a Claude account" / "Claude accounts" from a pill or chip inside this
+// app opens its Settings; split panes let it bubble to the host app.
+function openAccounts(event: Event) {
+  if (props.pane) return;
+  event.stopPropagation();
+  void showSettings();
+}
 onMounted(() => {
+  void loadAccounts();
+  root.value?.addEventListener(CLAUDE_ACCOUNTS_EVENT, openAccounts);
   unregisterComposer = registerComposer(composerHandle);
   document.addEventListener("visibilitychange", syncStream);
   document.addEventListener("pointerdown", outsideMenu, true);
@@ -2562,6 +2674,7 @@ onBeforeUnmount(() => {
   document.removeEventListener("visibilitychange", syncStream);
   document.removeEventListener("pointerdown", outsideMenu, true);
   window.removeEventListener("orvane:guest-pointer-down", outsideMenu);
+  root.value?.removeEventListener(CLAUDE_ACCOUNTS_EVENT, openAccounts);
   dockSize?.disconnect();
   clearInterval(clock);
   unregister();
@@ -2667,6 +2780,8 @@ onBeforeUnmount(() => {
                 <span class="cs-prov" :class="item.provider">{{
                   agentNames[item.provider]
                 }}</span>
+                <span v-if="item.provider === 'claude' && manyAccounts" class="cs-acct"
+                  ><i :style="{ background: accountColor(item.profileId) }" />{{ accountLabel(item.profileId) }}</span>
                 <span class="cs-path" :title="item.folder">{{
                   projectName(item.folder)
                 }}</span>
@@ -2695,6 +2810,8 @@ onBeforeUnmount(() => {
                 <span class="cs-prov" :class="s.provider ?? 'claude'">{{
                   agentNames[s.provider ?? "claude"]
                 }}</span>
+                <span v-if="(s.provider ?? 'claude') === 'claude' && manyAccounts" class="cs-acct"
+                  ><i :style="{ background: accountColor(s.profileId) }" />{{ accountLabel(s.profileId) }}</span>
                 <span class="cs-path" :title="s.project">{{
                   projectName(s.project)
                 }}</span>
@@ -2785,7 +2902,10 @@ onBeforeUnmount(() => {
             </span>
           </div>
           <KeepAwake v-if="working && !hostMode" />
+          <!-- An open Claude chat's account is locked; its menu starts a blank chat elsewhere. -->
+          <AccountChip v-if="provider === 'claude' && ((selected && !newProvider) || run)" :profile-id="chatProfile" @new-chat="newChatOn" />
           <button v-if="newProvider && pane?.id !== 'side' && !hostMode" type="button"
+
             class="cs-btn cs-icon cs-ghost" aria-label="Pin new session" title="Pin new session"
             :disabled="sending" @click="pinNew">
             <Icon name="pin" :size="14" />
@@ -3188,6 +3308,7 @@ onBeforeUnmount(() => {
               :checkpoint="rewinding"
               :session-id="selected.sessionId"
               :provider="selected.provider ?? 'claude'"
+              :profile-id="chatProfile"
               :can-chat="(selected.provider ?? 'claude') === 'claude'"
               :busy="busy || rewindBusy"
               @restore="restoreCheckpoint"
@@ -3314,8 +3435,9 @@ onBeforeUnmount(() => {
                 ref="composer"
                 v-model="draft"
                 aria-label="Message"
+                :readonly="accountUnavailable"
                 :class="{ 'cs-suggesting': suggestion }"
-                :placeholder="suggestion || 'Write a message…'"
+                :placeholder="accountUnavailable ? 'Account removed · start a new chat on another account' : suggestion || 'Write a message…'"
                 rows="2"
                 maxlength="12000"
                 aria-keyshortcuts="Enter Shift+Enter Control+Enter Control+Shift+Enter Escape @ / Shift+Tab Control+Alt+S Control+Alt+Z"
@@ -3401,6 +3523,14 @@ onBeforeUnmount(() => {
                 </span>
               </div>
               <div class="cs-compose-actions">
+                <!-- A new Claude chat picks its account; an open one (or a
+                     continued draft of a Claude chat) shows it locked. -->
+                <AccountPicker v-if="newProvider === 'claude' && !lockedProfile && !run" :model-value="chatProfile ?? ''"
+                  :disabled="busy" @update:model-value="newProfileId = $event" @picked="showNotice(`New chat uses ${$event}`)" />
+                <span v-else-if="provider === 'claude' && chatProfile && manyAccounts" class="cs-acct-lock"
+                  :title="`This chat runs on ${accountLabel(chatProfile)}. Open chats keep their account.`"
+                  ><i :style="{ background: accountColor(chatProfile) }" /><b>{{ accountLabel(chatProfile) }}</b><Icon name="lock" :size="11"
+                /></span>
                 <!-- A continued draft picks its model across both CLIs. -->
                 <span v-if="sourceQuote" class="cs-continue-anchor">
                   <button ref="continuePill" type="button" class="select-trigger cs-model cs-continue-model"
@@ -3461,7 +3591,7 @@ onBeforeUnmount(() => {
                 >
                 <span v-else class="cs-status-space" aria-hidden="true" />
                 <div class="cs-send-controls">
-                  <AgentUsage v-if="!schedulesOpen" ref="usagePill" :provider="provider" />
+                  <AgentUsage v-if="!schedulesOpen" ref="usagePill" :provider="provider" :profile-id="chatProfile" />
                   <!-- Queue sits beside the ring; Stop takes Send's round place in it. -->
                   <button v-if="busy && run?.status === 'running' && hasDraft" type="button"
                     class="cs-btn cs-primary cs-queue-btn" :disabled="queuePending"
@@ -3484,7 +3614,8 @@ onBeforeUnmount(() => {
                       <Icon name="stop" :size="11" />
                     </button>
                     <button v-else type="submit" class="cs-btn cs-primary cs-send"
-                      aria-label="Send" title="Send" :disabled="!hasDraft || (!!newProvider && !folder.trim())">
+                      aria-label="Send" title="Send" :disabled="accountUnavailable || !hasDraft || (!!newProvider && !folder.trim()) ||
+                        (newProvider === 'claude' && !accountReady(accountById(chatProfile)))">
                       <Icon name="up" :size="16" />
                     </button>
                   </ContextRing>
@@ -3746,6 +3877,7 @@ onBeforeUnmount(() => {
   min-height: 0;
   padding: 2px 6px 12px;
 }
+.cs-session-list:has(+ .cs-settings-nav) { margin-bottom: 8px; }
 .cs-group {
   display: flex;
   align-items: center;
@@ -4802,6 +4934,50 @@ onBeforeUnmount(() => {
 }
 .cs-compose-actions :deep(.select-trigger.cs-model[aria-expanded="true"]) {
   border-color: #7b97a7;
+}
+/* Claude accounts: the tag in session rows and the locked pill of an open chat. */
+.cs-acct {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--cs-muted);
+}
+.cs-acct i,
+.cs-acct-lock i {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.cs-acct-lock {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 180px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px dashed var(--cs-line2);
+  border-radius: 7px;
+  color: var(--cs-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.cs-acct-lock i {
+  width: 7px;
+  height: 7px;
+}
+.cs-acct-lock b {
+  overflow: hidden;
+  color: #273f50;
+  font-weight: 550;
+  text-overflow: ellipsis;
+}
+.cs-acct-lock :deep(svg) {
+  flex: none;
+  color: #8296a2;
 }
 .cs-folder-chip {
   flex: 0 1 auto;

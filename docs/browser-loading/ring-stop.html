@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ring stop</title>
+<style>
+/* Values copied from BrowserView.vue (.browser-view tokens, sidebar, toolbar). */
+:root{--canvas:#e9edf0;--accent:#6e91a6;--surface:#f8fafb;--line:#d5e1e8;--side-bg:#eaf0f4;--low:#f1f5f7;--hover:#e1eaf0;--ink:#425b6c;--sub:#6c8594;--faint:#96aab6;--soft:rgb(121 151 170 / 17%);--selection:#d9e7ef;--run:#365f78;--ease:cubic-bezier(.22,.75,.25,1)}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{display:grid;place-items:center;overflow:hidden;background:var(--canvas);color:var(--ink);font:12px "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+button,input{font:inherit;color:inherit;outline:none}
+button{border:0;background:none;padding:0;cursor:pointer}
+button:disabled{opacity:.45;cursor:default}
+button:focus-visible{outline:1px solid #7a96a6;outline-offset:2px}
+svg{display:block;flex:none;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+
+.browser-view{position:relative;display:grid;grid-template-columns:var(--side) minmax(0,1fr);grid-template-rows:48px auto minmax(0,1fr);--side:262px;width:min(960px,calc(100vw - 32px));height:min(560px,calc(100vh - 32px));overflow:hidden;border-radius:10px;background:var(--surface);box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c}
+
+/* Sidebar */
+.browser-side{grid-column:1;grid-row:1/-1;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);border-right:1px solid var(--soft)}
+.side-head{display:flex;align-items:center;gap:6px;height:44px;flex:none;padding:12px 10px 0 9px}
+.current-space{display:flex;align-items:center;gap:9px;padding:3px 6px 3px 3px;border-radius:8px}
+.current-space:hover{background:var(--hover)}
+.current-space svg{color:var(--faint)}
+.space-initial{display:grid;place-items:center;width:25px;height:25px;border-radius:7px;color:#4f7b93;background:#d8e6ee;font-weight:690;font-size:11px}
+.space-label{font-size:13.5px;font-weight:630;letter-spacing:-.32px}
+.side-spacer{flex:1}
+.icon-button{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;flex:none;border-radius:7px;color:var(--sub);transition:background .18s,color .18s,transform .18s}
+.icon-button:hover:not(:disabled){background:var(--hover);color:var(--ink)}
+.icon-button:active:not(:disabled){transform:scale(.95)}
+.browser-spaces{display:flex;align-items:center;gap:5px;min-height:33px;flex:none;padding:8px 12px 3px}
+.browser-space{display:grid;place-items:center;width:30px;height:28px;border-radius:7px;color:var(--faint);font-size:11px;font-weight:630}
+.browser-space[aria-selected="true"]{color:#4f7b93;background:#d6e5ed}
+.browser-space-add{width:27px;border:1px dashed var(--line)}
+.browser-tabs{padding:0 12px 10px;min-height:0;overflow:hidden auto;scrollbar-width:thin;scrollbar-color:#6c8fa459 transparent}
+.side-title{display:flex;align-items:center;gap:6px;height:28px;margin-top:12px;padding:0 7px;color:var(--faint);font-size:10px;font-weight:620;letter-spacing:.35px;text-transform:uppercase}
+.side-title-text{flex:1}
+.side-key{font-weight:450;letter-spacing:-.13px;opacity:.88}
+.side-add{display:grid;place-items:center;width:25px;height:25px;border-radius:6px;color:var(--sub)}
+.side-add:hover{background:var(--selection);color:var(--ink)}
+.browser-tab{position:relative;display:flex;align-items:center;gap:9px;height:33px;margin:2px 0;padding:0 6px 0 10px;border-radius:7px;color:var(--sub);cursor:pointer;white-space:nowrap;transition:background .16s,color .16s}
+.browser-tab:hover{background:rgb(132 162 182 / 10%);color:var(--ink)}
+.browser-tab.active{background:var(--selection);color:var(--ink);font-weight:570}
+.browser-tab.active::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:2px;border-radius:10px;background:var(--accent)}
+.browser-tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.tab-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.browser-tab-close{display:grid;place-items:center;width:20px;height:20px;border-radius:5px;color:var(--faint);opacity:0;transition:opacity .16s}
+.browser-tab:hover .browser-tab-close,.browser-tab.active .browser-tab-close,.browser-tab-close:focus-visible{opacity:1}
+.browser-tab-close:hover{background:rgb(93 122 139 / 14%);color:var(--ink)}
+.browser-foot{display:flex;align-items:center;gap:3px;margin-top:auto;flex:none;padding:8px 11px 10px;border-top:1px solid var(--soft)}
+.foot-link{display:flex;align-items:center;gap:10px;flex:1;height:30px;padding:0 9px;border-radius:7px;color:var(--sub);text-align:left}
+.foot-link:hover{background:var(--hover);color:var(--ink)}
+
+/* Tab favicon: one fixed 16px slot, so loading never moves the title. */
+.tab-slot{position:relative;width:16px;height:16px;flex:none}
+.tab-favicon{position:absolute;inset:0;display:grid;place-items:center;border-radius:4px;color:#607f91;background:#dbe7ee;font-size:10px;font-weight:700;transition:transform .14s ease,border-radius .14s ease}
+.pinned .tab-favicon{color:#96763f;background:#efe5d2}
+
+/* ---- loading indicator ---- */
+/* Tab: the site tile stays, rounds off and a thin ring turns around it. Only a
+   transform changes its size, so the 16px slot and the title stay put. */
+.tab-spin{position:absolute;top:-1px;left:-1px;width:18px;height:18px;opacity:0;transition:opacity .12s;stroke-width:1.5}
+.loading .tab-favicon{border-radius:50%;transform:scale(.72)}
+.loading .tab-spin{opacity:1;animation:spin .9s linear infinite}
+/* Button: X inside a ring, both within the unchanged 28px button. */
+.load-button{position:relative}
+.load-button .glyphs{display:grid;place-items:center;width:14px;height:14px}
+.load-button .glyphs svg{grid-area:1/1;transition:opacity .12s}
+.load-button .g-stop,.load-button.loading .g-reload{opacity:0}
+.load-button.loading .g-stop{width:10px;height:10px;opacity:1;stroke-width:2.2}
+.load-ring{position:absolute;top:3px;left:3px;width:22px;height:22px;opacity:0;transition:opacity .12s;stroke-width:1.5;pointer-events:none}
+.load-button.loading .load-ring{opacity:1;animation:spin .9s linear infinite}
+.track{stroke:#6e91a638}
+.arc{stroke:var(--run)}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Toolbar */
+.browser-bar{grid-column:2;grid-row:1;display:flex;align-items:center;gap:2px;min-width:0;height:48px;margin:0;padding:0 14px;background:var(--surface);border-bottom:1px solid var(--soft)}
+.address-shell{position:relative;display:flex;align-items:center;gap:8px;flex:1;min-width:80px;height:31px;margin:0 6px;padding:0 5px 0 10px;border:1px solid var(--soft);border-radius:7px;background:var(--low);overflow:hidden}
+.address-shell>svg{color:var(--faint)}
+.address-shell::after{content:"";position:absolute;left:12px;right:12px;bottom:0;height:1.5px;border-radius:2px;background:var(--accent);opacity:0;transform:scaleX(.3);transition:opacity .22s ease,transform .28s var(--ease);pointer-events:none}
+.address-shell:focus-within::after{opacity:.75;transform:scaleX(1)}
+.browser-address{flex:1;min-width:0;padding:0;border:0;background:transparent;font-size:12px}
+.address-shell .icon-button{width:23px;height:23px}
+.browser-star.on{color:#b5874a}
+.browser-star.on svg{fill:currentColor}
+.browser-bar-divider{flex:0 0 1px;height:16px;margin-inline:3px;background:var(--soft)}
+.browser-error{grid-column:2;grid-row:2;margin:0;padding:7px 14px;font-size:11px;color:#9a4b45;background:#f7ecea}
+.browser-error[hidden]{display:none}
+
+/* Page (stands in for the webview guest) */
+.browser-page{grid-column:2;grid-row:3;min-width:0;min-height:0;overflow:hidden;background:#fff;color:#33434f;font-size:13px;line-height:1.6}
+.site-head{display:flex;align-items:center;gap:18px;height:42px;padding:0 28px;border-bottom:1px solid #edf1f3;font-size:12px;color:#657985}
+.site-head b{color:#243a48;font-size:13px;margin-right:auto}
+.doc{max-width:600px;padding:20px 28px}
+.doc small{color:#7b8e9a;font-size:11.5px}
+.doc h1{margin:4px 0 12px;font-size:23px;line-height:1.3;color:#1f3340;letter-spacing:-.4px}
+.doc h2{margin:20px 0 6px;font-size:15px;color:#1f3340}
+.doc p{margin:0 0 10px}
+.doc pre{margin:0;padding:11px 14px;border-radius:8px;background:#f2f6f8;font:11.5px/1.7 "Cascadia Code",Consolas,monospace;white-space:pre;overflow:hidden}
+.doc .rest{animation:fade .18s ease-out}
+@keyframes fade{from{opacity:0}}
+
+.browser-tip{position:absolute;z-index:10;display:flex;align-items:center;gap:9px;min-height:27px;padding:6px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);box-shadow:0 8px 24px rgb(50 77 96 / 11%),0 2px 6px rgb(50 77 96 / 4.5%);font-size:11px;line-height:1.25;white-space:nowrap;pointer-events:none;animation:tip-in .17s ease both}
+.browser-tip[hidden]{display:none}
+.browser-tip kbd{font:10px "Cascadia Code",Consolas,monospace;color:var(--sub)}
+@keyframes tip-in{from{opacity:0;transform:translateY(3px)}}
+
+@media (max-width:700px){.browser-view{--side:208px}}
+/* Reduced motion: the arc stays, still, and still differs from the idle state. */
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></symbol>
+  <symbol id="i-forward" viewBox="0 0 24 24"><path d="M5 12h14m-7-7 7 7-7 7"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8M3 10a2 2 0 0 1 .7-1.53l7-6a2 2 0 0 1 2.6 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><path d="M2.6 17.4A2 2 0 0 0 2 18.8V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.2a2 2 0 0 0 1.4-.6l.8-.8a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".6"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-columns" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></symbol>
+  <symbol id="i-library" viewBox="0 0 24 24"><path d="M10 2v8l3-3 3 3V2M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/></symbol>
+</svg>
+
+<div class="browser-view" aria-label="Web browser">
+  <aside class="browser-side" aria-label="Browser tabs">
+    <div class="side-head">
+      <button type="button" class="current-space" aria-label="Switch space">
+        <span class="space-initial">W</span><span class="space-label">Work</span><svg width="12" height="12"><use href="#i-down"/></svg>
+      </button>
+      <span class="side-spacer"></span>
+      <button type="button" class="icon-button" aria-label="Collapse sidebar" data-tip="Collapse or expand sidebar"><svg width="15" height="15"><use href="#i-sidebar"/></svg></button>
+    </div>
+    <div class="browser-spaces" role="tablist" aria-label="Spaces">
+      <button type="button" class="browser-space" role="tab" aria-selected="true" aria-label="Space Work">W</button>
+      <button type="button" class="browser-space" role="tab" aria-selected="false" aria-label="Space Personal">P</button>
+      <button type="button" class="browser-space browser-space-add" aria-label="New space" data-tip="New space"><svg width="11" height="11"><use href="#i-plus"/></svg></button>
+    </div>
+    <div class="browser-tabs" role="tablist" aria-orientation="vertical">
+      <div class="side-title"><span class="side-title-text">Pinned</span></div>
+      <div class="browser-tab pinned" role="tab" tabindex="0" data-id="github"></div>
+      <div class="side-title"><span class="side-title-text">Tabs</span><span class="side-key">Ctrl T</span><button type="button" class="side-add" aria-label="New tab" data-tip="New tab" data-key="Ctrl T"><svg width="14" height="14"><use href="#i-plus"/></svg></button></div>
+      <div class="browser-tab" role="tab" tabindex="0" data-id="electron"></div>
+      <div class="browser-tab" role="tab" tabindex="0" data-id="vue"></div>
+      <div class="browser-tab" role="tab" tabindex="0" data-id="local"></div>
+    </div>
+    <div class="browser-foot">
+      <button type="button" class="foot-link" data-tip="Bookmarks and history" data-key="Ctrl B"><svg width="15" height="15"><use href="#i-library"/></svg><span>Library</span></button>
+      <button type="button" class="icon-button" aria-label="Preferences" data-tip="Preferences"><svg width="15" height="15"><use href="#i-settings"/></svg></button>
+    </div>
+  </aside>
+
+  <form class="browser-bar">
+    <button type="button" class="icon-button" id="back" aria-label="Back" data-tip="Back" data-key="Alt ←"><svg width="15" height="15"><use href="#i-back"/></svg></button>
+    <button type="button" class="icon-button" id="forward" aria-label="Forward" data-tip="Forward" data-key="Alt →"><svg width="15" height="15"><use href="#i-forward"/></svg></button>
+    <button type="button" class="icon-button load-button" id="load">
+      <svg class="load-ring" viewBox="0 0 22 22" aria-hidden="true"><circle class="track" cx="11" cy="11" r="10"/><path class="arc" d="M11 1a10 10 0 0 1 10 10"/></svg>
+      <span class="glyphs">
+        <svg class="g-reload" width="14" height="14"><use href="#i-refresh"/></svg>
+        <svg class="g-stop" width="14" height="14"><use href="#i-close"/></svg>
+      </span>
+    </button>
+    <button type="button" class="icon-button" aria-label="Start page" data-tip="Start page"><svg width="15" height="15"><use href="#i-home"/></svg></button>
+    <div class="address-shell">
+      <svg width="14" height="14"><use id="scheme" href="#i-lock"/></svg>
+      <input class="browser-address" id="address" aria-label="Address" placeholder="Search or enter address" spellcheck="false" autocomplete="off">
+      <button type="button" class="icon-button browser-star" aria-label="Bookmark this page" aria-pressed="false" data-tip="Bookmark this page"><svg width="14" height="14"><use href="#i-star"/></svg></button>
+    </div>
+    <button type="button" class="icon-button" aria-label="Saved passwords" data-tip="Saved passwords"><svg width="14" height="14"><use href="#i-key"/></svg></button>
+    <button type="button" class="icon-button" aria-label="Open in your browser" data-tip="Open in your browser"><svg width="14" height="14"><use href="#i-external"/></svg></button>
+    <button type="button" class="icon-button" aria-label="Peek a link" data-tip="Peek a link"><svg width="15" height="15"><use href="#i-eye"/></svg></button>
+    <button type="button" class="icon-button" aria-label="Toggle Split View" data-tip="Enter Split View"><svg width="15" height="15"><use href="#i-columns"/></svg></button>
+    <span class="browser-bar-divider" aria-hidden="true"></span>
+    <button type="button" class="icon-button" aria-label="Command palette" data-tip="Command palette" data-key="Ctrl K"><svg width="15" height="15"><use href="#i-search"/></svg></button>
+    <button type="button" class="icon-button" aria-label="Browser menu" data-tip="Browser menu"><svg width="15" height="15"><use href="#i-more"/></svg></button>
+  </form>
+  <p class="browser-error" role="alert" hidden></p>
+  <main class="browser-page"></main>
+  <div class="browser-tip" role="tooltip" hidden></div>
+  <span class="sr-only" id="status" role="status"></span>
+</div>
+
+<template id="spinner"><svg class="tab-spin" viewBox="0 0 18 18" aria-hidden="true"><circle class="track" cx="9" cy="9" r="8"/><path class="arc" d="M9 1a8 8 0 0 1 8 8"/></svg></template>
+
+<script>
+const $ = (selector) => document.querySelector(selector);
+const view = $(".browser-view"), loadButton = $("#load"), address = $("#address");
+const page = $(".browser-page"), errorRow = $(".browser-error"), tip = $(".browser-tip");
+
+const pages = {
+  "https://github.com/pulls": { title: "Pull requests · GitHub", site: "GitHub", nav: ["Issues", "Pulls", "Actions"], crumb: "Created by you", h1: "Pull requests", body: "<p>feat(host): reuse desktop Agent Sessions on LAN</p><p>feat: agent delegation and Orvane Host chat</p>" },
+  "https://www.electronjs.org/docs/latest/api/webview-tag": { title: "<webview> Tag | Electron", site: "Electron", nav: ["Docs", "API", "Blog"], crumb: "API › Modules for the Renderer Process", h1: "<webview> Tag", body: "<p>Display external web content in an isolated frame and process. The guest page runs separately from the page that embeds it.</p><h2>Enabling</h2><p>The tag is off by default. Turn it on with the window's webviewTag preference.</p><pre>const win = new BrowserWindow({\n  webPreferences: { webviewTag: true }\n})</pre><h2>Methods</h2><p><code>&lt;webview&gt;.stop()</code> stops any pending navigation.</p>" },
+  "https://vuejs.org/guide/essentials/watchers.html": { title: "Watchers | Vue.js", site: "Vue.js", nav: ["Docs", "API", "Playground"], crumb: "Guide › Essentials", h1: "Watchers", body: "<p>Computed properties declare derived values. A watcher runs a side effect when a piece of reactive state changes.</p><h2>Basic Example</h2><pre>watch(question, async (value) => {\n  if (value.includes('?')) await answer()\n})</pre>" },
+  "http://localhost:5173/": { title: "Orvane", site: "Orvane", nav: ["localhost:5173"], crumb: "Development server", h1: "Workspace", body: "<p>Browser, Terminal, Notes and Git on one canvas.</p>" },
+};
+// paint: what the page area shows: "none" (blank), "partial" or "full".
+const makeTab = (url) => ({ url, shown: url, title: pages[url].title, stack: [url], index: 0, state: "loaded", paint: "full", timers: [], typed: "", error: "" });
+const tabs = {
+  github: makeTab("https://github.com/pulls"),
+  electron: makeTab("https://www.electronjs.org/docs/latest/api/webview-tag"),
+  vue: makeTab("https://vuejs.org/guide/essentials/watchers.html"),
+  local: makeTab("http://localhost:5173/"),
+};
+let active = "electron";
+// The open tab has one page behind it, so Back is available as on a working day.
+pages["https://www.electronjs.org/docs/latest/api/browser-window"] = { title: "BrowserWindow | Electron", site: "Electron", nav: ["Docs", "API", "Blog"], crumb: "API › Modules for the Main Process", h1: "BrowserWindow", body: "<p>Create and control browser windows.</p>" };
+tabs.electron.stack.unshift("https://www.electronjs.org/docs/latest/api/browser-window");
+tabs.electron.index = 1;
+
+const host = (url) => { try { return new URL(url).host.replace(/^www\./, ""); } catch { return url; } };
+const label = (tab) => tab.title || host(tab.url);
+const escapeHtml = (value) => value.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const fails = (url) => /^(localhost|127\.0\.0\.1)(:|$)|\.invalid$/.test(host(url));
+
+for (const row of document.querySelectorAll("[data-id]")) {
+  row.innerHTML = '<span class="tab-slot"><span class="tab-favicon"></span></span><span class="tab-text"></span><button type="button" class="browser-tab-close"><svg width="12" height="12"><use href="#i-close"/></svg></button>';
+  row.firstChild.append($("#spinner").content.cloneNode(true));
+}
+
+let painted = "";
+function renderPage() {
+  const tab = tabs[active], key = [active, tab.shown, tab.paint].join();
+  if (key === painted) return;
+  painted = key;
+  const data = pages[tab.shown] || { site: host(tab.shown), nav: [], crumb: host(tab.shown), h1: host(tab.shown), body: "<p>Page content.</p>" };
+  page.innerHTML = tab.paint === "none" ? "" :
+    `<div class="site-head"><b>${escapeHtml(data.site)}</b>${data.nav.map((item) => `<span>${item}</span>`).join("")}</div>
+     <div class="doc"><small>${escapeHtml(data.crumb)}</small><h1>${escapeHtml(data.h1)}</h1>${tab.paint === "full" ? `<div class="rest">${data.body}</div>` : ""}</div>`;
+}
+
+function render() {
+  for (const row of document.querySelectorAll("[data-id]")) {
+    const tab = tabs[row.dataset.id], selected = row.dataset.id === active, loading = tab.state === "loading";
+    row.classList.toggle("active", selected);
+    row.classList.toggle("loading", loading);
+    row.setAttribute("aria-selected", selected);
+    row.setAttribute("aria-busy", loading);
+    row.setAttribute("aria-label", label(tab) + (loading ? ", loading" : ""));
+    row.dataset.tip = label(tab) + (loading ? " · Loading" : "");
+    row.querySelector(".tab-favicon").textContent = host(tab.url).charAt(0).toUpperCase();
+    row.querySelector(".tab-text").textContent = label(tab);
+    row.querySelector(".browser-tab-close").setAttribute("aria-label", "Close " + label(tab));
+  }
+  const tab = tabs[active], loading = tab.state === "loading";
+  // Same button element in both states: keyboard focus never moves.
+  loadButton.classList.toggle("loading", loading);
+  loadButton.setAttribute("aria-label", loading ? "Stop loading" : "Reload");
+  loadButton.dataset.tip = loading ? "Stop" : "Reload";
+  if (loading) loadButton.dataset.key = "Esc"; else delete loadButton.dataset.key;
+  if (document.activeElement !== address) address.value = tab.typed || tab.url;
+  $("#scheme").setAttribute("href", tab.url.startsWith("https:") ? "#i-lock" : "#i-globe");
+  $("#back").disabled = tab.index === 0;
+  $("#forward").disabled = tab.index === tab.stack.length - 1;
+  page.setAttribute("aria-busy", loading);
+  errorRow.hidden = !tab.error;
+  errorRow.textContent = tab.error;
+  renderPage();
+  if (!tip.hidden && tipFor === loadButton) showTip(loadButton);
+}
+
+const say = (text) => { $("#status").textContent = text; };
+function clearTimers(tab) { tab.timers.forEach(clearTimeout); tab.timers = []; }
+function load(id, url = tabs[id].url, duration = 4500, history) {
+  const tab = tabs[id], navigating = url !== tab.url;
+  clearTimers(tab);
+  tab.state = "loading";
+  tab.error = "";
+  tab.typed = navigating ? url : "";
+  say("Loading " + (navigating ? host(url) : label(tab)));
+  if (fails(url)) {
+    tab.timers = [setTimeout(() => {
+      tab.state = "failed";
+      tab.paint = "none";
+      // As in BrowserView: only the tab on screen reports its failure.
+      if (id === active) tab.error = "This page couldn't load (ERR_CONNECTION_REFUSED).";
+      render();
+    }, 2200)];
+  } else {
+    tab.timers = [
+      setTimeout(() => {
+        if (navigating) {
+          // History moves only when the navigation commits.
+          if (history === "push") { tab.stack.splice(tab.index + 1, Infinity, url); tab.index++; }
+          else if (history !== undefined) tab.index = history;
+          tab.url = url;
+          tab.typed = "";
+          tab.title = pages[url]?.title || "";
+        }
+        tab.shown = url;
+        tab.paint = "partial";
+        render();
+      }, duration * 0.3),
+      setTimeout(() => {
+        tab.state = "loaded";
+        tab.paint = "full";
+        say(label(tab) + " loaded");
+        render();
+      }, duration),
+    ];
+  }
+  render();
+}
+function stop(id) {
+  const tab = tabs[id];
+  if (tab.state !== "loading") return;
+  clearTimers(tab);
+  tab.state = "stopped";
+  say("Loading stopped");
+  render();
+}
+function select(id) {
+  if (id === active) return;
+  tabs[active].error = "";
+  active = id;
+  address.blur();
+  render();
+}
+
+loadButton.addEventListener("click", () => (tabs[active].state === "loading" ? stop(active) : load(active)));
+function step(delta) {
+  const tab = tabs[active], url = tab.stack[tab.index + delta];
+  if (!url) return;
+  load(active, url, 4500, tab.index + delta);
+}
+$("#back").addEventListener("click", () => step(-1));
+$("#forward").addEventListener("click", () => step(1));
+$(".browser-bar").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const raw = address.value.trim();
+  if (!raw) return;
+  const url = /^https?:\/\//i.test(raw) ? raw
+    : /^(localhost|127\.0\.0\.1)/.test(raw) ? "http://" + raw
+    : /^\S+\.\S+$/.test(raw) ? "https://" + raw
+    : "https://www.google.com/search?q=" + encodeURIComponent(raw);
+  address.blur();
+  load(active, url, 4500, url === tabs[active].url ? undefined : "push");
+});
+address.addEventListener("focus", () => address.select());
+
+const rows = [...document.querySelectorAll("[data-id]")];
+rows.forEach((row, index) => {
+  row.addEventListener("click", (event) => { if (!event.target.closest(".browser-tab-close")) select(row.dataset.id); });
+  row.addEventListener("keydown", (event) => {
+    if (event.target !== row) return;
+    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(row.dataset.id); }
+    if (event.key === "ArrowUp" || event.key === "ArrowDown") { event.preventDefault(); rows[index + (event.key === "ArrowUp" ? -1 : 1)]?.focus(); }
+  });
+});
+
+addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    hideTip();
+    // Text fields come first: Esc in the address restores it, as today.
+    if (event.target === address) { address.value = tabs[active].url; address.select(); }
+    else if (tabs[active].state === "loading") { event.preventDefault(); stop(active); }
+  } else if (event.altKey && event.key === "ArrowLeft") { event.preventDefault(); step(-1); }
+  else if (event.altKey && event.key === "ArrowRight") { event.preventDefault(); step(1); }
+  else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "l") { event.preventDefault(); address.focus(); }
+});
+
+let tipTimer, tipFor;
+function showTip(target) {
+  const [text, detail] = (target.dataset.tip || "").split(" · ");
+  if (!text) return;
+  tip.textContent = text;
+  const extra = target.dataset.key || detail;
+  if (extra) {
+    const node = document.createElement(target.dataset.key ? "kbd" : "span");
+    node.textContent = extra;
+    tip.append(node);
+  }
+  tip.hidden = false;
+  const box = view.getBoundingClientRect(), anchor = target.getBoundingClientRect();
+  const x = Math.min(anchor.left - box.left, view.clientWidth - tip.offsetWidth - 6);
+  let y = anchor.bottom - box.top + 8;
+  if (y + tip.offsetHeight > view.clientHeight - 6) y = anchor.top - box.top - tip.offsetHeight - 8;
+  tip.style.left = Math.max(6, x) + "px";
+  tip.style.top = y + "px";
+}
+function hideTip() { clearTimeout(tipTimer); tipFor = null; tip.hidden = true; }
+function planTip(target, delay) {
+  if (target === tipFor) return;
+  hideTip();
+  if (!target || target.disabled) return;
+  tipFor = target;
+  tipTimer = setTimeout(() => showTip(target), delay);
+}
+view.addEventListener("pointerover", (event) => planTip(event.target.closest("[data-tip]"), 500));
+view.addEventListener("pointerleave", hideTip);
+view.addEventListener("pointerdown", () => { clearTimeout(tipTimer); tip.hidden = true; }, true);
+view.addEventListener("focusin", (event) => { if (event.target.matches("[data-tip]:focus-visible")) planTip(event.target, 240); });
+view.addEventListener("focusout", hideTip);
+
+// Opens mid-load: the page has painted its header, the rest is still coming.
+tabs.electron.paint = "partial";
+load("electron", tabs.electron.url, 9000);
+</script>
+</body>
+</html>

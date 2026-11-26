@@ -24,6 +24,8 @@ const props = defineProps<{
   checkpoint: SessionCheckpoint;
   sessionId: string;
   provider: string;
+  /** Claude account of the session (its UUID may exist in another account too). */
+  profileId?: string;
   /** Claude can also go back in the conversation. */
   canChat: boolean;
   busy?: boolean;
@@ -48,6 +50,7 @@ onMounted(async () => {
       sessionId: props.sessionId,
       commit: props.checkpoint.commit,
       provider: props.provider,
+      ...(props.profileId ? { profileId: props.profileId } : {}),
     });
     files.value = preview.files;
     more.value = preview.more;

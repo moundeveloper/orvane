@@ -2,7 +2,7 @@
 // Agent Sessions → Settings: the Orvane MCP for the Claude and Codex CLIs
 // (install, test, remove through each CLI's own `mcp` commands) and session
 // preferences. Nothing is written until Install or Remove is pressed.
-import { onMounted, reactive, ref } from "vue";
+import { onMounted, reactive, ref, watch } from "vue";
 import {
   agentEditModeNames,
   agentEditModes,
@@ -14,9 +14,15 @@ import { harness } from "../agentHarness";
 import { agentRequest } from "../exposition";
 import Icon from "./Icon.vue";
 import HostSettings from "./HostSettings.vue";
+import ClaudeAccountsSettings from "./ClaudeAccountsSettings.vue";
+import { claudeAccounts } from "../claudeAccounts";
+
 
 type McpRow = {
   provider: AgentProvider;
+  /** Claude: the account whose .claude.json this row reads and writes. */
+  profileId?: string;
+  profileName?: string;
   cli: boolean;
   installed: boolean;
   where: string;
@@ -28,9 +34,14 @@ const suggest = defineModel<boolean>("suggest", { required: true });
 const rows = ref<McpRow[]>([]);
 const loading = ref(true);
 const error = ref("");
-const busy = reactive<Partial<Record<AgentProvider, string>>>({});
-const tested = reactive<Partial<Record<AgentProvider, number>>>({});
-const open = reactive<Partial<Record<AgentProvider, boolean>>>({});
+/** Claude rows are one per account, so state is keyed per row. */
+const keyOf = (row: McpRow) => (row.provider === "claude" ? `claude:${row.profileId ?? "default"}` : row.provider);
+const claudeRows = () => rows.value.filter((r) => r.provider === "claude").length;
+const rowName = (row: McpRow) =>
+  row.provider === "claude" && claudeRows() > 1 ? `${agentNames.claude} · ${row.profileName}` : agentNames[row.provider];
+const busy = reactive<Record<string, string>>({});
+const tested = reactive<Record<string, number>>({});
+const open = reactive<Record<string, boolean>>({});
 const root = ref<HTMLElement>();
 // The edit mode new chats start in; unset is what the CLI does by itself.
 const modeHints: Record<AgentEditMode, string> = {
@@ -61,7 +72,7 @@ async function load() {
   loading.value = true;
   try {
     rows.value = (await agentRequest<{ rows: McpRow[] }>("mcp-status")).rows;
-    for (const row of rows.value) if (open[row.provider] === undefined) open[row.provider] = row.cli && !row.installed;
+    for (const row of rows.value) if (open[keyOf(row)] === undefined) open[keyOf(row)] = row.cli && !row.installed;
     error.value = "";
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : "Could not read the CLI settings.";
@@ -70,34 +81,38 @@ async function load() {
   }
 }
 onMounted(load);
+watch(() => claudeAccounts.list.filter((account) => !account.removed).map((account) => account.id).join("|"), () => void load());
 
 async function act(row: McpRow, op: "install" | "remove" | "test") {
-  if (busy[row.provider]) return;
-  busy[row.provider] = op;
+  const key = keyOf(row);
+  if (busy[key]) return;
+  busy[key] = op;
   error.value = "";
   let installed: McpRow | undefined;
+  const target = { provider: row.provider, ...(row.profileId ? { profileId: row.profileId } : {}) };
   try {
     if (op === "test") {
-      tested[row.provider] = (await agentRequest<{ tools: number }>("mcp-test", { provider: row.provider })).tools;
+      tested[key] = (await agentRequest<{ tools: number }>("mcp-test", target)).tools;
     } else {
-      rows.value = (await agentRequest<{ rows: McpRow[] }>(`mcp-${op}`, { provider: row.provider })).rows;
-      delete tested[row.provider];
-      open[row.provider] = op === "remove";
-      if (op === "install") installed = rows.value.find((r) => r.provider === row.provider && r.installed);
+      rows.value = (await agentRequest<{ rows: McpRow[] }>(`mcp-${op}`, target)).rows;
+      delete tested[key];
+      open[key] = op === "remove";
+      if (op === "install") installed = rows.value.find((r) => keyOf(r) === key && r.installed);
     }
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : "That did not work.";
   } finally {
-    delete busy[row.provider];
+    delete busy[key];
   }
   // A fresh install is checked right away: start the server, count its tools.
   if (installed) await act(installed, "test");
 }
 function rowKey(event: KeyboardEvent, row: McpRow) {
-  if (event.key === "Escape" && open[row.provider]) {
+  const key = keyOf(row);
+  if (event.key === "Escape" && open[key]) {
     event.stopPropagation();
-    open[row.provider] = false;
-  } else if (event.key === "Enter" && open[row.provider] && row.cli && !row.installed && event.target === event.currentTarget) {
+    open[key] = false;
+  } else if (event.key === "Enter" && open[key] && row.cli && !row.installed && event.target === event.currentTarget) {
     event.preventDefault();
     void act(row, "install");
   }
@@ -115,40 +130,42 @@ defineExpose({ focus: () => root.value?.focus() });
     <p class="as-sub">For the Claude and Codex sessions Orvane starts on this computer.</p>
 
     <HostSettings />
+    <ClaudeAccountsSettings />
+
 
     <h2>Orvane MCP</h2>
     <p v-if="loading && !rows.length" class="as-note">Checking the CLIs…</p>
     <div v-else class="as-card" role="list" aria-label="Orvane MCP">
-      <template v-for="row in rows" :key="row.provider">
-        <div class="as-row" role="listitem" :aria-label="agentNames[row.provider]" tabindex="0" @keydown="rowKey($event, row)">
+      <template v-for="row in rows" :key="keyOf(row)">
+        <div class="as-row" role="listitem" :aria-label="rowName(row)" tabindex="0" @keydown="rowKey($event, row)">
           <span class="as-logo"><Icon :name="row.provider === 'claude' ? 'ai' : 'code'" :size="15" /></span>
-          <span class="as-name"><b>{{ agentNames[row.provider] }}</b><code :title="row.where">{{ row.where }}</code></span>
+          <span class="as-name"><b>{{ rowName(row) }}</b><code :title="row.where">{{ row.where }}</code></span>
           <span v-if="!row.cli" class="as-state off"><i></i>CLI not found</span>
-          <span v-else-if="busy[row.provider] === 'test'" class="as-state"><i></i>Testing…</span>
+          <span v-else-if="busy[keyOf(row)] === 'test'" class="as-state"><i></i>Testing…</span>
           <span v-else-if="row.installed" class="as-state ok"
-            ><i></i>{{ tested[row.provider] !== undefined ? `Connected · ${tested[row.provider]} tools` : "Set up" }}</span
+            ><i></i>{{ tested[keyOf(row)] !== undefined ? `Connected · ${tested[keyOf(row)]} tools` : "Set up" }}</span
           >
           <span v-else class="as-state off"><i></i>Not set up</span>
           <span class="as-acts">
             <template v-if="row.cli && row.installed">
-              <button type="button" class="as-btn ghost" :disabled="!!busy[row.provider]" @click="act(row, 'test')">Test</button>
-              <button type="button" class="as-btn ghost" :disabled="!!busy[row.provider]" @click="act(row, 'remove')">
-                {{ busy[row.provider] === "remove" ? "Removing…" : "Remove" }}
+              <button type="button" class="as-btn ghost" :disabled="!!busy[keyOf(row)]" @click="act(row, 'test')">Test</button>
+              <button type="button" class="as-btn ghost" :disabled="!!busy[keyOf(row)]" @click="act(row, 'remove')">
+                {{ busy[keyOf(row)] === "remove" ? "Removing…" : "Remove" }}
               </button>
             </template>
             <template v-else-if="row.cli">
-              <button type="button" class="as-btn primary" :disabled="!!busy[row.provider]" @click="act(row, 'install')">
-                {{ busy[row.provider] === "install" ? "Installing…" : "Install" }}
+              <button type="button" class="as-btn primary" :disabled="!!busy[keyOf(row)]" @click="act(row, 'install')">
+                {{ busy[keyOf(row)] === "install" ? "Installing…" : "Install" }}
               </button>
-              <button type="button" class="as-caret" :aria-expanded="!!open[row.provider]"
-                :aria-label="open[row.provider] ? 'Hide what gets written' : 'Show what gets written'"
-                @click="open[row.provider] = !open[row.provider]">
+              <button type="button" class="as-caret" :aria-expanded="!!open[keyOf(row)]"
+                :aria-label="open[keyOf(row)] ? 'Hide what gets written' : 'Show what gets written'"
+                @click="open[keyOf(row)] = !open[keyOf(row)]">
                 <Icon name="down" :size="12" />
               </button>
             </template>
           </span>
         </div>
-        <div v-if="row.cli && !row.installed && open[row.provider]" class="as-more">
+        <div v-if="row.cli && !row.installed && open[keyOf(row)]" class="as-more">
           <p>
             Install adds this entry with
             <code>{{ row.provider === "claude" ? "claude mcp add -s user" : "codex mcp add" }}</code>.

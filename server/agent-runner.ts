@@ -36,9 +36,12 @@ import {
 import { stepInput, stepOutput } from "./step-details.ts";
 import { compare, fileDiff, snapshot, type RunChange, type Snapshot } from "./run-changes.ts";
 import { Checkpoints } from "./checkpoints.ts";
+import { claudeAuthStatus, DEFAULT_PROFILE, type ClaudeAuth, type ResolvedProfile } from "./claude-profiles.ts";
 
-type Target = {
+export type Target = {
   provider: AgentProvider;
+  /** Required for Claude: the account resolved by the server, frozen for the run. */
+  profile?: ResolvedProfile;
   folder: string;
   delegationId?: string;
   key?: string;
@@ -72,6 +75,10 @@ const jobs = {
 type Entry = {
   view: AgentRun;
   lock: string;
+  /** The Claude account this run (and its queue) is bound to. */
+  profile?: ResolvedProfile;
+  /** The sign-in the account had when this run started. */
+  fingerprint?: string;
   child?: ChildProcessWithoutNullStreams;
   clients: Set<ServerResponse>;
   inputs: Map<string, unknown>;
@@ -132,17 +139,38 @@ export class AgentRunner {
     this.checkpoints = new Checkpoints(directory);
   }
 
-  current(target: Pick<Target, "key" | "provider" | "sessionId">) {
+  /** Lets the API refuse runs while an account's sign-in Terminal is open. */
+  loginActive?: (profileId: string) => boolean;
+  /** Recheck the registry after async folder validation and before registering
+   * any chat, queued turn or text job with an already-resolved account. */
+  validateProfile?: (profileId: string) => void;
+  /** The trusted transcript path to resume a session of one account. */
+  resumePath?: (profile: ResolvedProfile, sessionId: string, key?: string) => Promise<string>;
+  /** Each Claude run reports the account's sign-in it found. */
+  onAuth?: (profileId: string, auth: ClaudeAuth) => void;
+
+  current(target: Pick<Target, "key" | "provider" | "sessionId"> & { profileId?: string }) {
+    const profileId = target.profileId ?? DEFAULT_PROFILE;
     return (
       [...this.runs.values()]
         .reverse()
         .find(
           ({ view }) =>
-            view.key === target.key ||
+            (!!target.key && view.key === target.key) ||
             (view.provider === target.provider &&
-              view.sessionId === target.sessionId),
+              !!target.sessionId &&
+              view.sessionId === target.sessionId &&
+              (view.provider !== "claude" || (view.profileId ?? DEFAULT_PROFILE) === profileId)),
         )?.view ?? null
     );
+  }
+
+  /** Claude runs of one account that are still working. */
+  busyCount(profileId: string) {
+    let count = 0;
+    for (const { view, profile } of this.runs.values())
+      if (view.provider === "claude" && profile?.id === profileId && agentBusy(view)) count++;
+    return count;
   }
 
   recent() {
@@ -162,7 +190,11 @@ export class AgentRunner {
   }
 
   /** Approvals given in one session, read from the saved run logs. */
-  async approvals(sessionId: string) {
+  async approvals(sessionId: string, profileId?: string, provider: AgentProvider = "claude") {
+    // The same Claude session UUID may exist in two accounts' folders.
+    const mine = (record: { provider?: string; profileId?: string }) =>
+      (record.provider ?? "claude") === provider &&
+      (provider !== "claude" || (record.profileId ?? DEFAULT_PROFILE) === (profileId ?? DEFAULT_PROFILE));
     const directory = join(this.directory, "agent-runs");
     const names = await readdir(directory).catch(() => [] as string[]);
     const files = await Promise.all(
@@ -179,9 +211,9 @@ export class AgentRunner {
     const found: { tool: string; allowed: boolean; at: string; runId: string }[] = [];
     for (const { path } of files.slice(0, 300)) {
       const record = await readFile(path, "utf8")
-        .then((text) => JSON.parse(text) as { id?: string; sessionId?: string; decisions?: Entry["decisions"]; finishedAt?: string })
+        .then((text) => JSON.parse(text) as { id?: string; sessionId?: string; provider?: string; profileId?: string; decisions?: Entry["decisions"]; finishedAt?: string })
         .catch(() => null);
-      if (!record || record.sessionId !== sessionId || !Array.isArray(record.decisions)) continue;
+      if (!record || record.sessionId !== sessionId || !mine(record) || !Array.isArray(record.decisions)) continue;
       for (const decision of record.decisions)
         if (typeof decision?.tool === "string")
           found.push({
@@ -193,7 +225,7 @@ export class AgentRunner {
     }
     // Runs still open have not written a log yet.
     for (const entry of this.runs.values())
-      if (entry.view.sessionId === sessionId)
+      if (entry.view.sessionId === sessionId && mine(entry.view))
         for (const decision of entry.decisions)
           found.push({ tool: decision.tool, allowed: decision.allowed, at: decision.at ?? "", runId: entry.view.id });
     const unique = new Map(found.map((item) => [`${item.runId}|${item.at}|${item.tool}`, item]));
@@ -201,7 +233,7 @@ export class AgentRunner {
   }
 
   /** Checkpoints saved before the turns of one session, oldest first. */
-  async sessionCheckpoints(sessionId: string) {
+  async sessionCheckpoints(sessionId: string, profileId?: string, provider: AgentProvider = "claude") {
     const directory = join(this.directory, "agent-runs");
     const names = await readdir(directory).catch(() => [] as string[]);
     const files = await Promise.all(
@@ -218,6 +250,8 @@ export class AgentRunner {
     const found = new Map<string, Found>();
     const add = (view: Partial<AgentRun>) => {
       if (view.sessionId !== sessionId || !view.checkpoint?.commit || !view.id) return;
+      if ((view.provider ?? "claude") !== provider ||
+          (provider === "claude" && (view.profileId ?? DEFAULT_PROFILE) !== (profileId ?? DEFAULT_PROFILE))) return;
       found.set(view.id, {
         runId: view.id,
         commit: view.checkpoint.commit,
@@ -245,24 +279,24 @@ export class AgentRunner {
     return this.startInFolder({ ...target, folder }, message, undefined, undefined, runId);
   }
 
-  async rewrite(folder: string, message: string, signal: AbortSignal) {
-    const result = await this.textJob(jobs.rewrite, folder, message, signal);
+  async rewrite(profile: ResolvedProfile, folder: string, message: string, signal: AbortSignal) {
+    const result = await this.textJob(jobs.rewrite, profile, folder, message, signal);
     if (!result.text) throw Error("Claude Code did not return a rewrite.");
     return result;
   }
 
   /** One suggested next message for a finished turn; empty when none fits. */
-  async suggest(folder: string, message: string, signal: AbortSignal) {
-    const result = await this.textJob(jobs.suggest, folder, message, signal);
+  async suggest(profile: ResolvedProfile, folder: string, message: string, signal: AbortSignal) {
+    const result = await this.textJob(jobs.suggest, profile, folder, message, signal);
     return result.text.split("\n", 1)[0]!.replace(/^["'`]+|["'`]+$/g, "").trim().slice(0, 400);
   }
 
-  private async textJob(job: TextJob, folder: string, message: string, signal: AbortSignal) {
+  private async textJob(job: TextJob, profile: ResolvedProfile, folder: string, message: string, signal: AbortSignal) {
     signal.throwIfAborted();
     let finish!: (view: AgentRun) => void;
     const done = new Promise<AgentRun>((resolve) => { finish = resolve; });
     const started = this.startInFolder(
-      { provider: "claude", folder, model: "haiku", mode: "plan" },
+      { provider: "claude", profile, folder, model: "haiku", mode: "plan" },
       message,
       finish,
       job,
@@ -284,13 +318,24 @@ export class AgentRunner {
       throw Error("Invalid session ID.");
     if (this.closed) throw Error("The session runner is closing.");
     if (this.runs.has(id)) throw Error("This run ID is already in use.");
-    const lock = job ? job.lock : `${target.provider}:${target.sessionId?.toLowerCase() || id}`;
+    const { profile, ...rest } = target;
+    // Every Claude path (chats, queues, forks, schedules, text jobs) names its
+    // account; there is no implicit fallback to Default here.
+    if (target.provider === "claude" && !profile) throw Error("Choose a Claude account for this chat.");
+    if (target.provider !== "claude" && profile) throw Error("Only Claude chats use Claude accounts.");
+    if (profile) this.validateProfile?.(profile.id);
+    if (profile && this.loginActive?.(profile.id))
+      throw Error(`A sign-in for ${profile.name} is open in a Terminal. Finish or cancel it first.`);
+    const lock = job ? job.lock : this.lockKey(target.provider, profile?.id, target.sessionId?.toLowerCase() || id);
+
     if (this.locks.has(lock))
       throw Error(job ? job.busy : "This session already has a running message.");
     const command = this.command(target.provider);
     const run: Entry = {
+      profile,
       view: {
-        ...target,
+        ...rest,
+        ...(profile ? { profileId: profile.id } : {}),
         id,
         message,
         status: "running",
@@ -326,6 +371,11 @@ export class AgentRunner {
     run.timer.unref();
     void this.launch(run, command);
     return run.view;
+  }
+
+  /** Claude sessions are locked per account: the same UUID may live in two roots. */
+  private lockKey(provider: AgentProvider, profileId: string | undefined, session: string) {
+    return provider === "claude" ? `claude:${profileId}:${session}` : `${provider}:${session}`;
   }
 
   private updateActivity(run: Entry, activity: AgentActivity) {
@@ -399,14 +449,29 @@ export class AgentRunner {
 
   private async launch(run: Entry, command: ReturnType<typeof findAgent>) {
     const { provider, folder, message, sessionId } = run.view;
-    const env = agentEnvironment();
+    // A Claude run uses the env frozen with its account; Codex is unchanged.
+    const env: NodeJS.ProcessEnv = run.profile ? { ...run.profile.env } : agentEnvironment();
     if (run.view.delegationId) env.ORVANE_DELEGATED_RUN = run.view.delegationId;
+
     const codexPlan = provider === "codex" && run.view.mode === "plan";
     const images = provider === "codex"
       ? splitAttachments(message).paths.filter((path) => isAbsolute(path) && attachmentPicture(path))
       : [];
     try {
-      await verifyAgentLogin(provider, command, folder, env);
+      let resume = sessionId;
+      if (run.profile) {
+        const auth = await claudeAuthStatus(command, run.profile, folder);
+        this.onAuth?.(run.profile.id, auth);
+        if (!auth.loggedIn) throw Error(`${run.profile.name}: not signed in. ${loginHint("claude")}`);
+        if (!auth.supported) throw Error(`${run.profile.name}: ${auth.error}`);
+        run.fingerprint = auth.fingerprint;
+        // Resume only from this account's own transcript file; never by a
+        // bare ID the CLI might find somewhere else, never from Default.
+        if (sessionId && !run.textDone) {
+          if (!this.resumePath) throw Error("Orvane can't locate this chat's transcript.");
+          resume = await this.resumePath(run.profile, sessionId, run.view.key);
+        }
+      } else await verifyAgentLogin(provider, command, folder, env);
       if (run.view.status === "stopping") return this.finish(run);
       if (!run.textDone) {
         const label = message.trim().split("\n", 1)[0]!.slice(0, 120) || "Turn";
@@ -428,7 +493,7 @@ export class AgentRunner {
             "-c", "sandbox_workspace_write.network_access=false",
             "app-server", "--listen", "stdio://",
           ] : agentArgs(
-            provider, sessionId, run.view.model, run.view.effort, run.view.mode, run.view.fork, run.view.resumeAt,
+            provider, resume, run.view.model, run.view.effort, run.view.mode, run.view.fork, run.view.resumeAt,
             provider === "codex" && run.view.mode === "full" && codexHasOrvaneMcp(env),
             images,
           )),
@@ -543,16 +608,17 @@ export class AgentRunner {
       return;
     run.view.sessionId = id;
     this.locks.delete(run.lock);
-    run.lock = `${run.view.provider}:${id.toLowerCase()}`;
+    run.lock = this.lockKey(run.view.provider, run.profile?.id, id.toLowerCase());
     this.locks.add(run.lock);
   }
 
   // Claude's CLI keeps stdin open for permission replies in stream-json mode.
   /** Claude's subscription limits, as it reports them during a run. */
-  onClaudeUsage?: (event: unknown) => void;
+  onClaudeUsage?: (event: unknown, profileId: string, fingerprint: string) => void;
   private claudeRecord(run: Entry, data: any) {
     if (data?.type === "rate_limit_event") {
-      this.onClaudeUsage?.(data);
+      // Limits belong to the account (and sign-in) this run started with.
+      if (run.profile && run.fingerprint) this.onClaudeUsage?.(data, run.profile.id, run.fingerprint);
       return;
     }
     this.rememberSession(run, data.session_id);
@@ -1094,8 +1160,10 @@ export class AgentRunner {
     try {
       // This folder was resolved when the first message started. Hand over the
       // queue before clients can see the finished run or start another message.
+      // The queue stays on the account this run was bound to.
       const next = this.startInFolder(
-        { provider, folder, key, sessionId, model, effort, mode, delegationId },
+        { provider, profile: run.profile, folder, key, sessionId, model, effort, mode, delegationId },
+
         item.text,
       );
       if (run.view.queued?.length) next.queued = run.view.queued;

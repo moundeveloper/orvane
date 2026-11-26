@@ -3,13 +3,21 @@
 // window (weekly when no 5-hour one is reported), and a popover with both
 // CLIs and reset times.
 // The numbers are what each CLI last reported in a run; nothing is fetched.
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+
 import { usePopover } from "./pickers/usePopover";
 import { agentNames, type AgentProvider, type AgentUsage, type AgentUsageWindow } from "../agentSessions";
 import { agentRequest } from "../exposition";
+import { activeAccounts, accountLabel } from "../claudeAccounts";
 
-const props = defineProps<{ provider: AgentProvider }>();
+// profileId: the Claude account whose limits this chat uses (each account
+// has its own; another account's numbers are never shown as this one's).
+const props = defineProps<{ provider: AgentProvider; profileId?: string }>();
 const usage = ref<Partial<Record<AgentProvider, AgentUsage | null>>>({});
+/** With several accounts the pill names the one it reports. */
+const accountName = computed(() => (activeAccounts().length > 1 ? accountLabel(props.profileId) : ""));
+const providerName = (name: AgentProvider) =>
+  name === "claude" && accountName.value ? `${agentNames.claude} · ${accountName.value}` : agentNames[name];
 const trigger = ref<HTMLButtonElement>();
 const popover = ref<HTMLElement>();
 const { open, style, show, close } = usePopover(trigger, popover, 150, {
@@ -18,13 +26,24 @@ const { open, style, show, close } = usePopover(trigger, popover, 150, {
   preferAbove: true,
 });
 
+let refreshVersion = 0;
 async function refresh() {
+  const version = ++refreshVersion;
+  const profileId = props.profileId;
   try {
-    usage.value = await agentRequest<Record<AgentProvider, AgentUsage | null>>("usage");
+    const reported = await agentRequest<Record<AgentProvider, AgentUsage | null>>(
+      "usage",
+      profileId ? { profileId } : {},
+    );
+    if (version === refreshVersion && profileId === props.profileId) usage.value = reported;
   } catch {
     // Keep the last numbers.
   }
 }
+watch(() => props.profileId, () => {
+  usage.value = {};
+  void refresh();
+});
 const level = (used: number) => (used >= 95 ? "full" : used >= 80 ? "high" : "");
 /** The window shown on the pill: the 5-hour one, else the weekly one. */
 const tight = computed((): (AgentUsageWindow & { label: string }) | undefined => {
@@ -120,13 +139,14 @@ defineExpose({ refresh });
     type="button"
     class="au-pill"
     :class="tight ? level(tight.used) : 'empty'"
-    :aria-label="tight ? `${agentNames[provider]} usage: ${tight.label} ${tight.used}%` : 'Usage'"
+    :aria-label="tight ? `${providerName(provider)} usage: ${tight.label} ${tight.used}%` : 'Usage'"
     aria-haspopup="dialog"
     :aria-expanded="open"
     title="Usage · Alt U"
     @click="toggle"
   >
-    <i aria-hidden="true"></i>{{ tight ? `${tight.label} ${tight.used}%` : "Usage" }}
+    <i aria-hidden="true"></i
+    >{{ tight ? `${provider === "claude" && accountName ? `${accountName} · ` : ""}${tight.label} ${tight.used}%` : "Usage" }}
   </button>
   <Teleport to="body">
     <div
@@ -142,7 +162,7 @@ defineExpose({ refresh });
       <header><span>Usage</span><kbd>Alt U</kbd></header>
       <template v-for="name in providers" :key="name">
         <div class="au-head">
-          <b>{{ agentNames[name] }}</b><small>reported {{ clock(usage[name]!.at) }}</small>
+          <b>{{ providerName(name) }}</b><small>reported {{ clock(usage[name]!.at) }}</small>
         </div>
         <div
           v-for="row in [

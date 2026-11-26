@@ -4,6 +4,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  realpath,
   rm,
   unlink,
   writeFile,
@@ -899,7 +900,12 @@ test("message actions copy, send to Notes, save prompts and fork", async ({
     .trim()
     .split(/\r?\n/)
     .map((line) => JSON.parse(line));
-  expect(inputs.at(-1).args).toEqual(expect.arrayContaining(["--resume", claudeId, "--fork-session"]));
+  // Claude resumes from the account's own transcript file, never a bare ID.
+  const args: string[] = inputs.at(-1).args;
+  expect(args).toContain("--fork-session");
+  expect(args[args.indexOf("--resume") + 1]).toBe(
+    await realpath(join(directory, "claude-projects", "test-project", `${claudeId}.jsonl`)),
+  );
 });
 
 test("the session timeline shows asks, research, approvals, files, failures and answers", async ({

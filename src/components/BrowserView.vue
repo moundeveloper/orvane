@@ -2,7 +2,7 @@
 // Shared by every Browser app: a budget of live pages. Each <webview> costs
 // a renderer process (about 100 MB on a trivial page, far more on NetSuite),
 // so beyond the limit the pages nobody has seen for a while are replaced by
-// a picture until clicked.
+// a picture while hidden, then automatically restored when visible again.
 interface LivePage {
   /** Last time the page was on screen (now while it is). */
   seen(): number;
@@ -106,6 +106,8 @@ import BrowserDrawer, {
   type SearchEngine,
 } from "./BrowserDrawer.vue";
 import PasswordsPanel from "./PasswordsPanel.vue";
+import BrowserSourcesWidget from "./BrowserSources.vue";
+import { readBrowserSources, sameSourcePage, sourceHighlightScript, SOURCE_MESSAGE, type BrowserSources, type SourcePassage } from "../browserHighlights";
 import { importImageData } from "../imageDrop";
 import { addWorkbenchWidget, REFRESH_BROWSER_CLIP, workbenchEditable, type BrowserClipRequest, type ClipRect } from "../workbenchWidgets";
 import { CANCEL_PICK, PICK_ELEMENT, readPicked, readRect, readSize, runInPage } from "../liveClip";
@@ -129,6 +131,7 @@ interface BrowserTab {
   peek?: { id: string; url: string; title?: string; space?: string };
   /** Never unloaded to save memory (chats, dashboards…). */
   keepLive?: boolean;
+  sources?: BrowserSources;
 }
 interface TabGroup {
   id: string;
@@ -163,6 +166,7 @@ interface WebviewElement extends HTMLElement {
   goBack(): void;
   goForward(): void;
   reload(): void;
+  stop(): void;
   canGoBack(): boolean;
   canGoForward(): boolean;
   getWebContentsId(): number;
@@ -182,6 +186,7 @@ interface ProcessingApi {
   onChanged(callback: () => void): () => void;
 }
 interface OrvaneDesktop {
+  sourceStyle?(webContentsId: number): Promise<void>;
   processing?: ProcessingApi;
   browserNetSuiteEnvironments?(id: number): Promise<BrowserNetSuiteEnvironment[]>;
   webview: boolean;
@@ -199,7 +204,7 @@ interface OrvaneDesktop {
   snapshotPage?(
     webContentsId: number,
     picture: boolean,
-  ): Promise<{ edited: boolean; image?: string } | null>;
+  ): Promise<{ edited: boolean; image?: string; scroll?: { x: number; y: number } } | null>;
   onGuestInput(
     callback: (
       input:
@@ -371,6 +376,7 @@ function readState(imported?: Record<string, unknown>) {
     )
     .map((tab) => {
       const rootUrl = typeof tab.rootUrl === "string" ? safeUrl(tab.rootUrl) : undefined;
+      const sources = readBrowserSources(tab.sources);
       return {
       id: tab.id as string,
       url: rootUrl ?? (tab.url as string),
@@ -381,6 +387,7 @@ function readState(imported?: Record<string, unknown>) {
         ? { pinned: tab.pinned }
         : {}),
       ...(tab.keepLive === true ? { keepLive: true } : {}),
+      ...(sources ? { sources } : {}),
       ...(groups.some((group) => group.id === tab.group)
         ? { group: tab.group as string }
         : {}),
@@ -539,9 +546,19 @@ for (const tab of state.value.tabs) {
   if (tab.peek) started[tab.peek.id] = tab.peek.url;
 }
 const webviews = new Map<string, WebviewElement>();
+const loading = reactive<Record<string, boolean>>({});
+const activeLoading = computed(() => useWebview && !!loading[activeTab.value.id]);
+const sourceOpen = reactive<Record<string, boolean>>({});
+const sourceChecking = reactive<Record<string, boolean>>({});
+const sourceErrors = reactive<Record<string, string>>({});
+const activeSources = computed(() => {
+  const sources = activeTab.value.sources;
+  return sources && sameSourcePage(sources.url, activeTab.value.url) ? sources : undefined;
+});
 const loginStartupTabs = new Set<string>();
 /** Tabs whose page was discarded to save memory: a picture until reloaded. */
-const discarded = reactive<Record<string, { image: string }>>({});
+const discarded = reactive<Record<string, { image: string; scroll?: { x: number; y: number } }>>({});
+const restoreScroll = new Map<string, { x: number; y: number }>();
 const webviewNav = reactive<Record<string, { back: boolean; forward: boolean }>>(
   {},
 );
@@ -562,6 +579,114 @@ const error = ref("");
 
 function save() {
   props.block.value = JSON.stringify(state.value);
+}
+function receiveSources(tab: BrowserTab, raw: unknown) {
+  const sources = tab.sources;
+  const report = raw as { url?: string; selected?: string; passages?: { id?: string; text?: string; found?: boolean; matches?: number }[] };
+  if (!sources || !report || !Array.isArray(report.passages) || !sameSourcePage(report.url ?? "", sources.url) || !sameSourcePage(tab.url, sources.url)) return;
+  let changed = false;
+  for (const passage of sources.passages) {
+    const match = report.passages.find((item) => item?.id === passage.id);
+    if (!match) continue;
+    const found = match.found === true && typeof match.text === "string" && !!match.text;
+    const text = found ? match.text!.slice(0, 6000) : passage.text;
+    const matches = found && Number.isFinite(match.matches) ? Math.max(0, Math.min(20, match.matches!)) : 0;
+    if (passage.found !== found || passage.text !== text || passage.matches !== matches) changed = true;
+    Object.assign(passage, { found, text, matches });
+  }
+  if (report.selected && sources.passages.some((p) => p.id === report.selected) && sources.selected !== report.selected) {
+    sources.selected = report.selected; changed = true;
+  }
+  sourceChecking[tab.id] = false;
+  if (changed) save();
+}
+async function uncoverSource(tab: BrowserTab, view: WebviewElement, raw: unknown) {
+  if (tab.id !== activeTab.value.id || !sourceOpen[tab.id]) return;
+  const result = raw as { target?: { left: number; top: number; right: number; bottom: number }; viewport?: { width: number; height: number } };
+  if (!result?.target || !result.viewport || ![...Object.values(result.target), ...Object.values(result.viewport)].every(Number.isFinite) || result.viewport.width <= 0 || result.viewport.height <= 0) return;
+  await nextTick();
+  const popover = root.value?.querySelector<HTMLElement>(".browser-sources .sources-popover");
+  if (!popover) return;
+  const panel = popover.getBoundingClientRect(), guest = view.getBoundingClientRect(), target = result.target;
+  const x = guest.width / result.viewport.width, y = guest.height / result.viewport.height;
+  if (guest.left + target.left*x < panel.right && guest.left + target.right*x > panel.left && guest.top + target.top*y < panel.bottom && guest.top + target.bottom*y > panel.top) {
+    const focused = popover.contains(document.activeElement);
+    sourceOpen[tab.id] = false;
+    if (focused) void nextTick(() => root.value?.querySelector<HTMLElement>(".browser-sources .sources-open")?.focus({ preventScroll: true }));
+  }
+}
+async function paintSources(tab: BrowserTab, scroll = false) {
+  const view = webviews.get(tab.id), sources = tab.sources;
+  if (!view) return;
+  if (!sources || !sameSourcePage(sources.url, tab.url)) return runInPage(view, sourceHighlightScript());
+  sourceChecking[tab.id] = true;
+  delete sourceErrors[tab.id];
+  try {
+    await desktop?.sourceStyle?.(view.getWebContentsId());
+    if (webviews.get(tab.id) !== view || tab.sources !== sources) return;
+    const result = await runInPage(view, sourceHighlightScript(sources, scroll));
+    if (webviews.get(tab.id) === view && tab.sources === sources) receiveSources(tab, result);
+    if (scroll && webviews.get(tab.id) === view && tab.sources === sources) await uncoverSource(tab, view, result);
+    return result;
+  } catch (error) {
+    if (tab.sources === sources) sourceErrors[tab.id] = error instanceof Error ? error.message : "Highlights are unavailable on this page.";
+    throw error;
+  } finally { sourceChecking[tab.id] = false; }
+}
+async function highlightRequest(tabId: string, args: Record<string, unknown>) {
+  const tab = state.value.tabs.find((item) => item.id === tabId);
+  const view = webviews.get(tabId);
+  if (!tab || !view || !useWebview) throw Error("Source highlights need a live desktop Browser tab.");
+  if (args.action === "clear") {
+    await runInPage(view, sourceHighlightScript());
+    delete tab.sources; delete sourceOpen[tabId]; delete sourceErrors[tabId]; save();
+    return { cleared: true, tabId };
+  }
+  if (args.action === "set") {
+    if (!Array.isArray(args.passages) || !args.passages.length || args.passages.length > 20) throw Error("Provide 1–20 exact source passages.");
+    const passages: SourcePassage[] = args.passages.map((raw) => {
+      const item = raw as { quote?: unknown; label?: unknown; prefix?: unknown; suffix?: unknown };
+      if (!item || typeof item.quote !== "string" || !item.quote.trim() || item.quote.length > 4000) throw Error("Each passage needs an exact quote of at most 4000 characters.");
+      return { id: uid(), quote: item.quote.trim(), text: "", found: false, matches: 0,
+        ...(typeof item.label === "string" ? { label: item.label.slice(0, 120) } : {}),
+        ...(typeof item.prefix === "string" ? { prefix: item.prefix.slice(0, 200) } : {}),
+        ...(typeof item.suffix === "string" ? { suffix: item.suffix.slice(0, 200) } : {}) };
+    });
+    const sources: BrowserSources = { url: tab.url, title: label(tab), passages, selected: passages[0]!.id };
+    await desktop?.sourceStyle?.(view.getWebContentsId());
+    const result = await runInPage(view, sourceHighlightScript(sources, false)) as { url?: string; passages?: {id: string; found: boolean; text: string; matches: number}[] };
+    if (webviews.get(tabId) !== view || !sameSourcePage(result?.url ?? "", tab.url) || !Array.isArray(result.passages)) throw Error("The page changed while matching its source passages. Try again.");
+    const matched = result.passages;
+    const accepted = passages.filter((p) => matched.some((m) => m.id === p.id && m.found && typeof m.text === "string" && !!m.text));
+    const unmatched = passages.filter((p) => !accepted.includes(p)).map((p) => ({ quote: p.quote, reason: "Exact passage not found in the current main document." }));
+    if (!accepted.length) {
+      await runInPage(view, sourceHighlightScript()); delete tab.sources; save();
+      return { tabId, url: tab.url, passages: [], unmatched };
+    }
+    sources.passages = accepted; sources.selected = accepted[0]!.id;
+    tab.sources = sources; receiveSources(tab, result);
+    sourceOpen[tabId] = true;
+    await paintSources(tab, args.scroll !== false); save();
+    return { tabId, ...tab.sources, unmatched };
+  }
+  if (!["jump", "list"].includes(String(args.action))) throw Error("Use set, jump, list or clear.");
+  const sources = tab.sources;
+  if (!sources || !sameSourcePage(sources.url, tab.url)) return { tabId, url: tab.url, passages: [] };
+  if (args.action === "jump") {
+    if (!sources.passages.some((p) => p.id === args.passageId)) throw Error("No such source passage in this tab.");
+    sources.selected = String(args.passageId);
+  }
+  await paintSources(tab, args.action === "jump" && args.scroll !== false); save();
+  return { tabId, ...sources };
+}
+function jumpSource(id: string) {
+  void highlightRequest(activeTab.value.id, { action: "jump", passageId: id }).catch((error) => say(String(error.message || error)));
+}
+function clearSources() {
+  void highlightRequest(activeTab.value.id, { action: "clear" }).catch((error) => say(String(error.message || error)));
+}
+function sourceCount(tab: BrowserTab) {
+  return tab.sources && sameSourcePage(tab.sources.url, tab.url) ? tab.sources.passages.length : 0;
 }
 function recordVisit(tab: BrowserTab) {
   if (!tab.url) return;
@@ -591,6 +716,7 @@ function go(text = address.value) {
     if (!result.url) return;
     tab.title = undefined;
     delete discarded[tab.id];
+    restoreScroll.delete(tab.id);
     const view = webviews.get(tab.id);
     if (view && started[tab.id]) {
       view.loadURL(result.url).catch(() => undefined);
@@ -629,6 +755,14 @@ function reload() {
   }
   history(activeTab.value).reloads++;
   revision.value++;
+}
+function stopLoading() {
+  if (!activeLoading.value) return;
+  webviews.get(activeTab.value.id)?.stop();
+}
+function reloadOrStop() {
+  if (activeLoading.value) stopLoading();
+  else reload();
 }
 const bookmarked = computed(() =>
   state.value.bookmarks.find((b) => b.url === activeTab.value.url),
@@ -739,6 +873,11 @@ function bindWebview(tab: BrowserTab, element: unknown) {
   const view = element as WebviewElement;
   if (webviews.get(tab.id) === view) return;
   webviews.set(tab.id, view);
+  view.addEventListener("console-message", (event) => {
+    const message = (event as Event & { message?: string }).message;
+    if (webviews.get(tab.id) !== view || !message?.startsWith(SOURCE_MESSAGE)) return;
+    try { receiveSources(tab, JSON.parse(message.slice(SOURCE_MESSAGE.length))); } catch { /* Page data is untrusted. */ }
+  });
   view.addEventListener("found-in-page", (event) => {
     const result = (event as Event & { result?: { activeMatchOrdinal?: number; matches?: number } }).result;
     const find = finds[tab.id];
@@ -751,6 +890,15 @@ function bindWebview(tab: BrowserTab, element: unknown) {
     if (find) find.current = find.matches = 0;
   });
   const startup = started[tab.id];
+  const restorePosition = () => {
+    const position = restoreScroll.get(tab.id);
+    if (!position || webviews.get(tab.id) !== view) return;
+    void runInPage(view, `(() => { scrollTo(${position.x}, ${position.y}); return Math.abs(scrollX - ${position.x}) < 2 && Math.abs(scrollY - ${position.y}) < 2; })()`)
+      .then((restored) => {
+        if (restored && restoreScroll.get(tab.id) === position) restoreScroll.delete(tab.id);
+      }).catch(() => undefined);
+  };
+  view.addEventListener("did-finish-load", restorePosition);
   const configureStartupLogin = !loginStartupTabs.has(tab.id) && startup === tab.rootUrl && !!tab.loginId;
   if (configureStartupLogin) loginStartupTabs.add(tab.id);
   addLivePageFor(tab, view);
@@ -790,6 +938,7 @@ function bindWebview(tab: BrowserTab, element: unknown) {
       address.value = url;
     sync();
     save();
+    if (tab.sources && runningNow(tab.id)) void paintSources(tab).catch(() => undefined);
   };
   view.addEventListener("did-navigate", (event) =>
     navigated((event as Event & { url: string }).url),
@@ -801,6 +950,7 @@ function bindWebview(tab: BrowserTab, element: unknown) {
   view.addEventListener("page-title-updated", (event) => {
     if (webviews.get(tab.id) !== view) return;
     tab.title = (event as Event & { title: string }).title.slice(0, 200);
+    if (tab.sources && sameSourcePage(tab.sources.url, tab.url)) tab.sources.title = label(tab);
     if (state.value.tabs.some((item) => item.id === tab.id)) {
       const visit = state.value.recentPages.find((entry) => entry.url === tab.url);
       if (visit) visit.title = label(tab);
@@ -818,12 +968,19 @@ function bindWebview(tab: BrowserTab, element: unknown) {
       error.value = `This page couldn't load (${detail.errorDescription || detail.errorCode}).`;
   });
   view.addEventListener("did-stop-loading", () => {
+    if (webviews.get(tab.id) !== view) return;
+    delete loading[tab.id];
     if (tab.id !== state.value.active) return;
     rememberedAt = 0;
     setTimeout(rememberPicture, 300);
   });
   view.addEventListener("did-start-loading", () => {
+    if (webviews.get(tab.id) !== view) return;
+    loading[tab.id] = true;
     if (tab.id === state.value.active) error.value = "";
+  });
+  view.addEventListener("render-process-gone", () => {
+    if (webviews.get(tab.id) === view) delete loading[tab.id];
   });
   // Clicking into the other page of a Split View selects that pane.
   view.addEventListener("focus", () => focusPane(tab.id));
@@ -850,6 +1007,7 @@ function bindWebview(tab: BrowserTab, element: unknown) {
     if (webviews.get(tab.id) === view) {
       delete pageActive[tab.id];
       updateActivity();
+      restorePosition();
     }
   });
   view.addEventListener("dom-ready", configureLogin, { once: true });
@@ -1046,6 +1204,8 @@ onMounted(() => {
 onBeforeUnmount(() => stopAppText?.());
 // Ctrl+K palette: commands, and opening a page from browser history.
 const stopCommands = registerCommands(`browser:${props.block.id}`, () => [
+  ...(activeSources.value ? [{ id: `browser-sources:${props.block.id}`, title: "Browser source passages", icon: "edit" as const,
+    blockId: props.block.id, keywords: "highlights quotes evidence", run: () => { sourceOpen[activeTab.value.id] = !sourceOpen[activeTab.value.id]; } }] : []),
   { id: `browser-tab:${props.block.id}`, title: "New browser tab", icon: "plus", blockId: props.block.id, keywords: "web", run: () => addTab() },
   { id: `browser-library:${props.block.id}`, title: "Bookmarks and history", icon: "library", blockId: props.block.id, run: () => openDrawer("library") },
   { id: `browser-memory:${props.block.id}`, title: "Browser memory (AI routes, notes, flows)", icon: "keyboard", blockId: props.block.id, keywords: "site memory ai", run: () => openDrawer("memory") },
@@ -1290,6 +1450,7 @@ onMounted(() => {
       return tab.id;
     },
     access: (tabId) => aiAccess[tabId],
+    highlight: highlightRequest,
     setAccess: setAiAccess,
     page(tabId) {
       if (discarded[tabId]) restoreTab(tabId);
@@ -1448,11 +1609,17 @@ function setPageActive(tabId: string, active: boolean) {
   if (active) delete asleep[tabId];
   else asleep[tabId] = true;
   void desktop.setPageActive(id, active).catch(() => undefined);
+  const tab = pages.value.find((item) => item.id === tabId);
+  if (active && tab?.sources) void paintSources(tab).catch(() => undefined);
 }
 function updateActivity() {
   if (!useWebview) return;
   const now = Date.now();
   for (const tab of pages.value) {
+    if (discarded[tab.id] && runningNow(tab.id)) {
+      restoreTab(tab.id, false);
+      continue;
+    }
     if (!webviews.has(tab.id)) continue;
     const seen = seenNow(tab.id);
     // Last seen: now while seen, and the moment it stopped being seen.
@@ -1526,7 +1693,9 @@ function addLivePageFor(tab: BrowserTab, view: WebviewElement) {
         updateActivity();
         return;
       }
-      discarded[tab.id] = { image: snapshot.image || "" };
+      const scroll = snapshot.scroll;
+      discarded[tab.id] = { image: snapshot.image || "",
+        ...(scroll && Number.isFinite(scroll.x) && Number.isFinite(scroll.y) ? { scroll } : {}) };
       unbindWebview(tab.id);
     },
   };
@@ -1545,17 +1714,20 @@ function dropLivePage(tabId: string) {
   delete wasSeen[tabId];
 }
 function unbindWebview(tabId: string) {
+  delete loading[tabId];
   webviews.delete(tabId);
   delete webviewNav[tabId];
   dropLivePage(tabId);
 }
 /** Bring a discarded tab back: a new page at the same address. */
-function restoreTab(tabId: string) {
-  const tab = state.value.tabs.find((t) => t.id === tabId);
+function restoreTab(tabId: string, focus = true) {
+  const tab = pages.value.find((t) => t.id === tabId);
   if (!tab || !discarded[tabId]) return;
+  const scroll = discarded[tabId].scroll;
+  if (scroll) restoreScroll.set(tabId, scroll);
   delete discarded[tabId];
   if (tab.url) started[tabId] = tab.url;
-  if (tabId === state.value.active) focusFrame();
+  if (focus && tabId === state.value.active) focusFrame();
 }
 watch(() => state.value.active, () => updateActivity());
 watch(interacting, () => updateActivity());
@@ -1621,11 +1793,14 @@ function forget(id: string) {
   webviews.delete(id);
   dropLivePage(id);
   delete discarded[id];
+  restoreScroll.delete(id);
   dismissPrompt(id);
   delete autoLogins[id];
   delete started[id];
   delete webviewNav[id];
   delete playing[id];
+  delete loading[id];
+  delete sourceOpen[id]; delete sourceChecking[id]; delete sourceErrors[id];
   delete muted[id];
   selected.delete(id);
   const at = recent.indexOf(id);
@@ -2642,7 +2817,7 @@ const peek = computed(() =>
 );
 // Tab order is independent of guest order. Reordering guest elements would
 // detach and reload Electron webviews.
-const pages = computed(() => state.value.tabs.flatMap((tab) =>
+const pages = computed<BrowserTab[]>(() => state.value.tabs.flatMap((tab) =>
   tab.peek ? [tab, tab.peek] : [tab],
 ).sort((a, b) => a.id.localeCompare(b.id)));
 function siteOf(url: string) {
@@ -3616,7 +3791,13 @@ function hostKey(event: KeyboardEvent) {
   if (event.key === "Tab") tipResumeAt = undefined;
   if (event.key === "Escape") {
     hideTip();
-    if (!(menu.value || switcher.value || dialog.value || drawer.value || peek.value || cropArming.value || processingOpen.value || showPasswords.value)) return;
+    const sourceEscape = sourceOpen[activeTab.value.id] && !(event.target as Element)?.closest("input,textarea,[contenteditable]");
+    if (!(menu.value || switcher.value || dialog.value || drawer.value || peek.value || cropArming.value || processingOpen.value || showPasswords.value || sourceEscape)) {
+      if (activeLoading.value && !finds[state.value.active]?.open && !(event.target as Element)?.closest("input,textarea,[contenteditable]")) {
+        event.preventDefault(); event.stopPropagation(); stopLoading();
+      }
+      return;
+    }
     if ((event.target as Element)?.closest(".browser-drawer") && !menu.value) return;
     event.preventDefault();
     event.stopPropagation();
@@ -3630,7 +3811,11 @@ function hostKey(event: KeyboardEvent) {
       cropping.value = null;
       cropArming.value = false;
     }
-    else closePeek();
+    else if (peek.value) closePeek();
+    else if (sourceEscape) {
+      sourceOpen[activeTab.value.id] = false;
+      root.value?.querySelector<HTMLElement>(".browser-sources .sources-open")?.focus();
+    }
     return;
   }
   const name = keyShortcut(event);
@@ -3699,7 +3884,7 @@ function browserWheel(event: WheelEvent) {
     :class="[
       `layout-${state.layout}`,
       `theme-${state.theme}`,
-      { 'side-collapsed': state.collapsed || narrow, 'side-right': state.sidebarPosition === 'right', 'bar-open': barOpen },
+      { 'side-collapsed': state.collapsed || narrow, 'side-right': state.sidebarPosition === 'right', 'bar-open': barOpen, 'browser-in-view': onScreen },
     ]"
     :style="{ '--side-wide': state.side + 'px', '--split': state.ratio + '%' }"
     aria-label="Web browser"
@@ -3895,11 +4080,12 @@ function browserWheel(event: WheelEvent) {
               @auxclick.prevent="$event.button === 1 && closeTabSliding(tab.id)"
               @contextmenu="tabMenu($event, tab)"
             >
-              <span class="tab-favicon" :style="faviconStyle(tab.url)">
+              <span class="tab-load-shell"><span class="tab-favicon" :class="{ 'tab-site-loading': loading[tab.id] }" :style="faviconStyle(tab.url)">
                 <Icon v-if="!tab.url" name="box" :size="14" />
                 <template v-else>{{ glyph(tab) }}</template>
-              </span>
+              </span><svg v-if="loading[tab.id]" class="tab-load-ring" viewBox="0 0 18 18" aria-hidden="true"><circle class="load-track" cx="9" cy="9" r="7.5" /><path class="load-arc" d="M9 1.5a7.5 7.5 0 0 1 7.5 7.5" /></svg></span>
               <span class="tab-text">{{ label(tab) }}</span>
+              <span v-if="sourceCount(tab)" class="tab-source-count" aria-label="Source passages"><Icon name="edit" :size="10" />{{ sourceCount(tab) }}</span>
               <span v-if="pageDialogs[tab.id]" class="tab-asks" aria-label="Page is waiting for you" data-tip="Page is waiting for you"></span>
               <Icon v-if="tab.rootUrl" name="lock" :size="12" aria-label="Locked tab" />
               <span class="pane-tag">{{
@@ -3956,11 +4142,12 @@ function browserWheel(event: WheelEvent) {
             @auxclick.prevent="$event.button === 1 && closeTabSliding(row.tab.id)"
             @contextmenu="tabMenu($event, row.tab)"
           >
-            <span class="tab-favicon" :style="faviconStyle(row.tab.url)">
+            <span class="tab-load-shell"><span class="tab-favicon" :class="{ 'tab-site-loading': loading[row.tab.id] }" :style="faviconStyle(row.tab.url)">
               <Icon v-if="!row.tab.url" name="box" :size="14" />
               <template v-else>{{ glyph(row.tab) }}</template>
-            </span>
+            </span><svg v-if="loading[row.tab.id]" class="tab-load-ring" viewBox="0 0 18 18" aria-hidden="true"><circle class="load-track" cx="9" cy="9" r="7.5" /><path class="load-arc" d="M9 1.5a7.5 7.5 0 0 1 7.5 7.5" /></svg></span>
             <span class="tab-text">{{ label(row.tab) }}</span>
+            <span v-if="sourceCount(row.tab)" class="tab-source-count" aria-label="Source passages"><Icon name="edit" :size="10" />{{ sourceCount(row.tab) }}</span>
             <span v-if="pageDialogs[row.tab.id]" class="tab-asks" aria-label="Page is waiting for you" data-tip="Page is waiting for you"></span>
             <span v-if="aiAccess[row.tab.id]" class="tab-ai-mark" :class="aiAccess[row.tab.id]"
               :aria-label="aiAccess[row.tab.id] === 'controlled' ? 'AI is using this tab' : 'AI may use this tab'"
@@ -4094,13 +4281,14 @@ function browserWheel(event: WheelEvent) {
       </button>
       <button
         type="button"
-        class="icon-button"
-        aria-label="Reload"
-        data-tip="Reload"
+        class="icon-button browser-load-button"
+        :aria-label="activeLoading ? 'Stop loading' : 'Reload'"
+        :data-tip="activeLoading ? 'Stop loading' : 'Reload'"
         :disabled="!activeTab.url"
-        @click="reload"
+        @click="reloadOrStop"
       >
-        <Icon name="refresh" :size="14" />
+        <svg v-if="activeLoading" class="toolbar-load-ring" viewBox="0 0 18 18" aria-hidden="true"><circle class="load-track" cx="9" cy="9" r="7.5" /><path class="load-arc" d="M9 1.5a7.5 7.5 0 0 1 7.5 7.5" /></svg>
+        <Icon :name="activeLoading ? 'close' : 'refresh'" :size="activeLoading ? 10 : 14" />
       </button>
       <button
         type="button"
@@ -4139,6 +4327,12 @@ function browserWheel(event: WheelEvent) {
           <Icon name="star" :size="14" />
         </button>
       </div>
+      <button v-if="useWebview" type="button" class="icon-button browser-source-button"
+        aria-label="Sources" :data-tip="activeSources ? 'Source passages' : 'No source highlights in this tab'"
+        :class="{ on: activeSources && sourceOpen[activeTab.id] }" :disabled="!activeSources"
+        @click="sourceOpen[activeTab.id] = !sourceOpen[activeTab.id]">
+        <Icon name="edit" :size="15" /><span v-if="activeSources" class="browser-source-count">{{ activeSources.passages.length }}</span>
+      </button>
       <button
         v-if="passwords"
         type="button"
@@ -4428,6 +4622,9 @@ function browserWheel(event: WheelEvent) {
           <small class="start-foot">⌘ / Ctrl K for commands · Shift-click a shortcut to Peek</small>
         </div>
       </div>
+      <BrowserSourcesWidget v-if="activeSources && !showPasswords && !pageDialogs[activeTab.id]" :key="activeTab.id"
+        :sources="activeSources" :open="!!sourceOpen[activeTab.id]" :checking="!!sourceChecking[activeTab.id]"
+        :problem="sourceErrors[activeTab.id]" @update:open="sourceOpen[activeTab.id] = $event" @jump="jumpSource" @clear="clearSources" />
       <template v-for="tab in visiblePanes" :key="`shield-${tab.id}`">
         <div
           v-if="tab.url && (editing || (!useWebview && (!interacting || tab.id !== state.active)))"
@@ -4494,10 +4691,10 @@ function browserWheel(event: WheelEvent) {
           :class="[pane ? 'second' : 'first', { current: tab.id === state.active }]"
           @click="focusPane(tab.id)"
         >
-          <span class="tab-favicon" :style="faviconStyle(tab.url)">
+          <span class="tab-load-shell"><span class="tab-favicon" :class="{ 'tab-site-loading': loading[tab.id] }" :style="faviconStyle(tab.url)">
             <Icon v-if="!tab.url" name="box" :size="12" />
             <template v-else>{{ glyph(tab) }}</template>
-          </span>
+          </span><svg v-if="loading[tab.id]" class="tab-load-ring" viewBox="0 0 18 18" aria-hidden="true"><circle class="load-track" cx="9" cy="9" r="7.5" /><path class="load-arc" d="M9 1.5a7.5 7.5 0 0 1 7.5 7.5" /></svg></span>
           <span class="caption-name">{{ label(tab) }}</span>
           <span v-if="tab.id === state.active" class="pane-active-label">Active pane</span>
           <button
@@ -5876,6 +6073,20 @@ function browserWheel(event: WheelEvent) {
   color: #607f91;
   background: #dbe7ee;
 }
+.tab-load-shell { position: relative; display: inline-flex; width: 16px; height: 16px; flex: none; }
+.tab-favicon.tab-site-loading { border-radius: 50%; transform: scale(0.72); }
+.browser-load-button { position: relative; }
+.browser-source-button { position: relative; }
+.browser-source-count { position: absolute; right: 0; top: 0; min-width: 13px; height: 13px; padding: 0 3px; border-radius: 7px; background: #365f78; color: white; font: 600 9px/13px "Inter Variable", Inter, sans-serif; }
+.tab-source-count { display: inline-flex; align-items: center; gap: 3px; flex: none; color: #7897a4; font-size: 10px; font-variant-numeric: tabular-nums; }
+.tab-load-ring, .toolbar-load-ring { position: absolute; fill: none; stroke-width: 1.5; stroke-linecap: round; pointer-events: none; animation: browser-load-turn 900ms linear infinite; }
+.tab-load-ring { top: -1px; left: -1px; width: 18px; height: 18px; }
+.toolbar-load-ring { top: 3px; left: 3px; width: 22px; height: 22px; }
+.load-track { stroke: #6e91a638; }
+.load-arc { stroke: #365f78; }
+.browser-view:not(.browser-in-view) :is(.tab-load-ring, .toolbar-load-ring) { animation-play-state: paused; }
+@keyframes browser-load-turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .tab-load-ring, .toolbar-load-ring { animation: none; } }
 .tab-favicon:has(svg) {
   background: transparent;
   color: var(--accent);

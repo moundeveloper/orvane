@@ -4,18 +4,30 @@ const {
   mkdirSync,
   writeFileSync,
 } = require("node:fs");
-const { join } = require("node:path");
+const { join, relative, isAbsolute } = require("node:path");
 const { createInterface } = require("node:readline");
 const { spawn } = require("node:child_process");
 
 let args = process.argv.slice(2);
+// A Claude account's config folder, only when it lives inside this test
+// workspace (an inherited real CLAUDE_CONFIG_DIR is never written to).
+const accountDir = (() => {
+  const dir = process.env.CLAUDE_CONFIG_DIR;
+  if (!dir) return undefined;
+  const rel = relative(__dirname, dir);
+  return rel && !rel.startsWith("..") && !isAbsolute(rel) ? dir : undefined;
+})();
+/** Per-account fixture files: the account folder, else the workspace. */
+const home = accountDir ?? __dirname;
 // `mcp add|get|remove` as Claude Code and Codex run them, for Agent Sessions →
 // Settings. Claude keeps its servers in .claude.json; Codex answers `get --json`.
 if (args[0] === "--mcp-provider") {
   const { readFileSync } = require("node:fs");
   const provider = args[1];
   args = args.slice(2);
-  const file = join(__dirname, provider === "claude" ? ".claude.json" : "codex-mcp.json");
+  const file = join(provider === "claude" ? home : __dirname, provider === "claude" ? ".claude.json" : "codex-mcp.json");
+  if (provider === "claude")
+    appendFileSync(join(__dirname, "mcp-calls.jsonl"), JSON.stringify({ args, configDir: process.env.CLAUDE_CONFIG_DIR || "<unset>" }) + "\n");
   const read = () => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {});
   const config = read();
   config.mcpServers ??= {};
@@ -51,19 +63,41 @@ const emit = (record) => process.stdout.write(JSON.stringify(record) + "\n");
 const codexId = "22222222-2222-4222-8222-222222222222";
 const claudeId = "11111111-1111-4111-8111-111111111111";
 const codex = args.includes("exec") || args[0] === "login";
-const signedOut = existsSync(join(__dirname, "signed-out"));
+const signedOut = existsSync(join(codex ? __dirname : home, "signed-out"));
 const append = (file, record) =>
   appendFileSync(file, JSON.stringify(record) + "\n");
+const fixture = (name, fallback) => {
+  try {
+    return require("node:fs").readFileSync(join(home, name), "utf8").trim() || fallback;
+  } catch {
+    return fallback;
+  }
+};
 
-if (args[1] === "status") {
+if (args[0] === "auth" && args[1] === "login") {
+  // Interactive sign-in stand-in: the real CLI opens the browser and writes
+  // its own credentials. Here it only leaves a marker in the account folder.
+  append(join(__dirname, "logins.jsonl"), { configDir: process.env.CLAUDE_CONFIG_DIR || "<unset>", args });
+  writeFileSync(join(home, "login-marker"), "signed in by fixture");
+  try {
+    require("node:fs").rmSync(join(home, "signed-out"), { force: true });
+  } catch {}
+  process.stdout.write("Fixture sign-in complete.\r\n");
+  setTimeout(() => process.exit(0), existsSync(join(__dirname, "slow-login")) ? 120_000 : 200);
+} else if (args[1] === "status") {
   if (codex)
     console.error(signedOut ? "Not logged in" : "Logged in using ChatGPT");
-  else
+  else {
+    append(join(__dirname, "auth-status.jsonl"), { configDir: process.env.CLAUDE_CONFIG_DIR || "<unset>" });
     emit({
       loggedIn: !signedOut,
-      authMethod: "claude.ai",
+      authMethod: fixture("auth-method", "claude.ai"),
       apiProvider: "firstParty",
+      email: fixture("auth-email", accountDir ? "work@fixture.example" : "default@fixture.example"),
+      subscriptionType: "max",
+      ...(accountDir ? { configDirectory: fixture("auth-config-dir", accountDir) } : {}),
     });
+  }
   process.exitCode = signedOut ? 1 : 0;
 } else if (args.includes("app-server")) {
   const folder = join(__dirname, "codex-sessions", "2026", "11", "21");
@@ -210,12 +244,12 @@ if (args[1] === "status") {
     });
 } else {
   const lines = createInterface({ input: process.stdin });
-  const file = join(
-    __dirname,
-    "claude-projects",
-    "test-project",
-    claudeId + ".jsonl",
-  );
+  // Default writes where it always did; an account writes in its own folder,
+  // with the same session UUID (the collision case Orvane must keep apart).
+  const file = accountDir
+    ? join(accountDir, "projects", "test-project", claudeId + ".jsonl")
+    : join(__dirname, "claude-projects", "test-project", claudeId + ".jsonl");
+  mkdirSync(join(file, ".."), { recursive: true });
   const save = (type, content) =>
     append(file, {
       type,
@@ -232,6 +266,7 @@ if (args[1] === "status") {
         args,
         message,
         folder: process.cwd(),
+        configDir: process.env.CLAUDE_CONFIG_DIR || "<unset>",
       });
       if (args.includes("--no-session-persistence")) {
         const input = JSON.parse(message);

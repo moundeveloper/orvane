@@ -320,6 +320,15 @@ export function registerBrowserTools(server: McpServer, liveRun: LiveRun, dataDi
     };
   };
 
+  server.registerTool("browser_highlight", {
+    description: "Built-in source highlights in a Browser tab you control. set finds exact quoted passages (whitespace is folded, case is preserved), paints them without changing page text or native selection, scrolls to the first match, and shows the current tab's Sources widget. Read the source first: never invent quotes. Optional prefix/suffix disambiguate repeated text. Only found quotes become sources; unmatched quotes are returned honestly. jump revisits a passage by passageId; list refreshes matches; clear removes this tab's marks and widget. Main document HTML only; not PDFs, cross-origin frames or shadow roots. Call browser_open purpose user to leave a highlighted source open for the owner, then release it when done.",
+    inputSchema: { tabId, action: z.enum(["set", "jump", "list", "clear"]),
+      passages: z.array(z.object({ quote: z.string().trim().min(1).max(4000), label: z.string().max(120).optional(),
+        prefix: z.string().max(200).optional(), suffix: z.string().max(200).optional() })).min(1).max(20).optional(),
+      passageId: z.string().min(1).max(80).optional(), scroll: z.boolean().optional(), sessionId: session },
+    annotations: { readOnlyHint: false, ...live },
+  }, async ({ sessionId, ...args }) => guarded(() => request("highlight", args, sessionId)));
+
   server.registerTool(
     "browser_act",
     {

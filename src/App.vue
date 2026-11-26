@@ -51,6 +51,8 @@ import { DRAG_MIME } from "./components/files/explorer";
 import CommandPalette from "./components/CommandPalette.vue";
 import AgentLauncher from "./components/AgentLauncher.vue";
 import { AGENT_REVEAL, agentOpenRequests, agentRunIndicators, PIN_AGENT_DRAFT, type AgentDraft, type AgentReveal } from "./agentNavigation";
+import { CLAUDE_LOGIN_EVENT, type ClaudeLoginDetail } from "./claudeAccounts";
+import { readTerminal, panes as terminalPanes } from "./terminalLayout";
 import { agentRequest } from "./exposition";
 import { agentNames, type AgentRun } from "./agentSessions";
 import {
@@ -1053,6 +1055,42 @@ function createGitViewer(kind: keyof typeof toolApps = "git", value?: string) {
   void focusApp(app);
   return app;
 }
+// ---- Claude account sign-in: a Terminal whose only pane runs `claude auth
+// login` for one account. The server prepared the command from the ticket;
+// the page only names the ticket. ----
+const claudeLoginApps = new Map<string, string>();
+function claudeLoginEvent(event: Event) {
+  const detail = (event as CustomEvent<ClaudeLoginDetail>).detail;
+  if (!detail || typeof detail.ticket !== "string" || !/^[\w-]{10,64}$/.test(detail.ticket)) return;
+  const known = claudeLoginApps.get(detail.ticket);
+  if (known && workspace.apps.some((a) => a.id === known && !a.archived)) return focusAppById(known);
+  const restored = workspace.apps.find((app) => !app.archived && flatten(app.blocks).some((block) =>
+    block.kind === "terminal" && readTerminal(block.value).tabs.some((tab) =>
+      terminalPanes(tab.root).some((pane) => pane.profile === `claude-login:${detail.ticket}`))));
+  if (restored) {
+    claudeLoginApps.set(detail.ticket, restored.id);
+    return focusAppById(restored.id);
+  }
+  if (detail.show) {
+    status.value = "The sign-in Terminal was closed. Cancel the sign-in in Settings and start it again.";
+    return;
+  }
+  if (!canEdit.value) {
+    status.value = "This window can't add apps right now. Sign in from the window that edits the workspace.";
+    return;
+  }
+  const pane = `login-${uid()}`.slice(0, 60);
+  const tab = `tab-${uid()}`.slice(0, 60);
+  const state = {
+    tabs: [{ id: tab, name: `Claude sign-in · ${String(detail.name).slice(0, 40)}`, root: { type: "pane", id: pane, profile: `claude-login:${detail.ticket}` }, focus: pane }],
+    active: tab,
+  };
+  const app = createGitViewer("terminal", JSON.stringify(state));
+  if (app) {
+    app.name = `Claude sign-in · ${String(detail.name).slice(0, 40)}`;
+    claudeLoginApps.set(detail.ticket, app.id);
+  }
+}
 // ---- Command palette (Ctrl+K) ----
 const palette = ref<string | null>(null);
 const agentLauncher = ref(false);
@@ -1197,14 +1235,18 @@ const sideState = computed((): "waiting" | "working" | "idle" => {
     return !run || !["running", "stopping"].includes(run.status) ? "idle" : run.awaitingApproval ? "waiting" : "working";
   }
   let path = "";
+  const sideProvider = sideSession.value.startsWith("codex:") ? "codex" : "claude";
+  const sideProfile = /^claude@([^:]+):/.exec(sideSession.value)?.[1] ?? "default";
   try {
-    const key = sideSession.value.replace(/^codex:/, "");
+    const key = sideSession.value.replace(/^(?:codex:|claude@[^:]+:)/, "");
     path = atob(key.replace(/-/g, "+").replace(/_/g, "/")).toLowerCase();
   } catch {
     return "idle";
   }
   const run = harness.runs.find(
-    (r) => r.sessionId && ["running", "stopping"].includes(r.status) && path.includes(r.sessionId.toLowerCase()),
+    (r) => r.provider === sideProvider && (sideProvider !== "claude" || (r.profileId ?? "default") === sideProfile) &&
+      r.sessionId && ["running", "stopping"].includes(r.status) &&
+      (r.key ? r.key === sideSession.value : path.includes(r.sessionId.toLowerCase())),
   );
   return !run ? "idle" : run.awaitingApproval ? "waiting" : "working";
 });
@@ -4458,6 +4500,7 @@ onMounted(() => {
   window.addEventListener(ACTIVATE_EVENT, activatedApp);
   window.addEventListener("orvane:open-link", openLinkEvent);
   window.addEventListener("orvane:open-git", openGitEvent);
+  window.addEventListener(CLAUDE_LOGIN_EVENT, claudeLoginEvent);
   window.addEventListener("orvane:palette", paletteEvent);
   window.addEventListener("orvane:send-selection", sendSelectionEvent);
   window.addEventListener(PIN_AGENT_DRAFT, pinDraftEvent);
@@ -4488,6 +4531,7 @@ onBeforeUnmount(() => {
   window.removeEventListener(ACTIVATE_EVENT, activatedApp);
   window.removeEventListener("orvane:open-link", openLinkEvent);
   window.removeEventListener("orvane:open-git", openGitEvent);
+  window.removeEventListener(CLAUDE_LOGIN_EVENT, claudeLoginEvent);
   window.removeEventListener("orvane:palette", paletteEvent);
   window.removeEventListener("orvane:send-selection", sendSelectionEvent);
   window.removeEventListener(PIN_AGENT_DRAFT, pinDraftEvent);
