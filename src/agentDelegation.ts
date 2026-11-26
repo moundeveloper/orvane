@@ -12,7 +12,7 @@ export const agentDelegationSchema = z.discriminatedUnion("action", [
     message,
     model: z.string().max(150).regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/).optional(),
     effort: z.enum(["low", "medium", "high", "max"]).optional(),
-    mode: z.enum(["ask", "auto", "plan"]).optional(),
+    mode: z.enum(["ask", "auto", "plan", "full"]).optional(),
     sourceSessionKey: z.string().min(1).max(1000).optional(),
   }),
   z.strictObject({ action: z.literal("status"), runId }),

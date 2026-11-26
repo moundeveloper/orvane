@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { agentBusy, type AgentRun } from "../src/agentSessions.ts";
+import { agentBusy, agentEditModes, type AgentEditMode, type AgentProvider, type AgentRun } from "../src/agentSessions.ts";
 import type { AgentDelegationInput } from "../src/agentDelegation.ts";
 import type { AgentRunner } from "./agent-runner.ts";
 import { LocalDatabase } from "./database.ts";
+import { defaultModesKey } from "./orvane-host-chat.ts";
 
 type Receipt = {
   fingerprint: string;
@@ -14,7 +15,7 @@ type Receipt = {
   folder: string;
   model?: string;
   effort?: AgentRun["effort"];
-  mode: "ask" | "auto" | "plan";
+  mode: AgentEditMode;
   error?: string;
 };
 
@@ -99,9 +100,12 @@ export class AgentDelegations {
     let key: string | undefined;
     if (input.action === "start") {
       const { provider, folder, model, effort, sourceSessionKey } = input;
-      const mode = input.mode ?? (provider === "claude" ? "ask" : "auto");
+      const defaults = this.database().appData(defaultModesKey) as Partial<Record<AgentProvider, AgentEditMode>> | undefined;
+      const savedMode = defaults?.[provider];
+      const supportedModes = agentEditModes[provider];
+      const mode = input.mode ?? (savedMode && supportedModes.includes(savedMode) ? savedMode : supportedModes[0]!);
       if (provider === "codex" && mode === "ask")
-        throw Error("Codex delegation supports Auto-accept or Plan only.");
+        throw Error("Codex delegation supports Auto-accept, Plan only, or Full access.");
       receipt = { fingerprint, delegationId: requestId, provider, folder, model, effort, mode, sourceSessionKey };
     } else {
       const parent = this.receipt(input.runId.toLowerCase());

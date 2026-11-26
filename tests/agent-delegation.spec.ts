@@ -88,6 +88,12 @@ test("agent_delegate runs in the desktop runner, replays safely, resumes and sto
     await expect.poll(restartReady).toBe(true);
     expect((await status()).sessionKey).toBeTruthy();
 
+    const saveClaudeMode = async (claude: "ask" | "full") => {
+      const response = await page.request.post(origin + "/__orvane/agents/default-modes", { data: { claude } });
+      expect(response.ok()).toBe(true);
+    };
+    await saveClaudeMode("full");
+
     const nextId = randomUUID();
     const next = await call({ action: "follow_up", runId, requestId: nextId, message: "Check the preview again" });
     expect(next.delegationId).toBe(runId);
@@ -100,10 +106,23 @@ test("agent_delegate runs in the desktop runner, replays safely, resumes and sto
     expect(logged[1].args).toContain("--resume");
 
     const stoppedId = randomUUID();
-    await call({ ...start, requestId: stoppedId, message: "Review the settings mock" });
+    await call({ ...start, requestId: stoppedId, mode: "ask", message: "Review the settings mock" });
     await waitForApproval(stoppedId);
     await call({ action: "stop", runId: stoppedId });
     await expect.poll(async () => (await status(stoppedId)).status).toBe("stopped");
+
+    const fullId = randomUUID();
+    await call({ ...start, requestId: fullId, message: "Preview in full access" });
+    await expect.poll(async () => {
+      const view = await status(fullId);
+      if (view.awaitingApproval || view.status === "failed") return view;
+      return view.result;
+    }).toBe("Preview ready");
+    await saveClaudeMode("ask");
+    expect((await call({ ...start, requestId: fullId, message: "Preview in full access" })).result).toBe("Preview ready");
+    const overrideId = randomUUID();
+    await call({ ...start, requestId: overrideId, mode: "full", message: "Preview in full access" });
+    await expect.poll(async () => (await status(overrideId)).result).toBe("Preview ready");
 
     const codexId = randomUUID();
     await call({ ...start, requestId: codexId, provider: "codex", model: undefined, message: "Review the host plan" });

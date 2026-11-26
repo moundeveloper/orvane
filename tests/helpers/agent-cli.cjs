@@ -295,6 +295,13 @@ if (args[0] === "auth" && args[1] === "login") {
         return;
       }
       save("user", message);
+      if (message === "Preview in full access" && args.includes("bypassPermissions")) {
+        const result = "Preview ready";
+        save("assistant", result);
+        emit({ type: "assistant", message: { content: [{ type: "text", text: result }] } });
+        emit({ type: "result", subtype: "success", session_id: claudeId });
+        return;
+      }
       if (message === "Ask me questions") {
         // Claude's AskUserQuestion arrives as a permission request.
         emit({
