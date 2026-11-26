@@ -22,32 +22,44 @@ export async function builtAsset(directory: string, name: string) {
 
 const escape = (value: string) => value.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
+type SharedApps = { maker: boolean; terminal: boolean; browser: boolean; notes: boolean };
+
 /**
- * The laptop's Agent Sessions page: the host's top bar, then the desktop
- * component in one app window. Built tags come from dist/host-agents.html.
+ * A laptop page that runs a desktop component from the production build: the
+ * host's top bar, then the component in one app window. Built tags come from
+ * dist/<entry>.html.
  */
-export async function agentsPage(
-  directory: string, csrf: string, modes: object, apps: { maker: boolean; terminal: boolean; browser: boolean },
+async function builtPage(
+  directory: string, entry: string, title: string, active: string, chat: boolean, apps: SharedApps, meta: string,
 ) {
-  const built = await readFile(join(directory, "host-agents.html"), "utf8").catch(() => "");
+  const built = await readFile(join(directory, entry), "utf8").catch(() => "");
   const tags = built.match(/<script type="module"[^>]*><\/script>|<link rel="(?:modulepreload|stylesheet)"[^>]*>/g) ?? [];
   const content = tags.length
-    ? '<div id="host-agents" class="host-app"></div>'
-    : '<p class="host-missing" role="alert">Agent Sessions isn\'t built yet. On the desktop, run <code>pnpm build-only</code> (or restart Orvane), then reload this page.</p>';
+    ? `<div id="${entry.replace(/\.html$/, "")}" class="host-app"></div>`
+    : `<p class="host-missing" role="alert">${title} isn't built yet. On the desktop, run <code>pnpm build-only</code> (or restart Orvane), then reload this page.</p>`;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="orvane-host" content=""><meta name="orvane-csrf" content="${escape(csrf)}">
-<meta name="orvane-modes" content="${escape(JSON.stringify(modes))}">
-<title>Agent Sessions · Orvane</title><link rel="icon" href="/favicon.png"><link rel="stylesheet" href="/host-shell.css">
+<meta name="orvane-host" content="">${meta}
+<title>${title} · Orvane</title><link rel="icon" href="/favicon.png"><link rel="stylesheet" href="/host-shell.css">
 ${tags.join("\n")}
-${navScriptTag}</head><body>${hostHeader(appStrip("chat", true, apps.maker, apps.terminal, apps.browser))}<main>${content}</main></body></html>`;
+${navScriptTag}</head><body>${hostHeader(appStrip(active, chat, apps.maker, apps.terminal, apps.browser, apps.notes))}<main>${content}</main></body></html>`;
 }
+
+/** The laptop's Agent Sessions page: the desktop's AgentSessions.vue. */
+export const agentsPage = (directory: string, csrf: string, modes: object, apps: SharedApps) =>
+  builtPage(directory, "host-agents.html", "Agent Sessions", "chat", true, apps,
+    `<meta name="orvane-csrf" content="${escape(csrf)}">
+<meta name="orvane-modes" content="${escape(JSON.stringify(modes))}">`);
+
+/** The laptop's Notes page: the desktop's NotesView.vue on the same pages. */
+export const notesPage = (directory: string, csrf: string, chat: boolean, apps: SharedApps) =>
+  builtPage(directory, "host-notes.html", "Notes", "notes", chat, apps, `<meta name="orvane-csrf" content="${escape(csrf)}">`);
 
 // Only the page frame and the top bar: the app inside keeps the desktop's own
 // styles, so nothing here may reach into it.
 export const hostShellCss = `
 html,body{height:100%}body{margin:0;height:100dvh;display:grid;grid-template-rows:48px minmax(0,1fr);overflow:hidden;background:#e9edf0}
-main{min-height:0;padding:0 14px 14px}
+body>main{min-height:0;padding:0 14px 14px}
 .host-app{height:100%;min-height:0;overflow:hidden;background:#f7f9fa;border-radius:10px;box-shadow:0 1px 2px #263f5512,0 10px 30px #263f551c}
 .host-missing{margin:24px 8px;color:#455968;font:13px/1.5 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif}
 .host-top{display:flex;align-items:center;gap:14px;min-width:0;padding:0 14px 0 22px;font:13px/1.5 "Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;color:#455968}

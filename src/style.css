@@ -221,6 +221,8 @@ button:hover {
 .workspace {
   --dock-bottom: 24px;
   --dock-height: 49px;
+  background: var(--theme-canvas, #e9edf0);
+  color: var(--theme-text, #455968);
   position: fixed;
   inset: 0;
   overflow: hidden;
@@ -232,6 +234,52 @@ button:hover {
   background-image: radial-gradient(circle, #9baebb47 0.7px, transparent 0.9px);
   pointer-events: none;
   opacity: 0.6;
+}
+.workspace-themed .canvas-dots {
+  background-image: radial-gradient(circle, color-mix(in oklab, var(--theme-text) 30%, transparent) .7px, transparent .9px);
+}
+.appearance-preview-chip,
+.appearance-motion-chip {
+  position: absolute;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 9px;
+  border: 1px solid #d3dee5;
+  border-radius: 8px;
+  background: #fbfcfdee;
+  color: #5d7381;
+  font-size: 11px;
+  pointer-events: none;
+}
+/* Top left, where the header is empty since the wordmark went. Moves below
+   the header when the onboarding hint or a narrow window needs the row. */
+.appearance-preview-chip {
+  left: 22px;
+  top: 17px;
+  height: 28px;
+  box-shadow: 0 4px 12px #263f5518;
+}
+.appearance-preview-chip span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #b08a4a;
+}
+.appearance-motion-chip {
+  left: 24px;
+  bottom: calc(var(--dock-bottom) + 6px);
+  height: 24px;
+}
+.appearance-preview-chip.below-header {
+  top: 55px;
+}
+@media (max-width: 820px) {
+  .appearance-preview-chip { top: 55px; }
+}
+@media (max-width: 760px) {
+  .appearance-motion-chip { display: none; }
 }
 .canvas-plane {
   position: absolute;
@@ -260,40 +308,8 @@ button:hover {
   backdrop-filter: blur(8px) saturate(120%);
   -webkit-backdrop-filter: blur(8px) saturate(120%);
 }
-.topbar-frost {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 78px;
-  z-index: 9;
-  mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    #000 0%,
-    #000 55%,
-    transparent 100%
-  );
-  pointer-events: none;
-}
-.wordmark {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  color: #556c7a;
-}
-.wordmark > span:first-of-type {
-  font-size: 15px;
-  font-weight: 550;
-  letter-spacing: -0.7px;
-}
-.workspace-label {
-  font-size: 10px;
-  color: #5b6c77;
-  margin-left: 12px;
-  padding-left: 17px;
-  border-left: 1px solid #ccd6dd;
-  letter-spacing: 0.01em;
-}
 .top-actions {
+  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -309,13 +325,25 @@ button:hover {
 .gesture-cursor-target {
   cursor: grabbing !important;
 }
-/* Desktop window without a system title bar: drag it by the wordmark. */
-.frameless .wordmark {
+/* Desktop window without a system title bar: an invisible strip with the
+   wordmark's old footprint moves the window; the canvas around it is free. */
+.window-drag-region {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 180px;
+  height: 30px;
+  transform: translateY(-50%);
   -webkit-app-region: drag;
+  app-region: drag;
   user-select: none;
 }
-.frameless .wordmark.restore-drag {
+.window-drag-region.restore-drag {
   -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+.context-hint {
+  margin-inline: auto;
 }
 .window-size,
 .window-close {
@@ -324,6 +352,32 @@ button:hover {
 }
 .window-close:hover {
   background: #ecd9d3;
+  color: #8a4a3a;
+}
+.workspace-wallpaper .top-actions {
+  position: relative;
+  isolation: isolate;
+  color: #273f50;
+}
+.workspace-wallpaper .top-actions::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 50%;
+  inset-inline: -7px;
+  height: 36px;
+  transform: translateY(-50%);
+  border: 1px solid rgb(255 255 255 / 55%);
+  border-radius: 9px;
+  background: rgb(247 250 252 / 90%);
+  box-shadow: 0 1px 2px #263f5512, 0 4px 12px #263f5518;
+  backdrop-filter: blur(8px) saturate(120%);
+  pointer-events: none;
+}
+.workspace-wallpaper .topbar :is(.subtle-button, .icon-button, .field-help) {
+  color: #455968;
+}
+.workspace-wallpaper .topbar .window-close:hover {
   color: #8a4a3a;
 }
 /* Pan feedback: one overlay above the canvas and below the top bar, dock and
@@ -1203,6 +1257,10 @@ button:hover {
 .dock-home {
   color: #566c7a;
 }
+.dock-logo {
+  display: block;
+  pointer-events: none;
+}
 .dock .dock-ai { flex: none; }
 .dock-tabs {
   position: relative;
@@ -1575,6 +1633,18 @@ kbd {
   min-width: 100px;
   font-size: 10px;
 }
+.status-actions { display: contents; }
+.status-area.status-recovery {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  width: min(440px, calc(100vw - 48px));
+}
+.status-recovery .status-actions {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
 .workspace-panel .field-help {
   font-size: 10px;
 }
@@ -1601,6 +1671,20 @@ kbd {
   margin-left: auto;
   font-size: 10px;
   color: #586c77;
+}
+/* Workspace options → Appearance: one row that opens the Appearance panel. */
+.workspace-panel .appearance-entry {
+  display: flex;
+  width: calc(100% + 12px);
+  margin: 0 -6px;
+  justify-content: flex-start;
+  padding: 7px 6px;
+  font-size: 11px;
+}
+.appearance-entry > span {
+  margin-left: auto;
+  color: #586c77;
+  font-size: 10px;
 }
 .shortcut-row {
   display: flex;
@@ -1762,17 +1846,11 @@ kbd {
     right: 15px;
     top: 17px;
   }
-  .workspace-label {
-    display: none;
-  }
   .top-actions {
     gap: 7px;
   }
   .top-actions .subtle-button {
     font-size: 10px;
-  }
-  .wordmark > span:first-of-type {
-    font-size: 14px;
   }
   .dock {
     max-width: calc(100% - 24px);
@@ -1981,7 +2059,7 @@ kbd {
   z-index: 200;
   background: #45596812;
 }
-/* Action wheel (Halo · Glow): a frosted ring like the top bar (.topbar-frost),
+/* Action wheel (Halo · Glow): a frosted ring like the shared .workspace-frost,
    a soft glow in the selected slot that reaches the edge, faint dividers, and a
    white center disc that says what will run. */
 .radial-wheel {
@@ -2479,11 +2557,17 @@ kbd {
 .canvas-app.focused-app .resize-edge {
   display: none;
 }
-/* Terminal app: frosted glass like the top bar (.topbar-frost). */
+/* Terminal app: frosted glass like the shared .workspace-frost. */
 .app-surface.app-frosted {
   background: rgb(247 250 252 / 8%);
   backdrop-filter: blur(8px) saturate(120%);
   -webkit-backdrop-filter: blur(8px) saturate(120%);
+}
+/* Over an image, video or code background the glass stays see-through; a
+   soft light halo lifts the terminal text and toolbar icons off busy or dark
+   footage instead of covering the picture. */
+.workspace-wallpaper .app-surface.app-frosted :is(.xterm-screen, .app-topline) {
+  filter: drop-shadow(0 0 1px rgb(247 250 252 / 95%)) drop-shadow(0 0 3px rgb(247 250 252 / 70%));
 }
 .app-content:has(> :is(.block-browser-clip, .block-folder-compare, .block-test-results):only-child) {
   padding: 0;
@@ -2531,4 +2615,98 @@ kbd {
   background: #f8fbfc;
   border: 1px solid #dbe6eb;
   border-radius: 7px;
+}
+
+/* Workspace palettes on Orvane's own shell: the dock, floating panels,
+   dropdowns and status notes. App.vue sets .orvane-themed and the --theme-*
+   colors on <html> only for a non-default palette, so the default look keeps
+   every value above. App content and Browser pages are left alone; warning
+   and status colors keep their meaning. Components with scoped styles
+   (command palette, board rail, dock menu, Appearance) theme themselves. */
+html.orvane-themed {
+  /* Shell surfaces sit between the palette's window and canvas colors, the
+     way the default dock (#f5f8fa) sits between #f7f9fa and #e9edf0. */
+  --shell-surface: color-mix(in oklab, var(--theme-surface) 80%, var(--theme-canvas));
+  --shell-text: var(--theme-text);
+  --shell-strong: color-mix(in oklab, var(--theme-text) 78%, #0d151b);
+  --shell-muted: color-mix(in oklab, var(--theme-text) 88%, var(--shell-surface));
+  --shell-faint: color-mix(in oklab, var(--theme-text) 83%, var(--shell-surface));
+  --shell-line: color-mix(in oklab, var(--theme-text) 13%, var(--shell-surface));
+  --shell-field: color-mix(in oklab, var(--theme-accent) 13%, var(--shell-surface));
+  --shell-hover: color-mix(in oklab, var(--theme-accent) 17%, var(--shell-surface));
+  --shell-selected: color-mix(in oklab, var(--theme-accent) 26%, var(--shell-surface));
+  --shell-focus: color-mix(in oklab, var(--theme-accent) 70%, var(--theme-text));
+}
+html.orvane-themed :where(.dock, .floating-panel:not(.workspace-frost), .select-popover, .status-area:not(.status-warning)) {
+  --surface: var(--theme-surface);
+  --accent: var(--theme-accent);
+  --line: var(--shell-line);
+  --muted: var(--shell-muted);
+  background-color: var(--shell-surface);
+  color: var(--shell-text);
+}
+html.orvane-themed :where(.dock, .floating-panel, .select-popover, .status-area:not(.status-warning))
+  :where(.subtle-button, .icon-button, .section-line, .field-help, .dock-tab, .empty-dock-label, .shortcut-row, .restore-row, .property, summary, .select-options > button) {
+  color: var(--shell-muted);
+}
+html.orvane-themed :where(.floating-panel, .select-popover) :where(h1, h2, h3, .panel-heading) {
+  color: var(--shell-strong);
+}
+html.orvane-themed :where(.dock, .floating-panel, .select-popover, .status-area:not(.status-warning)) :where(button:not(:disabled)):hover {
+  background-color: var(--shell-hover);
+}
+html.orvane-themed :where(.dock, .floating-panel, .select-popover) :where(button, summary):focus-visible {
+  outline-color: var(--shell-focus);
+}
+html.orvane-themed .floating-panel :is(.property > input:not([type="range"]):not([type="color"]), .property > textarea, .select-trigger, .shortcut-row > input),
+html.orvane-themed .floating-panel .workspace-action-row > button {
+  background-color: var(--shell-field);
+  color: var(--shell-text);
+}
+html.orvane-themed .floating-panel :is(input:not([type="checkbox"]):not([type="range"]):not([type="color"]):not([type="file"]), textarea):focus {
+  background-color: var(--shell-hover);
+  box-shadow: inset 0 -1px 0 var(--shell-focus);
+}
+html.orvane-themed .floating-panel :is(.settings-section, .settings-section > .section-line > span, .settings-section summary > span) {
+  border-color: var(--shell-line);
+  color: var(--shell-muted);
+}
+html.orvane-themed .select-options > button:is([data-highlighted="true"], :hover) {
+  background-color: var(--shell-hover);
+}
+html.orvane-themed .select-options > button[aria-selected="true"] {
+  color: var(--shell-strong);
+}
+html.orvane-themed .dock-divider {
+  background: var(--shell-line);
+}
+html.orvane-themed .dock .dock-tab.active {
+  background: var(--shell-selected);
+  color: var(--shell-strong);
+}
+html.orvane-themed .dock .dock-tab.active::after {
+  background: var(--theme-accent);
+}
+html.orvane-themed .dock :is(.selected, .create-app) {
+  background: var(--shell-selected);
+  color: var(--shell-strong);
+}
+html.orvane-themed .dock .create-app:hover {
+  background: color-mix(in oklab, var(--theme-accent) 32%, var(--theme-surface));
+}
+html.orvane-themed .status-area:not(.status-warning) {
+  border-left-color: var(--theme-accent);
+}
+html.orvane-themed .status-area:not(.status-warning) .status-icon {
+  color: var(--theme-accent);
+}
+/* Plain header over a palette canvas: header text follows the palette. */
+html.orvane-themed .workspace:not(.workspace-wallpaper) .top-actions :is(.subtle-button, .icon-button, .field-help) {
+  color: color-mix(in oklab, var(--theme-text) 90%, var(--theme-canvas));
+}
+html.orvane-themed .workspace:not(.workspace-wallpaper) .top-actions :is(.subtle-button, .icon-button):not(.window-close):hover {
+  background-color: color-mix(in oklab, var(--theme-accent) 16%, var(--theme-canvas));
+}
+html.orvane-themed .memory-pending {
+  background: var(--theme-run);
 }

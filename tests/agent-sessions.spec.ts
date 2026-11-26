@@ -93,7 +93,15 @@ test("the AI launcher starts in Surveying and global search can reopen the sessi
     const { backgroundColor, backdropFilter } = getComputedStyle(element);
     return { backgroundColor, backdropFilter };
   };
-  const banner = await page.locator(".topbar-frost").evaluate(material);
+  // The shared frost material (the header no longer draws a frost band).
+  const banner = await page.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.className = "workspace-frost";
+    document.querySelector("main.workspace")!.append(probe);
+    const { backgroundColor, backdropFilter } = getComputedStyle(probe);
+    probe.remove();
+    return { backgroundColor, backdropFilter };
+  });
   expect(banner.backdropFilter).toBe("blur(8px) saturate(1.2)");
   expect(await launcher.evaluate(material)).toEqual(banner);
   await expect(launcher.locator(".agent-composer")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
@@ -359,6 +367,87 @@ test("queued follow-ups drain in order and keep the Codex session", async ({ pag
   const resumed = (await readFile(join(directory, "inputs.jsonl"), "utf8")).trim().split("\n").map((line) => JSON.parse(line)).at(-1);
   expect(resumed.message).toBe("Interrupt and continue");
   expect(resumed.args).toEqual(expect.arrayContaining(["resume", codexId]));
+});
+
+test("a long queued follow-up keeps its buttons inside the conversation", async ({ page, context }) => {
+  test.setTimeout(90_000);
+  const { directory, project } = await fixture(context);
+  const app = await openApp(page);
+  await app.getByRole("button", { name: "Codex", exact: true }).click();
+  await app.getByRole("textbox", { name: "Project folder" }).fill(project);
+  const composer = app.getByRole("textbox", { name: "Message", exact: true });
+  await composer.fill("Survey the launcher workflow for follow-ups");
+  await composer.press("Enter");
+  await expect(app.getByRole("region", { name: "Run steps" }).getByText("Thinking", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await composer.fill(`Check the overflow ${"longwordwithoutbreaks".repeat(11)}`);
+  await composer.press("Enter");
+  const queue = app.getByRole("region", { name: "Queued follow-ups" });
+  const remove = queue.getByRole("button", { name: "Remove" });
+  await expect(remove).toBeVisible();
+  const chat = app.getByLabel("Session conversation");
+  expect(await chat.evaluate((node) => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1);
+  const box = (await queue.boundingBox())!;
+  for (const name of ["Edit", "Send now", "Remove"]) {
+    const button = (await queue.getByRole("button", { name }).boundingBox())!;
+    expect(button.x + button.width, name).toBeLessThanOrEqual(box.x + box.width);
+  }
+  await writeFile(join(directory, "finish-launcher"), "");
+  await expect(queue).toHaveCount(0, { timeout: 20_000 });
+});
+
+test("a long continued-session reference doesn't make the conversation scroll sideways", async ({ page, context }) => {
+  test.setTimeout(90_000);
+  const { directory, project } = await fixture(context);
+  const id = "44444444-4444-4444-8444-444444444444";
+  const title = "The Orvane owner asked you to implement the next appearance and style pass on the existing branch ".repeat(2).trim();
+  const fence = "`".repeat(3);
+  const message = [
+    "Picking this up again.", "",
+    `Continue from the earlier session "${title}" (Claude Code in orvane, session ${id}).`,
+    'Its full transcript (JSONL) is at: "C:\transcript.jsonl"',
+    "Read it when you need earlier turns.", fence, "Asked: earlier", fence,
+  ].join("\n");
+  await writeFile(join(directory, "claude-projects", "test-project", id + ".jsonl"), JSON.stringify({
+    type: "user", sessionId: id, cwd: project, message: { content: message },
+  }) + "\n");
+  const app = await openApp(page);
+  await app.getByRole("button", { name: /Picking this up again/ }).click();
+  const chat = app.getByLabel("Session conversation");
+  await expect(chat.locator(".cs-sent-ref")).toBeVisible();
+  expect(await chat.evaluate((node) => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1);
+  const dock = app.locator(".cs-dock");
+  expect(await dock.evaluate((node) => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1);
+});
+
+test("the session list hides from beside the search and comes back from the toolbar", async ({ page, context }, info) => {
+  test.setTimeout(90_000);
+  await fixture(context);
+  const app = await openApp(page);
+  const list = app.getByRole("navigation", { name: "Agent sessions" });
+  const search = list.getByRole("textbox", { name: "Find a session" });
+  const hide = list.getByRole("button", { name: "Hide session list" });
+  await expect(hide).toBeVisible();
+  // Same row and centre line as the search field.
+  const field = (await app.locator(".cs-search").boundingBox())!;
+  const button = (await hide.boundingBox())!;
+  expect(Math.abs(field.y + field.height / 2 - (button.y + button.height / 2))).toBeLessThan(1);
+  expect(button.x).toBeGreaterThan(field.x + field.width);
+  await app.getByRole("button", { name: /Existing Claude project/ }).click();
+  const chat = app.getByLabel("Session conversation");
+  const before = (await chat.boundingBox())!.width;
+  await hide.click();
+  await expect(list).toBeHidden();
+  await expect.poll(async () => (await chat.boundingBox())!.width).toBeGreaterThan(before + 200);
+  await page.screenshot({ path: info.outputPath("session-list-hidden.png") });
+  const show = app.locator(".cs-toolbar").getByRole("button", { name: "Show session list" });
+  await show.click();
+  await expect(list).toBeVisible();
+  await expect(show).toHaveCount(0);
+  await expect(search).toBeVisible();
+  // "/" still finds a session once the list is back.
+  await chat.click();
+  await page.keyboard.press("/");
+  await expect(search).toBeFocused();
 });
 
 test("session row menu tiles a session and the toolbar shows split shortcuts", async ({ page, context }, info) => {
@@ -906,6 +995,71 @@ test("message actions copy, send to Notes, save prompts and fork", async ({
   expect(args[args.indexOf("--resume") + 1]).toBe(
     await realpath(join(directory, "claude-projects", "test-project", `${claudeId}.jsonl`)),
   );
+});
+
+test("Claude and Codex replies show local pictures inline and open them full-window", async ({ page, context }) => {
+  test.setTimeout(90_000);
+  const { directory, project } = await fixture(context);
+  await mkdir(join(project, "shots"), { recursive: true });
+  const shot = join(project, "shots", "terminal.png");
+  // A real 2×2 PNG.
+  await writeFile(shot, Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEklEQVR4nGN0q4hiYGBgYgADAA02ARyeTxxIAAAAAElFTkSuQmCC", "base64"));
+  const at = new Date(Date.UTC(2026, 10, 21, 20, 0)).toISOString();
+  await writeFile(join(directory, "claude-projects", "test-project", claudeId + ".jsonl"), [
+    { type: "user", uuid: "u1", timestamp: at, sessionId: claudeId, cwd: project, message: { content: "Show the terminal screenshot" } },
+    { type: "assistant", uuid: "a1", timestamp: at, message: { content: [{ type: "text",
+      text: `Here it is:
+
+![Terminal over a wallpaper](${shot})
+
+![Second shot](shots/terminal.png)
+
+Remote stays text: ![remote](https://example.test/x.png)` }] } },
+  ].map((record) => JSON.stringify(record)).join("\n") + "\n");
+  const codexFolder = join(directory, "codex-sessions", "2026", "11", "22");
+  await mkdir(codexFolder, { recursive: true });
+  const wrap = (type: string, payload: object) => JSON.stringify({ type, payload, timestamp: at });
+  await writeFile(join(codexFolder, "pictures.jsonl"), [
+    wrap("session_meta", { id: "33333333-3333-4333-8333-333333333333", cwd: project }),
+    wrap("event_msg", { type: "item_completed", item: { type: "UserMessage", content: [{ type: "text", text: "Codex picture check" }] } }),
+    wrap("response_item", { type: "message", role: "assistant", content: [{ type: "output_text", text: "Relative path:\n\n![Codex shot](shots/terminal.png)" }] }),
+  ].join("\n") + "\n");
+  const app = await openApp(page);
+  const chat = app.getByLabel("Session conversation");
+  const loaded = (picture: ReturnType<typeof chat.getByRole>) =>
+    picture.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth);
+
+  await app.getByRole("button", { name: /Show the terminal screenshot/ }).click();
+  const picture = chat.getByRole("button", { name: "Terminal over a wallpaper" });
+  await expect.poll(() => loaded(picture)).toBe(2);
+  await expect(chat.getByText("Image: remote")).toBeVisible();
+  await expect(chat.locator('img[src^="https:"]')).toHaveCount(0);
+  await picture.focus();
+  await page.keyboard.press("Enter");
+  const peek = page.getByRole("dialog");
+  await expect(peek.locator("img").first()).toHaveAttribute("src", /\/__orvane\/agents\/picture\?path=/);
+  // ← → and Previous/Next step through the reply's pictures and wrap around.
+  await expect(peek.getByText("1 / 2")).toBeVisible();
+  await page.keyboard.press("ArrowLeft");
+  await expect(peek.getByText("2 / 2")).toBeVisible();
+  await expect(peek.getByText("Second shot", { exact: true })).toBeVisible();
+  await page.keyboard.press("ArrowRight");
+  await expect(peek.getByText("1 / 2")).toBeVisible();
+  await peek.getByRole("button", { name: "Next image" }).click();
+  await expect(peek.getByText("2 / 2")).toBeVisible();
+  await peek.getByRole("button", { name: "Previous image" }).click();
+  await expect(peek.getByText("1 / 2")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(peek).toHaveCount(0);
+  await expect(picture).toBeFocused();
+
+  await app.getByRole("button", { name: /Codex picture check/ }).click();
+  const codexPicture = chat.getByRole("button", { name: "Codex shot" });
+  await expect.poll(() => loaded(codexPicture)).toBe(2);
+  // SVG and non-files are refused by the route itself.
+  expect((await page.request.get(`/__orvane/agents/picture?path=${encodeURIComponent(join(project, "x.svg"))}`)).status()).toBe(400);
+  expect((await page.request.get(`/__orvane/agents/picture?path=${encodeURIComponent(join(project, "missing.png"))}`)).status()).toBe(404);
 });
 
 test("the session timeline shows asks, research, approvals, files, failures and answers", async ({

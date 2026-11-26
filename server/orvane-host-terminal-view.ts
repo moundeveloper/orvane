@@ -6,14 +6,14 @@ const require = createRequire(import.meta.url);
 export const xtermScriptPath = () => require.resolve("@xterm/xterm");
 export const xtermCssPath = () => join(dirname(xtermScriptPath()), "../css/xterm.css");
 
-export const terminalPage = (maker: boolean, browser = false) => hostDocument("Terminal", `
+export const terminalPage = (maker: boolean, browser = false, notes = false) => hostDocument("Terminal", `
 <section class="host-app host-terminal"><header class="app-bar">${icon("terminal", 15)}<strong>Terminal</strong><span id="terminal-status" class="app-status" role="status">Looking for shared terminals…</span></header>
 <nav id="terminal-tabs" class="host-tabs" aria-label="Open desktop terminals"></nav>
 <div class="terminal-content"><p id="terminal-empty" class="muted">Open a terminal in a shared project on the desktop.</p>
 <div id="terminal-screen" aria-label="Terminal input and output" hidden></div></div>
 <p id="terminal-error" role="status" class="error"></p></section>`,
   navScriptTag + '<link rel="stylesheet" href="/terminal/xterm.css"><script src="/terminal/xterm.js" defer></script><script src="/terminal.js" defer></script>',
-  appStrip("terminal", true, maker, true, browser));
+  appStrip("terminal", true, maker, true, browser, notes));
 
 export const terminalCss = `
 .host-terminal{display:grid;grid-template-rows:auto auto minmax(0,1fr) auto}

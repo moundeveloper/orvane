@@ -439,3 +439,35 @@ test("unavailable backend preserves browser data and offers export without enabl
     ),
   ).toBe("Notes");
 });
+
+test("a backup export preserves the recovery error and opening the workspace can be retried", async ({ page }) => {
+  const saved = fixture();
+  const image = makeBlock("image");
+  image.value = "a".repeat(40) + ".png";
+  saved.apps[0]!.blocks.push(image);
+  await page.addInitScript((data) => {
+    localStorage.setItem("orvane.examples.v1", "installed");
+    localStorage.setItem("orvane.workspace.v1", JSON.stringify(data));
+  }, saved);
+  const lease = "**/__orvane/storage/lease";
+  await page.route(lease, (route) => route.fulfill({
+    status: 503, json: { error: "Local SQLite backend is unavailable." },
+  }));
+  await page.route("**/__orvane/files/image/*", (route) => route.fulfill({
+    status: 200, contentType: "image/png", body: "backup fixture",
+  }));
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const banner = page.locator(".status-area");
+  await expect(banner).toContainText("Local SQLite backend is unavailable.");
+  const exported = page.waitForEvent("download");
+  await banner.getByRole("button", { name: "Export current data" }).click();
+  await (await exported).path();
+  await expect(banner).toContainText("Local SQLite backend is unavailable.");
+  await expect(banner).not.toContainText("Backup includes");
+
+  await page.unroute(lease);
+  await banner.getByRole("button", { name: "Retry opening workspace" }).click();
+  await expect(page.locator('main[data-editable="true"]')).toBeVisible();
+  await expect(banner).toBeHidden();
+  expect((await readStored(page)).apps[0]?.name).toBe("Notes");
+});

@@ -8,7 +8,7 @@ import Icon from "./Icon.vue";
 type Status = {
   enabled: boolean; url?: string; addresses: { address: string; name: string }[];
   address?: string; port: number; projects: string[]; approvals: boolean;
-  uiMaker: boolean; terminal: boolean; browser: boolean; keepAwake: boolean; passwordSet: boolean; certificateReady: boolean;
+  uiMaker: boolean; terminal: boolean; browser: boolean; notes: boolean; keepAwake: boolean; passwordSet: boolean; certificateReady: boolean;
 };
 
 const status = ref<Status>();
@@ -20,6 +20,7 @@ const approvals = ref(false);
 const uiMaker = ref(false);
 const terminal = ref(false);
 const browser = ref(false);
+const notes = ref(false);
 const keepAwake = ref(true);
 const busy = ref(false);
 const message = ref("");
@@ -35,6 +36,7 @@ function apply(value: Status) {
   uiMaker.value = value.uiMaker;
   terminal.value = value.terminal;
   browser.value = value.browser;
+  notes.value = value.notes;
   keepAwake.value = value.keepAwake;
   password.value = "";
 }
@@ -58,7 +60,7 @@ async function act(action: "start" | "stop" | "status") {
       action, address: address.value, port: Number(port.value),
       projects: sharedFolders,
       password: password.value || undefined, approvals: approvals.value, uiMaker: uiMaker.value,
-      terminal: terminal.value, browser: browser.value, keepAwake: keepAwake.value,
+      terminal: terminal.value, browser: browser.value, notes: notes.value, keepAwake: keepAwake.value,
     } : { action }, AbortSignal.timeout(65_000));
     apply(value);
     if (action === "stop") message.value = "Laptop access disconnected.";
@@ -145,6 +147,11 @@ onMounted(() => { void act("status"); });
           <span><strong>Share Browser</strong><small>Open host tabs and control tabs shared from the desktop.</small></span>
           <button type="button" class="host-switch" role="switch" aria-label="Share Browser"
             :aria-checked="browser" :disabled="busy" @click="browser = !browser" />
+        </div>
+        <div class="host-row">
+          <span><strong>Share Notes</strong><small>Open and edit the workspace’s Notes pages from the laptop.</small></span>
+          <button type="button" class="host-switch" role="switch" aria-label="Share Notes"
+            :aria-checked="notes" :disabled="busy" @click="notes = !notes" />
         </div>
         <div class="host-row">
           <span><strong>Share open terminals</strong><small>Allow full shell input in terminals opened in a shared project.</small></span>

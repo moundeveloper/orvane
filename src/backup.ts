@@ -5,8 +5,10 @@ import { flatten, type Workspace } from "./model";
 import { IMAGE_ID } from "./imageDrop";
 import { api } from "./components/files/explorer";
 import { readWidget, type BrowserClip } from "./workbenchWidgets";
+import { getThemeMediaUrl, MAX_THEME_MEDIA, THEME_MEDIA_TYPES } from "./workspaceTheme";
 
-export type Backup = { orvaneBackup: 1; created: string; workspace: Workspace; images: Record<string, string> };
+type BackgroundFile = { mime: string; data: string };
+export type Backup = { orvaneBackup: 1; created: string; workspace: Workspace; images: Record<string, string>; backgrounds?: Record<string, BackgroundFile> };
 
 export function imageIds(workspace: Workspace) {
   const ids = new Set<string>();
@@ -50,8 +52,47 @@ export async function makeBackup(workspace: Workspace) {
       missing++;
     }
   }
-  const backup: Backup = { orvaneBackup: 1, created: new Date().toISOString(), workspace, images };
-  return { backup, count: Object.keys(images).length, missing };
+  const backgrounds: Record<string, BackgroundFile> = {};
+  let missingBackgrounds = 0;
+  for (const media of Object.values(workspace.appearance?.media ?? {})) {
+    if (!media) continue;
+    try {
+      const response = await fetch(getThemeMediaUrl(media.id));
+      if (!response.ok) throw new Error();
+      const blob = await response.blob();
+      backgrounds[media.id] = { mime: blob.type, data: await base64(blob) };
+    } catch {
+      missingBackgrounds++;
+    }
+  }
+  const backup: Backup = {
+    orvaneBackup: 1, created: new Date().toISOString(), workspace, images,
+    ...(Object.keys(backgrounds).length ? { backgrounds } : {}),
+  };
+  return { backup, count: Object.keys(images).length, missing, missingBackgrounds };
+}
+export async function restoreBackgrounds(
+  workspace: Workspace,
+  backgrounds: Backup["backgrounds"],
+  upload: (id: string, file: File) => Promise<void>,
+) {
+  if (!backgrounds) return 0;
+  let rejected = 0;
+  for (const kind of ["image", "video"] as const) {
+    const media = workspace.appearance?.media?.[kind];
+    if (!media || !Object.hasOwn(backgrounds, media.id)) continue;
+    const entry = backgrounds[media.id];
+    const supported: readonly string[] = THEME_MEDIA_TYPES[kind];
+    try {
+      if (!entry || !supported.includes(entry.mime) || typeof entry.data !== "string" ||
+        entry.data.length > 4 * Math.ceil(MAX_THEME_MEDIA / 3)) throw new Error();
+      const bytes = Uint8Array.from(atob(entry.data), (char) => char.charCodeAt(0));
+      await upload(media.id, new File([bytes], media.name, { type: entry.mime }));
+    } catch {
+      rejected++;
+    }
+  }
+  return rejected;
 }
 export function isBackup(value: unknown): value is Backup {
   const v = value as Backup;

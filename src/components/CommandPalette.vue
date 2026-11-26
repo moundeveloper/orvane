@@ -523,3 +523,35 @@ kbd {
   }
 }
 </style>
+<style>
+/* Workspace palette (see "Workspace palettes" in style.css). */
+html.orvane-themed .cp {
+  background: color-mix(in srgb, var(--shell-surface) 86%, transparent);
+  color: var(--shell-text);
+}
+html.orvane-themed :is(.cp-input, .cp-foot) {
+  border-color: var(--shell-line);
+}
+html.orvane-themed :is(.cp-input, .cp-section, .cp-detail, .cp-empty, .cp-foot) {
+  color: var(--shell-faint);
+}
+html.orvane-themed .cp-input input {
+  color: var(--shell-strong);
+}
+html.orvane-themed .cp-item {
+  color: var(--shell-text);
+}
+html.orvane-themed .cp-item.active {
+  background: var(--shell-selected);
+  color: var(--shell-strong);
+}
+html.orvane-themed .cp kbd {
+  border-color: var(--shell-line);
+  background: var(--shell-surface);
+  color: var(--shell-faint);
+}
+html.orvane-themed .cp-spinner {
+  border-color: var(--shell-line);
+  border-top-color: var(--theme-accent);
+}
+</style>

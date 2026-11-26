@@ -8,11 +8,16 @@ import {
   reactive,
   ref,
   shallowReactive,
+  toRaw,
   watch,
   defineAsyncComponent,
   h,
 } from "vue";
 import { WorkspaceStorage, LEGACY_STORAGE } from "./storage";
+import { useWorkspaceAppearance } from "./useWorkspaceAppearance";
+import { THEME_PRESETS, type ThemeBackgroundType, type WorkspaceTheme } from "./workspaceTheme";
+import AppearanceSettings from "./components/AppearanceSettings.vue";
+import ThemeCanvasBackground from "./components/ThemeCanvasBackground.vue";
 import { trackWorkspace } from "./workspaceTracking";
 import { connectMcpBridge, type BridgeRequest } from "./mcpBridge";
 import { applyCommands, duplicateApp, type RunRequest } from "./automation";
@@ -37,7 +42,7 @@ import { vMotion } from "./motion";
 import { closeWheel, openWheel, wheelLevelHooks, type WheelExit } from "./wheelMotion";
 import { importDrop, importImageData, importImageFile, importPath, mayHoldImage, measure, type PlacedImage } from "./imageDrop";
 import { isImage, peekKind } from "./components/files/explorer";
-import { isBackup, makeBackup, restoreImages } from "./backup";
+import { isBackup, makeBackup, restoreBackgrounds, restoreImages } from "./backup";
 import { OPEN_EVENT, registerCommands, type OpenRequest } from "./commands";
 import { ACTIVATE_EVENT, BROWSER_SHORTCUT, canvasScroll } from "./canvasScroll";
 import { dayKey, dueAt, formatDay, readCalendar, type CalendarItem } from "./calendar";
@@ -222,14 +227,15 @@ function assignCreatedAction(id: string) {
 }
 const EXAMPLES = "orvane.examples.v1";
 const status = ref(""),
-  loadError = ref(false),
+  loadError = ref(""),
   ready = ref(false),
   canEdit = ref(false);
+const statusText = computed(() => loadError.value || status.value);
 // Confirmations read as neutral notes; everything else needs attention.
 const statusIsProblem = computed(
   () =>
     loadError.value ||
-    !/ (moved to trash|archived)\. Restore it|^(App|Canvas arrangement) restored\.$/.test(status.value),
+    !/ (moved to trash|archived)\. Restore it|^(App|Canvas arrangement) restored\.$|^Backup includes \d+ images?\.$/.test(status.value),
 );
 // Same conditions as the status action buttons in the template.
 const statusHasActions = computed(
@@ -339,34 +345,39 @@ async function refresh() {
   const value = await store.read();
   if (value) replaceWorkspace(parseWorkspace(value));
 }
-async function initialize() {
+async function openWorkspaceForEditing() {
   try {
+    const value = await store.initialize();
+    upgradeExampleApps(value);
+    migrateGroups(value);
+    replaceWorkspace(value);
+    canEdit.value = true;
+    status.value = "";
+    if (!(await store.learned(EXAMPLES))) {
+      if (!localStorage.getItem(EXAMPLES)) addExamples();
+      await store.learn(EXAMPLES);
+    }
+    loadError.value = "";
+    await persist();
+    // Undo starts from the canvas as it opened (examples included).
+    resetCanvasHistory();
+  } catch (error) {
+    canEdit.value = false;
+    loadError.value = error instanceof Error
+      ? error.message
+      : "Your saved workspace could not be opened. Export the stored data to recover it.";
+  } finally {
+    ready.value = true;
+  }
+}
+async function initialize(retry = false) {
+  try {
+    let opened = false;
     await store.start(async () => {
-      try {
-        const value = await store.initialize();
-        upgradeExampleApps(value);
-        migrateGroups(value);
-        replaceWorkspace(value);
-        canEdit.value = true;
-        status.value = "";
-        if (!(await store.learned(EXAMPLES))) {
-          if (!localStorage.getItem(EXAMPLES)) addExamples();
-          await store.learn(EXAMPLES);
-        }
-        await persist();
-        // Undo starts from the canvas as it opened (examples included).
-        resetCanvasHistory();
-        ready.value = true;
-      } catch (error) {
-        canEdit.value = false;
-        loadError.value = true;
-        ready.value = true;
-        status.value =
-          error instanceof Error
-            ? error.message
-            : "Your saved workspace could not be opened. Export the stored data to recover it.";
-      }
+      opened = true;
+      await openWorkspaceForEditing();
     });
+    if (retry && !opened && store.writer) await openWorkspaceForEditing();
     if (!canEdit.value && !loadError.value) await refresh();
     ready.value = true;
     if (!canEdit.value && !loadError.value)
@@ -374,8 +385,8 @@ async function initialize() {
         "Read-only here. Changes from the editing browser appear automatically. Editing transfers when it closes.";
   } catch (error) {
     ready.value = true;
-    loadError.value = true;
-    status.value =
+    canEdit.value = false;
+    loadError.value =
       error instanceof Error
         ? error.message
         : "The local SQLite backend is unavailable. Start Orvane with pnpm dev or pnpm preview, then reload.";
@@ -385,6 +396,16 @@ async function initialize() {
     } catch {
       /* Preserve original bytes. */
     }
+  }
+}
+const retryingWorkspace = ref(false);
+async function retryOpeningWorkspace() {
+  if (retryingWorkspace.value || unsavedChanges.value) return;
+  retryingWorkspace.value = true;
+  try {
+    await initialize(true);
+  } finally {
+    retryingWorkspace.value = false;
   }
 }
 const apps = computed(() =>
@@ -535,12 +556,77 @@ function dismissHint() {
 const createdAppId = ref("");
 
 const panel = ref<
-    "search" | "workspace" | "help" | "geometry" | "groups" | "layouts" | "memory" | "site-memory" | null
+    "search" | "workspace" | "appearance" | "help" | "geometry" | "groups" | "layouts" | "memory" | "site-memory" | null
   >(null),
   query = ref(""),
   searchInput = ref<HTMLInputElement>(),
   importInput = ref<HTMLInputElement>(),
   geometryApp = ref<CanvasApp>();
+const appearanceButton = ref<HTMLButtonElement>();
+const optionsButton = ref<HTMLButtonElement>();
+const {
+  theme: appearance, dirty: appearanceDirty, changeCount: appearanceChanges, reduced: appearanceReduced, previewReduced,
+  systemReduced, saving: appearanceSaving, error: appearanceError, paletteStyle,
+  discard: discardAppearance, close: releaseAppearance, update: updateAppearance,
+  importMedia: importAppearanceMedia, apply: applyAppearance,
+} = useWorkspaceAppearance(
+  () => workspace.appearance,
+  (id, file) => store.uploadThemeMedia(id, file),
+  saveAppearance,
+);
+async function saveAppearance(theme: WorkspaceTheme) {
+  store.assertWriter();
+  const previous = workspace.appearance;
+  workspace.appearance = theme;
+  try {
+    await store.write(workspace);
+  } catch (error) {
+    if (toRaw(workspace.appearance) === theme) {
+      if (previous) workspace.appearance = previous;
+      else delete workspace.appearance;
+    }
+    throw error;
+  }
+}
+function openAppearance() {
+  if (!canEdit.value || importBusy.value || appearanceSaving.value) return;
+  discardAppearance();
+  panel.value = "appearance";
+}
+function leaveAppearance(back = false) {
+  panel.value = back ? "workspace" : null;
+  void nextTick(() => (back ? appearanceButton.value : optionsButton.value)?.focus());
+}
+function dismissAppearanceFromGuest() {
+  if (panel.value === "appearance") panel.value = null;
+}
+watch(panel, (open, previous) => {
+  if (previous === "appearance" && open !== "appearance") releaseAppearance();
+});
+const appearanceSummary = computed(() => {
+  const { preset, backgroundType } = appearance.value;
+  const name = THEME_PRESETS.find((item) => item.id === preset)?.name ?? "Custom";
+  return `${name} · ${backgroundType.charAt(0).toUpperCase()}${backgroundType.slice(1)}`;
+});
+// The palette also lives on <html> so shell popovers teleported to <body>
+// (dropdowns, tooltips) follow it. The default palette sets nothing.
+const ROOT_THEME_VARS = {
+  "--theme-canvas": "--theme-canvas", "--theme-surface": "--surface", "--theme-text": "--theme-text",
+  "--theme-accent": "--accent", "--theme-run": "--theme-run",
+} as const;
+watch(paletteStyle, (style: Partial<Record<string, string>>) => {
+  const root = document.documentElement;
+  root.classList.toggle("orvane-themed", !!style["--theme-canvas"]);
+  for (const [name, source] of Object.entries(ROOT_THEME_VARS)) {
+    const value = style[source];
+    if (value) root.style.setProperty(name, value);
+    else root.style.removeProperty(name);
+  }
+}, { immediate: true });
+onBeforeUnmount(() => {
+  document.documentElement.classList.remove("orvane-themed");
+  for (const name of Object.keys(ROOT_THEME_VARS)) document.documentElement.style.removeProperty(name);
+});
 // Monitors can be plugged in or removed, so read them each time.
 watch(panel, (open) => {
   if (open === "workspace") void (loadDisplays(), loadWindowMode());
@@ -1905,6 +1991,7 @@ const stopCanvasCommands = registerCommands("canvas", () => {
     { id: "workspace-inbox", title: "Open workspace inbox", icon: "archive", detail: "Workspace", keywords: "capture clipboard screenshot", run: openInbox },
     { id: "automation-timeline", title: "Automation timeline", icon: "clock", detail: "Action library", keywords: "workflow trigger runs history schedule failed", run: () => openActionStudio("", "", undefined, "timeline") },
     ...(writable ? [
+      { id: "workspace-appearance", title: "Appearance settings", icon: "settings", detail: "Workspace", keywords: "theme palette wallpaper background", run: openAppearance },
       { id: "agent-launcher", title: "Open AI launcher", icon: "ai", hint: "Ctrl+Shift+K", keywords: "new task agent Codex Claude prompt", run: openAgentLauncher },
       { id: "agent-send-selection", title: "Add selection to agent session", icon: "agent-sessions", hint: "Ctrl+Shift+L", keywords: "quote selected text terminal page Claude Codex context", run: () => void sendAgentSelection() },
       { id: "agent-activity", title: "Agent activity", icon: "agent-sessions", hint: "Ctrl+Alt+U", keywords: "waiting approval running done sessions alerts", run: openAgentActivity },
@@ -3275,8 +3362,30 @@ function wheelRemove(id: string) {
     (entry) => !removed.has(entry.id),
   );
 }
+const appearanceTypeShortcuts: Partial<Record<string, ThemeBackgroundType>> = {
+  "1": "plain", "2": "image", "3": "video", "4": "code",
+};
 function keydown(e: KeyboardEvent) {
   if (!ready.value || e.defaultPrevented) return;
+  if (panel.value === "appearance") {
+    const type = appearanceTypeShortcuts[e.key];
+    if (e.key === "Escape") {
+      e.preventDefault();
+      if (appearanceDirty.value) discardAppearance();
+      else leaveAppearance();
+      return;
+    }
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.altKey) {
+      e.preventDefault();
+      void applyAppearance();
+      return;
+    }
+    if (type && e.altKey && !e.ctrlKey && !e.metaKey && !typing(e.target)) {
+      e.preventDefault();
+      updateAppearance({ ...appearance.value, backgroundType: type });
+      return;
+    }
+  }
   if (rewindOpen.value && !typing(e.target)) {
     rewind.value?.key(e);
     if (e.defaultPrevented) return;
@@ -3589,11 +3698,12 @@ async function exportWorkspace(raw = false) {
   if (!raw) {
     // A full backup carries the pictures of image widgets too.
     try {
-      const { backup, count, missing } = await makeBackup(JSON.parse(data));
+      const { backup, count, missing, missingBackgrounds } = await makeBackup(JSON.parse(data));
       data = JSON.stringify(backup);
       status.value = count || missing
         ? `Backup includes ${count} image${count === 1 ? "" : "s"}${missing ? `; ${missing} could not be read and were left out` : ""}.`
         : status.value;
+      if (missingBackgrounds) status.value = `Backup could not include ${missingBackgrounds} background file(s).`;
     } catch {
       // Fall back to the workspace alone.
     }
@@ -3664,11 +3774,14 @@ async function importWorkspace(e: Event) {
       // Pictures go back into the image store first; they are content-
       // addressed, so restoring them twice or merging is harmless.
       const { restored, rejected } = await restoreImages(raw.images);
+      const rejectedBackgrounds = await restoreBackgrounds(parseWorkspace(raw.workspace), raw.backgrounds,
+        (id, file) => store.uploadThemeMedia(id, file));
       restoredNote = rejected
         ? `${restored} images restored; ${rejected} were damaged and skipped.`
         : restored
           ? `${restored} image${restored === 1 ? "" : "s"} restored.`
           : "";
+      if (rejectedBackgrounds) restoredNote += ` ${rejectedBackgrounds} background file(s) could not be restored.`;
       raw = raw.workspace;
     } else if ((raw as { version?: number })?.version === 1 && file.size > 25_000_000)
       throw Error("This backup is too large (maximum 25 MB without images).");
@@ -3764,7 +3877,7 @@ async function restoreSnapshot() {
 async function resetAfterFailure() {
   await exportWorkspace(true);
   if (!store.writer) return;
-  loadError.value = false;
+  loadError.value = "";
   canEdit.value = true;
   replaceWorkspace(emptyWorkspace());
   await persist();
@@ -4210,11 +4323,10 @@ async function executeMcp(request: BridgeRequest, revision: string) {
     return { results: output?.results || [{ restored: true }], changed: true };
   } catch (error) {
     if (committed) {
-      status.value =
+      loadError.value =
         "The MCP edit was saved, but the view could not refresh. Reload this tab before editing again.";
-      loadError.value = true;
       canEdit.value = false;
-      throw Error(status.value);
+      throw Error(loadError.value);
     }
     if (error instanceof Error && error.message.startsWith("No local recovery"))
       throw error;
@@ -4469,6 +4581,7 @@ onMounted(() => {
   window.addEventListener("pageshow", restorePage);
   window.addEventListener("online", persist);
   document.addEventListener("pointerdown", dismissOutside, true);
+  window.addEventListener("orvane:guest-pointer-down", dismissAppearanceFromGuest);
   window.addEventListener("blur", dismissOnBlur);
   void initialize();
   mcpBridge = connectMcpBridge({
@@ -4543,6 +4656,7 @@ onBeforeUnmount(() => {
   stopPan();
   stopZoom();
   document.removeEventListener("pointerdown", dismissOutside, true);
+  window.removeEventListener("orvane:guest-pointer-down", dismissAppearanceFromGuest);
   window.removeEventListener("blur", dismissOnBlur);
   void persist().finally(() => store.close());
   window.removeEventListener("keydown", keydown);
@@ -4560,12 +4674,16 @@ onBeforeUnmount(() => {
 <template>
   <main
     class="workspace"
-    :style="{ '--side-reserve': `${sideReserved}px` }"
+    :style="{ '--side-reserve': `${sideReserved}px`, ...paletteStyle }"
     :inert="mcpBusy || !ready"
     :data-ready="ready"
     :data-saved="!unsavedChanges"
     :data-editable="canEdit && ready"
-    :class="{ frameless }"
+    :class="{
+      frameless,
+      'workspace-themed': !!paletteStyle['--theme-canvas'],
+      'workspace-wallpaper': appearance.backgroundType !== 'plain',
+    }"
     @pointerdown.capture="touchStart"
     @pointermove.capture="touchMove"
     @pointerup.capture="touchEnd"
@@ -4584,7 +4702,15 @@ onBeforeUnmount(() => {
       ((panel = null), (boardSelected = ''))
     "
   >
-    <div class="canvas-background"></div>
+    <div class="canvas-background">
+      <ThemeCanvasBackground v-if="appearance.backgroundType !== 'plain'" :theme="appearance" :reduced="appearanceReduced" />
+    </div>
+    <div v-if="panel === 'appearance' && appearanceDirty" class="appearance-preview-chip" :class="{ 'below-header': hint && canEdit }" aria-hidden="true">
+      <span />Previewing theme · not applied
+    </div>
+    <div v-if="panel === 'appearance' && appearanceReduced && (appearance.backgroundType === 'video' || appearance.backgroundType === 'code')" class="appearance-motion-chip">
+      <Icon name="pause" :size="12" />Still frame · reduced motion
+    </div>
     <div v-if="dropNotice" class="drop-notice" role="status">{{ dropNotice }}</div>
     <BoardTools
       v-if="ready && canEdit"
@@ -4966,15 +5092,13 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </div>
-    <div class="topbar-frost workspace-frost" aria-hidden="true"></div>
     <header class="topbar" @pointerdown.stop>
-      <div class="wordmark" :class="{ 'restore-drag': restoreDrag }"
+      <!-- Frameless desktop window: an invisible strip where the wordmark used
+           to be still moves the window (and restores it from maximized). -->
+      <div v-if="frameless" class="window-drag-region" :class="{ 'restore-drag': restoreDrag }" aria-hidden="true"
         @pointerdown="beginWindowDrag" @pointermove="moveWindowDrag" @pointerup="endWindowDrag($event)"
         @pointercancel="endWindowDrag($event)" @lostpointercapture="endWindowDrag($event)"
-        @dblclick="restoreDrag && desktopWindow?.toggleWindowMaximized?.()">
-        <img src="/favicon.png" width="18" height="18" alt="" />
-        <span>orvane</span><span class="workspace-label">Personal canvas</span>
-      </div>
+        @dblclick="restoreDrag && desktopWindow?.toggleWindowMaximized?.()"></div>
       <div
         v-if="hint && canEdit"
         class="context-hint"
@@ -5025,6 +5149,7 @@ onBeforeUnmount(() => {
           <Icon name="help" :size="14" /><span>Canvas guide</span></button
         ><button
           class="icon-button workspace-options"
+          ref="optionsButton"
           aria-label="Workspace options"
           @click="panel = panel === 'workspace' ? null : 'workspace'"
         >
@@ -5051,6 +5176,7 @@ onBeforeUnmount(() => {
       </div>
     </header>
     <div
+      v-if="appearance.dots"
       class="canvas-dots"
       :style="{
         backgroundPosition: `${camera.x}px ${camera.y}px`,
@@ -5238,9 +5364,9 @@ onBeforeUnmount(() => {
     />
     <div ref="panShield" class="pan-shield" aria-hidden="true"></div>
     <div
-      v-if="status"
+      v-if="statusText"
       class="status-area"
-      :class="{ 'status-warning': statusIsProblem }"
+      :class="{ 'status-warning': statusIsProblem, 'status-recovery': loadError }"
       :role="statusIsProblem ? 'alert' : 'status'"
       @pointerdown.stop
     >
@@ -5249,13 +5375,20 @@ onBeforeUnmount(() => {
         :name="statusIsProblem ? 'alert' : 'info'"
         :size="15"
       />
-      <span class="status-text">{{ status }}</span
-      ><button
+      <span class="status-text">{{ statusText }}</span>
+      <div class="status-actions"><button
         v-if="status.startsWith('Saving')"
         class="subtle-button"
         @click="persist"
       >
         Retry saving</button
+      ><button
+        v-if="loadError && !unsavedChanges"
+        class="subtle-button"
+        :disabled="retryingWorkspace"
+        @click="retryOpeningWorkspace"
+      >
+        {{ retryingWorkspace ? "Opening workspace…" : "Retry opening workspace" }}</button
       ><button
         v-if="loadError || !canEdit || status.startsWith('Saving')"
         class="subtle-button"
@@ -5281,7 +5414,7 @@ onBeforeUnmount(() => {
         @click="status = ''"
       >
         <Icon name="close" :size="14" />
-      </button>
+      </button></div>
     </div>
     <Transition name="search-reveal">
       <section
@@ -5413,6 +5546,24 @@ onBeforeUnmount(() => {
         <Icon name="box" :size="14" />Center canvas
       </button>
     </section>
+    <AppearanceSettings
+      v-if="panel === 'appearance' && !pendingImport"
+      :theme="appearance"
+      :dirty="appearanceDirty"
+      :change-count="appearanceChanges"
+      :reduced="previewReduced"
+      :system-reduced="systemReduced"
+      :saving="appearanceSaving"
+      :error="appearanceError"
+      @pointerdown.stop
+      @update:theme="updateAppearance"
+      @update:reduced="previewReduced = $event"
+      @import-media="importAppearanceMedia"
+      @apply="applyAppearance"
+      @discard="discardAppearance"
+      @back="leaveAppearance(true)"
+      @close="leaveAppearance()"
+    />
     <section
       v-if="panel === 'workspace' && !pendingImport"
       class="workspace-panel floating-panel"
@@ -5568,6 +5719,14 @@ onBeforeUnmount(() => {
         Import previews Merge or Replace. A local recovery snapshot keeps your
         current workspace safe.
       </p>
+      <div class="settings-section">
+        <div class="section-line">
+          <Icon name="settings" :size="14" />Appearance
+        </div>
+        <button ref="appearanceButton" class="subtle-button appearance-entry" :disabled="!canEdit || importBusy" @click="openAppearance">
+          Palette and background<span>{{ appearanceSummary }}</span><Icon name="right" :size="13" />
+        </button>
+      </div>
       <div v-if="displays.length" class="settings-section">
         <div class="section-line">
           <Icon name="box" :size="14" />Window
@@ -6000,7 +6159,7 @@ onBeforeUnmount(() => {
         title="Center canvas"
         @click="home"
       >
-        <Icon name="box" :size="18" />
+        <img class="dock-logo" src="/favicon.png" width="18" height="18" alt="" />
       </button>
       <button
         ref="agentDockButton"

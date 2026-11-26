@@ -38,12 +38,18 @@ export class NotesService {
       (!p.pageId || p.collection !== "blocks")
     )
       throw Error("A block page ID is required.");
-    this.db ||= new LocalDatabase(join(this.directory, this.filename));
+    const db = this.database();
     if (p.action === "saveCapture") {
       if (p.collection !== "blocks" || !p.key || !p.text?.trim()) throw Error("A note with text is required.");
-      return this.db.saveNotesCapture(p.key, p.pageId, p.text);
+      return db.saveNotesCapture(p.key, p.pageId, p.text);
     }
-    return this.db.notesData(p.collection, p.action, p.key, p.rows, p.pageId);
+    return db.notesData(p.collection, p.action, p.key, p.rows, p.pageId);
+  }
+  usesImage(source: string) {
+    return this.database().notesUsesImage(source);
+  }
+  private database() {
+    return (this.db ??= new LocalDatabase(join(this.directory, this.filename)));
   }
   close() {
     this.db?.close();

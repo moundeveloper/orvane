@@ -119,6 +119,12 @@ export function hostAgentGateway(
           throw new HostChatError(403, "Answer this request on the desktop.");
         await runById(op === "run-events" ? url.searchParams.get("id") : args.id);
         if (op === "queue") await attachmentsAllowed(args.message);
+      } else if (op === "picture") {
+        // A picture in a reply: only from shared folders or pasted pictures.
+        const path = url.searchParams.get("path") ?? "";
+        const real = isAbsolute(path) ? await realpath(path).catch(() => "") : "";
+        const fromPictures = real ? relative(await pictures, real) : "..";
+        if (!real || fromPictures.startsWith("..") || isAbsolute(fromPictures)) await within(path);
       } else if (bySessionKey.has(op)) await sessionByKey(args.key);
       else if (bySessionId.has(op)) await sessionById(args);
       else if (!free.has(op)) throw new HostChatError(404, "This action is only available on the desktop.");

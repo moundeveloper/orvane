@@ -1,6 +1,6 @@
 import { appStrip, hostDocument, icon, navScriptTag } from "./orvane-host-view.ts";
 
-export const makerPage = (chat: boolean, terminal = false, browser = false) => hostDocument("UI Maker", `
+export const makerPage = (chat: boolean, terminal = false, browser = false, notes = false) => hostDocument("UI Maker", `
 <section class="host-app host-maker"><header class="app-bar">${icon("edit", 15)}<strong>UI Maker</strong><span id="maker-status" role="status" class="app-status">Loading components…</span></header>
 <div class="maker-layout"><aside aria-label="UI Maker components" class="maker-rail">
 <label class="cs-search">${icon("search", 14)}<input type="text" id="maker-search" placeholder="Find a component" aria-label="Find a component" autocomplete="off"></label>
@@ -13,7 +13,7 @@ export const makerPage = (chat: boolean, terminal = false, browser = false) => h
 <p id="maker-empty" class="muted">Select a saved version or a Lab variant.</p></div>
 <footer class="maker-foot"><span id="maker-caption" class="muted"></span>
 <button type="button" id="maker-cancel" class="ghost" hidden>Cancel</button><button type="button" id="maker-pick" class="primary" hidden>Pick this variant</button></footer>
-</section></div></section>`, navScriptTag + '<script src="/maker.js" defer></script>', appStrip("maker", chat, true, terminal, browser));
+</section></div></section>`, navScriptTag + '<script src="/maker.js" defer></script>', appStrip("maker", chat, true, terminal, browser, notes));
 
 export const makerCss = `
 .host-maker{display:grid;grid-template-rows:auto minmax(0,1fr)}

@@ -165,6 +165,17 @@ test("Host serves the desktop Agent Sessions page and scopes its operations to s
       expect((await call("agents", desktopOnly)).status()).toBe(404);
     expect(calls).toEqual(["read", "start", "stop"]);
 
+    // Pictures in replies: shared folders and pasted pictures only, never SVG.
+    await writeFile(join(shared, "src", "shot.png"), "png");
+    await writeFile(join(privateProject, "secret.png"), "png");
+    const picture = (path: string) => api.get(`/__orvane/agents/picture?path=${encodeURIComponent(path)}`);
+    calls.length = 0;
+    expect((await picture(join(privateProject, "secret.png"))).status()).toBe(404);
+    expect((await picture(join(shared, "..", "shared-private", "secret.png"))).status()).toBe(404);
+    expect((await picture("shot.png")).status()).toBe(404);
+    expect((await picture(join(shared, "src", "shot.png"))).status()).toBe(200);
+    expect(calls).toEqual(["picture"]);
+
     const roots = await (await call("files", "roots")).json();
     expect(roots.places.map((place: { path: string }) => place.path)).toEqual([roots.home]);
     expect((await call("files", "list", { path: privateProject })).status()).toBe(404);

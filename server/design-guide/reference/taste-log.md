@@ -91,3 +91,11 @@ Quotes are the owner's own words (typos kept out). Newest last. Add to this file
 ## Browser loading and source passages (26.11.2026)
 
 - Asked Claude to mock both features first. Picked **Ring stop** in UI Maker `browser-loading/r1` and **Source widget** in `browser-source-highlights/r1` (both saved as v2). Loading uses a thin ring around the toolbar X and tab tile, returning to Reload. Source excerpts use a compact stepper/popover with exact quotes, click-to-scroll, current-tab scope and an honest missing-passage state. Wants this as a baked-in browser capability agents can invoke, rather than one-off page code. Also wants discarded tabs to revive automatically on return, retaining the reading position. The other mock variants were unselected, not explicitly rejected.
+## Workspace appearance (26.11.2026)
+
+- The owner said “I love the settings panel” and approved **Settings Panel** from UI Maker `theme-settings/r1`. Implement it inside Workspace settings with the draft preview on the real canvas, palette editing, background controls, and the Apply and Discard footer.
+- The owner called out the header becoming hard to read over a video background. Keep the header controls readable on light and dark footage, with frost behind the header cluster.
+- Asked to remove the top-left logo section entirely: no frosted "orvane" wordmark and no "Personal canvas" label. The Orvane mark lives only in the dock, as the Center canvas button. The frameless window still drags from that empty top-left spot. In Plain mode the header has no frost band; video and code backgrounds keep the frost behind the controls.
+- Palettes must visibly theme Orvane's own dock, floating panels, menus and dropdowns (surfaces, text, accents), not only the canvas. App content, per-app colors, warning colors and Browser pages keep their own colors.
+- Appearance is an Orvane setting: its entry sits in Workspace options' settings area (with Window and Keyboard shortcuts), not among the Create-app shortcuts.
+- The owner rejected the Terminal text halo and picked **Auto tint** from UI Maker `theme-settings/r2` for Terminal over wallpaper. Use smoked glass with light text over dark wallpaper, light frost over light wallpaper, and the existing glass on Plain.

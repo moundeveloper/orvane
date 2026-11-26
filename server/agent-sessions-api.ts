@@ -1,10 +1,10 @@
 import type { Plugin, Connect } from "vite";
 import type { ServerResponse } from "node:http";
-import { join } from "node:path";
+import { extname, isAbsolute, join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createReadStream, existsSync } from "node:fs";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { z } from "zod";
 import { SessionTranscripts } from "./session-transcripts.ts";
 import { AgentRunner } from "./agent-runner.ts";
@@ -23,6 +23,7 @@ import { HostSettings, hostSettingsAction } from "./orvane-host-settings.ts";
 import { UiMakerService } from "./uimaker.ts";
 import { HostBrowser } from "./orvane-host-browser.ts";
 import { HostDesktop } from "./orvane-host-desktop.ts";
+import { hostNotes } from "./orvane-host-notes.ts";
 import {
   ClaudeProfiles,
   claudeAuthStatus,
@@ -34,6 +35,25 @@ import {
 import { ClaudeTranscriptSet } from "./claude-transcripts.ts";
 import { cancelLogin, issueLogin, loginActive, loginTicket } from "./claude-login.ts";
 import type { AgentProvider } from "../src/agentSessions.ts";
+
+/** Pictures an agent shows in a reply with ![caption](path). No SVG: it can carry script. */
+export const REPLY_PICTURE_TYPES: Record<string, string> = {
+  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
+  ".webp": "image/webp", ".avif": "image/avif", ".bmp": "image/bmp",
+};
+const MAX_REPLY_PICTURE = 30 * 1024 * 1024;
+/** Streams a local picture for a reply, or answers why it cannot. */
+export async function sendReplyPicture(path: string, res: ServerResponse, reply: (status: number, value: unknown) => void) {
+  const type = REPLY_PICTURE_TYPES[extname(path).toLowerCase()];
+  if (!isAbsolute(path) || !type) return reply(400, { error: "Not a picture file." });
+  const info = await stat(path).catch(() => null);
+  if (!info?.isFile()) return reply(404, { error: "Picture was not found." });
+  if (info.size > MAX_REPLY_PICTURE) return reply(413, { error: "Picture is too large." });
+  // Screenshots are often rewritten under the same name: always revalidate.
+  res.writeHead(200, { "Content-Type": type, "Content-Length": info.size, "Cache-Control": "no-cache",
+    "Last-Modified": info.mtime.toUTCString(), "X-Content-Type-Options": "nosniff" });
+  createReadStream(path).on("error", () => res.destroy()).pipe(res);
+}
 
 
 
@@ -356,13 +376,14 @@ export function agentSessionsApi(directory: string): Plugin {
     if (!settings) {
       const data = workspacePath(namespace);
       const bridges = process.env.ORVANE_MCP_STATE_DIR || fileURLToPath(new URL("../.orvane", import.meta.url));
-      settings = new HostSettings(data.data, data.file, (projects, approvals, maker, terminal, browserOrigin, desktopOrigin) => ({
+      settings = new HostSettings(data.data, data.file, (projects, approvals, maker, terminal, browserOrigin, desktopOrigin, notes) => ({
         recent: () => serviceFor(namespace).runner.recent(),
         ...hostChat(namespace, projects, approvals),
         ...(maker ? { maker: new UiMakerService(directory, data.filename) } : {}),
         terminal,
         ...(browserOrigin ? { browser: new HostBrowser(bridges, browserOrigin) } : {}),
         ...(desktopOrigin ? { desktop: new HostDesktop(bridges, desktopOrigin) } : {}),
+        ...(notes ? { notes: hostNotes(directory, data.filename) } : {}),
       }));
       hostControllers.set(namespace, settings);
     }
@@ -459,6 +480,7 @@ export function agentSessionsApi(directory: string): Plugin {
   ): Promise<void> {
       const picture = op === "attachment";
       const streaming = op === "run-events";
+      if (op === "picture") return await sendReplyPicture(url.searchParams.get("path") ?? "", res, reply);
 
       const service = serviceFor(namespace);
       const { claude, codex, runner, surveying, prompts, schedules, skillsHome } = service;
@@ -842,7 +864,7 @@ export function agentSessionsApi(directory: string): Plugin {
     const op = url.pathname.slice(base.length);
     const streaming = op === "run-events" && req.method === "GET";
     // A picture saved by attachment-save, shown in the composer and chat.
-    const picture = op === "attachment" && req.method === "GET";
+    const picture = (op === "attachment" || op === "picture") && req.method === "GET";
     if (
       !streaming &&
       !picture &&

@@ -1,6 +1,6 @@
 import { appStrip, hostDocument, icon, navScriptTag } from "./orvane-host-view.ts";
 
-export const browserPage = (chat: boolean, maker: boolean, terminal: boolean) => hostDocument("Browser",
+export const browserPage = (chat: boolean, maker: boolean, terminal: boolean, notes = false) => hostDocument("Browser",
   `<section class="host-app host-browser">
 <header class="app-bar">${icon("globe", 15)}<strong>Browser</strong><span id="browser-status" class="app-status" role="status">Connecting to desktop Browser…</span></header>
 <nav id="browser-tabs" class="host-tabs" aria-label="Shared Browser tabs"></nav>
@@ -14,7 +14,7 @@ export const browserPage = (chat: boolean, maker: boolean, terminal: boolean) =>
 <form id="browser-type" class="browser-bar"><input id="browser-text" type="text" aria-label="Text to type in the desktop page" placeholder="Type into the active field on the desktop page…">
 <button type="submit">Send text</button><button type="button" id="browser-enter" class="ghost">${icon("enter", 13)}Enter</button></form>
 <p id="browser-error" role="status" class="error"></p></section>`,
-  navScriptTag + '<script src="/browser.js" defer></script>', appStrip("browser", chat, maker, terminal, true));
+  navScriptTag + '<script src="/browser.js" defer></script>', appStrip("browser", chat, maker, terminal, true, notes));
 
 export const browserCss = `
 .host-browser{display:grid;grid-template-rows:auto auto auto minmax(0,1fr) auto auto}

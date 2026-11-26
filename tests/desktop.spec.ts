@@ -36,10 +36,14 @@ test("Desktop Browser app loads frame-blocking sites in a webview", async ({}, i
     const page = await app.firstWindow();
     await page.locator('main[data-ready="true"]').waitFor({ timeout: 60000 });
     // Production CSS must retain the unprefixed filter supported by Electron.
-    await expect(page.locator(".topbar-frost")).toHaveCSS(
-      "backdrop-filter",
-      "blur(8px) saturate(1.2)",
-    );
+    expect(await page.evaluate(() => {
+      const probe = document.createElement("div");
+      probe.className = "workspace-frost";
+      document.querySelector("main.workspace")!.append(probe);
+      const { backdropFilter } = getComputedStyle(probe);
+      probe.remove();
+      return backdropFilter;
+    })).toBe("blur(8px) saturate(1.2)");
     // No menu bar, and Alt (used for Alt+drag) can't bring it up.
     expect(
       await app.evaluate(({ BrowserWindow }) =>

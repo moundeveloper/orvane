@@ -182,7 +182,7 @@ export class WorkspaceStorage {
   async start(owned: () => Promise<void>) {
     this.owned = owned;
     await this.tick();
-    this.timer = setInterval(
+    this.timer ??= setInterval(
       () =>
         void this.tick().catch(() => {
           /* Retain unsaved in-memory work; writes report failures. */
@@ -219,6 +219,18 @@ export class WorkspaceStorage {
       throw Error(
         "This browser is read-only. Editing is active in another browser or tab.",
       );
+  }
+  async uploadThemeMedia(id: string, file: File) {
+    this.assertWriter();
+    const response = await fetch(`/__orvane/storage/theme-media/${encodeURIComponent(id)}`, {
+      method: "POST",
+      headers: { "Content-Type": file.type, "X-Orvane-Editor": this.client },
+      body: file,
+    });
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({}));
+      throw new Error(result.error || "Could not save the background file.");
+    }
   }
   write(data: Workspace, reason?: string, snapshotBase?: Workspace) {
     this.assertWriter();

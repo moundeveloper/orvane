@@ -55,6 +55,7 @@ export class LocalDatabase {
       CREATE TABLE IF NOT EXISTS lease (id INTEGER PRIMARY KEY CHECK(id = 1), owner TEXT NOT NULL, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS git_workspaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL, path_key TEXT NOT NULL UNIQUE);
       CREATE TABLE IF NOT EXISTS app_data (key TEXT PRIMARY KEY, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS theme_media (id TEXT PRIMARY KEY, mime TEXT NOT NULL, data BLOB NOT NULL);
       CREATE TABLE IF NOT EXISTS notes_records (collection TEXT NOT NULL, key TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(collection,key));
     `);
     const columns = this.db.pragma("table_info(workspace)") as {
@@ -79,6 +80,28 @@ export class LocalDatabase {
       .get(key) as { data: string } | undefined;
     return row ? JSON.parse(row.data) : undefined;
   }
+  saveThemeMedia(owner: string, id: string, mime: string, data: Buffer) {
+    this.db.transaction(() => {
+      this.assertOwner(owner);
+      this.db.prepare("INSERT INTO theme_media (id, mime, data) VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING")
+        .run(id, mime, data);
+    })();
+  }
+  themeMediaInfo(id: string) {
+    return this.db.prepare("SELECT mime, length(data) AS size FROM theme_media WHERE id = ?")
+      .get(id) as { mime: string; size: number } | undefined;
+  }
+  themeMediaBytes(id: string, offset: number, length: number) {
+    const row = this.db.prepare("SELECT substr(data, ?, ?) AS data FROM theme_media WHERE id = ?")
+      .get(offset + 1, length, id) as { data: Buffer };
+    return row.data;
+  }
+  notesUsesImage(source: string) {
+    return !!this.db.prepare(
+      "SELECT 1 FROM notes_records WHERE collection='blocks' AND json_extract(data,'$.type')='image' AND json_extract(data,'$.html')=? LIMIT 1",
+    ).get(source);
+  }
+
   notesData(
     collection: string,
     action: string,

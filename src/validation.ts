@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { workspaceThemeSchema } from "./workspaceTheme.ts";
 import { captureSchema, INBOX_LIMIT } from "./inbox.ts";
 import {
   flatten,
@@ -137,6 +138,7 @@ const schema = z.object({
     .max(300),
   library: z.array(z.object({ id, name: z.string(), block })),
   inbox: z.array(captureSchema).max(INBOX_LIMIT).optional(),
+  appearance: workspaceThemeSchema.optional(),
   customNodes: z.array(
     z.object({
       id,

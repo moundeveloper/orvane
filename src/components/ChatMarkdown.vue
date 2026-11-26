@@ -3,9 +3,13 @@ import { computed, ref } from "vue";
 import { Marked } from "marked";
 import DOMPurify from "dompurify";
 import { api as fileRequest } from "./files/explorer";
+import ImagePeek, { type PeekImage } from "./ImagePeek.vue";
+import { replyPictureUrl, isReplyPicture } from "../agentSessions";
 
 // base: the session folder, for paths the agent wrote relative to it.
 const props = defineProps<{ text: string; base?: string }>();
+// Two roots (the text and the picture viewer): classes go on the text.
+defineOptions({ inheritAttrs: false });
 
 // File and folder names in a reply become links into the File Explorer, but
 // only once the path is known to exist. Shared by every message.
@@ -76,7 +80,35 @@ function markPath(element: Element, path: string) {
   element.setAttribute("role", "link");
   element.setAttribute("tabindex", "0");
 }
+// Pictures open full-window; ← → step through this message's pictures.
+const peek = ref<{ items: PeekImage[]; index: number } | null>(null);
+let peekTrigger: HTMLElement | null = null;
+function openPicture(event: Event) {
+  const picture = (event.target as Element).closest<HTMLImageElement>("img[data-picture]");
+  if (!picture) return false;
+  event.preventDefault();
+  const all = [...(event.currentTarget as HTMLElement).querySelectorAll<HTMLImageElement>("img[data-picture]")];
+  peekTrigger = picture;
+  peek.value = {
+    items: all.map((img) => ({ src: img.src, title: img.alt || img.dataset.picture!.split(/[\\/]/).pop()!, source: img.dataset.picture })),
+    index: Math.max(0, all.indexOf(picture)),
+  };
+  return true;
+}
+// ImagePeek's step is ±1 (arrows, Previous/Next); it wraps like the
+// composer's picture viewer. pick is an index (thumbnails).
+function stepPicture(by: number) {
+  if (!peek.value) return;
+  const count = peek.value.items.length;
+  peek.value.index = (peek.value.index + by + count) % count;
+}
+function closePicture() {
+  peek.value = null;
+  peekTrigger?.focus();
+  peekTrigger = null;
+}
 function openPath(event: Event) {
+  if (openPicture(event)) return;
   // Web links open in Orvane's Browser (the system browser only when the
   // workspace has no Browser app), not straight in the system browser.
   const web = (event.target as Element).closest<HTMLAnchorElement>("a[href]");
@@ -108,6 +140,7 @@ function openPath(event: Event) {
 }
 function openPathKey(event: KeyboardEvent) {
   if (event.key === "Enter") openPath(event);
+  else if (event.key === " ") openPicture(event);
 }
 const escape = (text: string) =>
   text.replace(
@@ -122,7 +155,18 @@ const markdown = new Marked({
   renderer: {
     // Transcripts are content, not app markup. Raw HTML stays visible as text.
     html: ({ text }) => escape(text),
-    image: ({ text }) => `<span class="md-image">Image: ${escape(text)}</span>`,
+    // A local picture (![caption](C:\path\shot.png), absolute or relative to
+    // the session folder) shows inline. Web images stay a text label: replies
+    // never load remote content.
+    image: ({ href, text, raw }) => {
+      // Markdown unescapes "\." and the like, which breaks Windows paths
+      // (…\orvane\.orvane\…): take the destination as written.
+      const written = /\]\(\s*<?(.*?)>?(?:\s+"[^"]*")?\s*\)$/s.exec(raw)?.[1];
+      const path = localPath(written || href || "");
+      if (!path || !isReplyPicture(path))
+        return `<span class="md-image">Image: ${escape(text)}</span>`;
+      return `<span class="md-figure"><img class="md-picture" src="${escape(replyPictureUrl(path))}" alt="${escape(text)}" data-picture="${escape(path)}" loading="lazy">${text ? `<span class="md-caption">${escape(text)}</span>` : ""}</span>`;
+    },
   },
 });
 const html = computed(() => {
@@ -158,6 +202,7 @@ const html = computed(() => {
         "a",
         "input",
         "span",
+        "img",
       ],
       ALLOWED_ATTR: [
         "href",
@@ -168,6 +213,9 @@ const html = computed(() => {
         "type",
         "checked",
         "disabled",
+        "src",
+        "alt",
+        "loading",
       ],
       RETURN_DOM_FRAGMENT: true,
     },
@@ -187,6 +235,19 @@ const html = computed(() => {
     if (code.closest("a")) continue;
     const path = codeCandidate(code.textContent || "");
     if (path) markPath(code, path);
+  }
+  // Only pictures this component made, from Orvane's own picture route.
+  for (const img of fragment.querySelectorAll("img")) {
+    const path = img.dataset.picture;
+    if (!path || img.getAttribute("src") !== replyPictureUrl(path)) {
+      img.replaceWith(Object.assign(document.createElement("span"), {
+        className: "md-image", textContent: `Image: ${img.getAttribute("alt") || ""}`,
+      }));
+      continue;
+    }
+    img.setAttribute("role", "button");
+    img.setAttribute("tabindex", "0");
+    img.setAttribute("title", "Open full window");
   }
   for (const input of fragment.querySelectorAll("input")) {
     input.type = "checkbox";
@@ -208,11 +269,14 @@ const html = computed(() => {
 </script>
 <template>
   <div
+    v-bind="$attrs"
     class="chat-markdown"
     @click="openPath"
     @keydown="openPathKey"
     v-html="html"
   ></div>
+  <ImagePeek v-if="peek" :items="peek.items" :index="peek.index" :thumbnails="peek.items.length > 1"
+    @close="closePicture" @step="stepPicture" @pick="peek.index = $event" />
 </template>
 <style scoped>
 .chat-markdown {
@@ -373,6 +437,33 @@ const html = computed(() => {
 }
 .chat-markdown :deep([align="center"]) {
   text-align: center;
+}
+.chat-markdown :deep(.md-figure) {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 100%;
+  margin: 4px 0;
+  vertical-align: top;
+}
+.chat-markdown :deep(.md-picture) {
+  display: block;
+  max-width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+  border: 1px solid #dde4e8;
+  border-radius: 8px;
+  background: #fff;
+  cursor: zoom-in;
+}
+.chat-markdown :deep(.md-picture:focus-visible) {
+  outline: 2px solid #7b97a7;
+  outline-offset: 2px;
+}
+.chat-markdown :deep(.md-caption) {
+  color: #526976;
+  font-size: 11.5px;
+  line-height: 1.4;
 }
 .chat-markdown :deep(.md-image) {
   color: #526976;

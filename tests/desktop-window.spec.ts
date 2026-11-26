@@ -85,10 +85,10 @@ test("the tray reopens Orvane and its header can restore the window into a drag"
 
     await page.getByRole("button", { name: "Maximize Orvane window", exact: true }).click();
     await expect.poll(async () => (await read()).maximized).toBe(true);
-    await expect(page.locator(".wordmark")).toHaveClass(/restore-drag/);
+    await expect(page.locator(".window-drag-region")).toHaveClass(/restore-drag/);
     const maximized = (await read()).bounds;
-    const wordmark = (await page.locator(".wordmark").boundingBox())!;
-    const point = { x: wordmark.x + 35, y: wordmark.y + wordmark.height / 2 };
+    const region = (await page.locator(".window-drag-region").boundingBox())!;
+    const point = { x: region.x + 35, y: region.y + region.height / 2 };
     await desktop.evaluate(({ ipcMain, screen }, { bounds, point }) => {
       const fixture = (globalThis as unknown as { windowTest: TestWindowState }).windowTest;
       fixture.cursor = { x: bounds.x + point.x, y: bounds.y + point.y };
@@ -113,7 +113,7 @@ test("the tray reopens Orvane and its header can restore the window into a drag"
     } finally {
       await page.mouse.up();
     }
-    await expect(page.locator(".wordmark")).toHaveCSS("app-region", "drag");
+    await expect(page.locator(".window-drag-region")).toHaveCSS("app-region", "drag");
   } finally {
     await desktop.close();
   }

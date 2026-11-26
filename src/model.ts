@@ -150,6 +150,7 @@ export interface Workspace {
   actions?: WorkspaceAction[];
   layouts?: Layout[];
   activeLayout?: string;
+  appearance?: import("./workspaceTheme.ts").WorkspaceTheme;
   board?: Board;
   /** Scheduled runs of Action-library workflows (see triggers.ts). */
   triggers?: import("./triggers").Trigger[];

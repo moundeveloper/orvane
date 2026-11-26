@@ -1,6 +1,7 @@
 import { join, resolve } from "node:path";
 import type { Plugin, Connect } from "vite";
 import { LocalDatabase, StorageError } from "./database.ts";
+import { themeMediaRequest } from "./theme-media.ts";
 
 // Only fixed application operations are exposed. No SQL, filenames, or arbitrary
 // filesystem access comes from the browser. Test namespaces are disabled normally.
@@ -74,6 +75,8 @@ export function localStorageApi(directory: string): Plugin {
         databases.set(namespace, database);
       }
       const route = path.slice("/__orvane/storage/".length);
+      if (route.startsWith("theme-media/"))
+        return await themeMediaRequest(database, route.slice("theme-media/".length), req, res, reply);
       if (req.method === "GET") {
         if (route === "preferences")
           return reply(200, { keys: database.learnedKeys() });

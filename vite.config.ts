@@ -30,6 +30,7 @@ export default defineConfig({
       input: {
         main: fileURLToPath(new URL("./index.html", import.meta.url)),
         host: fileURLToPath(new URL("./host-agents.html", import.meta.url)),
+        notes: fileURLToPath(new URL("./host-notes.html", import.meta.url)),
       },
     },
   },

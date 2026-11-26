@@ -12,7 +12,9 @@ import { hostPasswordMaximum, hostPasswordMinimum } from "../src/hostPassword.ts
 import { hostCss, hostNavScript, restartPage, restartScript, signInPage, watchPage, watchScript } from "./orvane-host-view.ts";
 import { HostChatError, hostProjectList, type HostAgentChat } from "./orvane-host-chat.ts";
 import type { HostAgents } from "./orvane-host-agents.ts";
-import { agentsPage, builtApp, builtAsset, hostShellCss } from "./orvane-host-app.ts";
+import { agentsPage, builtApp, builtAsset, hostShellCss, notesPage } from "./orvane-host-app.ts";
+import type { HostNotes } from "./orvane-host-notes.ts";
+import { IMAGE_MIME } from "./images.ts";
 import { makerCss, makerPage, makerScript } from "./orvane-host-maker-view.ts";
 import { terminalCss, terminalPage, terminalScript, xtermCssPath, xtermScriptPath } from "./orvane-host-terminal-view.ts";
 import { hostTerminalOutput, hostTerminals, writeHostTerminal } from "./terminal.ts";
@@ -63,6 +65,8 @@ type HostOptions = {
   browser?: HostBrowser;
   /** The desktop window, for Restart. */
   desktop?: HostDesktop;
+  /** The desktop's Notes pages, read and edited from the laptop. */
+  notes?: HostNotes;
   /** Sign-ins kept from before a restart, by hashed token. */
   sessions?: HostSessions;
 };
@@ -92,10 +96,14 @@ async function form(request: IncomingMessage) {
 }
 
 export async function startOrvaneHost(options: HostOptions) {
-  const { address, port, tls, recent, chat, maker, browser, desktop } = options;
+  const { address, port, tls, recent, chat, maker, browser, desktop, notes } = options;
   const agents = chat && options.agents;
   const app = options.app ?? builtApp;
   const terminal = !!(options.terminal && chat);
+  const shared = () => ({ maker: !!maker, terminal, browser: !!browser, notes: !!notes });
+  // Pages that run desktop components from the build (Agent Sessions, Notes).
+  const built = !!(agents || notes);
+  const builtCsp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
   await chat?.ready();
   const hostname = options.hostname ?? address;
   const adapter = Object.values(networkInterfaces()).flat().find((item) => item?.address === address);
@@ -159,10 +167,10 @@ export async function startOrvaneHost(options: HostOptions) {
 
     if (req.method === "GET" && req.url === "/") {
       if (!authorized) return text(200, signInPage());
-      if (!agents) return text(200, watchPage(false, !!maker, terminal, !!browser));
+      if (!agents) return text(200, watchPage(false, !!maker, terminal, !!browser, !!notes));
       // The desktop's own Agent Sessions app; Vue sets inline styles.
-      res.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
-      return text(200, await agentsPage(app, session!.csrf, chat!.defaultModes(), { maker: !!maker, terminal, browser: !!browser }));
+      res.setHeader("Content-Security-Policy", builtCsp);
+      return text(200, await agentsPage(app, session!.csrf, chat!.defaultModes(), shared()));
     }
     if (req.method === "GET" && req.url === "/host.css")
       return text(200, hostCss + makerCss + terminalCss + browserCss, "text/css");
@@ -220,24 +228,28 @@ export async function startOrvaneHost(options: HostOptions) {
       }
     }
 
-    if (req.method === "GET" && (req.url === "/runs" || req.url === "/maker" || req.url === "/terminal" || req.url === "/browser")) {
+    if (req.method === "GET" && (req.url === "/runs" || req.url === "/maker" || req.url === "/terminal" || req.url === "/browser" || req.url === "/notes")) {
       if (!authorized) return void redirect();
-      if (req.url === "/runs") return text(200, watchPage(!!chat, !!maker, terminal, !!browser));
-      if (req.url === "/maker" && maker) return text(200, makerPage(!!chat, terminal, !!browser));
+      if (req.url === "/runs") return text(200, watchPage(!!chat, !!maker, terminal, !!browser, !!notes));
+      if (req.url === "/maker" && maker) return text(200, makerPage(!!chat, terminal, !!browser, !!notes));
+      if (req.url === "/notes" && notes) {
+        res.setHeader("Content-Security-Policy", builtCsp);
+        return text(200, await notesPage(app, session!.csrf, !!chat, shared()));
+      }
       if (req.url === "/terminal" && terminal) {
         res.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
-        return text(200, terminalPage(!!maker, !!browser));
+        return text(200, terminalPage(!!maker, !!browser, !!notes));
       }
       if (req.url === "/browser" && browser) {
         res.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
-        return text(200, browserPage(!!chat, !!maker, terminal));
+        return text(200, browserPage(!!chat, !!maker, terminal, !!notes));
       }
     }
     if (!authorized) return void res.writeHead(401).end();
     if (req.method === "GET" && req.url === "/navigation.js") return text(200, hostNavScript, "text/javascript");
     if (req.method === "GET" && req.url === "/restart.js") return text(200, restartScript, "text/javascript");
-    if (agents && req.method === "GET" && req.url === "/host-shell.css") return text(200, hostShellCss, "text/css");
-    if (agents && req.method === "GET" && req.url?.startsWith("/assets/")) {
+    if (built && req.method === "GET" && req.url === "/host-shell.css") return text(200, hostShellCss, "text/css");
+    if (built && req.method === "GET" && req.url?.startsWith("/assets/")) {
       const asset = await builtAsset(app, req.url.slice("/assets/".length));
       if (!asset) return void res.writeHead(404).end();
       res.writeHead(200, { "Content-Type": asset.type, "Cache-Control": "private, max-age=31536000, immutable" }).end(asset.data);
@@ -268,6 +280,35 @@ export async function startOrvaneHost(options: HostOptions) {
     }
 
     try {
+      if (notes) {
+        // Notes pages, the pictures in them, and pasting a picture.
+        if (req.method === "POST" && url.pathname === "/__orvane/notes/data") {
+          const args = await mutation(12_000_000);
+          try {
+            return json(200, await notes.data(args));
+          } catch (error) {
+            return json(400, { error: error instanceof Error ? error.message : "Notes could not be saved." });
+          }
+        }
+        if (req.method === "GET" && url.pathname.startsWith("/__orvane/files/image/")) {
+          const id = decodeURIComponent(url.pathname.slice("/__orvane/files/image/".length));
+          const file = notes.image(id);
+          const data = file && await readFile(file).catch(() => undefined);
+          if (!data) return void res.writeHead(404).end();
+          res.writeHead(200, { "Content-Type": IMAGE_MIME[id.split(".").pop()!] ?? "application/octet-stream",
+            "Content-Security-Policy": "sandbox; default-src 'none'",
+            "Cache-Control": "private, no-store" }).end(data);
+          return;
+        }
+        if (req.method === "POST" && url.pathname === "/__orvane/files/import-image") {
+          const args = await mutation(40_000_000) as Record<string, unknown> | null;
+          try {
+            return json(200, await notes.importImage(args?.dataUrl, args?.name));
+          } catch (error) {
+            return json(400, { error: error instanceof Error ? error.message : "The picture could not be added." });
+          }
+        }
+      }
       if (agents && (url.pathname.startsWith("/__orvane/agents/") || url.pathname.startsWith("/__orvane/files/"))) {
         const [, , area, op = ""] = url.pathname.split("/");
         const reply = (status: number, value: unknown) => json(status, value);
@@ -278,7 +319,7 @@ export async function startOrvaneHost(options: HostOptions) {
             return json(200, await agents.files(op, args && typeof args === "object" ? args as Record<string, unknown> : {}));
           }
           // A running reply's stream, and pictures pasted into the composer.
-          if (req.method === "GET" && (op === "run-events" || op === "attachment"))
+          if (req.method === "GET" && (op === "run-events" || op === "attachment" || op === "picture"))
             return await agents.agents(op, {}, url, res, reply);
           if (req.method !== "POST") return void res.writeHead(405).end();
           const args = await mutation(op === "attachment-save" ? 12_000_000 : 96_000);
@@ -413,7 +454,7 @@ export async function startOrvaneHost(options: HostOptions) {
       sessions.clear();
       server.close((error) => error ? reject(error) : resolve());
       server.closeAllConnections();
-    }).finally(async () => { await Promise.all([chat?.close(), maker?.close(), browser?.close(), desktop?.close()]); }),
+    }).finally(async () => { notes?.close(); await Promise.all([chat?.close(), maker?.close(), browser?.close(), desktop?.close()]); }),
   };
 }
 

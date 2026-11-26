@@ -22,18 +22,21 @@ export const hostSettingsAction = z.discriminatedUnion("action", [
     uiMaker: z.boolean(),
     terminal: z.boolean().default(false),
     browser: z.boolean().default(false),
+    notes: z.boolean().default(false),
     keepAwake: z.boolean().default(true),
   }),
 ]);
 
 type Config = {
   address: string; port: number; projects: string[]; approvals: boolean; uiMaker: boolean; terminal: boolean; browser: boolean; keepAwake: boolean; verifier: string;
+  /** Notes pages are shared (older saved settings have no value: off). */
+  notes?: boolean;
   /** Host was on when last changed: it turns back on at the next launch. */
   enabled?: boolean;
   /** The desktop page the Browser share was started from. */
   origin?: string;
 };
-type Source = Pick<Parameters<typeof startOrvaneHost>[0], "recent" | "chat" | "agents" | "maker" | "terminal" | "browser" | "desktop">;
+type Source = Pick<Parameters<typeof startOrvaneHost>[0], "recent" | "chat" | "agents" | "maker" | "terminal" | "browser" | "desktop" | "notes">;
 type Listener = Awaited<ReturnType<typeof startOrvaneHost>>;
 const preference = "orvane-host-settings";
 // Laptop sign-ins (hashed tokens) kept while Orvane restarts; turning Host off clears them.
@@ -49,7 +52,7 @@ export class HostSettings {
   constructor(
     private directory: string,
     private filename: string,
-    private source: (projects: string[], approvals: boolean, uiMaker: boolean, terminal: boolean, browserOrigin?: string, desktopOrigin?: string) => Source,
+    private source: (projects: string[], approvals: boolean, uiMaker: boolean, terminal: boolean, browserOrigin?: string, desktopOrigin?: string, notes?: boolean) => Source,
   ) {}
 
   private database() { return (this.db ??= new LocalDatabase(this.filename)); }
@@ -72,6 +75,7 @@ export class HostSettings {
       projects: saved?.projects ?? [], approvals: saved?.approvals ?? false, uiMaker: saved?.uiMaker ?? false,
       terminal: saved?.terminal ?? false,
       browser: saved?.browser ?? false,
+      notes: saved?.notes ?? false,
       keepAwake: saved?.keepAwake ?? true,
       passwordSet: !!saved?.verifier, certificateReady: !!this.certificate,
     };
@@ -100,8 +104,8 @@ export class HostSettings {
           throw Error("Select a private network interface on this computer.");
         const verifier = input.password ? await makeHostPasswordVerifier(input.password) : this.config()?.verifier;
         if (!verifier) throw Error("Set an access password first.");
-        const { address, port, projects, approvals, uiMaker, terminal, browser, keepAwake } = input;
-        const config = { address, port, projects, approvals, uiMaker, terminal, browser, keepAwake, verifier, enabled: true, origin };
+        const { address, port, projects, approvals, uiMaker, terminal, browser, notes, keepAwake } = input;
+        const config = { address, port, projects, approvals, uiMaker, terminal, browser, notes, keepAwake, verifier, enabled: true, origin };
         await this.open(config, () => {
           this.database().saveAppData(preference, config);
           this.database().saveAppData(signIns, []);
@@ -124,7 +128,7 @@ export class HostSettings {
   private async open(config: Config, save?: () => void, sessions?: HostSessions) {
     const { address, port, projects, approvals, uiMaker, terminal, browser, keepAwake, verifier } = config;
     const material = await localHostCertificate(this.directory, address);
-    const source = this.source(projects, approvals, uiMaker, terminal, browser ? config.origin : undefined, config.origin);
+    const source = this.source(projects, approvals, uiMaker, terminal, browser ? config.origin : undefined, config.origin, config.notes === true);
     const listener = await startOrvaneHost({ address, port, verifier, tls: material.tls, ...source, sessions });
     try { save?.(); }
     catch (error) { await listener.close(); throw error; }

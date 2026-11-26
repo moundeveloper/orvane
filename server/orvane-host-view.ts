@@ -18,6 +18,7 @@ export const iconPaths = {
   enter: '<path d="M20 4v7a4 4 0 0 1-4 4H4"/><path d="m9 10-5 5 5 5"/>',
   folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
+  notes: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
 } as const;
 export type IconName = keyof typeof iconPaths;
 export const icon = (name: IconName, size = 14) =>
@@ -90,10 +91,11 @@ ${failed ? '<p class="error" role="alert">Password or sign-in attempt rejected.<
 <p class="login-foot"><kbd>Enter</kbd><span>connect</span></p></section>`);
 }
 
-const appIcons: Record<string, IconName> = { chat: "sessions", maker: "edit", browser: "globe", terminal: "terminal", runs: "clock" };
-export const appStrip = (active: string, chat: boolean, maker: boolean, terminal = false, browser = false) => {
+const appIcons: Record<string, IconName> = { chat: "sessions", notes: "notes", maker: "edit", browser: "globe", terminal: "terminal", runs: "clock" };
+export const appStrip = (active: string, chat: boolean, maker: boolean, terminal = false, browser = false, notes = false) => {
   const apps = [
     ...(chat ? [{ id: "chat", path: "/", label: "Agent Sessions" }] : []),
+    ...(notes ? [{ id: "notes", path: "/notes", label: "Notes" }] : []),
     ...(maker ? [{ id: "maker", path: "/maker", label: "UI Maker" }] : []),
     ...(browser ? [{ id: "browser", path: "/browser", label: "Browser" }] : []),
     ...(terminal ? [{ id: "terminal", path: "/terminal", label: "Terminal" }] : []),
@@ -105,10 +107,10 @@ export const appStrip = (active: string, chat: boolean, maker: boolean, terminal
     <span class="host-keys" aria-hidden="true"><kbd>Ctrl</kbd><kbd>←</kbd><kbd>→</kbd></span></nav>`;
 };
 export const navScriptTag = '<script src="/navigation.js" defer></script>';
-export const watchPage = (chat = false, maker = false, terminal = false, browser = false) => hostDocument("Agent runs", `<section class="host-app watch">
+export const watchPage = (chat = false, maker = false, terminal = false, browser = false, notes = false) => hostDocument("Agent runs", `<section class="host-app watch">
 <header class="app-bar">${icon("clock", 15)}<h1>Agent runs</h1><p class="app-status" id="connection" role="status">Connecting to host…</p></header>
 <p class="cs-group">Recent</p><ul id="runs" aria-label="Recent runs"></ul></section>`,
-navScriptTag + '<script src="/watch.js" defer></script>', appStrip("runs", chat, maker, terminal, browser));
+navScriptTag + '<script src="/watch.js" defer></script>', appStrip("runs", chat, maker, terminal, browser, notes));
 
 // Shared shell: the canvas, the frost top bar with the wordmark and app strip,
 // and one Orvane app window per page. Tokens and controls follow DESIGN.md and

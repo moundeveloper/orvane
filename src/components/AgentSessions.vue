@@ -100,6 +100,8 @@ import {
   sameAgentSession,
   askedQuestions,
   attachmentPicture,
+  isReplyPicture,
+  replyPictureUrl,
   splitAttachments,
   summarizeAgentRun,
   type AgentRunSummary,
@@ -138,6 +140,8 @@ const emit = defineEmits<{
 const sessions = ref<AgentSession[]>([]),
   active = ref(""),
   search = ref(""),
+  /** The session list is hidden (its button sits beside the search). */
+  listHidden = ref(false),
   messages = ref<AgentMessage[]>([]),
   visuals = ref<VisualRecord[]>([]),
   before = ref<string | null>(null),
@@ -275,6 +279,7 @@ if (props.pane) {
   try {
     const saved = JSON.parse(props.block.value || "{}");
     active.value = saved.active || "";
+    listHidden.value = saved.listHidden === true;
     const restored = readTiles(saved.tiles);
     if (restored) tiles.value = restored;
   } catch {}
@@ -1763,7 +1768,9 @@ function openPictures(list: { path: string; src: string }[], index: number) {
 }
 async function openViewedImage(path: string) {
   try {
-    openPictures([{ path, src: attachmentPicture(path) ?? rawUrl(path, await fileToken()) }], 0);
+    // replyPictureUrl also works on Orvane Host, where /files/raw does not.
+    openPictures([{ path, src: attachmentPicture(path)
+      ?? (isReplyPicture(path) ? replyPictureUrl(path) : rawUrl(path, await fileToken())) }], 0);
   } catch (error) {
     showRunError(error);
   }
@@ -2256,12 +2263,18 @@ function saveBlock() {
   if (props.pane) return;
   const split = splitOn.value;
   props.block.value =
-    active.value || split
+    active.value || split || listHidden.value
       ? JSON.stringify({
           ...(active.value ? { active: active.value } : {}),
           ...(split ? { tiles: tiles.value } : {}),
+          ...(listHidden.value ? { listHidden: true } : {}),
         })
       : "";
+}
+/** Hide or show the session list; the choice is kept with the app's layout. */
+function toggleList() {
+  listHidden.value = !listHidden.value;
+  saveBlock();
 }
 const shownKey = computed(() =>
   tiles.value.focus === HOST ? active.value : tiles.value.panes[tiles.value.focus]?.key ?? "",
@@ -2689,6 +2702,17 @@ onBeforeUnmount(() => {
 <template>
   <div ref="root" class="agent-sessions-app" :class="{ 'cs-pane-mode': pane, 'cs-pinned': pane?.id === 'side' }" @keydown="appKey">
     <header v-if="!pane" class="cs-toolbar">
+      <button
+        v-if="listHidden && !expanded"
+        type="button"
+        class="cs-btn cs-icon cs-ghost cs-list-toggle"
+        title="Show session list"
+        aria-label="Show session list"
+        :aria-expanded="false"
+        @click="toggleList"
+      >
+        <Icon name="sidebar" :size="14" />
+      </button>
       <span class="cs-title"
         ><Icon name="agent-sessions" :size="16" /><span>Agent sessions</span></span
       >
@@ -2743,6 +2767,7 @@ onBeforeUnmount(() => {
         'cs-focus': expanded,
         'cs-scheduled-layout': schedulesOpen || settingsOpen,
         'cs-pane-layout': pane,
+        'cs-list-hidden': listHidden && !pane,
       }"
     >
       <nav v-if="!pane" v-show="!expanded" class="cs-sidebar" aria-label="Agent sessions">
@@ -2751,17 +2776,29 @@ onBeforeUnmount(() => {
           @click="schedulesOpen ? closeSchedules() : showSchedules()">
           <Icon name="clock" :size="14" />Scheduled <span>{{ schedules.length }}</span>
         </button>
-        <label class="cs-search"
-          ><Icon name="search" :size="14" /><input
-            ref="searchInput"
-            v-model="search"
-            type="text"
-            placeholder="Find a session"
-            aria-label="Find a session"
-            aria-keyshortcuts="/"
-            @keydown.esc.stop="searchInput?.blur()"
-          /><kbd>/</kbd></label
-        >
+        <div class="cs-search-row">
+          <label class="cs-search"
+            ><Icon name="search" :size="14" /><input
+              ref="searchInput"
+              v-model="search"
+              type="text"
+              placeholder="Find a session"
+              aria-label="Find a session"
+              aria-keyshortcuts="/"
+              @keydown.esc.stop="searchInput?.blur()"
+            /><kbd>/</kbd></label
+          >
+          <button
+            type="button"
+            class="cs-btn cs-icon cs-ghost cs-list-toggle"
+            title="Hide session list"
+            aria-label="Hide session list"
+            :aria-expanded="true"
+            @click="toggleList"
+          >
+            <Icon name="sidebar" :size="14" />
+          </button>
+        </div>
         <div class="cs-session-list">
           <template v-for="group in groups" :key="group.label">
             <p class="cs-group">
@@ -3677,7 +3714,7 @@ onBeforeUnmount(() => {
   --cs-line: #e1e8ec;
   --cs-line2: #d5e0e5;
   --cs-hover: #e5edf2;
-  --cs-run: #365f78;
+  --cs-run: var(--theme-run, #365f78);
   --cs-fail: #8c4637;
   --cs-wait: #7d5a1f;
   --cs-mono: "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace,
@@ -3837,12 +3874,36 @@ onBeforeUnmount(() => {
 .cs-queue header { display: flex; align-items: baseline; gap: 7px; color: #657b89; font-size: 11px; }
 .cs-queue header strong { text-transform: uppercase; letter-spacing: .04em; font-size: 10.5px; font-weight: 600; }
 .cs-queue-count { margin-left: auto; }
-.cs-queue ol { display: grid; gap: 4px; margin: 6px 0 0; padding: 0; list-style: none; }
+/* minmax(0, 1fr): a long one-line follow-up ellipsizes instead of widening
+   the list and pushing Steer / Send now past the conversation's edge. */
+.cs-queue ol { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin: 6px 0 0; padding: 0; list-style: none; }
 .cs-queue li { display: flex; align-items: center; gap: 4px; min-height: 26px; padding: 3px 6px; border-radius: 6px; }
 .cs-queue li:hover, .cs-queue li:focus-within { background: #e4edf2; }
 .cs-queue-number { margin-right: 4px; color: #657b89; font: 11px "Cascadia Code", Consolas, monospace; }
 .cs-queue-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #273f50; }
 .cs-queue .cs-btn { flex: none; height: 22px; padding: 0 5px; font-size: 11px; }
+.cs-search-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 10px 10px 6px;
+}
+.cs-search-row .cs-search {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.cs-search-row .cs-list-toggle {
+  width: 30px;
+  height: 30px;
+}
+.cs-layout.cs-list-hidden {
+  grid-template-columns: minmax(0, 1fr);
+}
+.cs-layout.cs-list-hidden > .cs-sidebar {
+  display: none;
+}
 .cs-search {
   flex: none;
   display: flex;
@@ -4268,6 +4329,9 @@ onBeforeUnmount(() => {
   max-width: 760px;
   margin: 0 auto;
   display: grid;
+  /* One column as wide as the pane: an unbreakable line (a long
+     "@… full transcript" reference) must not widen the list. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   padding-bottom: 6px;
 }
@@ -4278,6 +4342,7 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 5px;
   min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
 }
 .cs-message:hover :deep(.msg-actions) {
   opacity: 1;
@@ -4640,6 +4705,12 @@ onBeforeUnmount(() => {
   gap: 6px;
   min-width: 0;
 }
+/* When the row doesn't fit (laptop, split panes) it wraps instead of
+   scrolling sideways; usage, ring and Send/Stop stay together on the right. */
+.cs-composer .cs-compose-actions {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
 .cs-folder label {
   flex: 1;
   min-width: 0;
@@ -4997,7 +5068,8 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 .cs-status {
-  flex: 1 1 auto;
+  /* Shrinks (with an ellipsis) before the row wraps. */
+  flex: 1 1 52px;
   min-width: 52px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5013,7 +5085,10 @@ onBeforeUnmount(() => {
   flex: 1 1 auto;
 }
 .cs-send-controls {
-  display: contents;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-inline-start: auto;
 }
 .cs-pinned .cs-dock,
 .cs-pinned .cs-composer {
@@ -5059,6 +5134,12 @@ onBeforeUnmount(() => {
 @container (max-width: 650px) {
   .cs-layout {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .agent-sessions-app .cs-list-toggle {
+    display: none;
+  }
+  .cs-layout.cs-list-hidden:not(.cs-has-selection) > .cs-sidebar {
+    display: flex;
   }
   .cs-has-selection .cs-sidebar {
     display: none;

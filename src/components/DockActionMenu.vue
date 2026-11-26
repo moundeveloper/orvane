@@ -259,3 +259,30 @@ kbd {
   font-size: 11px;
 }
 </style>
+<style>
+/* Workspace palette (see "Workspace palettes" in style.css). */
+html.orvane-themed :is(.da-search, .da-foot) {
+  border-color: var(--shell-line);
+}
+html.orvane-themed :is(.da-search, .da-section, .da-empty, .da-foot) {
+  color: var(--shell-faint);
+}
+html.orvane-themed .da-search input {
+  color: var(--shell-strong);
+}
+html.orvane-themed .dock-actions button:not(.danger) {
+  color: var(--shell-text);
+}
+html.orvane-themed .dock-actions button:hover {
+  background: var(--shell-hover);
+}
+html.orvane-themed .dock-actions button.on {
+  background: var(--shell-selected);
+  color: var(--shell-strong);
+}
+html.orvane-themed .dock-actions kbd {
+  border-color: var(--shell-line);
+  background: var(--shell-field);
+  color: var(--shell-faint);
+}
+</style>

@@ -174,4 +174,11 @@ onBeforeUnmount(() => {
     animation: none;
   }
 }
+/* Workspace palette (see "Workspace palettes" in style.css). */
+html.orvane-themed .app-tooltip {
+  --line: var(--shell-line);
+  --muted: var(--shell-muted);
+  background: var(--shell-surface);
+  color: var(--shell-text);
+}
 </style>

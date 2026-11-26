@@ -255,6 +255,14 @@ function questionDetail(permission: { tool: string; input: string }) {
 }
 /** A picture saved by attachment-save (a pasted screenshot): the URL that
  * shows it in the composer and the chat, or null for any other file. */
+/** Local pictures a reply can show inline with ![caption](path). */
+export function isReplyPicture(path: string) {
+  return /\.(?:png|jpe?g|gif|webp|avif|bmp)$/i.test(path);
+}
+/** The same route on the desktop and on Orvane Host (shared folders only). */
+export function replyPictureUrl(path: string) {
+  return `/__orvane/agents/picture?path=${encodeURIComponent(path)}`;
+}
 export function attachmentPicture(path: string) {
   const name = path.split(/[\\/]/).pop() ?? "";
   return /[\\/]agent-attachments[\\/]/.test(path) && /^snapshot-[\w-]{1,80}\.png$/.test(name)

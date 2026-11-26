@@ -281,3 +281,23 @@ const colorIndex = computed(() => Math.max(0, BOARD_COLORS.indexOf(props.color))
   pointer-events: none;
 }
 </style>
+<style>
+/* Workspace palette (see "Workspace palettes" in style.css). */
+html.orvane-themed .board-rail {
+  background: color-mix(in srgb, var(--shell-surface) 92%, transparent);
+}
+html.orvane-themed .board-rail button {
+  color: var(--shell-muted);
+}
+html.orvane-themed .board-rail button:hover {
+  background: var(--shell-hover);
+}
+html.orvane-themed .board-rail button[aria-pressed="true"] {
+  background: var(--shell-selected);
+  color: var(--shell-strong);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--theme-accent) 45%, var(--theme-surface));
+}
+html.orvane-themed .board-rail-line {
+  background: var(--shell-line);
+}
+</style>

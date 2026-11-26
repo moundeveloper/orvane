@@ -8,17 +8,9 @@ import { harness } from "../agentHarness";
 import "../style.css";
 import "../scrollbars.css";
 import "../selectPopover.css";
-
-// The host checks this per-sign-in token on every request that changes state.
-const csrf = document.querySelector<HTMLMetaElement>('meta[name="orvane-csrf"]')?.content ?? "";
-const send = window.fetch.bind(window);
-window.fetch = (input, init) => {
-  const url = new URL(input instanceof Request ? input.url : String(input), location.href);
-  if (url.origin !== location.origin) return send(input, init);
-  const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
-  headers.set("x-orvane-csrf", csrf);
-  return send(input, { ...init, headers });
-};
+// The shared dropdown trigger look (one line, ellipsis), as on the desktop.
+import "../editor.css";
+import "./csrf";
 
 // New chats start in the desktop's default edit modes (Settings → Sessions).
 try {
