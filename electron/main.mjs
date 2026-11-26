@@ -1719,7 +1719,7 @@ else {
         try {
           const response = await fetch(`${origin}/__orvane/agents/host-settings`, {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "stop" }), signal: AbortSignal.timeout(3000),
+            body: JSON.stringify({ action: "suspend" }), signal: AbortSignal.timeout(3000),
           });
           if (!response.ok) throw Error(`HTTP ${response.status}`);
         } catch (error) {
@@ -1728,7 +1728,7 @@ else {
       }
       await stopServer();
       if (restart.state === "restarting") {
-        // A restart should reopen the window and require Host to be enabled again.
+        // The relaunch turns Host back on from its saved state, not this variable.
         process.env.ORVANE_HOST_ENABLED = "0";
         app.relaunch({ args: process.argv.slice(1).filter(arg => arg !== "--from-login") });
       }

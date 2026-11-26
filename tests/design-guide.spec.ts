@@ -41,6 +41,7 @@ test("Orvane MCP serves the design method and attaches it to design work once", 
     expect(created.isError).toBeFalsy();
     expect(texts(created)).toContain("# Orvane design method");
     expect(texts(created)).toContain("composer-glass:");
+    expect(texts(created)).toContain("## Guided mock workflow");
     const id = JSON.parse((created.content as { text: string }[])[0]!.text).id as string;
     const round = await client.callTool({ name: "uimaker_lab_round", arguments: { component: id, title: "Layouts", kind: "new" } });
     expect(round.isError).toBeFalsy();
@@ -61,3 +62,40 @@ test("Orvane MCP serves the design method and attaches it to design work once", 
     await client.close();
   }
 });
+
+for (const [name, guided] of [["claude-code", false], ["codex-mcp-client", true]] as const) {
+  test(`design_guide adapts the method for ${name}`, async ({}, info) => {
+    const data = info.outputPath("data");
+    const client = new Client({ name, version: "1.0.0" });
+    await client.connect(new StdioClientTransport({
+      command: process.execPath,
+      args: [resolve("server/launch.mjs")],
+      env: { ORVANE_DATA_DIR: data, ORVANE_MCP_STATE_DIR: data, ORVANE_MCP_PORT: "0" },
+      stderr: "pipe",
+    }));
+    const call = async (tool: string, args: Record<string, unknown>) => {
+      const result = await client.callTool({ name: tool, arguments: args });
+      expect(result.isError).toBeFalsy();
+      return (result.content as { type: string; text?: string }[])
+        .filter((part) => part.type === "text").map((part) => part.text).join("\n");
+    };
+    try {
+      // Looking up tokens or choosing a different provider for one read must
+      // still leave the connection's own method available on its first mock.
+      expect(await call("design_guide", { topic: "look" })).not.toContain("## Guided mock workflow");
+      const before = await call("design_guide", { topic: "method", provider: guided ? "claude" : "codex" });
+      expect(before.includes("## Guided mock workflow")).toBe(!guided);
+
+      const created = await call("uimaker_create", { name: "Profile check" });
+      expect(created).toContain("# Orvane design method");
+      expect(created.includes("## Guided mock workflow")).toBe(guided);
+      const method = await call("design_guide", {});
+      expect(method.includes("## Guided mock workflow")).toBe(guided);
+      expect(await call("uimaker_lab_round", { component: "profile-check", title: "Review handoff", kind: "new" }))
+        .not.toContain("# Orvane design method");
+      expect(await call("design_guide", { topic: "flow" })).toContain("# Flow review for UI mocks");
+    } finally {
+      await client.close();
+    }
+  });
+}

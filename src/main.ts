@@ -3,6 +3,7 @@ import { createPinia } from "pinia";
 
 import App from "./App.vue";
 import "./style.css";
+import "./selectPopover.css";
 import "./editor.css";
 import "./scrollbars.css";
 import router from "./router";

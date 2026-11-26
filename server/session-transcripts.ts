@@ -74,6 +74,8 @@ function codexUserMessage(record: any): string {
 export class SessionTranscripts {
   private files = new Map<string, { path: string; info: AgentSession }>();
   private cache = new Map<string, Cache>();
+  /** Codex subagent threads (size:mtime), skipped without rereading. */
+  private subagents = new Map<string, string>();
   private indexedAt = 0;
   private indexing?: Promise<void>;
   private db: Database.Database;
@@ -176,7 +178,9 @@ export class SessionTranscripts {
         try {
           await this.allowed(file);
           const info = await stat(file),
-            existing = this.files.get(key);
+            existing = this.files.get(key),
+            stamp = `${info.size}:${info.mtimeMs}`;
+          if (this.subagents.get(key) === stamp) continue;
           if (
             existing?.info.bytes === info.size &&
             existing.info.updatedAt === info.mtimeMs
@@ -209,7 +213,8 @@ export class SessionTranscripts {
           }
           let title = existing?.info.title || "",
             project = existing?.info.project || folder.name,
-            sessionId = name.split("/").at(-1)!.slice(0, -6);
+            sessionId = name.split("/").at(-1)!.slice(0, -6),
+            subagent = false;
           for (const line of head.split("\n")) {
             try {
               const d = JSON.parse(line);
@@ -219,6 +224,13 @@ export class SessionTranscripts {
                     sessionId = d.payload.id;
                   if (typeof d.payload?.cwd === "string")
                     project = d.payload.cwd;
+                  // A thread Codex spawned inside a session belongs to that
+                  // session; listing it would show the session twice.
+                  if (
+                    d.payload?.thread_source === "subagent" ||
+                    d.payload?.source?.subagent
+                  )
+                    subagent = true;
                 }
                 if (!title)
                   title = codexUserMessage(d)
@@ -234,6 +246,10 @@ export class SessionTranscripts {
                   title = t.replace(/\s+/g, " ").slice(0, 140);
               }
             } catch {}
+          }
+          if (subagent) {
+            this.subagents.set(key, stamp);
+            continue;
           }
           for (const line of this.provider === "claude"
             ? tail.split("\n")

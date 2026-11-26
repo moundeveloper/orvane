@@ -23,12 +23,18 @@ test("desktop settings start and revoke Host, which can approve a turn and pick 
   const data = join(directory, "tests", ns);
   const project = join(data, "project");
   const transcripts = join(data, "claude-projects", "test-project");
-  await Promise.all([project, transcripts].map((folder) => mkdir(folder, { recursive: true })));
+  const privateProject = join(data, "private");
+  await Promise.all([project, privateProject, transcripts].map((folder) => mkdir(folder, { recursive: true })));
   await copyFile("tests/helpers/agent-cli.cjs", join(data, "agent-cli.cjs"));
   const claudeId = "11111111-1111-4111-8111-111111111111";
   await writeFile(join(transcripts, claudeId + ".jsonl"), JSON.stringify({
     type: "user", sessionId: claudeId, cwd: project,
     message: { content: "Laptop host approval" }, timestamp: new Date().toISOString(),
+  }) + "\n");
+
+  await writeFile(join(transcripts, "22222222-2222-4222-8222-222222222222.jsonl"), JSON.stringify({
+    type: "user", sessionId: "22222222-2222-4222-8222-222222222222", cwd: privateProject,
+    message: { content: "Private host transcript" }, timestamp: new Date().toISOString(),
   }) + "\n");
 
   const maker = new UiMakerService(directory, `tests/${ns}.sqlite`);
@@ -87,33 +93,62 @@ test("desktop settings start and revoke Host, which can approve a turn and pick 
     await laptop.goto(url!);
     await laptop.getByLabel("Access password").fill(password);
     await laptop.getByRole("button", { name: "Connect", exact: true }).click();
-    await laptop.getByRole("button", { name: /Laptop host approval/ }).click();
-    await laptop.getByRole("textbox", { name: "Message", exact: true }).fill("Review the laptop mock");
-    await laptop.getByRole("textbox", { name: "Message", exact: true }).press("Enter");
-    await expect(laptop.getByText("Write needs approval")).toBeVisible();
-    await expect(laptop.getByText(/fixture\.txt/)).toBeVisible();
+    // The laptop runs the desktop's own Agent Sessions component.
+    const app = laptop.locator(".agent-sessions-app");
+    await expect(app.getByRole("navigation", { name: "Agent sessions" })).toBeVisible();
+    await expect(app.getByText("Laptop host approval", { exact: true })).toBeVisible();
+    await expect(app.getByText("Private host transcript")).toHaveCount(0);
+    for (const desktopOnly of ["Settings", "Scheduled"])
+      await expect(app.getByRole("button", { name: new RegExp("^" + desktopOnly) })).toHaveCount(0);
+    await app.getByText("Laptop host approval", { exact: true }).click();
+    await expect(app.locator(".cs-thread").getByText("Laptop host approval", { exact: true })).toBeVisible();
+    await expect(app.getByRole("button", { name: "Open folder" })).toHaveCount(0);
+    await expect(app.getByRole("button", { name: /^Snapshot/ })).toHaveCount(0);
+    const chat = app.getByRole("textbox", { name: "Message", exact: true });
+    await chat.fill("Review the laptop mock");
+    await chat.press("Enter");
+    const request = app.getByRole("group", { name: /Permission request for Write/ });
+    await expect(request).toBeVisible();
+    await expect(request.getByText(/fixture\.txt/)).toBeVisible();
     await laptop.screenshot({ path: info.outputPath("laptop-approval.png") });
-    await laptop.getByRole("button", { name: "Allow once" }).click();
-    await expect(laptop.getByText("Write approved", { exact: true })).toBeVisible();
+    await request.getByRole("button", { name: "Allow once" }).click();
+    await expect(app.locator(".cs-thread").getByText("Write approved", { exact: true })).toBeVisible();
 
-    await laptop.getByRole("textbox", { name: "Message", exact: true }).fill("Ask me questions");
-    await laptop.getByRole("textbox", { name: "Message", exact: true }).press("Enter");
-    await laptop.getByRole("radio", { name: "UI 1x, page keeps zoom" }).check();
-    await laptop.getByRole("checkbox", { name: "Canvas" }).check();
-    await laptop.getByRole("button", { name: "Send answers" }).click();
-    await expect(laptop.locator("#transcript")).toContainText("Answers");
+    const send = app.getByRole("button", { name: "Send", exact: true });
+    await expect(send).toBeVisible();
+    await chat.fill("Ask me questions");
+    await chat.press("Enter");
+    const card = app.getByRole("group", { name: "Questions from Claude Code" });
+    await card.getByRole("radio", { name: /UI 1x, page keeps zoom/ }).click();
+    await card.getByRole("button", { name: /^Next/ }).click();
+    await card.getByRole("checkbox", { name: /Canvas/ }).click();
+    await card.getByRole("button", { name: /Send answers/ }).click();
+    await expect(app.locator(".cs-thread")).toContainText("Answers");
 
-    await laptop.getByRole("button", { name: "Codex", exact: true }).click();
-    await laptop.getByRole("textbox", { name: "Message", exact: true }).fill("Start a Codex session from the laptop");
-    await laptop.getByRole("textbox", { name: "Message", exact: true }).press("Enter");
-    await expect(laptop.locator("#transcript")).toContainText("Codex started");
-    await expect(laptop.getByRole("button", { name: /Start a Codex session from the laptop/ })).toBeVisible();
-    await laptop.getByRole("button", { name: /Laptop host approval/ }).click();
-    const chat = laptop.getByRole("textbox", { name: "Message", exact: true });
-    await chat.fill("Draft kept while reviewing");
-    await chat.press("Control+ArrowRight");
-    await expect(laptop).toHaveURL(url! + "/");
-    await laptop.locator("#transcript").click();
+    await expect(send).toBeVisible();
+    await app.getByRole("button", { name: "Codex", exact: true }).click();
+    await expect(app.getByLabel("Project folder")).toHaveValue(project);
+    await chat.fill("Start a Codex session from the laptop");
+    await chat.press("Enter");
+    await expect(app.locator(".cs-thread")).toContainText("Codex started");
+    await laptop.screenshot({ path: info.outputPath("laptop-agent-sessions.png") });
+    // Popovers keep the desktop's surface on the laptop page (selectPopover.css).
+    await app.locator(".au-pill").click();
+    const usage = laptop.getByRole("dialog", { name: "Usage" });
+    await expect(usage).toHaveCSS("background-color", "rgb(244, 248, 250)");
+    // It opens above the pill, by its real height.
+    await expect.poll(async () => (await usage.boundingBox())!.y + (await usage.boundingBox())!.height)
+      .toBeLessThanOrEqual((await app.locator(".au-pill").boundingBox())!.y);
+    await laptop.screenshot({ path: info.outputPath("laptop-usage.png") });
+    await laptop.keyboard.press("Escape");
+    await expect(usage).toHaveCount(0);
+    await app.getByRole("button", { name: /Laptop host approval/ }).click({ button: "right" });
+    const rowMenu = laptop.getByRole("menu", { name: "Open session in a tile" });
+    await expect(rowMenu).toHaveCSS("background-color", "rgb(244, 248, 250)");
+    await laptop.screenshot({ path: info.outputPath("laptop-session-menu.png"), animations: "disabled" });
+    await laptop.keyboard.press("Escape");
+    await expect(rowMenu).toHaveCount(0);
+    await laptop.locator(".host-top .wordmark").click();
     await laptop.keyboard.press("Control+ArrowRight");
     await expect(laptop).toHaveURL(url! + "/maker");
     await laptop.getByRole("button", { name: "Lab", exact: true }).click();
@@ -151,7 +186,16 @@ test("desktop settings start and revoke Host, which can approve a turn and pick 
     await expect(laptop.locator(".xterm-viewport")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     await laptop.screenshot({ path: info.outputPath("laptop-terminal.png") });
     await laptop.getByRole("link", { name: "Agent Sessions" }).click();
-    await expect(chat).toHaveValue("Draft kept while reviewing");
+    await expect(app.getByRole("navigation", { name: "Agent sessions" })).toBeVisible();
+    // Restart asks first, then reaches the desktop window. This test page isn't
+    // the Electron app, so the window answers that it can't restart.
+    await laptop.getByRole("button", { name: "Restart", exact: true }).click();
+    await expect(laptop.getByRole("heading", { name: "Restart Orvane?" })).toBeVisible();
+    await laptop.screenshot({ path: info.outputPath("laptop-restart-confirm.png") });
+    await laptop.getByRole("button", { name: "Restart Orvane" }).click();
+    await expect(laptop.getByRole("alert")).toContainText("Open the updated Orvane desktop app to schedule a restart.");
+    await laptop.getByRole("link", { name: "Back" }).click();
+    await expect(app.getByRole("navigation", { name: "Agent sessions" })).toBeVisible();
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-checked", "false");
     await expect(trustedStatus(url!, certificate)).rejects.toThrow();

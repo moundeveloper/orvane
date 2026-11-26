@@ -2,48 +2,46 @@
 
 Written 2026-11-24. Covers the LAN host (laptop access) work on branch `codex/host-and-delegation`. The plan itself is in [lan-host-plan.md](lan-host-plan.md).
 
-## The main problem still open
+## Agent Sessions on the laptop is now the desktop component (2026-11-25)
 
-**The laptop's hosted pages do not use Orvane's real app UI.** Each hosted app is HTML, CSS and JavaScript written by hand as template strings in `server/orvane-host-*-view.ts`. That code copies the desktop's classes and values. Desktop Agent Sessions is `src/components/AgentSessions.vue` with its child components (ComposerModes, ChatMarkdown, ContextRing, AgentRunActivity, ThinkingTrail, AgentQuestions, SlashMenu, ContextPicker, CustomSelect…). The laptop page shares none of that code. It only looks close, it lacks most features, and every desktop change has to be redone by hand.
+The laptop's Agent Sessions page is the real `src/components/AgentSessions.vue`, not a copy.
 
-The owner's requirement: the laptop must show **the same UI as the desktop Agent Sessions app**, not a lookalike. The next step is to reuse the real components rather than polish the copy.
+- **Build entry:** `host-agents.html` + `src/host/agents.ts` mount `AgentSessions.vue` with a block kept in the laptop's localStorage. `vite.config.ts` builds it beside `index.html` into `dist/`; `electron/server.mjs` rebuilds when it changes.
+- **Page:** `server/orvane-host-app.ts` wraps the built tags in the host's top bar (wordmark, app strip, Sign out) and one app window. It adds `<meta name="orvane-host">` (host mode), the sign-in's CSRF token and the desktop's default edit modes. `/assets/*` and `/host-shell.css` are served to signed-in browsers only.
+- **Transport:** the component still calls `/__orvane/agents/<op>` and `/__orvane/files/<op>`. The host entry adds the CSRF header to same-origin fetches.
+- **Gateway:** `server/orvane-host-agents.ts` allowlists operations and checks each against the shared project folders before calling the desktop's own handlers. `server/agent-sessions-api.ts` now has those handlers in `operate()`, used by both the desktop middleware and the gateway.
+  - Allowed: sessions, runs, read, start, queue/unqueue/queue-now/steer, stop, inspect-run, run-events, run-changes, run-diff, permission (only with "Approval from the laptop"), session-approvals, checkpoints and checkpoint preview/restore, transcript-file, slash, models, usage, save/delete prompt, suggest, attachment-save and pasted pictures.
+  - Lists are filtered to the shared projects. New sessions must name a shared folder. Attachments must be pasted pictures or files in a shared folder.
+  - Everything else is 404: host settings, MCP, delegation, schedules, default modes, launcher, notes rewrite.
+  - Files: `roots` lists the shared folders; `list` and `search` work inside them only.
+- **Hidden in host mode** (`src/hostMode.ts`): Scheduled, Settings, Snapshot (button and Ctrl+Alt+S), Open folder (button and menu), keep-awake, Pin new session, Send to Notes.
+- **Removed:** the hand-written `server/orvane-host-chat-view.ts` and its `/api/sessions`, `/api/chat`, `/chat.js` and markdown-library routes. `HostAgentChat` is now only the scope layer (shared roots, approvals switch, desktop default modes).
+- **Tests:**
+  - `tests/orvane-host-settings.spec.ts` drives the real component on the laptop page: it lists only shared sessions, approves a Write, answers the question card, and starts Codex. It passes.
+  - `tests/orvane-host.spec.ts` has a new gateway test: 401 signed out, 403 without CSRF or cross-origin, 404 for private sessions, runs, folders and attachments, 404 for desktop-only operations, files scoped. It passes.
 
-### How to do it (proposed, not started)
+### Changed from the hand-written page
 
-1. **Separate Vite entry for the host.** Add an entry (for example `host.html` and `src/host/main.ts`) that mounts the real `AgentSessions.vue`. Later entries would mount UI Maker, Browser and Terminal. Build it with the app's normal Vite build, and have `server/orvane-host.ts` serve the built files only to signed-in browsers. The current CSP (`script-src 'self'`, `style-src 'self'`) already fits a built bundle.
-2. **Transport adapter.** Today `agentRequest()` in `src/exposition.ts` posts to `/__orvane/agents/<op>`, and the run stream is an `EventSource` on `/__orvane/agents/run-events`. In the host build, both must go to the host's authenticated routes, with the CSRF header and same-origin checks. Do it with a small module swap (a Vite alias or an injected base URL and headers), not by forking the component.
-3. **Allowlisted proxy on the host.** In `server/orvane-host.ts`, forward only the Agent Sessions operations the laptop may use, to the same handlers as `server/agent-sessions-api.ts`:
-   - Operations: sessions, read, start/send, stop, permission, questions, run-events, models, slash list, usage, queue.
-   - Each call is limited to the shared project roots, as `HostAgentChat.allowedFolder` does today.
-   - Remote approvals still follow the "Approval from the laptop" switch.
-   - Provider secrets, raw transcript paths, the MCP bridge and Electron calls must stay unreachable.
-4. **Features that touch the desktop.** Turn these off (or adapt them) in host mode, behind one `host` flag or prop:
-   - Snapshot of desktop apps.
-   - Open folder.
-   - Attachments from local paths.
-   - Desktop notifications and keep-awake.
-   - Agent Settings (MCP install, Host access).
-   - Tile splitting, if it doesn't fit a laptop.
-5. **Delete the hand-written chat page.** Once the real component is served, remove `server/orvane-host-chat-view.ts`. `HostAgentChat` either becomes the proxy's scope and permission layer or is replaced by it.
-6. **Then the other apps.** Do the same for UI Maker (`UiMakerView.vue` / `LabView.vue`), Browser and Terminal. Their hand-written pages are `orvane-host-maker-view.ts`, `orvane-host-browser-view.ts` and `orvane-host-terminal-view.ts`.
-7. **Tests.** Port `tests/orvane-host.spec.ts` and `tests/orvane-host-settings.spec.ts` to the real component's labels. Keep the security assertions:
-   - Signed-out requests get 401.
-   - Cross-origin and missing-CSRF requests get 403.
-   - Private projects get 404.
-   - No full paths are returned.
-   - Lost acknowledgements are retried with the same request ID.
+- **Full paths:** the laptop now shows project paths as the desktop does (the header and the folder field). The old page hid them.
+- **Lost acknowledgement retry is gone:** the old page sent each message with a request ID and retried it safely. The real component's `start`/`queue` have no request ID, so on a dropped Wi-Fi reply the laptop shows an error and a resend could start a second turn. This needs an idempotency key in the desktop operations if it matters.
+- **A new build is needed:** the laptop page comes from `dist/`. Restarting Orvane rebuilds it. With `ORVANE_DEV=1`, run `pnpm build-only` first, otherwise the page says it isn't built.
 
-## Done in this session (Claude, 2026-11-24)
+## Still open
+
+- **UI Maker, Browser and Terminal** are still hand-written pages (`orvane-host-maker-view.ts`, `orvane-host-browser-view.ts`, `orvane-host-terminal-view.ts`). Do the same as Agent Sessions: one entry per app mounting `UiMakerView.vue` / `LabView.vue`, the Browser and `TerminalView.vue`, plus a gateway each.
+- **Not checked on a real second laptop:** everything above was verified in Playwright against a 127.0.0.1 host.
+
+## Earlier (Claude, 2026-11-24)
 
 ### Laptop sends now respect the desktop permission setting
 
 - **Before:** `server/orvane-host-chat.ts` always forced Claude to "Ask first" and Codex to "Auto-accept". Every turn sent from the laptop needed approval on the desktop, whatever the desktop's setting.
 - **Now:** a send uses the same edit mode the desktop would. That is the mode of the chat's latest desktop turn, otherwise the default from Agent Sessions → Settings → Sessions, and only then the CLI's first mode.
 - **How the setting reaches the server:** the desktop default was stored only in the desktop window's localStorage. `src/agentHarness.ts` now posts it to a new loopback-only route, `default-modes` in `server/agent-sessions-api.ts`. The server stores it in app data under `agent-default-modes`.
-- **Regression test:** "Host sends use the desktop's default edit mode instead of always asking" in `tests/orvane-host.spec.ts`. It fails on the old code (received `ask`) and passes now.
+- **Since 2026-11-25:** the laptop page gets these modes in a `<meta name="orvane-modes">` tag and applies them to the real composer, so new chats start in the desktop's default. The old regression test went with the hand-written page; the new gateway test checks the tag.
 - **Not checked yet:** behaviour from a real second laptop.
 
-### Hosted Agent Sessions restyle (interim, superseded by the plan above)
+### Hosted Agent Sessions restyle (superseded: that page was removed on 2026-11-25)
 
 - **Restyled** `server/orvane-host-chat-view.ts` to the desktop's structure and values. That covers:
   - the toolbar with + Claude / + Codex,
@@ -60,22 +58,10 @@ The owner's requirement: the laptop must show **the same UI as the desktop Agent
 
 ## Other open items
 
-- **Settings spec timing.** `tests/orvane-host-settings.spec.ts` fails at its default 5-second waits for "Write needs approval" (line 93) and "Codex started" (line 109).
-  - With those waits at 25s, the whole spec passes.
-  - On the hosted page alone, both appear in about 3s.
-  - In this spec, the dev server's run hadn't recorded the approval at 5s.
-  - It is unknown whether this was already slow before this session's changes.
+- **Settings spec timing:** resolved. The ported spec passes with default waits (about 45s in total).
 - **Restart needed.** Server and Electron changes need a full Orvane restart before trying them.
-- **Missing from the laptop today (all solved by reusing the real component):**
-  - model dropdown (the new-session Model field is a text box),
-  - Effort, and changing the edit mode from the laptop,
-  - Scheduled, Settings, Add context / Snapshot / saved prompts, Usage and context ring,
-  - session timeline, file-changes view, message actions, queueing and steering,
-  - thinking trail and tool-step strips,
-  - Open folder.
 - **Two-machine acceptance** from [lan-host-plan.md](lan-host-plan.md#acceptance-on-two-machines) has not been run on real hardware:
   - Wi-Fi drop during a send,
   - lid close,
   - stale approvals,
   - certificate install.
-- **UI Maker, Browser and Terminal** hosted pages are still hand-written and haven't been compared against the desktop.

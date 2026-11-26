@@ -9,13 +9,15 @@ import { z } from "zod";
 import { agentNames, type AgentRunSummary } from "../src/agentSessions.ts";
 import { hostBrowserInput } from "../src/hostBrowser.ts";
 import { hostPasswordMaximum, hostPasswordMinimum } from "../src/hostPassword.ts";
-import { hostCss, hostNavScript, signInPage, watchPage, watchScript } from "./orvane-host-view.ts";
-import { chatCss, chatPage, chatScript } from "./orvane-host-chat-view.ts";
-import { HostChatError, hostChatAction, hostProjectList, hostSessionId, type HostAgentChat } from "./orvane-host-chat.ts";
+import { hostCss, hostNavScript, restartPage, restartScript, signInPage, watchPage, watchScript } from "./orvane-host-view.ts";
+import { HostChatError, hostProjectList, type HostAgentChat } from "./orvane-host-chat.ts";
+import type { HostAgents } from "./orvane-host-agents.ts";
+import { agentsPage, builtApp, builtAsset, hostShellCss } from "./orvane-host-app.ts";
 import { makerCss, makerPage, makerScript } from "./orvane-host-maker-view.ts";
 import { terminalCss, terminalPage, terminalScript, xtermCssPath, xtermScriptPath } from "./orvane-host-terminal-view.ts";
 import { hostTerminalOutput, hostTerminals, writeHostTerminal } from "./terminal.ts";
 import type { HostBrowser } from "./orvane-host-browser.ts";
+import type { HostDesktop } from "./orvane-host-desktop.ts";
 import { browserCss, browserPage, browserScript } from "./orvane-host-browser-view.ts";
 import type { UiMakerService } from "./uimaker.ts";
 
@@ -26,11 +28,6 @@ const brandAssets = new Map([
     url: new URL(import.meta.resolve("@fontsource-variable/inter/files/inter-latin-wght-normal.woff2")),
     type: "font/woff2",
   }],
-]);
-const markdownLibraries = new Map([
-  // Browser builds beside each package's resolved entry (not in "exports").
-  ["/marked.js", new URL("./marked.umd.js", import.meta.resolve("marked"))],
-  ["/purify.js", new URL("./purify.min.js", import.meta.resolve("dompurify"))],
 ]);
 const sessionAge = 8 * 60 * 60;
 const derive = promisify(scrypt);
@@ -57,10 +54,19 @@ type HostOptions = {
   tls: Pick<ServerOptions, "cert" | "key">;
   recent: () => AgentRunSummary[];
   chat?: HostAgentChat;
+  /** The desktop's Agent Sessions operations, scoped to the shared projects. */
+  agents?: HostAgents;
+  /** Folder of the desktop's production build (default: dist). */
+  app?: string;
   maker?: UiMakerService;
   terminal?: boolean;
   browser?: HostBrowser;
+  /** The desktop window, for Restart. */
+  desktop?: HostDesktop;
+  /** Sign-ins kept from before a restart, by hashed token. */
+  sessions?: HostSessions;
 };
+export type HostSessions = [string, { expires: number; csrf: string }][];
 const makerId = z.string().min(1).max(80).regex(/^[a-z0-9][a-z0-9-]*$/);
 const makerPick = z.strictObject({ component: makerId, round: makerId, variant: makerId });
 const terminalId = z.string().regex(/^[a-f0-9]{64}$/);
@@ -86,7 +92,9 @@ async function form(request: IncomingMessage) {
 }
 
 export async function startOrvaneHost(options: HostOptions) {
-  const { address, port, tls, recent, chat, maker, browser } = options;
+  const { address, port, tls, recent, chat, maker, browser, desktop } = options;
+  const agents = chat && options.agents;
+  const app = options.app ?? builtApp;
   const terminal = !!(options.terminal && chat);
   await chat?.ready();
   const hostname = options.hostname ?? address;
@@ -103,7 +111,11 @@ export async function startOrvaneHost(options: HostOptions) {
   const mask = ipNumber(adapter.netmask);
   const subnet = ipNumber(address) & mask;
   const keyFor = (token: string) => createHash("sha256").update(token).digest("hex");
-  const sessions = new Map<string, { expires: number; csrf: string }>();
+  // Tells a laptop's Restarting page that this is a new Host start.
+  const instance = randomBytes(8).toString("hex");
+  const sessions = new Map<string, { expires: number; csrf: string }>(
+    (options.sessions ?? []).filter(([key, member]) => /^[a-f0-9]{64}$/.test(key) && member.expires > Date.now()).slice(-16),
+  );
   const attempts = new Map<string, { until: number; count: number }>();
   let verifying = 0;
   let origin: URL;
@@ -145,16 +157,22 @@ export async function startOrvaneHost(options: HostOptions) {
     const authorized = session !== undefined && session.expires > now;
     if (!authorized && sessionKey) sessions.delete(sessionKey);
 
-    if (req.method === "GET" && req.url === "/")
-      return text(200, authorized ? chat ? chatPage(!!maker, terminal, !!browser) : watchPage(false, !!maker, terminal, !!browser) : signInPage());
+    if (req.method === "GET" && req.url === "/") {
+      if (!authorized) return text(200, signInPage());
+      if (!agents) return text(200, watchPage(false, !!maker, terminal, !!browser));
+      // The desktop's own Agent Sessions app; Vue sets inline styles.
+      res.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+      return text(200, await agentsPage(app, session!.csrf, chat!.defaultModes(), { maker: !!maker, terminal, browser: !!browser }));
+    }
     if (req.method === "GET" && req.url === "/host.css")
-      return text(200, hostCss + chatCss + makerCss + terminalCss + browserCss, "text/css");
+      return text(200, hostCss + makerCss + terminalCss + browserCss, "text/css");
     const asset = req.method === "GET" && brandAssets.get(req.url ?? "");
     if (asset) {
       const data = await readFile(asset.url);
       res.writeHead(200, { "Content-Type": asset.type }).end(data);
       return;
     }
+    if (req.method === "GET" && req.url === "/instance") return text(200, instance, "text/plain");
     if (req.method === "POST" && (req.url === "/login" || req.url === "/logout")) {
       if (req.headers.origin !== origin.origin) return void res.writeHead(403).end();
       if (req.url === "/logout") {
@@ -188,6 +206,20 @@ export async function startOrvaneHost(options: HostOptions) {
       return void redirect();
     }
 
+    if (req.method === "POST" && req.url === "/restart") {
+      if (!authorized) return void redirect();
+      if (req.headers.origin !== origin.origin) return void res.writeHead(403).end();
+      if ((await form(req))?.get("confirm") !== "1") return text(200, restartPage("confirm"));
+      if (!desktop) return text(503, restartPage("failed", "Restart needs Host started from the desktop's Agent Sessions settings."));
+      try {
+        await desktop.restart();
+        return text(202, restartPage("restarting", "", instance));
+      } catch (error) {
+        return text(error instanceof HostChatError ? error.status : 500,
+          restartPage("failed", error instanceof Error ? error.message : "Orvane could not restart."));
+      }
+    }
+
     if (req.method === "GET" && (req.url === "/runs" || req.url === "/maker" || req.url === "/terminal" || req.url === "/browser")) {
       if (!authorized) return void redirect();
       if (req.url === "/runs") return text(200, watchPage(!!chat, !!maker, terminal, !!browser));
@@ -203,10 +235,12 @@ export async function startOrvaneHost(options: HostOptions) {
     }
     if (!authorized) return void res.writeHead(401).end();
     if (req.method === "GET" && req.url === "/navigation.js") return text(200, hostNavScript, "text/javascript");
-    // Desktop ChatMarkdown's parser and sanitizer, so replies render the same.
-    const library = req.method === "GET" && markdownLibraries.get(req.url ?? "");
-    if (library) {
-      res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" }).end(await readFile(library));
+    if (req.method === "GET" && req.url === "/restart.js") return text(200, restartScript, "text/javascript");
+    if (agents && req.method === "GET" && req.url === "/host-shell.css") return text(200, hostShellCss, "text/css");
+    if (agents && req.method === "GET" && req.url?.startsWith("/assets/")) {
+      const asset = await builtAsset(app, req.url.slice("/assets/".length));
+      if (!asset) return void res.writeHead(404).end();
+      res.writeHead(200, { "Content-Type": asset.type, "Cache-Control": "private, max-age=31536000, immutable" }).end(asset.data);
       return;
     }
     if (req.method === "GET" && req.url === "/watch.js") return text(200, watchScript, "text/javascript");
@@ -217,12 +251,12 @@ export async function startOrvaneHost(options: HostOptions) {
     }
     const url = new URL(req.url ?? "/", origin);
     if (url.origin !== origin.origin) return void res.writeHead(403).end();
-    async function mutation() {
+    async function mutation(limit = 96_000) {
       if (req.headers.origin !== origin.origin || req.headers["x-orvane-csrf"] !== session!.csrf)
         throw new HostChatError(403, "Sign in again to control this host.");
       if (req.headers["content-type"]?.split(";")[0] !== "application/json")
         throw new HostChatError(415, "Expected a JSON request.");
-      const input = await body(req, 96_000);
+      const input = await body(req, limit);
       if (input === null) throw new HostChatError(413, "The request is too large.");
       if (sessions.get(sessionKey) !== session || session!.expires <= Date.now())
         throw new HostChatError(401, "Sign in again.");
@@ -234,21 +268,26 @@ export async function startOrvaneHost(options: HostOptions) {
     }
 
     try {
-      if (chat) {
-        if (req.method === "GET" && req.url === "/chat.js") return text(200, chatScript, "text/javascript");
-        if (req.method === "GET" && req.url === "/api/sessions")
-          return json(200, {
-            sessions: await chat.sessions(), projects: await chat.projects(), modes: chat.defaultModes(), csrf: session.csrf,
-          });
-        if (url.pathname === "/api/chat" && req.method === "GET") {
-          const id = hostSessionId.safeParse(url.searchParams.get("session"));
-          return id.success ? json(200, await chat.read(id.data)) : json(400, { error: "Choose a session." });
-        }
-        if (url.pathname === "/api/chat" && req.method === "POST") {
-          const action = hostChatAction.safeParse(await mutation());
-          return action.success
-            ? json(202, await chat.act(action.data))
-            : json(400, { error: "Check the selected session and message." });
+      if (agents && (url.pathname.startsWith("/__orvane/agents/") || url.pathname.startsWith("/__orvane/files/"))) {
+        const [, , area, op = ""] = url.pathname.split("/");
+        const reply = (status: number, value: unknown) => json(status, value);
+        try {
+          if (area === "files") {
+            if (req.method !== "POST") return void res.writeHead(405).end();
+            const args = await mutation(16_000);
+            return json(200, await agents.files(op, args && typeof args === "object" ? args as Record<string, unknown> : {}));
+          }
+          // A running reply's stream, and pictures pasted into the composer.
+          if (req.method === "GET" && (op === "run-events" || op === "attachment"))
+            return await agents.agents(op, {}, url, res, reply);
+          if (req.method !== "POST") return void res.writeHead(405).end();
+          const args = await mutation(op === "attachment-save" ? 12_000_000 : 96_000);
+          return await agents.agents(op, args && typeof args === "object" ? args as Record<string, any> : {}, url, res, reply);
+        } catch (error) {
+          if (res.headersSent || res.destroyed) return;
+          if (error instanceof HostChatError) return json(error.status, { error: error.message });
+          // The same messages the desktop shows (validation, missing sessions).
+          return json(400, { error: error instanceof Error ? error.message : "The session request failed." });
         }
       }
       if (maker) {
@@ -359,25 +398,28 @@ export async function startOrvaneHost(options: HostOptions) {
   origin = new URL(`https://${hostname}:${binding.port}`);
   try {
     await browser?.start();
+    await desktop?.start();
   } catch (error) {
     server.close();
     server.closeAllConnections();
-    await browser?.close();
+    await Promise.all([browser?.close(), desktop?.close()]);
     throw error;
   }
   return {
     url: origin.origin,
+    /** Live sign-ins, to keep across a restart. */
+    sessions: (): HostSessions => [...sessions].filter(([, member]) => member.expires > Date.now()),
     close: () => new Promise<void>((resolve, reject) => {
       sessions.clear();
       server.close((error) => error ? reject(error) : resolve());
       server.closeAllConnections();
-    }).finally(async () => { await Promise.all([chat?.close(), maker?.close(), browser?.close()]); }),
+    }).finally(async () => { await Promise.all([chat?.close(), maker?.close(), browser?.close(), desktop?.close()]); }),
   };
 }
 
 export async function configuredOrvaneHost(
   recent: HostOptions["recent"],
-  createChat: (projects: string[], approvals: boolean) => HostAgentChat,
+  createChat: (projects: string[], approvals: boolean) => { chat: HostAgentChat; agents?: HostAgents },
   createMaker?: () => UiMakerService,
 ) {
   if (process.env.ORVANE_HOST_ENABLED !== "1") return;
@@ -395,7 +437,7 @@ export async function configuredOrvaneHost(
     tls: { cert, key },
     verifier: verifier.trim(),
     recent,
-    chat: projects ? createChat(hostProjectList.parse(JSON.parse(projects)), process.env.ORVANE_HOST_APPROVALS === "1") : undefined,
+    ...(projects ? createChat(hostProjectList.parse(JSON.parse(projects)), process.env.ORVANE_HOST_APPROVALS === "1") : {}),
     maker: process.env.ORVANE_HOST_UI_MAKER === "1" ? createMaker?.() : undefined,
     terminal: process.env.ORVANE_HOST_TERMINAL === "1",
   });

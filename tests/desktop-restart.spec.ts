@@ -4,8 +4,17 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { createServer } from "node:net";
+import { networkInterfaces } from "node:os";
 import { join, resolve } from "node:path";
 import electron from "electron";
+
+// The laptop reaches Host over the network, as in real use: a restart there is
+// short enough that the browser retries through it without an error.
+function lanAddress() {
+  const lan = Object.values(networkInterfaces()).flat()
+    .find((item) => item && item.family === "IPv4" && !item.internal && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(item.address));
+  return lan?.address ?? "127.0.0.1";
+}
 
 async function freePort() {
   const server = createServer();
@@ -17,7 +26,7 @@ async function freePort() {
 }
 
 test("desktop_restart cancels while saving and relaunches the isolated desktop after saving", async ({}, info) => {
-  test.setTimeout(150_000);
+  test.setTimeout(240_000);
   const port = await freePort();
   const debugPort = await freePort();
   const origin = `http://localhost:${port}`;
@@ -34,6 +43,8 @@ test("desktop_restart cancels while saving and relaunches the isolated desktop a
   for (const stream of [desktop.stdout, desktop.stderr]) stream.on("data", (chunk) => { log += chunk; });
   let oldBrowser: Browser | undefined;
   let newBrowser: Browser | undefined;
+  let lastBrowser: Browser | undefined;
+  let laptopBrowser: Browser | undefined;
   const client = new Client({ name: "desktop-restart-test", version: "1.0.0" });
   const endpoint = async () => {
     const response = await fetch(debug + "/json/version", { signal: AbortSignal.timeout(1000) });
@@ -89,7 +100,7 @@ test("desktop_restart cancels while saving and relaunches the isolated desktop a
 
     const hostSettings = "/__orvane/agents/host-settings";
     const host = await page.request.post(origin + hostSettings, { data: {
-      action: "start", address: "127.0.0.1", port: 0, projects: [project], password: "desk42",
+      action: "start", address: lanAddress(), port: await freePort(), projects: [project], password: "desk42",
       approvals: false, uiMaker: false,
     } });
     expect(host.ok()).toBe(true);
@@ -110,16 +121,54 @@ test("desktop_restart cancels while saving and relaunches the isolated desktop a
     await expect(restarted.locator(`[data-app-id="${createdApp}"]`).first()).toBeVisible();
     await expect.poll(ready).toBe(true);
     expect(await call("status")).toEqual({ state: "idle" });
-    const settings = await restarted.request.post(origin + hostSettings, { data: { action: "status" } });
-    expect(await settings.json()).toMatchObject({ enabled: false, passwordSet: true });
+    // Host was on before the restart, so it comes back on with its settings.
+    let hostUrl = "";
+    await expect.poll(async () => {
+      const status = await (await restarted.request.post(origin + hostSettings, { data: { action: "status" } })).json();
+      hostUrl = status.url ?? "";
+      return status;
+    }).toMatchObject({ enabled: true, passwordSet: true, projects: [project] });
+
+    // The laptop's Restart button restarts the desktop the same way, and the
+    // laptop page returns to Orvane by itself, still signed in.
+    laptopBrowser = await chromium.launch();
+    const laptop = await (await laptopBrowser.newContext({ ignoreHTTPSErrors: true })).newPage();
+    await laptop.goto(hostUrl);
+    await laptop.getByLabel("Access password").fill("desk42");
+    await laptop.getByRole("button", { name: "Connect", exact: true }).click();
+    const restartButton = laptop.getByRole("button", { name: "Restart", exact: true });
+    // The desktop window connects to the Host's bridge shortly after launch.
+    await expect(async () => {
+      await laptop.goto(hostUrl + "/runs");
+      await restartButton.click();
+      await laptop.getByRole("button", { name: "Restart Orvane" }).click();
+      await expect(laptop.getByRole("heading", { name: "Restarting" })).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 30_000 });
+    let thirdEndpoint = secondEndpoint;
+    await expect.poll(async () => {
+      thirdEndpoint = await endpoint().catch(() => secondEndpoint);
+      return thirdEndpoint;
+    }, { timeout: 60_000 }).not.toBe(secondEndpoint);
+    lastBrowser = await chromium.connectOverCDP(thirdEndpoint);
+    const lastPages = lastBrowser.contexts()[0];
+    await expect.poll(() => lastPages.pages().some((candidate) => candidate.url() === origin + "/"), { timeout: 60_000 }).toBe(true);
+    const third = lastPages.pages().find((candidate) => candidate.url() === origin + "/")!;
+    await expect(third.locator('main[data-ready="true"]')).toBeVisible();
+    await expect.poll(async () => (await (await third.request.post(origin + hostSettings, { data: { action: "status" } })).json()).enabled).toBe(true);
+    await expect(laptop).toHaveURL(hostUrl + "/", { timeout: 60_000 });
+    await expect(restartButton).toBeVisible();
+    await expect(laptop.getByRole("heading", { name: "Connect to host" })).toHaveCount(0);
+    await third.request.post(origin + hostSettings, { data: { action: "stop" } });
   } finally {
     await info.attach("desktop-log", { body: log, contentType: "text/plain" });
+    await laptopBrowser?.close().catch(() => undefined);
     await client.close();
-    if (newBrowser?.isConnected()) {
-      const cdp = await newBrowser.newBrowserCDPSession();
+    for (const open of [lastBrowser, newBrowser]) {
+      if (!open?.isConnected()) continue;
+      const cdp = await open.newBrowserCDPSession();
       // Electron may close the transport without completing the CDP call.
       void cdp.send("Browser.close").catch(() => undefined);
-      await expect.poll(() => newBrowser?.isConnected(), { timeout: 10_000 }).toBe(false);
+      await expect.poll(() => open.isConnected(), { timeout: 10_000 }).toBe(false);
     }
     if (oldBrowser?.isConnected()) await oldBrowser.close().catch(() => undefined);
     if (desktop.exitCode === null) desktop.kill();

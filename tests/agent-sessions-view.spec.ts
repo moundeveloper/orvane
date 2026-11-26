@@ -823,3 +823,39 @@ test("transcripts keep each tool call's input, result and timing for Claude and 
     codex.close?.();
   }
 });
+
+// A delegated Codex session that spawns a subagent writes a second rollout
+// for that thread; the list shows the session once.
+test("Codex subagent threads are not listed as separate sessions", async ({}, info) => {
+  const dir = info.outputPath("codex-subagent");
+  const day = join(dir, "codex", "2026", "11", "25");
+  await mkdir(day, { recursive: true });
+  const parent = "01a21415-b513-7312-a898-a651baa688d8",
+    child = "01a21417-3e93-74c2-a98a-7bc9923f4bf9";
+  await writeFile(
+    join(day, `rollout-2026-11-25T20-01-36-${parent}.jsonl`),
+    JSON.stringify({ type: "session_meta", payload: { id: parent, cwd: projectPath, source: "exec", thread_source: "user" } }) + "\n" +
+      JSON.stringify({ type: "event_msg", payload: { type: "user_message", message: "Build the mock" } }) + "\n",
+  );
+  await writeFile(
+    join(day, `rollout-2026-11-25T20-03-17-${child}.jsonl`),
+    JSON.stringify({
+      type: "session_meta",
+      payload: {
+        id: child,
+        session_id: parent,
+        parent_thread_id: parent,
+        cwd: projectPath,
+        source: { subagent: { thread_spawn: { parent_thread_id: parent, depth: 1 } } },
+        thread_source: "subagent",
+      },
+    }) + "\n",
+  );
+  const codex = new SessionTranscripts(dir, join(dir, "codex"), undefined, "codex");
+  try {
+    const sessions = await codex.list();
+    expect(sessions.map((s) => [s.sessionId, s.title])).toEqual([[parent, "Build the mock"]]);
+  } finally {
+    codex.close?.();
+  }
+});

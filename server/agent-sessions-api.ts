@@ -1,4 +1,5 @@
 import type { Plugin, Connect } from "vite";
+import type { ServerResponse } from "node:http";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -16,10 +17,12 @@ import { agentDelegationSchema } from "../src/agentDelegation.ts";
 import { AgentDelegations } from "./agent-delegation.ts";
 import { configuredOrvaneHost } from "./orvane-host.ts";
 import { defaultModesKey, HostAgentChat } from "./orvane-host-chat.ts";
+import { hostAgentGateway } from "./orvane-host-agents.ts";
 import { LocalDatabase } from "./database.ts";
 import { HostSettings, hostSettingsAction } from "./orvane-host-settings.ts";
 import { UiMakerService } from "./uimaker.ts";
 import { HostBrowser } from "./orvane-host-browser.ts";
+import { HostDesktop } from "./orvane-host-desktop.ts";
 
 const base = "/__orvane/agents/";
 const key = z.string().min(1).max(1000);
@@ -154,7 +157,13 @@ export function agentSessionsApi(directory: string): Plugin {
   }
   function hostChat(namespace: string, projects: string[], approvals: boolean) {
     const service = serviceFor(namespace);
-    return new HostAgentChat(projects, service, service.runner, workspacePath(namespace).file, approvals);
+    const chat = new HostAgentChat(projects, workspacePath(namespace).file, approvals);
+    const data = workspacePath(namespace).data;
+    // The laptop's Agent Sessions page calls the same operations, scoped.
+    const agents = hostAgentGateway(chat, service, service.runner,
+      (op, args, url, res, reply) => operate(namespace, op, args, url, res, reply),
+      data, join(data, "agent-attachments"));
+    return { chat, agents };
   }
   function workspacePath(namespace: string) {
     const filename = testing ? `tests/${namespace}.sqlite` : "workspace.sqlite";
@@ -164,67 +173,36 @@ export function agentSessionsApi(directory: string): Plugin {
     let settings = hostControllers.get(namespace);
     if (!settings) {
       const data = workspacePath(namespace);
-      settings = new HostSettings(data.data, data.file, (projects, approvals, maker, terminal, browserOrigin) => ({
+      const bridges = process.env.ORVANE_MCP_STATE_DIR || fileURLToPath(new URL("../.orvane", import.meta.url));
+      settings = new HostSettings(data.data, data.file, (projects, approvals, maker, terminal, browserOrigin, desktopOrigin) => ({
         recent: () => serviceFor(namespace).runner.recent(),
-        chat: hostChat(namespace, projects, approvals),
+        ...hostChat(namespace, projects, approvals),
         ...(maker ? { maker: new UiMakerService(directory, data.filename) } : {}),
         terminal,
-        ...(browserOrigin ? { browser: new HostBrowser(
-          process.env.ORVANE_MCP_STATE_DIR || fileURLToPath(new URL("../.orvane", import.meta.url)), browserOrigin,
-        ) } : {}),
+        ...(browserOrigin ? { browser: new HostBrowser(bridges, browserOrigin) } : {}),
+        ...(desktopOrigin ? { desktop: new HostDesktop(bridges, desktopOrigin) } : {}),
       }));
       hostControllers.set(namespace, settings);
     }
     return settings;
   }
-  const middleware: Connect.NextHandleFunction = async (req, res, next) => {
-    if (!req.url?.startsWith(base)) return next();
-    res.removeHeader("Access-Control-Allow-Origin");
-    res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Content-Type", "application/json");
-    const reply = (status: number, value: unknown) => {
-      res.statusCode = status;
-      res.end(JSON.stringify(value));
-    };
-    const host = req.headers.host || "",
-      protocol = "encrypted" in req.socket ? "https" : "http";
-    if (
-      !/^(localhost|127\.0\.0\.1|\[::1\]):\d+$/.test(host) ||
-      (req.headers.origin && req.headers.origin !== `${protocol}://${host}`) ||
-      req.headers["sec-fetch-site"] === "cross-site" ||
-      !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(
-        req.socket.remoteAddress || "",
-      )
-    )
-      return reply(403, { error: "Local, same-origin access is required." });
-    const url = new URL(req.url, "http://localhost");
-    const op = url.pathname.slice(base.length);
-    const streaming = op === "run-events" && req.method === "GET";
-    // A picture saved by attachment-save, shown in the composer and chat.
-    const picture = op === "attachment" && req.method === "GET";
-    if (
-      !streaming &&
-      !picture &&
-      (req.method !== "POST" ||
-        req.headers["content-type"]?.split(";")[0] !== "application/json")
-    )
-      return reply(415, { error: "POST application/json is required." });
-    const cookie = req.headers.cookie
-      ?.split(";")
-      .map((v) => v.trim())
-      .find((v) => v.startsWith("orvane-test-workspace="))
-      ?.slice("orvane-test-workspace=".length);
-    const namespace = testing
-      ? req.headers["x-orvane-test-workspace"] || cookie
-      : "workspace";
-    if (typeof namespace !== "string" || !/^[-\w]{1,80}$/.test(namespace))
-      return reply(400, { error: "An isolated test workspace is required." });
-    if (op === "host-awake") return reply(200, { keepAwake: hostControllers.get(namespace)?.keepAwake ?? false });
-    if (op === "desktop-restart-ready")
-      return reply(200, { ready: ![...services.values()].some(({ runner }) => runner.hasActiveTurns()) });
-    try {
+  type Reply = (status: number, value: unknown) => void;
+  /**
+   * The session operations themselves, after the caller's access checks. The
+   * desktop middleware below and Orvane Host's scoped gateway both use them.
+   */
+  async function operate(
+    namespace: string,
+    op: string,
+    args: Record<string, any>,
+    url: URL,
+    res: ServerResponse,
+    reply: Reply,
+  ): Promise<void> {
+      const picture = op === "attachment";
+      const streaming = op === "run-events";
       const service = serviceFor(namespace);
-      const { claude, codex, runner, surveying, prompts, schedules, skillsHome, delegations } = service;
+      const { claude, codex, runner, surveying, prompts, schedules, skillsHome } = service;
       if (picture) {
         const name = url.searchParams.get("name") ?? "";
         // Only names attachment-save makes: no paths, nothing else on disk.
@@ -240,34 +218,6 @@ export function agentSessionsApi(directory: string): Plugin {
         if (!runner.subscribe(id.parse(url.searchParams.get("id")), res))
           return reply(404, { error: "Run was not found." });
         return;
-      }
-      let length = 0;
-      const chunks: Buffer[] = [];
-      for await (const chunk of req) {
-        length += Buffer.byteLength(chunk);
-        const limit =
-          op === "attachment-save"
-            ? 12_000_000
-            : ["start", "queue", "schedule-save", "notes-rewrite", "suggest", "delegation"].includes(op)
-              ? 96_000
-              : 16_000;
-        if (length > limit)
-          return reply(413, { error: "Request is too large." });
-        chunks.push(Buffer.from(chunk));
-      }
-      const args = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
-      if (op === "host-settings")
-        return reply(200, await hostSettingsFor(namespace).execute(hostSettingsAction.parse(args), `${protocol}://${host}`));
-      if (op === "delegation") return reply(200, await delegations.execute(agentDelegationSchema.parse(args)));
-      // Settings → Sessions default edit modes, so Host access sends use them too.
-      if (op === "default-modes") {
-        const modes = z.strictObject({
-          claude: z.enum(["ask", "auto", "plan", "full"]).optional(),
-          codex: z.enum(["auto", "plan", "full"]).optional(),
-        }).parse(args);
-        const db = new LocalDatabase(workspacePath(namespace).file);
-        try { db.saveAppData(defaultModesKey, modes); } finally { db.close(); }
-        return reply(200, { ok: true });
       }
       const transcripts = (value: string) =>
         value.startsWith("codex:") ? codex : claude;
@@ -560,6 +510,84 @@ export function agentSessionsApi(directory: string): Plugin {
         return reply(200, {});
       }
       return reply(404, { error: "Unknown session operation." });
+  }
+  const middleware: Connect.NextHandleFunction = async (req, res, next) => {
+    if (!req.url?.startsWith(base)) return next();
+    res.removeHeader("Access-Control-Allow-Origin");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Type", "application/json");
+    const reply = (status: number, value: unknown) => {
+      res.statusCode = status;
+      res.end(JSON.stringify(value));
+    };
+    const host = req.headers.host || "",
+      protocol = "encrypted" in req.socket ? "https" : "http";
+    if (
+      !/^(localhost|127\.0\.0\.1|\[::1\]):\d+$/.test(host) ||
+      (req.headers.origin && req.headers.origin !== `${protocol}://${host}`) ||
+      req.headers["sec-fetch-site"] === "cross-site" ||
+      !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(
+        req.socket.remoteAddress || "",
+      )
+    )
+      return reply(403, { error: "Local, same-origin access is required." });
+    const url = new URL(req.url, "http://localhost");
+    const op = url.pathname.slice(base.length);
+    const streaming = op === "run-events" && req.method === "GET";
+    // A picture saved by attachment-save, shown in the composer and chat.
+    const picture = op === "attachment" && req.method === "GET";
+    if (
+      !streaming &&
+      !picture &&
+      (req.method !== "POST" ||
+        req.headers["content-type"]?.split(";")[0] !== "application/json")
+    )
+      return reply(415, { error: "POST application/json is required." });
+    const cookie = req.headers.cookie
+      ?.split(";")
+      .map((v) => v.trim())
+      .find((v) => v.startsWith("orvane-test-workspace="))
+      ?.slice("orvane-test-workspace=".length);
+    const namespace = testing
+      ? req.headers["x-orvane-test-workspace"] || cookie
+      : "workspace";
+    if (typeof namespace !== "string" || !/^[-\w]{1,80}$/.test(namespace))
+      return reply(400, { error: "An isolated test workspace is required." });
+    if (op === "host-awake") return reply(200, { keepAwake: hostControllers.get(namespace)?.keepAwake ?? false });
+    if (op === "desktop-restart-ready")
+      return reply(200, { ready: ![...services.values()].some(({ runner }) => runner.hasActiveTurns()) });
+    try {
+      if (picture || streaming) return await operate(namespace, op, {}, url, res, reply);
+      let length = 0;
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        length += Buffer.byteLength(chunk);
+        const limit =
+          op === "attachment-save"
+            ? 12_000_000
+            : ["start", "queue", "schedule-save", "notes-rewrite", "suggest", "delegation"].includes(op)
+              ? 96_000
+              : 16_000;
+        if (length > limit)
+          return reply(413, { error: "Request is too large." });
+        chunks.push(Buffer.from(chunk));
+      }
+      const args = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+      if (op === "host-settings")
+        return reply(200, await hostSettingsFor(namespace).execute(hostSettingsAction.parse(args), `${protocol}://${host}`));
+      if (op === "delegation")
+        return reply(200, await serviceFor(namespace).delegations.execute(agentDelegationSchema.parse(args)));
+      // Settings → Sessions default edit modes, so Host access sends use them too.
+      if (op === "default-modes") {
+        const modes = z.strictObject({
+          claude: z.enum(["ask", "auto", "plan", "full"]).optional(),
+          codex: z.enum(["auto", "plan", "full"]).optional(),
+        }).parse(args);
+        const db = new LocalDatabase(workspacePath(namespace).file);
+        try { db.saveAppData(defaultModesKey, modes); } finally { db.close(); }
+        return reply(200, { ok: true });
+      }
+      return await operate(namespace, op, args, url, res, reply);
     } catch (error) {
       if (res.destroyed) return;
       reply(400, {
@@ -587,7 +615,13 @@ export function agentSessionsApi(directory: string): Plugin {
     for (const { runner } of services.values()) runner.emergencyClose();
   };
   const startHost = () => {
-    if (testing || process.env.ORVANE_HOST_ENABLED !== "1") return;
+    if (testing) return;
+    if (process.env.ORVANE_HOST_ENABLED !== "1") {
+      void hostSettingsFor("workspace").restore().catch((error: unknown) => {
+        console.error("Orvane Host could not turn back on:", error);
+      });
+      return;
+    }
     void hostSettingsFor("workspace").adopt(async () => {
       const listener = await configuredOrvaneHost(() => serviceFor("workspace").runner.recent(),
         (projects, approvals) => hostChat("workspace", projects, approvals), () => new UiMakerService(directory));

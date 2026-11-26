@@ -31,15 +31,53 @@ function icon(name,size=14){
   return svg;
 }`;
 
-const signOut = `<form id="sign-out" method="post" action="/logout"><button type="submit" class="top-btn">${icon("logout", 14)}<span>Sign out</span></button></form>`;
+const signOut = `<form id="restart" method="post" action="/restart"><button type="submit" class="top-btn" title="Restart Orvane on the desktop">${icon("refresh", 14)}<span>Restart</span></button></form>
+<form id="sign-out" method="post" action="/logout"><button type="submit" class="top-btn">${icon("logout", 14)}<span>Sign out</span></button></form>`;
 
 // `nav` is given on signed-in pages (empty when only one app is shared); the
 // sign-in page passes nothing and shows only the wordmark.
 export const hostDocument = (title: string, content: string, script = "", nav?: string) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title} · Orvane</title><link rel="icon" href="/favicon.png"><link rel="stylesheet" href="/host.css">${script}</head><body>
-<header class="host-top"><span class="wordmark"><img src="/favicon.png" width="18" height="18" alt=""><span>orvane</span><span class="workspace-label">Local network</span></span>
-${nav ?? ""}${nav === undefined ? "" : signOut}</header><main>${content}</main></body></html>`;
+${hostHeader(nav)}<main>${content}</main></body></html>`;
+export const hostHeader = (nav?: string) => `<header class="host-top"><span class="wordmark"><img src="/favicon.png" width="18" height="18" alt=""><span>orvane</span><span class="workspace-label">Local network</span></span>
+${nav ?? ""}${nav === undefined ? "" : signOut}</header>`;
+
+/** Restart from the laptop: confirm first, then report what happened. */
+export function restartPage(state: "confirm" | "restarting" | "failed", message = "", instance = "") {
+  const body = state === "confirm"
+    ? `<p>Orvane waits for running agent turns and saves, then restarts. Desktop terminals close, and Host comes back on by itself.</p></div></div>
+<form method="post" action="/restart"><input type="hidden" name="confirm" value="1">
+<button type="submit" class="primary" autofocus>Restart Orvane</button></form>
+<p class="login-foot"><a href="/">Cancel</a></p>`
+    : state === "restarting"
+      ? `<p role="status" id="restart-status" data-instance="${instance}">Orvane is restarting. This page goes back to Orvane once it's back.</p></div></div>
+<p class="login-foot"><a href="/">Reload</a></p>`
+      : `<p class="error" role="alert">${message.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`)}</p></div></div>
+<p class="login-foot"><a href="/">Back</a></p>`;
+  return hostDocument("Restart Orvane", `<section class="login" aria-labelledby="restart-title">
+<div class="login-head"><span class="login-mark">${icon("refresh", 15)}</span><div><h1 id="restart-title">${
+    state === "confirm" ? "Restart Orvane?" : state === "restarting" ? "Restarting" : "Restart failed"}</h1>
+${body}</section>`, state === "restarting" ? '<script src="/restart.js" defer></script>' : "", "");
+}
+
+// The Restarting page: each Host start has its own ID, so a different ID
+// means Orvane is back. (A short restart can't be seen as an outage: the
+// browser quietly retries a request that fails mid-restart.)
+export const restartScript = `
+const status=document.getElementById("restart-status");
+const before=status?.dataset.instance||"";
+async function check(){
+  try{
+    const response=await fetch("/instance",{cache:"no-store"});
+    if(response.ok&&(await response.text())!==before){location.assign("/");return}
+  }catch{
+    if(status)status.textContent="Orvane is restarting. Waiting for it to come back…";
+  }
+  setTimeout(check,1000);
+}
+setTimeout(check,1000);
+`;
 
 export function signInPage(failed = false) {
   return hostDocument("Connect to host", `<section class="login" aria-labelledby="login-title">
@@ -130,7 +168,7 @@ background:none;font-size:12px;line-height:1;text-decoration:none;white-space:no
 .host-apps [aria-current=page]{background:var(--app);color:var(--strong);font-weight:550;box-shadow:0 1px 2px #263f5512,0 2px 8px #263f550d}
 .host-apps [aria-current=page] .i{color:var(--strong)}
 .host-keys{display:inline-flex;gap:3px;margin-left:auto;padding-left:8px}
-#sign-out{flex:none;margin-left:auto}.host-apps~#sign-out{margin-left:0}
+#restart,#sign-out{flex:none}#restart{margin-left:auto}.host-apps~#restart{margin-left:0}
 
 /* Each page is one app window on the canvas. */
 main{min-height:0;padding:0 14px 14px}
@@ -154,6 +192,7 @@ main{min-height:0;padding:0 14px 14px}
 .login form{display:grid;gap:7px;margin-top:18px}.login label{font-size:12px;font-weight:550;color:var(--muted)}
 .login input{height:32px}.login button{height:32px;margin-top:5px;font-size:12.5px}
 .login-foot{display:flex;align-items:center;gap:6px;margin-top:12px;color:var(--faint);font-size:11.5px}
+.login-foot a{color:var(--accent);text-decoration:none}.login-foot a:hover{color:var(--strong)}.login-foot a:focus-visible{outline:none;box-shadow:0 0 0 3px #6f899840;border-radius:3px}
 
 /* Recent runs. */
 .watch{width:min(760px,100%);height:auto;max-height:100%;margin:0 auto;display:flex;flex-direction:column}

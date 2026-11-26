@@ -4,11 +4,13 @@ import { hostPasswordMaximum, hostPasswordMinimum } from "../src/hostPassword.ts
 import { LocalDatabase } from "./database.ts";
 import { localHostCertificate } from "./orvane-host-cert.ts";
 import { hostProjectList } from "./orvane-host-chat.ts";
-import { makeHostPasswordVerifier, privateAddress, startOrvaneHost } from "./orvane-host.ts";
+import { makeHostPasswordVerifier, privateAddress, startOrvaneHost, type HostSessions } from "./orvane-host.ts";
 
 export const hostSettingsAction = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("status") }),
   z.strictObject({ action: z.literal("stop") }),
+  // Disconnect for a desktop restart; Host turns back on at the next launch.
+  z.strictObject({ action: z.literal("suspend") }),
   z.strictObject({ action: z.literal("certificate") }),
   z.strictObject({
     action: z.literal("start"),
@@ -26,10 +28,16 @@ export const hostSettingsAction = z.discriminatedUnion("action", [
 
 type Config = {
   address: string; port: number; projects: string[]; approvals: boolean; uiMaker: boolean; terminal: boolean; browser: boolean; keepAwake: boolean; verifier: string;
+  /** Host was on when last changed: it turns back on at the next launch. */
+  enabled?: boolean;
+  /** The desktop page the Browser share was started from. */
+  origin?: string;
 };
-type Source = Pick<Parameters<typeof startOrvaneHost>[0], "recent" | "chat" | "maker" | "terminal" | "browser">;
+type Source = Pick<Parameters<typeof startOrvaneHost>[0], "recent" | "chat" | "agents" | "maker" | "terminal" | "browser" | "desktop">;
 type Listener = Awaited<ReturnType<typeof startOrvaneHost>>;
 const preference = "orvane-host-settings";
+// Laptop sign-ins (hashed tokens) kept while Orvane restarts; turning Host off clears them.
+const signIns = "orvane-host-sign-ins";
 
 export class HostSettings {
   private db?: LocalDatabase;
@@ -41,7 +49,7 @@ export class HostSettings {
   constructor(
     private directory: string,
     private filename: string,
-    private source: (projects: string[], approvals: boolean, uiMaker: boolean, terminal: boolean, browserOrigin?: string) => Source,
+    private source: (projects: string[], approvals: boolean, uiMaker: boolean, terminal: boolean, browserOrigin?: string, desktopOrigin?: string) => Source,
   ) {}
 
   private database() { return (this.db ??= new LocalDatabase(this.filename)); }
@@ -81,11 +89,11 @@ export class HostSettings {
         if (!this.certificate) throw Error("Enable Host access first.");
         return { certificate: this.certificate };
       }
-      if (input.action === "stop") {
-        await this.listener?.close();
-        this.listener = undefined;
+      if (input.action === "stop" || input.action === "suspend") {
+        await this.shut(input.action === "suspend");
         this.certificate = undefined;
-        this.awake = false;
+        const saved = this.config();
+        if (input.action === "stop" && saved?.enabled) this.database().saveAppData(preference, { ...saved, enabled: false });
       } else if (input.action === "start") {
         if (this.listener) throw Error("Turn hosting off before changing its settings.");
         if (!this.addresses().some(({ address }) => address === input.address))
@@ -93,17 +101,47 @@ export class HostSettings {
         const verifier = input.password ? await makeHostPasswordVerifier(input.password) : this.config()?.verifier;
         if (!verifier) throw Error("Set an access password first.");
         const { address, port, projects, approvals, uiMaker, terminal, browser, keepAwake } = input;
-        const config = { address, port, projects, approvals, uiMaker, terminal, browser, keepAwake, verifier };
-        const material = await localHostCertificate(this.directory, address);
-        const source = this.source(projects, approvals, uiMaker, terminal, browser ? origin : undefined);
-        const listener = await startOrvaneHost({ address, port, verifier, tls: material.tls, ...source });
-        try { this.database().saveAppData(preference, config); }
-        catch (error) { await listener.close(); throw error; }
-        this.listener = listener;
-        this.certificate = material.trust;
-        this.awake = keepAwake;
+        const config = { address, port, projects, approvals, uiMaker, terminal, browser, keepAwake, verifier, enabled: true, origin };
+        await this.open(config, () => {
+          this.database().saveAppData(preference, config);
+          this.database().saveAppData(signIns, []);
+        });
       }
       return this.status();
+    });
+  }
+
+  /** Close the listener; keep its sign-ins for the next launch, or forget them. */
+  private async shut(keep: boolean) {
+    if (this.listener) {
+      this.database().saveAppData(signIns, keep ? this.listener.sessions() : []);
+      await this.listener.close();
+    }
+    this.listener = undefined;
+    this.awake = false;
+  }
+
+  private async open(config: Config, save?: () => void, sessions?: HostSessions) {
+    const { address, port, projects, approvals, uiMaker, terminal, browser, keepAwake, verifier } = config;
+    const material = await localHostCertificate(this.directory, address);
+    const source = this.source(projects, approvals, uiMaker, terminal, browser ? config.origin : undefined, config.origin);
+    const listener = await startOrvaneHost({ address, port, verifier, tls: material.tls, ...source, sessions });
+    try { save?.(); }
+    catch (error) { await listener.close(); throw error; }
+    this.listener = listener;
+    this.certificate = material.trust;
+    this.awake = keepAwake;
+  }
+
+  /** At launch: turn Host back on if it was on, with its saved settings. */
+  restore() {
+    return this.exclusive(async () => {
+      const saved = this.config();
+      if (this.listener || !saved?.enabled) return;
+      if (!this.addresses().some(({ address }) => address === saved.address))
+        throw Error(`Host stays off: ${saved.address} is not on this computer's network now.`);
+      const kept = this.database().appData(signIns);
+      await this.open(saved, undefined, Array.isArray(kept) ? kept as HostSessions : []);
     });
   }
 
@@ -118,9 +156,7 @@ export class HostSettings {
 
   close() {
     return this.exclusive(async () => {
-      await this.listener?.close();
-      this.listener = undefined;
-      this.awake = false;
+      await this.shut(true);
       this.db?.close();
       this.db = undefined;
     });

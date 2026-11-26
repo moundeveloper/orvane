@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { UiMakerService } from "./uimaker.ts";
-import { designGuideOnce } from "./design-tools.ts";
+import type { registerDesignTools } from "./design-tools.ts";
 import { referenceCandidate, referenceSource } from "../src/uimakerReferenceReview.ts";
 
 export const uimakerInstructions =
@@ -21,13 +21,6 @@ async function guarded(callback: () => Promise<{ content: ({ type: "text"; text:
   } catch (error) {
     return { isError: true, content: [text(error instanceof Error ? error.message : String(error))] };
   }
-}
-// Tools that start design work carry the owner's design method once per
-// connection, so it is used even when design_guide was not called.
-async function designed(callback: Parameters<typeof guarded>[0]) {
-  const result = await guarded(callback);
-  if ("isError" in result) return result;
-  return { content: [...result.content, ...(await designGuideOnce())] };
 }
 const component = z.string().min(1).max(80).describe("Component ID from uimaker_list");
 const version = z.number().int().positive().optional().describe("Iteration number; omit for the latest");
@@ -52,8 +45,14 @@ export function registerUiMakerTools(
   server: McpServer,
   directory: string,
   liveRun: (run: Record<string, unknown>, sessionId?: string) => Promise<unknown>,
+  designGuideOnce: ReturnType<typeof registerDesignTools>,
 ) {
   const uimaker = new UiMakerService(directory);
+  async function designed(callback: Parameters<typeof guarded>[0]) {
+    const result = await guarded(callback);
+    if ("isError" in result) return result;
+    return { content: [...result.content, ...(await designGuideOnce())] };
+  }
   server.registerTool(
     "uimaker_open",
     {

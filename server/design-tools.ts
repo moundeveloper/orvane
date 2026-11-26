@@ -16,8 +16,12 @@ const TOPICS = {
   motion: "reference/motion.md",
   research: "reference/research.md",
   taste: "reference/taste-log.md",
+  flow: "reference/flow-review.md",
 } as const;
 type Topic = keyof typeof TOPICS;
+const providers = ["claude", "codex", "other"] as const;
+type Provider = (typeof providers)[number];
+type Guide = "standard" | "guided";
 
 /** Approved designs in design-guide/examples: <name>.html and <name>.png. */
 export const DESIGN_EXAMPLES: Record<string, string> = {
@@ -41,9 +45,14 @@ export const DESIGN_EXAMPLES: Record<string, string> = {
   "radial-glow-blend": "Picked radial wheel: Halo glow on frosted glass, outer ring fades gradually into the centre",
 };
 
-let read = false;
+async function method(guide: Guide) {
+  const shared = await readFile(join(GUIDE, TOPICS.method), "utf8");
+  if (guide === "standard") return shared;
+  const worksheet = await readFile(join(GUIDE, "reference/guided-mock-workflow.md"), "utf8");
+  return `${shared.trimEnd()}\n\n${worksheet}`;
+}
 
-export async function readDesignGuide(args: { topic?: string; example?: string; show?: string[] }) {
+async function readDesignGuide(args: { topic?: Topic; example?: string; show?: string[] }, guide: Guide) {
   type Content = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
   const text = (value: string): Content => ({ type: "text", text: value });
   const png = async (name: string): Promise<Content> => ({
@@ -56,9 +65,7 @@ export async function readDesignGuide(args: { topic?: string; example?: string; 
   };
   const content: Content[] = [];
   if (args.topic) {
-    const file = TOPICS[args.topic as Topic];
-    if (!file) throw Error(`Unknown topic. Available: ${Object.keys(TOPICS).join(", ")}`);
-    content.push(text(await readFile(join(GUIDE, file), "utf8")));
+    content.push(text(args.topic === "method" ? await method(guide) : await readFile(join(GUIDE, TOPICS[args.topic]), "utf8")));
   }
   if (args.example) {
     known(args.example);
@@ -71,14 +78,13 @@ export async function readDesignGuide(args: { topic?: string; example?: string; 
     known(name);
     content.push(text(`${name}: ${DESIGN_EXAMPLES[name]}`), await png(name));
   }
-  if (!content.length) content.push(text(await overview()));
-  read = true;
+  if (!content.length) content.push(text(await overview(guide)));
   return content;
 }
 
-async function overview() {
+async function overview(guide: Guide) {
   return [
-    await readFile(join(GUIDE, TOPICS.method), "utf8"),
+    await method(guide),
     "## design_guide calls",
     `- topic: ${Object.keys(TOPICS).join(" | ")}`,
     "- example: one name below → its HTML and render",
@@ -89,34 +95,33 @@ async function overview() {
   ].join("\n");
 }
 
-/** The method, once per connection, for tools that start design work. */
-export async function designGuideOnce() {
-  if (read) return [];
-  read = true;
-  return [
-    {
-      type: "text" as const,
-      text: `Before designing, follow the owner's design method below (attached because design_guide was not read in this session). Read design_guide topic look and motion, and look at a few examples (show), before writing HTML.\n\n${await overview()}`,
-    },
-  ];
-}
-
 export function registerDesignTools(server: McpServer) {
+  const read = new Set<Guide>();
+  function guideFor(provider?: Provider): Guide {
+    if (provider) return provider === "claude" ? "standard" : "guided";
+    const client = server.server.getClientVersion()?.name.trim().toLowerCase() ?? "";
+    return /^claude(?:$|[-_\s])/.test(client) ? "standard" : "guided";
+  }
+
   server.registerTool(
     "design_guide",
     {
       description:
-        "The Orvane owner's design method: how approved designs were made (board research, translation into Orvane's soft light look, reuse of established parts, Lab variants with real content), tokens and CSS recipes, motion rules, the owner's past picks and rejections, and approved example designs with renders. Read it before any UI, design, mockup, redesign, component or animation work, in Orvane or the owner's other apps. No arguments: the method and the lists. topic: method | look | motion | research | taste. example: one name (HTML + render). show: up to 8 example names (renders).",
+        "The Orvane owner's design method: how approved designs were made (board research, translation into Orvane's soft light look, reuse of established parts, Lab variants with real content), tokens and CSS recipes, motion rules, the owner's past picks and rejections, and approved examples with renders. Read it before UI or design work. No arguments: the method for your MCP client and the example list. Claude gets the shared method. Codex and other clients also get the guided mock workflow. Pass provider to override the client identity when using a proxy. topic: method | look | motion | research | taste | flow. example: one name (HTML + render). show: up to 8 example names (renders).",
       inputSchema: {
         topic: z.enum(Object.keys(TOPICS) as [Topic, ...Topic[]]).optional(),
+        provider: z.enum(providers).optional().describe("Optional provider override when the MCP client name does not identify the model provider."),
         example: z.string().max(60).optional(),
         show: z.array(z.string().max(60)).max(8).optional(),
       },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
-    async (args) => {
+    async ({ provider, ...args }) => {
       try {
-        return { content: await readDesignGuide(args) };
+        const guide = guideFor(provider);
+        const content = await readDesignGuide(args, guide);
+        if (args.topic === "method" || (!args.topic && !args.example && !args.show?.length)) read.add(guide);
+        return { content };
       } catch (error) {
         return { isError: true, content: [{ type: "text" as const, text: error instanceof Error ? error.message : String(error) }] };
       }
@@ -141,4 +146,20 @@ export function registerDesignTools(server: McpServer) {
       ],
     }),
   );
+
+  // UI Maker also provides the connection's method on the first design action.
+  return async function designGuideOnce() {
+    const guide = guideFor();
+    if (read.has(guide)) return [];
+    read.add(guide);
+    try {
+      return [{
+        type: "text" as const,
+        text: `Before designing, follow the owner's design method below. Read design_guide topics look and motion, and inspect the closest approved examples before writing HTML.\n\n${await overview(guide)}`,
+      }];
+    } catch (error) {
+      read.delete(guide);
+      throw error;
+    }
+  };
 }

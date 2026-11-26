@@ -404,6 +404,49 @@ test("session row menu tiles a session and the toolbar shows split shortcuts", a
   await expect(tiles.nth(1)).toHaveClass(/focused/);
 });
 
+// Opening a session from the list leaves Settings, also when it lands in a
+// split pane or is already open in one.
+test("opening a session from the list closes Settings, split or not", async ({ page, context }) => {
+  test.setTimeout(90_000);
+  const { directory, project } = await fixture(context);
+  const secondId = "33333333-3333-4333-8333-333333333333";
+  await writeFile(join(directory, "claude-projects", "test-project", secondId + ".jsonl"), JSON.stringify({
+    type: "user", sessionId: secondId, cwd: project, message: { content: "Second Claude project" },
+  }) + "\n");
+  const app = await openApp(page);
+  const row = app.getByRole("button", { name: /Existing Claude project/ });
+  const second = app.getByRole("button", { name: /Second Claude project/ });
+  const nav = app.getByRole("button", { name: "Settings", exact: true });
+  const settings = app.getByRole("region", { name: "Settings" });
+  const header = app.locator(".cs-session-header strong").first();
+  await row.click();
+  await nav.click();
+  await expect(settings).toBeVisible();
+  await row.click();
+  await expect(settings).toHaveCount(0);
+  await expect(header).toBeVisible();
+
+  // Split: the second session opens in a pane, then each is reopened from the list.
+  await second.click({ modifiers: ["Control"] });
+  const tiles = app.locator(".cs-tiles").first().locator(":scope > .agent-tiles-layer > .agent-tile");
+  await expect(tiles).toHaveCount(2);
+  for (const target of [second, row]) {
+    await nav.click();
+    await expect(settings).toBeVisible();
+    await target.click();
+    await expect(settings).toHaveCount(0);
+    await expect(tiles).toHaveCount(2);
+  }
+  await nav.click();
+  await second.click({ modifiers: ["Control"] });
+  await expect(settings).toHaveCount(0);
+  await nav.click();
+  await second.click({ button: "right" });
+  await app.getByRole("menu", { name: "Open session in a tile" }).getByRole("menuitem", { name: /Focus existing pane/ }).click();
+  await expect(settings).toHaveCount(0);
+  await expect(tiles.nth(1)).toHaveClass(/focused/);
+});
+
 test("sessions split into Hyprland-style tiles that resize, swap, close and persist", async ({ page, context }, info) => {
   test.setTimeout(90_000);
   await fixture(context);

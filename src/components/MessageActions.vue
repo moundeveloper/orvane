@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import Icon from "./Icon.vue";
 import { usePopover } from "./pickers/usePopover";
+import { hostMode } from "../hostMode";
 
 // Hover actions on a session message: Copy, and "…" for a searchable menu.
 export type MessageAction = "copy" | "reuse" | "fork" | "notes" | "prompt";
@@ -13,7 +14,8 @@ const all = computed(() =>
     { id: "copy" as const, label: "Copy as Markdown", icon: "copy" },
     { id: "reuse" as const, label: props.user ? "Send again" : "Quote in composer", icon: "text" },
     ...(props.canFork ? [{ id: "fork" as const, label: "Fork session", icon: "git" }] : []),
-    { id: "notes" as const, label: "Send to Notes", icon: "file" },
+    // Notes live on the desktop canvas, not on the Orvane Host page.
+    ...(hostMode ? [] : [{ id: "notes" as const, label: "Send to Notes", icon: "file" }]),
     { id: "prompt" as const, label: "Save as prompt", icon: "plus" },
   ],
 );

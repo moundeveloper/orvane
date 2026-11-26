@@ -80,6 +80,7 @@ import { sendToNotes } from "../agentMessageNotes";
 import SlashMenu, { type SlashEntry } from "./SlashMenu.vue";
 import SessionTimeline, { type SessionApproval } from "./SessionTimeline.vue";
 import { registerCommands } from "../commands";
+import { hostMode } from "../hostMode";
 import {
   agentBusy,
   agentNames,
@@ -912,7 +913,9 @@ function closeTilePopover(restore = false) {
 function tileSession(dir: "row" | "column" | "auto") {
   const key = tilePopover.value?.key;
   closeTilePopover();
-  if (key) splitPane(dir, { key });
+  if (!key) return;
+  settingsOpen.value = false;
+  splitPane(dir, { key });
 }
 function outsideMenu(event: Event) {
   if (tilePopover.value) {
@@ -1786,7 +1789,7 @@ async function pickMentionSession(session: MentionSession) {
   }
 }
 function openSnapshot() {
-  if (!(selected.value || newProvider.value) || snapshotBusy.value) return;
+  if (hostMode || !(selected.value || newProvider.value) || snapshotBusy.value) return;
   mention.value = null;
   slash.value = null;
   snapshotOpen.value = true;
@@ -2127,7 +2130,8 @@ function back() {
   loading.value = false;
 }
 async function loadSchedules() {
-  if (schedulesLoading.value) return;
+  // Schedules run on the desktop; the host page doesn't offer them.
+  if (schedulesLoading.value || hostMode) return;
   schedulesLoading.value = true;
   const previous = schedules.value;
   try {
@@ -2275,6 +2279,8 @@ function closePane(id: string) {
 }
 function openFromList(key: string, event?: MouseEvent) {
   if (props.pane) return select(key);
+  // Opening a session leaves Settings, whichever pane it lands in.
+  settingsOpen.value = false;
   if (event && (event.ctrlKey || event.metaKey)) return splitPane("auto", { key });
   // Already open in a pane: go there.
   if (splitOn.value) {
@@ -2627,7 +2633,7 @@ onBeforeUnmount(() => {
       }"
     >
       <nav v-if="!pane" v-show="!expanded" class="cs-sidebar" aria-label="Agent sessions">
-        <button ref="scheduleButton" type="button" class="cs-schedule-nav"
+        <button v-if="!hostMode" ref="scheduleButton" type="button" class="cs-schedule-nav"
           :aria-current="schedulesOpen ? 'page' : undefined"
           @click="schedulesOpen ? closeSchedules() : showSchedules()">
           <Icon name="clock" :size="14" />Scheduled <span>{{ schedules.length }}</span>
@@ -2705,7 +2711,7 @@ onBeforeUnmount(() => {
             {{ search ? "No matching sessions." : "No local sessions found." }}
           </p>
         </div>
-        <button ref="settingsButton" type="button" class="cs-schedule-nav cs-settings-nav"
+        <button v-if="!hostMode" ref="settingsButton" type="button" class="cs-schedule-nav cs-settings-nav"
           :aria-current="settingsOpen ? 'page' : undefined"
           @click="settingsOpen ? closeSettings() : showSettings()">
           <Icon name="settings" :size="14" />Settings
@@ -2778,14 +2784,14 @@ onBeforeUnmount(() => {
               </template>
             </span>
           </div>
-          <KeepAwake v-if="working" />
-          <button v-if="newProvider && pane?.id !== 'side'" type="button"
+          <KeepAwake v-if="working && !hostMode" />
+          <button v-if="newProvider && pane?.id !== 'side' && !hostMode" type="button"
             class="cs-btn cs-icon cs-ghost" aria-label="Pin new session" title="Pin new session"
             :disabled="sending" @click="pinNew">
             <Icon name="pin" :size="14" />
           </button>
           <button
-            v-if="selected || (newProvider && run)"
+            v-if="!hostMode && (selected || (newProvider && run))"
             class="cs-btn cs-open-folder"
             type="button"
             title="Open folder"
@@ -2813,7 +2819,7 @@ onBeforeUnmount(() => {
               aria-label="Session actions"
               @keydown="menuKey"
             >
-              <button type="button" role="menuitem" @click="menuAction('folder')">
+              <button v-if="!hostMode" type="button" role="menuitem" @click="menuAction('folder')">
                 <Icon name="folder-open" :size="14" /><span>Open folder</span>
               </button>
               <button type="button" role="menuitem" @click="menuAction('id')">
@@ -3332,6 +3338,7 @@ onBeforeUnmount(() => {
                   <Icon name="attachment" :size="13" />Add context <kbd>@</kbd>
                 </button>
                 <button
+                  v-if="!hostMode"
                   type="button"
                   class="cs-btn cs-ghost cs-small"
                   :aria-expanded="snapshotOpen"

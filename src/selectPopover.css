@@ -1,0 +1,12 @@
+/* The shared popover surface (menus, pickers, panels). Loaded by the desktop
+   (main.ts) and by the Host laptop page (host/agents.ts). */
+.select-popover {
+  position: fixed;
+  z-index: 1000;
+  background: #f4f8fa;
+  box-shadow: 0 10px 30px -10px #43576445;
+  padding: 5px;
+  border-radius: 6px;
+  overflow: auto;
+  outline: none;
+}

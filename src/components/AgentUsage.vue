@@ -3,7 +3,7 @@
 // window (weekly when no 5-hour one is reported), and a popover with both
 // CLIs and reset times.
 // The numbers are what each CLI last reported in a run; nothing is fetched.
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { usePopover } from "./pickers/usePopover";
 import { agentNames, type AgentProvider, type AgentUsage, type AgentUsageWindow } from "../agentSessions";
 import { agentRequest } from "../exposition";
@@ -48,9 +48,17 @@ const clock = (ms: number) => {
 function toggle() {
   if (open.value) close(true);
   else {
-    void refresh();
+    void refresh().then(() => nextTick(fit));
     show();
+    void nextTick(fit);
   }
+}
+/** Open above the pill by the panel's real height (usePopover only estimates it). */
+function fit() {
+  const panel = popover.value, pill = trigger.value;
+  if (!open.value || !panel || !pill) return;
+  const top = pill.getBoundingClientRect().top - panel.offsetHeight - 6;
+  if (top >= 8) style.value = { ...style.value, top: top + "px" };
 }
 function key(event: KeyboardEvent) {
   if (event.key === "Escape") {

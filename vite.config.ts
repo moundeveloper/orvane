@@ -23,7 +23,16 @@ export default defineConfig({
   // Electron's newer Chromium requires the unprefixed backdrop-filter.
   // Lightning CSS currently folds it into only -webkit-backdrop-filter,
   // which makes the frosted header disappear in the production desktop app.
-  build: { cssMinify: "esbuild" },
+  // host-agents.html: the Agent Sessions page Orvane Host serves to a laptop.
+  build: {
+    cssMinify: "esbuild",
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL("./index.html", import.meta.url)),
+        host: fileURLToPath(new URL("./host-agents.html", import.meta.url)),
+      },
+    },
+  },
   plugins: [
     agentSessionsApi(process.env.ORVANE_DATA_DIR || fileURLToPath(new URL("./.orvane", import.meta.url))),
     certificatesApi(

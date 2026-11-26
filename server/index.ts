@@ -90,12 +90,13 @@ const notes = new NotesService(
 );
 registerNetSuiteTools(server, dataDirectory, liveRun);
 const closeExposition = registerExpositionTools(server, dataDirectory);
-registerDesignTools(server);
+const designGuideOnce = registerDesignTools(server);
 const closeUiMaker = registerUiMakerTools(
   server,
   process.env.ORVANE_DATA_DIR ||
     fileURLToPath(new URL("../.orvane", import.meta.url)),
   liveRun,
+  designGuideOnce,
 );
 server.registerTool(
   "notes_data",

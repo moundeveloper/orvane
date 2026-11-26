@@ -21,7 +21,7 @@ function newest(path) {
 function stale() {
   try {
     const built = statSync(join(root, "dist/index.html")).mtimeMs;
-    return ["src", "public", "index.html", "vite.config.ts", "package.json"]
+    return ["src", "public", "index.html", "host-agents.html", "vite.config.ts", "package.json"]
       .map((name) => join(root, name))
       .some((path) => {
         try {
