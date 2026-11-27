@@ -372,6 +372,17 @@ test("pinned terminal folders open in an animated split or in a new tab", async 
   await page.evaluate(({ pane, folder }) => (window as any).terminalFixture.pin(pane, folder), { pane, folder });
   await expect(bookmark).toBeVisible();
   expect((await layout()).bookmarks).toEqual([folder]);
+
+  // "Pin this folder" pins the focused split's folder, as its shell reported it.
+  await pins.getByRole("button", { name: "Unpin Pinned project", exact: true }).click();
+  const current = pins.getByRole("button", { name: /Pin this folder/ });
+  await expect(current).toContainText("Folder not reported");
+  await page.evaluate(({ pane, folder }) => (window as any).terminalFixture.cwd(pane, folder), { pane, folder });
+  await expect(current).toContainText("Pinned project");
+  await current.click();
+  await expect(bookmark).toBeVisible();
+  expect((await layout()).bookmarks).toEqual([folder]);
+  await expect(pins.getByRole("button", { name: /This folder is pinned/ })).toBeDisabled();
 });
 
 test("moving a split pane previews the layout without resizing or replaying live shells", async ({ page }, info) => {

@@ -40,6 +40,19 @@ const MAX_INPUT = 1_000_000;
 // while the shell is reading a command. Older versions still offer native Tab.
 const powerShellStartup = `
 & {
+  # Report the folder at every prompt (stripped from the output) so Orvane
+  # can pin a split's current folder in one click. The original prompt runs
+  # first, so it still sees the last command's $?.
+  $orvanePrompt = $function:prompt
+  Set-Item function:global:prompt -Value {
+    $text = & $orvanePrompt
+    $location = Get-Location
+    if ($location.Provider.Name -eq 'FileSystem') {
+      $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($location.ProviderPath))
+      [Console]::Write(([string][char]27) + ']627;orvane;' + $env:ORVANE_TERMINAL_PIN + ';cwd:' + $encoded + [char]7)
+    }
+    $text
+  }.GetNewClosure()
   $options = Get-Command Set-PSReadLineOption -ErrorAction Ignore
   if (!$options) { return }
   # Let PSReadLine edit the command as usual, then consume an exact "pin"
@@ -311,6 +324,8 @@ interface Session {
   purpose?: string;
   output: string;
   cursor: number;
+  /** The shell's current folder, as its prompt last reported it. */
+  cwd?: string;
   clients: Set<WebSocket>;
   inputClient?: WebSocket;
   idle?: ReturnType<typeof setTimeout>;
@@ -378,7 +393,7 @@ const size = (n: unknown, max: number) => Math.max(2, Math.min(max, Math.floor(N
 
 // Strip command frames before storing scrollback. Reattaching to a shell
 // must never repeat commands, and the marker belongs to just this shell.
-function terminalOutput(pinToken: string, pin: (path: string) => void) {
+function terminalOutput(pinToken: string, pin: (path: string) => void, cwd: (path: string) => void = () => {}) {
   const marker = `\x1b]627;orvane;${pinToken};`;
   const limit = 180_000; // UTF-8 and base64 can expand even a long Windows path.
   let pending = "";
@@ -404,8 +419,9 @@ function terminalOutput(pinToken: string, pin: (path: string) => void) {
         return output;
       }
       if (end - payload <= limit) {
-        const encoded = data.slice(payload, end);
-        if (/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) pin(Buffer.from(encoded, "base64").toString("utf8"));
+        // "pin" sends the bare folder; the prompt sends "cwd:" + folder.
+        const frame = /^(cwd:)?([A-Za-z0-9+/]*={0,2})$/.exec(data.slice(payload, end));
+        if (frame) (frame[1] ? cwd : pin)(Buffer.from(frame[2]!, "base64").toString("utf8"));
       }
       data = data.slice(end + 1);
     }
@@ -429,7 +445,7 @@ async function open(ws: WebSocket, message: Record<string, unknown>) {
     } catch {
       // Exited between messages.
     }
-    return send(ws, { t: "attached", id, replay: existing.output });
+    return send(ws, { t: "attached", id, replay: existing.output, ...(existing.cwd ? { cwd: existing.cwd } : {}) });
   }
   if (login) return openLogin(ws, id, login, cols, rows);
   const profiles = await terminalProfiles();
@@ -458,6 +474,10 @@ async function open(ws: WebSocket, message: Record<string, unknown>) {
   sessions.set(id, session);
   const readOutput = terminalOutput(pinToken, (path) => {
     if (session.inputClient) send(session.inputClient, { t: "pin", id, path });
+  }, (path) => {
+    if (!path || path === session.cwd) return;
+    session.cwd = path;
+    for (const client of session.clients) send(client, { t: "cwd", id, path });
   });
   proc.onData((chunk) => {
     const data = readOutput(chunk);

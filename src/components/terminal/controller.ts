@@ -11,6 +11,8 @@ export interface TerminalController {
   focus: (paneId: string) => void;
   title: (paneId: string, title: string) => void;
   pinFolder: (paneId: string, path: string) => void;
+  /** The pane's shell reported its current folder. */
+  folder: (paneId: string, path: string) => void;
   activity: (paneId: string) => void;
   bell: (paneId: string) => void;
   /** Close a standalone tab after a clean shell exit, keeping split layouts intact. */

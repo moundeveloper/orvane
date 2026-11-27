@@ -108,6 +108,9 @@ export function mountTerminalFixture(count = 50, open = true, layout?: string) {
     killed,
     attached,
     resizes,
+    cwd(paneId: string, path: string) {
+      sessions.get(paneId)?.listener?.cwd(path);
+    },
     pin(paneId: string, path: string) {
       sessions.get(paneId)?.listener?.pin(path);
     },

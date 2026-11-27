@@ -181,6 +181,9 @@ function sessionListener(): SessionListener {
       pin(path) {
         ctl.pinFolder(props.pane.id, path);
       },
+      cwd(path) {
+        ctl.folder(props.pane.id, path);
+      },
       output(data) {
         hold.output(data);
         if (!ctl.visible(props.pane.id)) ctl.activity(props.pane.id);

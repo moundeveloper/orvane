@@ -93,6 +93,20 @@ const matchingBookmarks = computed(() => {
   return bookmarks.value.filter((path) =>
     folderLabel(path).toLowerCase().includes(query) || path.toLowerCase().includes(query));
 });
+// Each pane's current folder, as its shell last reported it (PowerShell
+// does at every prompt). "Pin this folder" pins the focused split's.
+const liveFolders = reactive(new Map<string, string>());
+const currentFolder = computed(() => {
+  const tab = state.tabs.find((item) => item.id === state.active);
+  return tab ? liveFolders.get(tab.focus) : undefined;
+});
+const currentPinned = computed(() => !!currentFolder.value && bookmarks.value.some((path) => samePath(path, currentFolder.value!)));
+function pinCurrentFolder() {
+  bookmarksOpen.value = true;
+  bookmarkQuery.value = "";
+  if (currentFolder.value) void addBookmark(currentFolder.value);
+  else folderError.value = "This shell does not report its folder. In PowerShell, type pin.";
+}
 const folderInput = ref<HTMLInputElement>();
 const folderPath = ref("");
 const folderError = ref("");
@@ -647,6 +661,9 @@ const controller: TerminalController = {
   pinFolder(paneId, path) {
     if (tabOf(paneId)) void addBookmark(path, true);
   },
+  folder(paneId, path) {
+    liveFolders.set(paneId, path);
+  },
   activity(paneId) {
     const tab = tabOf(paneId);
     if (tab && tab.id !== state.active) activity.add(tab.id);
@@ -686,6 +703,15 @@ const stopCommands = registerCommands(`terminal:${props.block.id}`, () => [
     blockId: props.block.id,
     keywords: "terminal bookmarks directory",
     run: showBookmarkInput,
+  },
+  {
+    id: `terminal-pin-current:${props.block.id}`,
+    title: "Pin this terminal's folder",
+    ...(currentFolder.value ? { detail: currentFolder.value } : {}),
+    icon: "pin",
+    blockId: props.block.id,
+    keywords: "terminal bookmarks current directory cwd split",
+    run: pinCurrentFolder,
   },
   ...bookmarks.value.flatMap((path) => [false, true].map((inNewTab) => ({
     id: `terminal-bookmark:${props.block.id}:${Number(inNewTab)}:${path}`,
@@ -944,6 +970,15 @@ const kindIcon = (kind?: string) => (kind === "wsl" ? "desktop" : "terminal");
     <div class="terminal-content">
       <section v-if="bookmarksOpen" class="terminal-bookmarks" aria-label="Pinned folders">
         <h2>Pinned folders</h2>
+        <button type="button" class="terminal-bookmark-current" :disabled="bookmarkBusy || currentPinned"
+          :title="currentFolder ?? 'This shell does not report its folder. In PowerShell, type pin.'"
+          @click="pinCurrentFolder">
+          <Icon name="pin" :size="13" />
+          <span>
+            <strong>{{ currentPinned ? "This folder is pinned" : "Pin this folder" }}</strong>
+            <small>{{ currentFolder ? folderLabel(currentFolder) : "Folder not reported" }}</small>
+          </span>
+        </button>
         <form class="terminal-bookmark-form" @submit.prevent="addBookmark(folderPath.trim())">
           <input ref="folderInput" v-model="folderPath" type="text" aria-label="Folder path" placeholder="Folder path"
             autocomplete="off" spellcheck="false" :readonly="bookmarkBusy" @input="folderError = ''" />
@@ -1161,6 +1196,51 @@ const kindIcon = (kind?: string) => (kind === "wsl" ? "desktop" : "terminal");
   padding-inline: 3px;
   font-size: 12px;
   font-weight: 600;
+}
+.terminal-bookmark-current {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px dashed rgb(69 89 104 / 28%);
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.terminal-bookmark-current:hover:not(:disabled) {
+  background: rgb(255 255 255 / 55%);
+}
+.terminal-bookmark-current:disabled {
+  cursor: default;
+  opacity: .62;
+}
+.terminal-bookmark-current:focus-visible {
+  outline: 1px solid #6f8998;
+  outline-offset: -1px;
+}
+.terminal-bookmark-current > svg {
+  flex: none;
+}
+.terminal-bookmark-current span {
+  min-width: 0;
+}
+.terminal-bookmark-current strong,
+.terminal-bookmark-current small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.terminal-bookmark-current strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.terminal-bookmark-current small {
+  color: #556c7a;
+  font-size: 11px;
 }
 .terminal-bookmark-form,
 .terminal-bookmark-list li {

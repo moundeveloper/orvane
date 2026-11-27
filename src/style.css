@@ -2611,8 +2611,10 @@ kbd {
   background: rgb(255 255 255 / 10%);
   box-shadow: inset 0 -1px rgb(255 255 255 / 22%);
 }
+.wallpaper-dark .app-frosted .terminal-bookmark-current { border-color: rgb(255 255 255 / 22%); }
+.wallpaper-dark .app-frosted .terminal-bookmark-current:hover:not(:disabled) { background: rgb(255 255 255 / 12%); }
 .wallpaper-dark .app-frosted :is(.terminal-bookmark-form input, .terminal-bookmark-search)::placeholder,
-.wallpaper-dark .app-frosted :is(.terminal-bookmark-open small, .terminal-bookmark-empty) {
+.wallpaper-dark .app-frosted :is(.terminal-bookmark-open small, .terminal-bookmark-current small, .terminal-bookmark-empty) {
   color: #a9bbc6;
 }
 .wallpaper-dark .app-frosted .terminal-bookmark-open:hover {
