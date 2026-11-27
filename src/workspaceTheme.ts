@@ -11,8 +11,15 @@ const paletteImageSchema = mediaSchema.extend({
   strength: z.enum(["quiet", "balanced", "vivid"]),
   swatches: z.array(z.object({ hex, weight: z.number().min(0).max(1) })).min(1).max(6),
 });
+// Palettes the owner saved by name ("Save palette"), shown next to the
+// built-in ones. Only the five colours are kept.
+export const MAX_SAVED_PALETTES = 12;
+const savedPaletteSchema = z.object({ id: z.uuid(), name: z.string().trim().min(1).max(40), palette: paletteSchema });
 export const workspaceThemeSchema = z.object({
-  preset: z.enum(["orvane", "sage", "sand", "harbor", "heather", "image", "custom"]),
+  preset: z.enum(["orvane", "sage", "sand", "harbor", "heather", "image", "saved", "custom"]),
+  // With preset "saved": which saved palette is in use.
+  savedPalette: z.uuid().optional(),
+  savedPalettes: z.array(savedPaletteSchema).max(MAX_SAVED_PALETTES).optional(),
   palette: paletteSchema,
   backgroundType: z.enum(["plain", "image", "video", "code"]),
   image: z.union([z.enum(["lake", "dunes", "paper"]), z.uuid()]),
@@ -25,7 +32,8 @@ export const workspaceThemeSchema = z.object({
   paletteImage: paletteImageSchema.optional(),
 }).refine((theme) => (["image", "video"] as const).every((kind) =>
   !z.uuid().safeParse(theme[kind]).success || theme.media?.[kind]?.id === theme[kind],
-));
+)).refine((theme) => theme.preset !== "saved"
+  || !!theme.savedPalettes?.some((saved) => saved.id === theme.savedPalette));
 
 export type WorkspaceTheme = z.infer<typeof workspaceThemeSchema>;
 export type ThemePalette = WorkspaceTheme["palette"];
@@ -33,6 +41,7 @@ export type ThemePaletteKey = keyof ThemePalette;
 export type ThemeBackgroundType = WorkspaceTheme["backgroundType"];
 export type ThemeMediaKind = "image" | "video";
 export type ThemePaletteImage = NonNullable<WorkspaceTheme["paletteImage"]>;
+export type SavedPalette = NonNullable<WorkspaceTheme["savedPalettes"]>[number];
 
 export const THEME_PRESETS = [
   { id: "orvane", name: "Orvane", palette: { canvas: "#e9edf0", app: "#f7f9fa", text: "#455968", accent: "#6f8998", run: "#365f78" } },

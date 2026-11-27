@@ -450,3 +450,63 @@ test("an image palette keeps only its colours unless the image is also the backg
   await expect(again.getByLabel("Palette image", { exact: true })).toHaveCount(0);
   await expect(again.getByRole("radio", { name: "Plain", exact: true })).toHaveAttribute("aria-checked", "true");
 });
+
+test("Save palette keeps image colours as a named palette next to the built-in ones", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const png = Buffer.from(await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 60;
+    canvas.height = 40;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "#1c7e92";
+    context.fillRect(0, 0, 60, 26);
+    context.fillStyle = "#2e274e";
+    context.fillRect(0, 26, 60, 14);
+    return canvas.toDataURL("image/png").split(",")[1]!;
+  }), "base64");
+  const panel = await openAppearance(page);
+  const palettes = panel.getByRole("radiogroup", { name: "Palette" });
+  // Built-in palettes have nothing to save.
+  await expect(panel.getByRole("button", { name: "Save palette" })).toHaveCount(0);
+  const chooser = page.waitForEvent("filechooser");
+  await palettes.getByRole("radio", { name: "Palette from image" }).click();
+  await (await chooser).setFiles({ name: "harbour.png", mimeType: "image/png", buffer: png });
+  const canvas = await panel.getByRole("button", { name: /^Edit Canvas colour/ }).getAttribute("aria-label");
+
+  await panel.getByRole("button", { name: "Save palette" }).click();
+  const name = panel.getByRole("textbox", { name: "Palette name" });
+  await expect(name).toHaveValue("harbour");
+  await name.fill("Harbour dusk");
+  await name.press("Enter");
+  const saved = palettes.getByRole("radio", { name: "Harbour dusk" });
+  await expect(saved).toHaveAttribute("aria-checked", "true");
+  await expect(panel.getByText("Saved palette Harbour dusk")).toBeVisible();
+
+  // The palette library is stored at once, even without Apply.
+  await page.reload({ waitUntil: "domcontentloaded" });
+  let again = await openAppearance(page);
+  const chip = again.getByRole("radiogroup", { name: "Palette" }).getByRole("radio", { name: "Harbour dusk" });
+  await expect(chip).toHaveAttribute("aria-checked", "false");
+  await chip.click();
+  expect(await again.getByRole("button", { name: /^Edit Canvas colour/ }).getAttribute("aria-label")).toBe(canvas);
+  await again.getByRole("button", { name: /^Apply/ }).click();
+  await expect(again.getByText("No changes")).toBeVisible();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  again = await openAppearance(page);
+  const selected = () => again.getByRole("radiogroup", { name: "Palette" }).locator('[aria-checked="true"]');
+  await expect(selected()).toHaveText(/Harbour dusk/);
+  // The arrows step through saved palettes too: Heather is the last built-in.
+  await again.getByRole("button", { name: "Previous palette" }).click();
+  await expect(selected()).toHaveText(/Heather/);
+  await again.getByRole("button", { name: "Next palette" }).click();
+  await expect(selected()).toHaveText(/Harbour dusk/);
+
+  // Deleting it leaves the colours in use as Custom.
+  await again.getByRole("button", { name: "Delete saved palette Harbour dusk" }).click();
+  await expect(again.getByRole("radio", { name: "Harbour dusk" })).toHaveCount(0);
+  await expect(selected()).toHaveText(/Custom/);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  again = await openAppearance(page);
+  await expect(again.getByRole("radio", { name: "Harbour dusk" })).toHaveCount(0);
+  expect(await again.getByRole("button", { name: /^Edit Canvas colour/ }).getAttribute("aria-label")).toBe(canvas);
+});

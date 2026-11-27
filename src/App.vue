@@ -608,7 +608,7 @@ const {
   theme: appearance, dirty: appearanceDirty, changeCount: appearanceChanges, reduced: appearanceReduced, previewReduced,
   systemReduced, saving: appearanceSaving, error: appearanceError, paletteStyle,
   discard: discardAppearance, close: releaseAppearance, update: updateAppearance,
-  importMedia: importAppearanceMedia, importPaletteImage: importAppearancePaletteImage, apply: applyAppearance,
+  importMedia: importAppearanceMedia, importPaletteImage: importAppearancePaletteImage, savePalettes: saveAppearancePalettes, apply: applyAppearance,
 } = useWorkspaceAppearance(
   () => workspace.appearance,
   (id, file) => store.uploadThemeMedia(id, file),
@@ -647,7 +647,9 @@ watch(panel, (open, previous) => {
 });
 const appearanceSummary = computed(() => {
   const { preset, backgroundType } = appearance.value;
-  const name = THEME_PRESETS.find((item) => item.id === preset)?.name ?? (preset === "image" ? "Image" : "Custom");
+  const saved = appearance.value.savedPalettes?.find((item) => item.id === appearance.value.savedPalette);
+  const name = THEME_PRESETS.find((item) => item.id === preset)?.name
+    ?? (preset === "saved" && saved ? saved.name : preset === "image" ? "Image" : "Custom");
   return `${name} · ${backgroundType.charAt(0).toUpperCase()}${backgroundType.slice(1)}`;
 });
 // The palette also lives on <html> so shell popovers teleported to <body>
@@ -5653,6 +5655,7 @@ onBeforeUnmount(() => {
       @update:reduced="previewReduced = $event"
       @import-media="importAppearanceMedia"
       @import-palette-image="importAppearancePaletteImage"
+      @save-palettes="saveAppearancePalettes"
       @apply="applyAppearance"
       @discard="discardAppearance"
       @back="leaveAppearance(true)"

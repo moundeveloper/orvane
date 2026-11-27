@@ -3,7 +3,7 @@ import { paletteFromSwatches, readImageSwatches } from "./imagePalette.ts";
 import {
   addThemeMediaPreview, clearThemeMediaPreview, DEFAULT_THEME, MAX_THEME_MEDIA,
   THEME_COLORS, THEME_MEDIA_TYPES, themePaletteStyle, workspaceThemeSchema,
-  type ThemeMediaKind, type WorkspaceTheme,
+  type SavedPalette, type ThemeMediaKind, type WorkspaceTheme,
 } from "./workspaceTheme.ts";
 
 export function useWorkspaceAppearance(
@@ -175,6 +175,28 @@ export function useWorkspaceAppearance(
       ...(asBackground ? { image: id, media: { ...current.media, image: { id, name: paletteImage.name } } } : {}),
     });
   }
+  // "Save palette" and removing a saved palette are stored right away (the
+  // list is a library, not a preview); choosing one still waits for Apply.
+  // A theme that used a removed palette keeps its colours as Custom.
+  async function savePalettes(list: SavedPalette[], select?: SavedPalette) {
+    if (!draft.value || saving.value) return;
+    const withList = (theme: WorkspaceTheme): WorkspaceTheme => {
+      const lost = theme.preset === "saved" && !list.some((saved) => saved.id === theme.savedPalette);
+      return { ...theme, savedPalettes: list, ...(lost ? { preset: "custom", savedPalette: undefined } : {}) };
+    };
+    saving.value = true;
+    error.value = "";
+    try {
+      await save(workspaceThemeSchema.parse(withList(saved.value)));
+      if (draft.value) draft.value = withList(select
+        ? { ...draft.value, preset: "saved", savedPalette: select.id, palette: { ...select.palette } }
+        : draft.value);
+    } catch (cause) {
+      if (draft.value) error.value = cause instanceof Error ? cause.message : "The palette could not be saved.";
+    } finally {
+      saving.value = false;
+    }
+  }
   async function apply() {
     if (!draft.value || !dirty.value || saving.value) return;
     saving.value = true;
@@ -199,5 +221,5 @@ export function useWorkspaceAppearance(
       if (!draft.value) releasePreviews();
     }
   }
-  return { theme, dirty, changeCount, reduced, previewReduced, systemReduced, saving, error, paletteStyle, discard, close, update, importMedia, importPaletteImage, apply };
+  return { theme, dirty, changeCount, reduced, previewReduced, systemReduced, saving, error, paletteStyle, discard, close, update, importMedia, importPaletteImage, savePalettes, apply };
 }

@@ -3,10 +3,12 @@ import { Activity, ChevronLeft, Palette } from "@lucide/vue";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, type CSSProperties } from "vue";
 import {
   getThemeMediaUrl,
+  MAX_SAVED_PALETTES,
   THEME_BACKGROUNDS,
   THEME_COLORS,
   THEME_PRESETS,
   type ThemeBackgroundType,
+  type SavedPalette,
   type ThemePaletteKey,
   type WorkspaceTheme,
 } from "../workspaceTheme";
@@ -31,6 +33,7 @@ const emit = defineEmits<{
   "update:reduced": [value: boolean];
   "import-media": [file: File, kind: "image" | "video"];
   "import-palette-image": [file: File];
+  "save-palettes": [list: SavedPalette[], select?: SavedPalette];
   apply: [];
   discard: [];
   back: [];
@@ -68,6 +71,56 @@ function update(patch: Partial<WorkspaceTheme>) {
 
 function setPalette(preset: (typeof THEME_PRESETS)[number]) {
   update({ preset: preset.id, palette: { ...preset.palette } });
+}
+
+// Saved palettes: named colour sets the owner kept with "Save palette",
+// shown after the built-in ones. The list is stored right away; choosing
+// one still waits for Apply.
+const savedPalettes = computed(() => props.theme.savedPalettes ?? []);
+const activeSaved = computed(() => props.theme.preset === "saved"
+  ? savedPalettes.value.find((saved) => saved.id === props.theme.savedPalette)
+  : undefined);
+const canSavePalette = computed(() => props.theme.preset === "image" || props.theme.preset === "custom");
+const paletteFull = computed(() => savedPalettes.value.length >= MAX_SAVED_PALETTES);
+const paletteName = ref<string>();
+const paletteNameInput = ref<HTMLInputElement>();
+
+function setSavedPalette(saved: SavedPalette) {
+  update({ preset: "saved", savedPalette: saved.id, palette: { ...saved.palette } });
+}
+
+function startSavePalette() {
+  if (paletteFull.value || props.saving) return;
+  const fromName = props.theme.preset === "image" ? paletteImage.value?.name.replace(/\.[^.]+$/, "") : "";
+  const taken = new Set(savedPalettes.value.map((saved) => saved.name.toLowerCase()));
+  let fallback = savedPalettes.value.length + 1;
+  while (taken.has(`palette ${fallback}`)) fallback++;
+  paletteName.value = (fromName?.trim() || `Palette ${fallback}`).slice(0, 40);
+  void nextTick(() => paletteNameInput.value?.select());
+}
+
+function confirmSavePalette() {
+  const name = paletteName.value?.trim();
+  if (!name || paletteFull.value || props.saving) return;
+  const saved: SavedPalette = { id: crypto.randomUUID(), name: name.slice(0, 40), palette: { ...props.theme.palette } };
+  paletteName.value = undefined;
+  emit("save-palettes", [...savedPalettes.value, saved], saved);
+}
+
+function paletteNameKeys(event: KeyboardEvent) {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    confirmSavePalette();
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    paletteName.value = undefined;
+  }
+}
+
+function deleteSavedPalette(saved: SavedPalette) {
+  if (props.saving) return;
+  emit("save-palettes", savedPalettes.value.filter((item) => item.id !== saved.id));
 }
 
 // Palette from image: the panel shows the image, its mood and the palette
@@ -151,12 +204,17 @@ function toggleImageBackground() {
   });
 }
 
-// Previous / next palette, wrapping. From Custom, next is the first preset.
+// Previous / next palette (built-in, then saved), wrapping. From Custom or
+// Image, next is the first preset.
 function stepPalette(direction: number) {
-  const at = THEME_PRESETS.findIndex((preset) => preset.id === props.theme.preset);
+  const choices = [
+    ...THEME_PRESETS.map((preset) => ({ id: preset.id as string, choose: () => setPalette(preset) })),
+    ...savedPalettes.value.map((saved) => ({ id: saved.id, choose: () => setSavedPalette(saved) })),
+  ];
+  const current = props.theme.preset === "saved" ? props.theme.savedPalette : props.theme.preset;
+  const at = choices.findIndex((choice) => choice.id === current);
   const start = at < 0 ? (direction > 0 ? -1 : 0) : at;
-  const next = THEME_PRESETS[(start + direction + THEME_PRESETS.length) % THEME_PRESETS.length];
-  if (next) setPalette(next);
+  choices[(start + direction + choices.length) % choices.length]?.choose();
 }
 
 // Left / Right anywhere in the panel steps the palette, except where arrows
@@ -253,8 +311,12 @@ function writeColor(color: string) {
   const edit = colorEdit.value;
   if (!edit || props.theme.palette[edit.key] === color) return;
   const palette = { ...props.theme.palette, [edit.key]: color };
-  const preset = THEME_PRESETS.find((option) => THEME_COLORS.every(({ key }) => option.palette[key] === palette[key]));
-  update({ palette, preset: preset?.id ?? "custom" });
+  const same = (option: { palette: WorkspaceTheme["palette"] }) => THEME_COLORS.every(({ key }) => option.palette[key] === palette[key]);
+  const preset = THEME_PRESETS.find(same);
+  const saved = preset ? undefined : savedPalettes.value.find(same);
+  update(saved
+    ? { palette, preset: "saved", savedPalette: saved.id }
+    : { palette, preset: preset?.id ?? "custom", savedPalette: undefined });
 }
 
 function showColor(event: MouseEvent, key: ThemePaletteKey, label: string) {
@@ -424,6 +486,20 @@ const presetStyle = (palette: WorkspaceTheme["palette"]): CSSProperties => ({
             {{ preset.name }}
           </button>
           <button
+            v-for="saved in savedPalettes"
+            :key="saved.id"
+            class="theme-preset saved"
+            type="button"
+            role="radio"
+            :aria-checked="activeSaved?.id === saved.id"
+            :tabindex="activeSaved?.id === saved.id ? 0 : -1"
+            :title="saved.name"
+            @click="setSavedPalette(saved)"
+          >
+            <span class="theme-preset-sample" :style="presetStyle(saved.palette)"></span>
+            <span class="theme-preset-name">{{ saved.name }}</span>
+          </button>
+          <button
             type="button"
             class="theme-preset from-image"
             role="radio"
@@ -442,6 +518,28 @@ const presetStyle = (palette: WorkspaceTheme["palette"]): CSSProperties => ({
             <span class="theme-preset-sample" :style="presetStyle(theme.palette)"></span>
             Custom
           </button>
+        </div>
+        <div v-if="paletteName !== undefined" class="theme-save-row">
+          <input
+            ref="paletteNameInput"
+            v-model="paletteName"
+            class="theme-hex-input"
+            type="text"
+            maxlength="40"
+            aria-label="Palette name"
+            placeholder="Palette name"
+            @keydown="paletteNameKeys"
+          />
+          <button type="button" class="theme-action" @click="paletteName = undefined">Cancel</button>
+          <button type="button" class="theme-action primary" :disabled="!paletteName.trim() || saving" @click="confirmSavePalette">Save</button>
+        </div>
+        <div v-else-if="canSavePalette" class="theme-save-row">
+          <span>{{ paletteFull ? `You have ${MAX_SAVED_PALETTES} saved palettes. Delete one to save another.` : "Keep these colours as a named palette." }}</span>
+          <button type="button" class="theme-action" :disabled="paletteFull || saving" @click="startSavePalette">Save palette</button>
+        </div>
+        <div v-else-if="activeSaved" class="theme-save-row">
+          <span>Saved palette <b>{{ activeSaved.name }}</b></span>
+          <button type="button" class="theme-action" :disabled="saving" :aria-label="`Delete saved palette ${activeSaved.name}`" @click="deleteSavedPalette(activeSaved)">Delete</button>
         </div>
         <div v-if="fromImage && paletteImage" class="theme-image-source" aria-label="Palette image">
           <div class="theme-image-row">
@@ -838,6 +936,33 @@ const presetStyle = (palette: WorkspaceTheme["palette"]): CSSProperties => ({
 .theme-preset-sample.empty::before,
 .theme-preset-sample.empty::after {
   display: none;
+}
+
+.theme-save-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--appearance-muted);
+}
+
+.theme-save-row > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.theme-save-row b {
+  font-weight: 550;
+  color: var(--appearance-strong);
+}
+
+.theme-preset-name {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .theme-image-source {
