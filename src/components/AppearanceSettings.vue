@@ -68,6 +68,26 @@ function setPalette(preset: (typeof THEME_PRESETS)[number]) {
   update({ preset: preset.id, palette: { ...preset.palette } });
 }
 
+// Previous / next palette, wrapping. From Custom, next is the first preset.
+function stepPalette(direction: number) {
+  const at = THEME_PRESETS.findIndex((preset) => preset.id === props.theme.preset);
+  const start = at < 0 ? (direction > 0 ? -1 : 0) : at;
+  const next = THEME_PRESETS[(start + direction + THEME_PRESETS.length) % THEME_PRESETS.length];
+  if (next) setPalette(next);
+}
+
+// Left / Right anywhere in the panel steps the palette, except where arrows
+// already mean something (radio groups, colour sliders, text fields).
+function panelKeys(event: KeyboardEvent) {
+  const direction = { ArrowLeft: -1, ArrowRight: 1 }[event.key];
+  if (!direction || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  const target = event.target as HTMLElement;
+  if (target.closest('[role="radiogroup"], [role="slider"], input, textarea, select, [contenteditable="true"]')) return;
+  event.preventDefault();
+  event.stopPropagation();
+  stepPalette(direction);
+}
+
 function selectBackground(id: string) {
   if (background.value !== "plain") update({ [background.value]: id });
 }
@@ -280,6 +300,7 @@ const presetStyle = (palette: WorkspaceTheme["palette"]): CSSProperties => ({
     tabindex="-1"
     @pointerdown.stop
     @wheel.stop
+    @keydown="panelKeys"
   >
     <header class="appearance-heading">
       <button type="button" class="appearance-icon" aria-label="Back to Your workspace" title="Your workspace" @click="emit('back')">
@@ -298,7 +319,10 @@ const presetStyle = (palette: WorkspaceTheme["palette"]): CSSProperties => ({
         <h2 id="appearance-palette-title" class="appearance-section-heading">
           <Palette :size="14" :stroke-width="1.75" aria-hidden="true" />
           Palette
-          <span aria-hidden="true"><kbd>←</kbd><kbd>→</kbd></span>
+          <span class="theme-preset-steps">
+            <button type="button" aria-label="Previous palette" title="Previous palette (←)" @click="stepPalette(-1)"><kbd>←</kbd></button>
+            <button type="button" aria-label="Next palette" title="Next palette (→)" @click="stepPalette(1)"><kbd>→</kbd></button>
+          </span>
         </h2>
         <div class="theme-presets" role="radiogroup" aria-label="Palette" @keydown="radioKeys($event, 6)">
           <button
@@ -645,6 +669,22 @@ const presetStyle = (palette: WorkspaceTheme["palette"]): CSSProperties => ({
   align-items: center;
   gap: 4px;
   margin-left: auto;
+}
+
+.theme-preset-steps button {
+  display: flex;
+  padding: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.theme-preset-steps button:hover kbd {
+  background: var(--appearance-selected);
+}
+
+.theme-preset-steps button:focus-visible {
+  outline: 2px solid var(--appearance-outline);
+  outline-offset: 1px;
 }
 
 .theme-presets {

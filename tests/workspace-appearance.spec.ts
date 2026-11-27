@@ -144,15 +144,18 @@ test("palettes theme the dock and Orvane's floating panels; the default palette 
       groups: await style(".groups-panel", "backgroundColor"),
       text: await style(".groups-panel", "color"),
       create: await style(".dock .create-app", "backgroundColor"),
+      topPill: await page.locator(".topbar .top-actions").evaluate((node) => getComputedStyle(node, "::before").backgroundColor),
+      topText: await style(".top-actions [aria-label='Memory']", "color"),
     };
     await groupsButton.click();
     await expect(groups).toBeHidden();
     return result;
   };
   const defaults = await surfaces();
-  expect(defaults).toEqual({
+  expect(defaults).toMatchObject({
     dock: "rgb(245, 248, 250)", groups: "rgb(247, 249, 250)", text: "rgb(69, 89, 104)", create: "rgb(228, 237, 242)",
   });
+  expect(defaults.topPill).toMatch(/^rgba\(247, 250, 252, 0\.(?:898|9)\)$/);
   const panel = await openAppearance(page);
   const apply = panel.getByRole("button", { name: /^Apply/ });
   await panel.getByRole("radio", { name: "Sage" }).click();
@@ -163,7 +166,10 @@ test("palettes theme the dock and Orvane's floating panels; the default palette 
   await expect(panel).toBeHidden();
   const sage = await surfaces();
   expect(sage.text).toBe("rgb(70, 87, 74)");
-  for (const key of ["dock", "groups", "create"] as const) expect(sage[key]).not.toBe(defaults[key]);
+  for (const key of ["dock", "groups", "create", "topPill", "topText"] as const) expect(sage[key]).not.toBe(defaults[key]);
+  // The top bar pill uses the dock's shell surface, like the dock itself.
+  expect(sage.topText).toBe(await page.locator(".dock .dock-tab, .dock .empty-dock-label").first()
+    .evaluate((node) => getComputedStyle(node).color));
   await page.reload({ waitUntil: "domcontentloaded" });
   expect(await surfaces()).toEqual(sage);
   await (await openAppearance(page)).getByRole("radio", { name: "Orvane" }).click();
@@ -314,4 +320,23 @@ test("Workspace settings and Appearance stay above the pinned side chat", async 
   expect(await onTop("Workspace settings")).toBe(true);
   await page.getByRole("button", { name: /^Palette and background/ }).click();
   expect(await onTop("Appearance settings")).toBe(true);
+});
+
+test("palette arrow buttons and Left/Right keys step through palettes", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const panel = await openAppearance(page);
+  const selected = () => panel.getByRole("radiogroup", { name: "Palette" }).locator('[aria-checked="true"]');
+  await expect(selected()).toHaveText(/Orvane/);
+  await panel.getByRole("button", { name: "Next palette" }).click();
+  await expect(selected()).toHaveText(/Sage/);
+  await panel.getByRole("button", { name: "Previous palette" }).click();
+  await panel.getByRole("button", { name: "Previous palette" }).click();
+  // Wraps from the first palette to the last.
+  await expect(selected()).not.toHaveText(/Orvane|Sage/);
+  // Arrows work with focus on the panel itself, not only on a swatch.
+  await panel.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(selected()).toHaveText(/Orvane/);
+  await page.keyboard.press("ArrowRight");
+  await expect(selected()).toHaveText(/Sage/);
 });

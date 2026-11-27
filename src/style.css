@@ -2733,12 +2733,17 @@ html.orvane-themed .status-area:not(.status-warning) {
 html.orvane-themed .status-area:not(.status-warning) .status-icon {
   color: var(--theme-accent);
 }
-/* Plain header over a palette canvas: header text follows the palette. */
-html.orvane-themed .workspace:not(.workspace-wallpaper) .top-actions :is(.subtle-button, .icon-button, .field-help) {
-  color: color-mix(in oklab, var(--theme-text) 90%, var(--theme-canvas));
+/* Top bar pill: same shell surface, text and hover as the dock, on every
+   background type (Plain, Image, Video, Code). */
+html.orvane-themed .top-actions::before {
+  border-color: color-mix(in oklab, var(--shell-line) 60%, transparent);
+  background: color-mix(in oklab, var(--shell-surface) 90%, transparent);
 }
-html.orvane-themed .workspace:not(.workspace-wallpaper) .top-actions :is(.subtle-button, .icon-button):not(.window-close):hover {
-  background-color: color-mix(in oklab, var(--theme-accent) 16%, var(--theme-canvas));
+html.orvane-themed .top-actions :is(.subtle-button, .icon-button, .field-help) {
+  color: var(--shell-muted);
+}
+html.orvane-themed .top-actions :is(.subtle-button, .icon-button):not(.window-close):hover {
+  background-color: var(--shell-hover);
 }
 html.orvane-themed .memory-pending {
   background: var(--theme-run);
