@@ -6,7 +6,7 @@
 // - keys and paste act only while the pointer is over the app or focus is in it,
 //   and Space stays with the canvas (Space-drag pans the workspace);
 // - the open component/version is kept in the block value.
-import { reactive } from 'vue';
+import { nextTick, reactive } from 'vue';
 import { ICONS } from './icons.js';
 import { renderOverlay, applyTweaks, measureFrame, forwardCanvasZoom, describe, rectOf, cssPath, noteName,
   ensureBoard, renderBoardSvg, renderBoardPins, boardBounds, drawEdge, toWorld, refH, CAP, sv } from './overlay.js';
@@ -958,7 +958,9 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
   // ---------- live link ----------
   async function pullVersions() { model.versions = (await post('versions')).versions; }
   async function pullFeed() { const r = await post('state'); model.feed = r.feed; model.lab = r.lab || {}; adoptComponents(r.state); adoptSizes(r.state); }
-  async function openSavedView(component, mode, version, reference) {
+  // lab = { round, variant }: show that Lab round and tab (a "mock ready"
+  // card in Agent sessions) instead of the open round's first tab.
+  async function openSavedView(component, mode, version, reference, lab) {
     await Promise.all([pullVersions(), pullFeed()]);
     if (!model.state.components.some(c => c.id === component))
       throw new Error('UI Maker component not found.');
@@ -966,6 +968,13 @@ export function mountEditor(model, root, { view = null, onView = () => {} } = {}
       throw new Error('UI Maker version not found.');
     openComp(component, version);
     setMode(mode);
+    const round = mode === 'lab' && lab?.round ? (model.lab[component] || []).find(r => r.id === lab.round) : undefined;
+    if (round) {
+      // LabView follows the open round when the component changes; choose after it.
+      await nextTick();
+      ui.labRound = round.id;
+      ui.labVariant = round.variants.find(v => v.id === lab.variant)?.id ?? round.picked ?? round.variants[0]?.id ?? null;
+    }
     const view = { component, mode: ui.mode, version: ui.v };
     if (!reference) return view;
     if (!(await addRefs([referenceBlob(reference)], reference.caption))) throw new Error('The visual reference could not be added.');

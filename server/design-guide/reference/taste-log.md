@@ -99,3 +99,17 @@ Quotes are the owner's own words (typos kept out). Newest last. Add to this file
 - Palettes must visibly theme Orvane's own dock, floating panels, menus and dropdowns (surfaces, text, accents), not only the canvas. App content, per-app colors, warning colors and Browser pages keep their own colors.
 - Appearance is an Orvane setting: its entry sits in Workspace options' settings area (with Window and Keyboard shortcuts), not among the Create-app shortcuts.
 - The owner rejected the Terminal text halo and picked **Auto tint** from UI Maker `theme-settings/r2` for Terminal over wallpaper. Use smoked glass with light text over dark wallpaper, light frost over light wallpaper, and the existing glass on Plain.
+
+## Hard rule: no edge-stripe accents (27.11.2026)
+
+- On a log row with a coloured bar down its left edge, cut by the row's rounded corners: "I want you to forget about it, it is awful; from now on the design will not be accepted if it has this pattern anywhere on it."
+- Never use a coloured stripe or bar on one edge of a card, row, message or code line (`box-shadow: inset 2px 0 0 …`, `border-left: 2-4px solid …`), rounded or not. Show state with a soft full-row tint, a small dot or a level label instead.
+
+## Header pill on Plain (27.11.2026)
+
+- Reverses the earlier "In Plain mode the header has no frost band": the owner found the Groups / Layouts header cluster "completely transparent" on Plain and asked for it to look like it does over Image, Video and Code. The frosted pill behind `.top-actions` now shows on every background.
+
+## Pinned chat bubble character (27.11.2026)
+
+- Picked **Reader** (UI Maker `pinned-chat-bubble` r1, saved as v2): the existing two-eyed face, eyes reading while working, tilt + double blink + breathing amber dot while waiting, ^ ^ eyes and a drawn tick when done.
+- Asked to make it "more expressive" and rejected round r2 (brows, mouth, cheeks, catch-lights): "I didn't mean to give them an actual face, I meant the animations." Lesson: "expressive" means richer motion on the same design, not added features or details. Round r3 keeps the face and varies only the motion.

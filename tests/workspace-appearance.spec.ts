@@ -15,31 +15,32 @@ test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
 });
 
-test("wallpaper gives header controls a readable surface without changing their hit targets", async ({ page }) => {
+test("header controls sit on the same frosted pill on every background", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  // The top-left wordmark and the Plain header frost band are gone.
+  // The top-left wordmark and the full-width header frost band are gone.
   await expect(page.locator(".topbar .wordmark, .topbar-frost")).toHaveCount(0);
   const actions = page.locator(".topbar .top-actions");
   const closeOptions = page.getByRole("button", { name: "Close workspace settings" });
   const backdrop = (cluster: typeof actions) =>
     cluster.evaluate((node) => getComputedStyle(node, "::before").backgroundColor);
-  expect(await backdrop(actions)).toBe("rgba(0, 0, 0, 0)");
+  const opaqueFrost = /^rgba\(247, 250, 252, 0\.(?:898|9)\)$/;
+  // Plain used to leave the cluster bare; it now matches Image, Video and Code.
+  expect(await backdrop(actions)).toMatch(opaqueFrost);
   const panel = await openAppearance(page);
   await panel.getByRole("radio", { name: "Video", exact: true }).click();
-  const opaqueFrost = /^rgba\(247, 250, 252, 0\.(?:898|9)\)$/;
   await expect.poll(() => backdrop(actions)).toMatch(opaqueFrost);
   await expect(page.getByRole("button", { name: "App groups" })).toHaveCSS("color", "rgb(69, 89, 104)");
   await panel.getByRole("radio", { name: "Code", exact: true }).click();
   await expect.poll(() => backdrop(actions)).toMatch(opaqueFrost);
   await panel.getByRole("radio", { name: "Plain", exact: true }).click();
-  await expect.poll(() => backdrop(actions)).toBe("rgba(0, 0, 0, 0)");
+  await expect.poll(() => backdrop(actions)).toMatch(opaqueFrost);
   await panel.getByRole("radio", { name: "Video", exact: true }).click();
   await page.getByRole("button", { name: "Workspace options" }).click();
   await expect(closeOptions).toBeVisible();
-  await expect.poll(() => backdrop(actions)).toBe("rgba(0, 0, 0, 0)");
+  await expect.poll(() => backdrop(actions)).toMatch(opaqueFrost);
 });
 
-test("the frosted Terminal keeps its see-through glass and lifts its text over a wallpaper", async ({ page }) => {
+test("the frosted Terminal uses Auto tint over a light wallpaper and keeps Plain unchanged", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   // Same classes AppSurface gives the Terminal app.
   const glass = () => page.evaluate(() => {
@@ -56,8 +57,7 @@ test("the frosted Terminal keeps its see-through glass and lifts its text over a
   const panel = await openAppearance(page);
   for (const type of ["Image", "Video", "Code"]) {
     await panel.getByRole("radio", { name: type, exact: true }).click();
-    // The glass stays see-through; the text gets a light halo instead.
-    await expect.poll(glass).toEqual({ backgroundColor: "rgba(247, 250, 252, 0.08)", backdropFilter: "blur(8px) saturate(1.2)", halo: expect.stringContaining("drop-shadow") });
+    await expect.poll(glass).toEqual({ backgroundColor: "rgba(247, 250, 252, 0.42)", backdropFilter: "blur(22px) saturate(1.4)", halo: "none" });
   }
   await panel.getByRole("radio", { name: "Plain", exact: true }).click();
   await expect.poll(glass).toEqual({ backgroundColor: "rgba(247, 250, 252, 0.08)", backdropFilter: "blur(8px) saturate(1.2)", halo: "none" });
@@ -293,4 +293,25 @@ test("persists local media and previews code and reduced motion", async ({ page,
   } finally {
     await restored.close();
   }
+});
+
+test("Workspace settings and Appearance stay above the pinned side chat", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  // Same classes and place App.vue gives the pinned chat (z-index 200, top right).
+  await page.evaluate(() => {
+    const side = document.createElement("aside");
+    side.className = "side-chat workspace-frost";
+    side.dataset.probe = "side";
+    document.querySelector("main.workspace")!.append(side);
+  });
+  const onTop = (region: string) =>
+    page.getByRole("region", { name: region }).evaluate((panel) => {
+      const box = panel.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.right - 40, box.top + box.height / 2);
+      return !!hit && panel.contains(hit);
+    });
+  await page.getByRole("button", { name: "Workspace options" }).click();
+  expect(await onTop("Workspace settings")).toBe(true);
+  await page.getByRole("button", { name: /^Palette and background/ }).click();
+  expect(await onTop("Appearance settings")).toBe(true);
 });

@@ -354,12 +354,17 @@ button:hover {
   background: #ecd9d3;
   color: #8a4a3a;
 }
-.workspace-wallpaper .top-actions {
+/* The header controls sit on the same frosted pill on every background,
+   Plain included (owner, 27.11.2026: Plain looked bare next to Image,
+   Video and Code). */
+.top-actions {
   position: relative;
   isolation: isolate;
+}
+.workspace-wallpaper .top-actions {
   color: #273f50;
 }
-.workspace-wallpaper .top-actions::before {
+.top-actions::before {
   content: "";
   position: absolute;
   z-index: -1;
@@ -1426,6 +1431,11 @@ button:hover {
   width: 340px;
   max-height: calc(100dvh - 166px);
   overflow: auto;
+}
+/* Workspace settings and Appearance open at the top right, where the pinned
+   side chat (z-index 200) also sits: keep them above it. */
+.workspace-panel {
+  z-index: 210;
 }
 .guide-panel > p:not(.field-help) {
   font-size: 12px;
@@ -2563,11 +2573,34 @@ kbd {
   backdrop-filter: blur(8px) saturate(120%);
   -webkit-backdrop-filter: blur(8px) saturate(120%);
 }
-/* Over an image, video or code background the glass stays see-through; a
-   soft light halo lifts the terminal text and toolbar icons off busy or dark
-   footage instead of covering the picture. */
-.workspace-wallpaper .app-surface.app-frosted :is(.xterm-screen, .app-topline) {
-  filter: drop-shadow(0 0 1px rgb(247 250 252 / 95%)) drop-shadow(0 0 3px rgb(247 250 252 / 70%));
+/* Approved Terminal Auto tint. Only Terminal uses app-frosted; Plain retains
+   its existing material. Brightness is sampled once per wallpaper source. */
+.workspace-wallpaper .app-surface.app-frosted {
+  background: rgb(247 250 252 / 42%);
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+}
+.workspace-wallpaper.wallpaper-dark .app-surface.app-frosted {
+  background: rgb(24 36 44 / 46%);
+  backdrop-filter: blur(18px) saturate(130%);
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
+  border-color: rgb(255 255 255 / 14%);
+  color: #dfe8ed;
+}
+.wallpaper-dark .app-frosted :is(.app-title, .app-topline .icon-button, .app-topline .subtle-button, .terminal-icon-button, .terminal-pane-controls button) {
+  color: #dfe8ed;
+}
+.wallpaper-dark .app-frosted .terminal-tab { color: #a9bbc6; }
+.wallpaper-dark .app-frosted .terminal-tab.active {
+  color: #dfe8ed;
+  background: rgb(255 255 255 / 12%);
+}
+.wallpaper-dark .app-frosted :is(.terminal-icon-button:hover:not(:disabled), .terminal-icon-button.on, .terminal-icon-button[aria-expanded="true"], .terminal-pane-controls button) {
+  background: rgb(255 255 255 / 12%);
+}
+.wallpaper-dark .app-frosted .terminal-tab-count { color: #a3b5c0; }
+.wallpaper-dark .app-frosted .terminal-pane.focused {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 14%);
 }
 .app-content:has(> :is(.block-browser-clip, .block-folder-compare, .block-test-results):only-child) {
   padding: 0;

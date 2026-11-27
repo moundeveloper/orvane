@@ -15,6 +15,7 @@ import {
 } from "vue";
 import { WorkspaceStorage, LEGACY_STORAGE } from "./storage";
 import { useWorkspaceAppearance } from "./useWorkspaceAppearance";
+import { TERMINAL_DARK, useTerminalTint } from "./terminalTint";
 import { THEME_PRESETS, type ThemeBackgroundType, type WorkspaceTheme } from "./workspaceTheme";
 import AppearanceSettings from "./components/AppearanceSettings.vue";
 import ThemeCanvasBackground from "./components/ThemeCanvasBackground.vue";
@@ -44,6 +45,7 @@ import { importDrop, importImageData, importImageFile, importPath, mayHoldImage,
 import { isImage, peekKind } from "./components/files/explorer";
 import { isBackup, makeBackup, restoreBackgrounds, restoreImages } from "./backup";
 import { OPEN_EVENT, registerCommands, type OpenRequest } from "./commands";
+import { MOCK_READY_OPEN, type MockReadyOpen } from "./mockReady";
 import { ACTIVATE_EVENT, BROWSER_SHORTCUT, canvasScroll } from "./canvasScroll";
 import { dayKey, dueAt, formatDay, readCalendar, type CalendarItem } from "./calendar";
 import { captureLink, CAPTURE_TEXT_LIMIT, INBOX_LIMIT, type ClipboardCapture, type InboxCapture } from "./inbox";
@@ -162,6 +164,44 @@ async function loadWindowMode() {
 async function chooseWindowMode() {
   await desktopWindow?.setFullScreen?.(windowMode.value === "fullscreen");
 }
+// Restart Orvane from its own UI (Workspace settings → Window, or Ctrl+K),
+// the same restart agents schedule with desktop_restart: it waits for running
+// agent turns and the workspace save, then relaunches. Pressed again while it
+// waits, it cancels.
+const canRestart = !!desktopWindow?.restartDesktop;
+const restartWaiting = ref<"" | "agent-turns" | "workspace-save" | "starting">("");
+let restartPoll: ReturnType<typeof setInterval> | undefined;
+function restartSeen(result: unknown) {
+  const state = (result ?? {}) as { state?: string; waitingFor?: string };
+  restartWaiting.value =
+    state.state === "pending" ? (state.waitingFor === "agent-turns" || state.waitingFor === "workspace-save" ? state.waitingFor : "starting") : "";
+  if (!restartWaiting.value) {
+    clearInterval(restartPoll);
+    restartPoll = undefined;
+  }
+}
+async function restartOrvane() {
+  if (!desktopWindow?.restartDesktop) return;
+  try {
+    if (restartWaiting.value) return restartSeen(await desktopWindow.restartDesktop("cancel"));
+    flushSave();
+    restartSeen(await desktopWindow.restartDesktop("schedule"));
+    if (restartWaiting.value && !restartPoll)
+      restartPoll = setInterval(() => void desktopWindow.restartDesktop!("status").then(restartSeen, () => restartSeen(null)), 1000);
+  } catch (error) {
+    restartSeen(null);
+    status.value = error instanceof Error ? error.message : String(error);
+  }
+}
+const restartLabel = computed(() =>
+  restartWaiting.value === "agent-turns"
+    ? "Waiting for agents · Cancel"
+    : restartWaiting.value === "workspace-save"
+      ? "Saving the workspace · Cancel"
+      : restartWaiting.value
+        ? "Restarting… · Cancel"
+        : "Restart Orvane",
+);
 // The library pulls in the graph editor, which can take seconds to load the
 // first time (much longer under the dev server): say so at once, and load it
 // ahead when the window is idle after startup.
@@ -574,6 +614,8 @@ const {
   (id, file) => store.uploadThemeMedia(id, file),
   saveAppearance,
 );
+const terminalDark = useTerminalTint(appearance);
+provide(TERMINAL_DARK, terminalDark);
 async function saveAppearance(theme: WorkspaceTheme) {
   store.assertWriter();
   const previous = workspace.appearance;
@@ -1313,12 +1355,14 @@ function sideResizeKey(event: KeyboardEvent) {
 window.addEventListener("resize", () => {
   if (sideWidth.value > sideMax()) setSideWidth(sideWidth.value);
 });
-/** What the pinned session is doing, for the collapsed bubble. */
-const sideState = computed((): "waiting" | "working" | "idle" => {
+/** What the pinned session's run is doing, and which run. */
+const sideRunState = computed((): { state: "waiting" | "working" | "idle"; runId?: string } => {
   if (sideDraft.value) {
     const runId = latestSideDraft.value?.runId;
     const run = runId ? agentRunIndicators.get(runId) : undefined;
-    return !run || !["running", "stopping"].includes(run.status) ? "idle" : run.awaitingApproval ? "waiting" : "working";
+    return !run || !["running", "stopping"].includes(run.status)
+      ? { state: "idle" }
+      : { state: run.awaitingApproval ? "waiting" : "working", runId: run.id };
   }
   let path = "";
   const sideProvider = sideSession.value.startsWith("codex:") ? "codex" : "claude";
@@ -1327,15 +1371,39 @@ const sideState = computed((): "waiting" | "working" | "idle" => {
     const key = sideSession.value.replace(/^(?:codex:|claude@[^:]+:)/, "");
     path = atob(key.replace(/-/g, "+").replace(/_/g, "/")).toLowerCase();
   } catch {
-    return "idle";
+    return { state: "idle" };
   }
   const run = harness.runs.find(
     (r) => r.provider === sideProvider && (sideProvider !== "claude" || (r.profileId ?? "default") === sideProfile) &&
       r.sessionId && ["running", "stopping"].includes(r.status) &&
       (r.key ? r.key === sideSession.value : path.includes(r.sessionId.toLowerCase())),
   );
-  return !run ? "idle" : run.awaitingApproval ? "waiting" : "working";
+  return !run ? { state: "idle" } : { state: run.awaitingApproval ? "waiting" : "working", runId: run.id };
 });
+// Done (the Lively bubble's happy state): a run that completed while the
+// chat was folded into its bubble. A failed or stopped run is not "done".
+// Opening the chat, a new run or another pinned session clears it.
+const sideDoneRun = ref("");
+let sideLastRun = "";
+watch(sideRunState, (now) => {
+  if (now.runId) {
+    sideLastRun = now.runId;
+    sideDoneRun.value = "";
+    return;
+  }
+  if (!sideLastRun) return;
+  const id = sideLastRun;
+  sideLastRun = "";
+  const finished = harness.runs.find((r) => r.id === id) ?? agentRunIndicators.get(id);
+  if (sideCollapsed.value && finished?.status === "completed") sideDoneRun.value = id;
+});
+watch([sideCollapsed, sideSession], ([collapsed], [, before]) => {
+  if (!collapsed || sideSession.value !== before) sideDoneRun.value = "";
+});
+/** What the pinned session is doing, for the collapsed bubble. */
+const sideState = computed((): "waiting" | "working" | "done" | "idle" =>
+  sideRunState.value.state === "idle" && sideDoneRun.value ? "done" : sideRunState.value.state,
+);
 function collapseSideChat(collapse: boolean) {
   sideCollapsed.value = collapse;
   if (collapse) sideSwitching.value = false;
@@ -1576,6 +1644,18 @@ async function openNoteLink(link: NoteLink, external = false, sourceBlockId?: st
   }
 }
 // Ctrl+click on a link or path in the Terminal app.
+/** A "mock ready" card in Agent sessions: open UI Maker on it, the same way
+ * the uimaker_open tool does (focus the app, then show the round or version). */
+function mockReadyOpenEvent(event: Event) {
+  const detail = (event as CustomEvent<MockReadyOpen>).detail;
+  detail.opened = runForMcp({
+    kind: "uimaker-open",
+    component: detail.component,
+    mode: detail.mode,
+    ...(detail.version ? { version: detail.version } : {}),
+    ...(detail.lab ? { lab: detail.lab } : {}),
+  });
+}
 function openLinkEvent(event: Event) {
   const detail = (event as CustomEvent<{ link?: NoteLink; external?: boolean; sourceBlockId?: string }>).detail;
   const link = detail?.link;
@@ -2000,6 +2080,9 @@ const stopCanvasCommands = registerCommands("canvas", () => {
       { id: "folder-compare", title: "Compare two folders", icon: "columns", detail: "Canvas", run: () => placeWorkbench("folder-compare", {}) },
       { id: "test-results", title: "Pin Playwright results", icon: "terminal", detail: "Canvas", run: () => placeWorkbench("test-results", {}) },
     ] : []),
+    ...(canRestart
+      ? [{ id: "desktop-restart", title: restartWaiting.value ? "Cancel the Orvane restart" : "Restart Orvane", icon: "refresh", detail: "Window", keywords: "restart reload relaunch reboot desktop app", run: restartOrvane }]
+      : []),
     ...(writable
       ? [
           { id: "app-new", title: "New app", icon: "plus", hint: workspace.shortcuts.create.toUpperCase(), detail: "Canvas", run: () => createApp() },
@@ -4388,6 +4471,7 @@ async function runForMcp(request: RunRequest) {
     const detail: Extract<OpenRequest, { kind: "uimaker" }> = {
       kind: "uimaker", blockId: target.block.id, component: request.component,
       mode: request.mode, version: request.version, reference: request.reference, review: request.review,
+      lab: request.lab,
     };
     for (let attempt = 0; attempt < 40; attempt++) {
       window.dispatchEvent(new CustomEvent<OpenRequest>(OPEN_EVENT, { detail }));
@@ -4612,6 +4696,7 @@ onMounted(() => {
   }).orvaneDesktop?.onTouchpad?.(touchpadInput);
   window.addEventListener(ACTIVATE_EVENT, activatedApp);
   window.addEventListener("orvane:open-link", openLinkEvent);
+  window.addEventListener(MOCK_READY_OPEN, mockReadyOpenEvent);
   window.addEventListener("orvane:open-git", openGitEvent);
   window.addEventListener(CLAUDE_LOGIN_EVENT, claudeLoginEvent);
   window.addEventListener("orvane:palette", paletteEvent);
@@ -4643,6 +4728,7 @@ onBeforeUnmount(() => {
   stopTouchpad?.();
   window.removeEventListener(ACTIVATE_EVENT, activatedApp);
   window.removeEventListener("orvane:open-link", openLinkEvent);
+  window.removeEventListener(MOCK_READY_OPEN, mockReadyOpenEvent);
   window.removeEventListener("orvane:open-git", openGitEvent);
   window.removeEventListener(CLAUDE_LOGIN_EVENT, claudeLoginEvent);
   window.removeEventListener("orvane:palette", paletteEvent);
@@ -4683,6 +4769,7 @@ onBeforeUnmount(() => {
       frameless,
       'workspace-themed': !!paletteStyle['--theme-canvas'],
       'workspace-wallpaper': appearance.backgroundType !== 'plain',
+      'wallpaper-dark': terminalDark,
     }"
     @pointerdown.capture="touchStart"
     @pointermove.capture="touchMove"
@@ -4810,13 +4897,19 @@ onBeforeUnmount(() => {
         type="button"
         class="side-bubble workspace-frost"
         :class="`is-${sideState}`"
-        :aria-label="`Open pinned chat: ${sideLabel}${sideState === 'working' ? ', working' : sideState === 'waiting' ? ', waiting for you' : ''}`"
+        :aria-label="`Open pinned chat: ${sideLabel}${sideState === 'working' ? ', working' : sideState === 'waiting' ? ', waiting for you' : sideState === 'done' ? ', finished' : ''}`"
         :data-tip="`${sideLabel} · Ctrl+Shift+J`"
         @pointerdown.stop
         @click="collapseSideChat(false)"
       >
-        <span class="side-bubble-face" aria-hidden="true"><i></i><i></i></span>
+        <span class="side-bubble-face" aria-hidden="true"
+          ><i></i><i></i
+          ><template v-if="sideState === 'done'"><b class="side-bubble-arc"></b><b class="side-bubble-arc"></b></template
+        ></span>
         <span v-if="sideState === 'waiting'" class="side-bubble-dot" aria-hidden="true"></span>
+        <span v-else-if="sideState === 'done'" class="side-bubble-tick" aria-hidden="true"
+          ><svg width="9" height="9" viewBox="0 0 24 24"><path d="m5 12 5 5 9-10" /></svg
+        ></span>
       </button>
     </Transition>
     <div ref="agentPopovers" class="agent-launcher-popovers" />
@@ -5750,6 +5843,16 @@ onBeforeUnmount(() => {
           Orvane moves there now and opens there next time. If that monitor is
           not connected, it opens on the one in use.
         </p>
+        <button
+          v-if="canRestart"
+          type="button"
+          class="subtle-button restart-orvane"
+          :aria-pressed="!!restartWaiting"
+          title="Restart Orvane (also in Ctrl+K). Waits for running agent turns and saves first."
+          @click="restartOrvane"
+        >
+          <Icon name="refresh" :size="14" />{{ restartLabel }}
+        </button>
       </div>
       <div class="settings-section">
         <div class="section-line">

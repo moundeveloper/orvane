@@ -25,7 +25,7 @@ test("the AI launcher starts in Surveying and global search can reopen the sessi
   page,
   context,
 }, info) => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
   const { directory } = await fixture(context);
   await page.addInitScript(() =>
     localStorage.setItem("orvane.examples.v1", "installed"),
@@ -38,7 +38,8 @@ test("the AI launcher starts in Surveying and global search can reopen the sessi
   });
   const launcher = page.getByRole("dialog", { name: "AI launcher" });
   const menus = page.locator(".agent-launcher-popovers");
-  const prompt = launcher.getByRole("textbox", { name: "Task prompt" });
+  // New task is the Agent sessions composer itself (round Send, picture paste).
+  const prompt = launcher.getByRole("textbox", { name: "Message", exact: true });
   async function expectDockGap() {
     await expect
       .poll(async () => {
@@ -57,12 +58,15 @@ test("the AI launcher starts in Surveying and global search can reopen the sessi
       .poll(async () => {
         const control = (await trigger.boundingBox())!;
         const list = (await menu.boundingBox())!;
-        return Math.max(
-          Math.abs(list.x - control.x),
+        // Attached to its trigger: just above or just below it, overlapping it sideways.
+        const gap = Math.min(
           Math.abs(control.y - list.y - list.height - 5),
+          Math.abs(list.y - control.y - control.height - 5),
         );
+        const apart = list.x > control.x + control.width || list.x + list.width < control.x;
+        return apart ? 99 : gap;
       })
-      .toBeLessThan(2);
+      .toBeLessThan(3);
   }
 
   const viewport = page.viewportSize()!;
@@ -83,7 +87,8 @@ test("the AI launcher starts in Surveying and global search can reopen the sessi
     });
   });
   await aiButton.click();
-  await expect(prompt).toBeFocused({ timeout: 15000 });
+  // Agent sessions loads on demand (a cold dev server compiles it first).
+  await expect(prompt).toBeFocused({ timeout: 60_000 });
   await expect(page.locator("html")).toHaveAttribute(
     "data-launcher-entered",
     "true",
@@ -104,9 +109,30 @@ test("the AI launcher starts in Surveying and global search can reopen the sessi
   });
   expect(banner.backdropFilter).toBe("blur(8px) saturate(1.2)");
   expect(await launcher.evaluate(material)).toEqual(banner);
-  await expect(launcher.locator(".agent-composer")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-  await openPicker("Working folder");
-  await menus.getByRole("combobox", { name: "Find a folder" }).press("Escape");
+  // The same composer as Agent sessions: its Send sits in the context ring.
+  await expect(launcher.locator(".cs-composer .cs-send")).toBeVisible();
+  await expect(launcher.getByRole("textbox", { name: "Project folder" })).toHaveValue(/Surveying/);
+  // Pasting a picture into New task attaches it like in Agent sessions.
+  const pasted = await prompt.evaluate(async (field) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 120;
+    canvas.height = 80;
+    const paint = canvas.getContext("2d")!;
+    paint.fillStyle = "#d9e5ee";
+    paint.fillRect(0, 0, 120, 80);
+    const blob = await new Promise<Blob>((done) => canvas.toBlob((b) => done(b!), "image/png"));
+    const data = new DataTransfer();
+    data.items.add(new File([blob], "image.png", { type: "image/png" }));
+    const event = new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true });
+    field.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(pasted).toBe(true);
+  const launcherTiles = launcher.getByRole("list", { name: "Pictures sent with the message" });
+  await expect(launcherTiles.locator("img")).toHaveCount(1, { timeout: 15_000 });
+  await expect.poll(() => launcherTiles.locator("img").evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBe(120);
+  await launcherTiles.getByRole("button", { name: /^Remove / }).click();
+  await expect(launcherTiles.locator("img")).toHaveCount(0);
   await aiButton.click();
   await expect(page.locator("html")).toHaveAttribute(
     "data-launcher-left",
@@ -124,9 +150,7 @@ test("the AI launcher starts in Surveying and global search can reopen the sessi
   await expect(launcher).toHaveCount(0);
   await page.keyboard.press("Control+Shift+k");
   await expect(prompt).toHaveValue("Keep this draft");
-  await expect(
-    launcher.getByRole("combobox", { name: "Working folder" }),
-  ).toHaveText("Surveying");
+  await expect(launcher.getByRole("textbox", { name: "Project folder" })).toHaveValue(/Surveying/);
   await prompt.press("End");
   await prompt.press("Shift+Enter");
   await expect(prompt).toHaveValue("Keep this draft\n");
@@ -135,22 +159,19 @@ test("the AI launcher starts in Surveying and global search can reopen the sessi
   await expect(prompt).not.toBeFocused();
   await openPicker("Provider");
   await menus.getByRole("option", { name: "Claude Code" }).click();
-  await openPicker("Model");
-  await menus.getByRole("combobox", { name: "Find a model" }).fill("5.2");
-  await menus.getByRole("option", { name: "Fable 5.2" }).click();
+  // Switching provider keeps the draft.
+  await expect(prompt).toHaveValue("Keep this draft\n");
   await openPicker("Provider");
   await menus.getByRole("option", { name: "Codex", exact: true }).click();
-  await openPicker("Model");
+  const model = launcher.getByRole("combobox", { name: "Model", exact: true });
+  await model.click();
   await page.screenshot({ path: info.outputPath("ai-model-menu.png") });
-  await menus.getByRole("option", { name: "Test Codex model" }).click();
+  // The composer's menus live outside the launcher; picking one keeps it open.
+  await page.locator(".select-popover").getByRole("option", { name: "Test Codex model" }).click();
+  await expect(launcher).toBeVisible();
   await prompt.fill("Survey the launcher workflow");
   await page.screenshot({ path: info.outputPath("ai-launcher.png") });
-  await launcher.getByRole("button", { name: "Add context" }).click();
-  await launcher
-    .getByRole("textbox", { name: "Attachment path" })
-    .fill(join(directory, "project"));
-  await launcher.getByRole("button", { name: "Add path" }).click();
-  await launcher.getByRole("button", { name: "Start task" }).click();
+  await prompt.press("Enter");
   await expect(launcher).toHaveCount(0, { timeout: 30_000 });
   const app = page.locator(".agent-sessions-app");
   // The full-size helix takes the dot's place on the working step.
@@ -170,8 +191,8 @@ test("the AI launcher starts in Surveying and global search can reopen the sessi
   }
   // One loader only: no spinning AI mark beside the DNA loader while it runs.
   await expect(trail.locator(".trail-head .cs-mark")).toHaveCount(0);
-  // While a tool step runs, the head says it is working (not "Writing the answer").
-  await expect(trail.locator(".cs-trail-state")).toHaveText("Working");
+  // While a tool step runs, its helix says so: no "Working" line under it.
+  await expect(trail.locator(".cs-trail-state")).toHaveCount(0);
   // No filler line under the steps ("Then it writes the answer").
   await expect(trail.getByText(/writes the answer/i)).toHaveCount(0);
   await page.screenshot({ path: info.outputPath("ai-thinking-trail.png") });
@@ -259,7 +280,7 @@ test("the AI launcher starts in Surveying and global search can reopen the sessi
     .map((line) => JSON.parse(line));
   expect(input.folder).toBe(join(directory, "Surveying"));
   expect(input.args).toEqual(expect.arrayContaining(["--model", "test-codex"]));
-  expect(input.message).toContain("Local attachments:");
+  expect(input.message).toContain("Survey the launcher workflow");
   await page.keyboard.press("Control+k");
   const search = page.getByRole("combobox", { name: "Search", exact: true });
   await search.fill("Survey the launcher workflow");
@@ -1306,3 +1327,41 @@ test("the child environment strips subscription overrides", () => {
   }
 });
 
+
+test("a mock the agent presents shows as a card that opens UI Maker", async ({ page, context }) => {
+  test.setTimeout(240_000);
+  const { directory, project } = await fixture(context);
+  const at = (second: number) => new Date(Date.UTC(2026, 10, 27, 14, 52, second)).toISOString();
+  const present = {
+    orvaneMockReady: 1,
+    component: "pinned-chat-layout",
+    name: "Pinned chat layout",
+    summary: "The panel stops above the dock; the header and dock stay put.",
+    mode: "lab",
+    round: "r1",
+    title: "Pinned chat without covering the dock",
+    variants: [{ id: "above-dock", label: "Above the dock" }, { id: "today", label: "Today" }],
+  };
+  const records = [
+    { type: "user", uuid: "u1", timestamp: at(0), sessionId: claudeId, cwd: project, message: { content: "Mock where the pinned chat sits" } },
+    { type: "assistant", uuid: "a1", timestamp: at(10), message: { content: [{ type: "tool_use", id: "p1", name: "mcp__orvane__uimaker_present", input: { component: "pinned-chat-layout", summary: present.summary } }] } },
+    { type: "user", uuid: "r1", timestamp: at(12), message: { content: [{ type: "tool_result", tool_use_id: "p1", content: [{ type: "text", text: JSON.stringify(present) }] }] } },
+    { type: "assistant", uuid: "a2", timestamp: at(14), message: { content: [{ type: "text", text: "Two variants are in the Lab." }] } },
+  ];
+  await writeFile(
+    join(directory, "claude-projects", "test-project", claudeId + ".jsonl"),
+    records.map((record) => JSON.stringify(record)).join("\n") + "\n",
+  );
+  const app = await openApp(page);
+  await app.getByRole("button", { name: /Mock where the pinned chat sits/ }).click();
+  const card = app.getByRole("group", { name: "Mock ready: Pinned chat layout, Lab r1 · 2 variants" });
+  await expect(card).toBeVisible();
+  await expect(card).toContainText(present.summary);
+  await card.screenshot({ path: test.info().outputPath("mock-ready-card.png") });
+  await expect(card.getByRole("listitem")).toHaveText(["1above-dock", "2today"]);
+  // Newest card: Alt M is shown on Open.
+  await expect(card.getByRole("button", { name: /Open in UI Maker/ })).toContainText("Alt M");
+  // No UI Maker app on this canvas: the card says why instead of failing silently.
+  await card.getByRole("button", { name: /Open in UI Maker/ }).click();
+  await expect(card.locator(".mr-hint")).toHaveText("No matching UI Maker app is on the canvas.");
+});

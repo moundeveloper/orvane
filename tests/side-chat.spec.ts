@@ -213,3 +213,67 @@ test("pick a session in the AI launcher, chat in place, pin it to the side", asy
   await expect(page.locator(".side-chat-list")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+// Lively bubble (UI Maker "Pinned chat bubble" v3): a folded pinned chat shows
+// working, then "done" only when its run completed while folded. Opening the
+// chat clears it; a failed run never looks done. Runs come from the harness
+// poll, stubbed here.
+test("the folded pinned chat shows working, then done only for a completed run", async ({ page, context }) => {
+  test.setTimeout(240000);
+  page.setDefaultNavigationTimeout(120000);
+  const cookie = (await context.cookies()).find((c) => c.name === "orvane-test-workspace")!.value;
+  const folder = join(process.cwd(), ".orvane", "tests", cookie, "claude-projects", "side-chat-fixture");
+  await mkdir(folder, { recursive: true });
+  const sessionId = "33333333-3333-4333-8333-333333333333";
+  await writeFile(
+    join(folder, `${sessionId}.jsonl`),
+    JSON.stringify({ uuid: "u1", type: "user", sessionId, cwd: "C:/Example/Side", timestamp: "2026-11-27T10:00:00Z", message: { content: "Mock the pinned chat bubble" } }) + "\n" +
+      JSON.stringify({ uuid: "a1", type: "assistant", sessionId, cwd: "C:/Example/Side", timestamp: "2026-11-27T10:00:05Z", message: { content: "Three variants are in the Lab." } }) + "\n",
+  );
+  let runs: object[] = [];
+  const run = (id: string, status: string) => ({
+    id, provider: "claude", profileId: "default", folder: "C:/Example/Side", sessionId, status,
+    title: "Mock the pinned chat bubble", awaitingApproval: false, startedAt: Date.now() - 5000,
+    ...(status === "running" ? {} : { endedAt: Date.now() }),
+  });
+  await page.route("**/__orvane/agents/runs", (route) => route.fulfill({ json: { runs } }));
+  await page.addInitScript(() => localStorage.setItem("orvane.examples.v1", "installed"));
+  await page.goto("/");
+  await page.locator('main[data-ready="true"]').waitFor({ timeout: 60000 });
+  const launcher = page.getByRole("dialog", { name: "AI launcher" });
+  await expect(async () => {
+    if (!(await launcher.isVisible())) await page.getByTitle("AI launcher (Ctrl+Shift+K)").click();
+    await expect(launcher).toBeVisible({ timeout: 3000 });
+  }).toPass({ timeout: 60000 });
+  await launcher.getByRole("tab", { name: /Sessions/ }).click();
+  await expect(launcher.getByRole("option", { name: /Mock the pinned chat bubble/ })).toBeVisible({ timeout: 90000 });
+  await page.keyboard.press("Control+Shift+J");
+  const side = page.getByRole("complementary", { name: "Pinned AI session" });
+  await expect(side).toBeVisible();
+  await side.getByRole("button", { name: "Collapse side chat" }).click();
+  const bubble = page.locator(".side-bubble");
+  await expect(bubble).toHaveClass(/is-idle/);
+
+  // Working while folded, then it completes: done, with ^ ^ and the tick.
+  runs = [run("run-1", "running")];
+  await expect(bubble).toHaveClass(/is-working/, { timeout: 15000 });
+  runs = [run("run-1", "completed")];
+  await expect(bubble).toHaveClass(/is-done/, { timeout: 15000 });
+  await expect(bubble).toHaveAccessibleName(/finished$/);
+  await expect(bubble.locator(".side-bubble-arc")).toHaveCount(2);
+  await expect(bubble.locator(".side-bubble-tick")).toBeVisible();
+
+  // Opening the chat clears it; folding again shows the plain face.
+  await bubble.click();
+  await expect(side).toBeVisible();
+  await side.getByRole("button", { name: "Collapse side chat" }).click();
+  await expect(bubble).toHaveClass(/is-idle/);
+  await expect(bubble.locator(".side-bubble-tick")).toHaveCount(0);
+
+  // A run that fails while folded is not "done".
+  runs = [run("run-1", "completed"), run("run-2", "running")];
+  await expect(bubble).toHaveClass(/is-working/, { timeout: 15000 });
+  runs = [run("run-1", "completed"), run("run-2", "failed")];
+  await expect(bubble).toHaveClass(/is-idle/, { timeout: 15000 });
+  await expect(bubble.locator(".side-bubble-tick")).toHaveCount(0);
+});

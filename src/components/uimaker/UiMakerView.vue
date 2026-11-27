@@ -107,7 +107,7 @@ onMounted(() => {
     if (request.kind !== 'uimaker' || request.blockId !== props.block.id || !model.state) return;
     request.opened = request.review
       ? reviewReferences(request.component, request.review)
-      : editor.value.openSavedView(request.component, request.mode, request.version, request.reference);
+      : editor.value.openSavedView(request.component, request.mode, request.version, request.reference, request.lab);
     return true;
   });
 });

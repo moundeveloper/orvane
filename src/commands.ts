@@ -48,6 +48,8 @@ export type OpenRequest =
       version?: number;
       reference?: { mime: string; data: string; caption: string };
       review?: ReferenceReviewRequest;
+      /** Lab round and tab to show (a "mock ready" card in Agent sessions). */
+      lab?: { round: string; variant?: string };
       opened?: Promise<{ component: string; mode: string; version: number; referenceAdded?: true } | ReferenceReviewResult>;
     };
 export const OPEN_EVENT = "orvane:open-request";

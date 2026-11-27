@@ -9,6 +9,7 @@ import { usePopover } from "./pickers/usePopover";
 import { agentNames, type AgentProvider, type AgentUsage, type AgentUsageWindow } from "../agentSessions";
 import { agentRequest } from "../exposition";
 import { activeAccounts, accountLabel } from "../claudeAccounts";
+import { USAGE_CHANGED, unwatchUsage, watchUsage } from "../agentUsageTick";
 
 // profileId: the Claude account whose limits this chat uses (each account
 // has its own; another account's numbers are never shown as this one's).
@@ -118,16 +119,33 @@ const guestDown = () => open.value && close();
 // Where the owner last pressed, shared by every usage pill (see altU).
 let lastPress: EventTarget | null = null;
 const remember = (event: PointerEvent) => (lastPress = event.target);
+// Every pill follows new limits without a click: a run that ends in any chat
+// (Agent sessions app, pinned chat, another tile) refreshes them all, and so
+// do returning to the window and a slow tick while the window is visible.
+const quietRefresh = () => {
+  if (document.hidden) return;
+  void refresh().then(() => {
+    if (open.value) void nextTick(fit);
+  });
+};
 onMounted(() => {
   void refresh();
   window.addEventListener("keydown", altU, true);
   window.addEventListener("pointerdown", remember, true);
   window.addEventListener("orvane:guest-pointer-down", guestDown);
+  window.addEventListener(USAGE_CHANGED, quietRefresh);
+  window.addEventListener("focus", quietRefresh);
+  document.addEventListener("visibilitychange", quietRefresh);
+  watchUsage(quietRefresh);
 });
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", altU, true);
   window.removeEventListener("pointerdown", remember, true);
   window.removeEventListener("orvane:guest-pointer-down", guestDown);
+  window.removeEventListener(USAGE_CHANGED, quietRefresh);
+  window.removeEventListener("focus", quietRefresh);
+  document.removeEventListener("visibilitychange", quietRefresh);
+  unwatchUsage(quietRefresh);
 });
 defineExpose({ refresh });
 </script>

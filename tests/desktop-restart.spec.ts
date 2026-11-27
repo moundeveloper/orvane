@@ -174,3 +174,83 @@ test("desktop_restart cancels while saving and relaunches the isolated desktop a
     if (desktop.exitCode === null) desktop.kill();
   }
 });
+
+// The owner restarts Orvane from Workspace settings → Window: the button shows
+// what the restart waits for, a second press cancels, and with nothing to
+// wait for it relaunches the desktop.
+test("the Restart Orvane button waits, cancels and relaunches the desktop", async ({}, info) => {
+  test.setTimeout(240_000);
+  const port = await freePort();
+  const debugPort = await freePort();
+  const origin = `http://localhost:${port}`;
+  const debug = `http://127.0.0.1:${debugPort}`;
+  const data = info.outputPath("data");
+  const env = { ...process.env, ORVANE_DATA_DIR: data, ORVANE_MCP_STATE_DIR: data,
+    ORVANE_HOST_ENABLED: "0", ORVANE_PORT: String(port), ORVANE_USER_DATA: info.outputPath("profile") };
+  const desktop = spawn(electron as unknown as string, ["electron/main.mjs", `--remote-debugging-port=${debugPort}`], {
+    env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
+  });
+  let log = "";
+  for (const stream of [desktop.stdout, desktop.stderr]) stream.on("data", (chunk) => { log += chunk; });
+  const endpoint = async () => {
+    const response = await fetch(debug + "/json/version", { signal: AbortSignal.timeout(1000) });
+    return (await response.json()).webSocketDebuggerUrl as string;
+  };
+  let first: Browser | undefined;
+  let second: Browser | undefined;
+  try {
+    let firstEndpoint = "";
+    await expect.poll(async () => (firstEndpoint = await endpoint().catch(() => "")), { timeout: 90_000 }).not.toBe("");
+    first = await chromium.connectOverCDP(firstEndpoint);
+    const pages = first.contexts()[0];
+    await expect.poll(() => pages.pages().some((candidate) => candidate.url() === origin + "/"), { timeout: 90_000 }).toBe(true);
+    const page = pages.pages().find((candidate) => candidate.url() === origin + "/")!;
+    await expect(page.locator('main[data-ready="true"]')).toBeVisible({ timeout: 90_000 });
+    await expect(page.locator('main[data-saved="true"]')).toBeVisible();
+
+    // Hold a workspace save so the restart has something to wait for.
+    let releaseSave!: () => void;
+    const holdSave = new Promise<void>((done) => { releaseSave = done; });
+    await page.route("**/__orvane/storage/state", async (route) => {
+      if (route.request().method() === "PUT") await holdSave;
+      await route.continue();
+    });
+    await page.getByRole("button", { name: "Workspace options" }).click();
+    await page.getByRole("button", { name: "Create Notes", exact: true }).click();
+    await expect(page.locator('main[data-saved="false"]')).toBeVisible();
+    await page.getByRole("button", { name: "Workspace options" }).click();
+    const settings = page.getByRole("region", { name: "Workspace settings" });
+    const restart = settings.locator(".restart-orvane");
+    await expect(restart).toHaveText("Restart Orvane");
+    await restart.click();
+    await expect(restart).toHaveText("Saving the workspace · Cancel");
+    await expect(restart).toHaveAttribute("aria-pressed", "true");
+    // Pressed again while it waits: cancelled, nothing restarts.
+    await restart.click();
+    await expect(restart).toHaveText("Restart Orvane");
+    releaseSave();
+    await expect(page.locator('main[data-saved="true"]')).toBeVisible();
+    await page.unroute("**/__orvane/storage/state", { behavior: "ignoreErrors" });
+    expect(desktop.exitCode).toBeNull();
+    expect(await endpoint()).toBe(firstEndpoint);
+
+    // Nothing to wait for: it relaunches.
+    await restart.click();
+    await expect.poll(() => desktop.exitCode, { timeout: 30_000 }).toBe(0);
+    let secondEndpoint = firstEndpoint;
+    await expect.poll(async () => (secondEndpoint = await endpoint().catch(() => firstEndpoint)), { timeout: 90_000 }).not.toBe(firstEndpoint);
+    second = await chromium.connectOverCDP(secondEndpoint);
+    const after = second.contexts()[0];
+    await expect.poll(() => after.pages().some((candidate) => candidate.url() === origin + "/"), { timeout: 90_000 }).toBe(true);
+    await expect(after.pages().find((candidate) => candidate.url() === origin + "/")!.locator('main[data-ready="true"]')).toBeVisible({ timeout: 90_000 });
+  } finally {
+    await info.attach("desktop-log", { body: log, contentType: "text/plain" });
+    if (second?.isConnected()) {
+      const cdp = await second.newBrowserCDPSession();
+      void cdp.send("Browser.close").catch(() => undefined);
+      await expect.poll(() => second!.isConnected(), { timeout: 10_000 }).toBe(false);
+    }
+    if (first?.isConnected()) await first.close().catch(() => undefined);
+    if (desktop.exitCode === null) desktop.kill();
+  }
+});

@@ -324,6 +324,10 @@ export const runSchema = z.discriminatedUnion("kind", [
     version: z.number().int().positive().optional(),
     appId: id.optional(),
     review: referenceReviewRequest.optional(),
+    lab: z.object({
+      round: z.string().regex(/^r\d{1,4}$/),
+      variant: z.string().regex(/^[a-z0-9][a-z0-9-]{0,79}$/).optional(),
+    }).strict().optional(),
     reference: z.object({
       mime: z.enum(["image/png", "image/jpeg", "image/webp", "image/gif"]),
       data: z.string().min(1).max(6_666_668),

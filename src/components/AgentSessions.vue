@@ -41,6 +41,9 @@ import ThinkingTrail from "./ThinkingTrail.vue";
 import DnaHelix from "./DnaHelix.vue";
 import AgentSettings from "./AgentSettings.vue";
 import AgentUsage from "./AgentUsage.vue";
+import MockReadyCard from "./MockReadyCard.vue";
+import { mockReadyCards } from "../mockReady";
+import { announceUsageChanged } from "../agentUsageTick";
 import AccountPicker from "./AccountPicker.vue";
 import AccountChip from "./AccountChip.vue";
 import {
@@ -316,9 +319,10 @@ const accountUnavailable = computed(() => provider.value === "claude" && claudeA
 /** Several accounts: rows and chips name theirs. */
 const manyAccounts = computed(() => activeAccounts().length > 1 || claudeAccounts.list.some((a) => a.removed));
 const usagePill = ref<InstanceType<typeof AgentUsage>>();
-// A finished run may have reported new subscription limits.
+// A finished run may have reported new subscription limits: every usage pill
+// refreshes (this chat's, the pinned chat's, other tiles').
 watch(busy, (now, before) => {
-  if (before && !now) void usagePill.value?.refresh();
+  if (before && !now) announceUsageChanged();
 });
 const queuePending = ref(false);
 const schedules = ref<AgentSchedule[]>([]);
@@ -523,10 +527,10 @@ const trailLabel = computed(() => {
   if (run.value.permissions.length)
     return askedQuestions(run.value.permissions[0]!) ? "Waiting for your answers" : "Waiting for your approval";
   if (run.value.status === "stopping") return "Stopping…";
-  // A tool step is running: the steps below say which. Text written before
-  // a tool call ("I'll check…") is not the answer yet.
-  if (run.value.activities?.some((step) => step.status === "running")) return "Working";
-  return run.value.text ? "Replying" : "Thinking";
+  // A step is running (its helix shows it) or the reply is streaming in
+  // view: no label, the work itself says it. Only an empty run says Thinking.
+  if (run.value.activities?.some((step) => step.status === "running")) return "";
+  return run.value.text ? "" : "Thinking";
 });
 const elapsed = computed(() => {
   const started = run.value && runStarts.get(run.value.id);
@@ -1054,6 +1058,19 @@ const attachment = computed(() => {
     else loose.push(v);
   }
   return { map, loose };
+});
+/** Mock ready cards per reply (uimaker_present), and the newest one for Alt+M. */
+const mockCards = computed(() => {
+  const map = new Map<string, ReturnType<typeof mockReadyCards>>();
+  let latest = "";
+  for (const m of messages.value) {
+    if (m.role !== "assistant" || !m.tools.length) continue;
+    const cards = mockReadyCards(m);
+    if (!cards.length) continue;
+    map.set(m.id, cards);
+    latest = cards.at(-1)!.id;
+  }
+  return { map, latest };
 });
 const projectName = (path: string) =>
   path.split(/[\\/]/).filter(Boolean).at(-1) || path;
@@ -2428,7 +2445,8 @@ if (props.pane) {
     { immediate: !!props.pane.nonce, flush: "post" },
   );
 }
-if (props.pane?.id === "side") {
+// The pinned panel and the AI launcher keep the draft they show.
+if (props.pane?.id === "side" || props.pane?.id === "launcher-new") {
   watch(
     [newProvider, folder, draft, paths, quotes, model, effort, editMode, () => run.value?.id],
     () => { if (newProvider.value) emit("draft-state", currentDraft(newProvider.value)); },
@@ -3112,6 +3130,12 @@ onBeforeUnmount(() => {
                   >Message shortened for display. The transcript is
                   unchanged.</span
                 >
+                <MockReadyCard
+                  v-for="card in mockCards.map.get(m.id) || []"
+                  :key="card.id"
+                  :card="card"
+                  :latest="card.id === mockCards.latest"
+                />
                 <ExpositionView
                   v-for="v in attachment.map.get(m.id) || []"
                   :key="v.view.id"
@@ -3149,7 +3173,7 @@ onBeforeUnmount(() => {
               >
                 <template #head="{ stepWorking }">
                   <DnaHelix v-if="!stepWorking" />
-                  <strong class="cs-trail-state">{{ trailLabel }}</strong>
+                  <strong v-if="trailLabel && !(stepWorking && trailLabel === 'Thinking')" class="cs-trail-state">{{ trailLabel }}</strong>
                   <time v-if="elapsed" class="cs-trail-time">{{ elapsed }}</time>
                 </template>
               </ThinkingTrail>
