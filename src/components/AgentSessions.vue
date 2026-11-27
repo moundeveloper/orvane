@@ -294,9 +294,10 @@ const provider = computed(
   () => newProvider.value || selected.value?.provider || "claude",
 );
 const busy = computed(() => sending.value || agentBusy(run.value));
-/** A continued draft whose source is a Claude chat stays on that chat's
- * account: its transcript never moves to another account. */
-const lockedProfile = computed(() => {
+/** A continued draft of a Claude chat starts on that chat's account; the
+ * picker can move it to another one (the new chat only reads the old
+ * transcript file, it never moves it). */
+const sourceProfile = computed(() => {
   const origin = newProvider.value === "claude" ? quotes.value.find((quote) => quote.origin)?.origin : undefined;
   if (!origin || origin.provider !== "claude") return undefined;
   const indexed = sessions.value.find((s) => s.key === origin.key)?.profileId;
@@ -310,11 +311,11 @@ const chatProfile = computed(() =>
   provider.value !== "claude"
     ? undefined
     : newProvider.value
-      ? lockedProfile.value ?? (newProfileId.value || claudeAccounts.newChatProfileId)
+      ? newProfileId.value || sourceProfile.value || claudeAccounts.newChatProfileId
       : selected.value?.profileId ?? DEFAULT_ACCOUNT,
 );
 const accountUnavailable = computed(() => provider.value === "claude" && claudeAccounts.loaded &&
-  !!(selected.value || run.value || lockedProfile.value) &&
+  !!(selected.value || run.value || sourceProfile.value) &&
   (!accountById(chatProfile.value) || !!accountById(chatProfile.value)?.removed));
 /** Several accounts: rows and chips name theirs. */
 const manyAccounts = computed(() => activeAccounts().length > 1 || claudeAccounts.list.some((a) => a.removed));
@@ -1342,8 +1343,8 @@ async function buildContinueDraft(choice: ContinueChoice): Promise<AgentDraft | 
   ].filter(Boolean).join("\n");
   return {
     provider: choice.provider,
-    // Same-account continue: a Claude source keeps its account (the
-    // transcript never goes to another account's chat).
+    // A Claude source starts on its own account; the composer's picker can
+    // switch it before sending.
     ...(choice.provider === "claude"
       ? { profileId: kind === "claude" ? s.profileId ?? DEFAULT_ACCOUNT : claudeAccounts.newChatProfileId }
       : {}),
@@ -2696,6 +2697,9 @@ watch(
     }
     back();
     newProvider.value = request.run.provider;
+    // The run's own account: without it the usage pill and models fell back
+    // to the New chats account (Default) until the session was listed.
+    newProfileId.value = request.run.provider === "claude" ? request.run.profileId ?? "" : "";
     folder.value = request.run.folder;
     watchRun(request.run);
   },
@@ -3584,9 +3588,9 @@ onBeforeUnmount(() => {
                 </span>
               </div>
               <div class="cs-compose-actions">
-                <!-- A new Claude chat picks its account; an open one (or a
-                     continued draft of a Claude chat) shows it locked. -->
-                <AccountPicker v-if="newProvider === 'claude' && !lockedProfile && !run" :model-value="chatProfile ?? ''"
+                <!-- A new Claude chat (continued drafts too) picks its
+                     account; an open one shows it locked. -->
+                <AccountPicker v-if="newProvider === 'claude' && !run" :model-value="chatProfile ?? ''"
                   :disabled="busy" @update:model-value="newProfileId = $event" @picked="showNotice(`New chat uses ${$event}`)" />
                 <span v-else-if="provider === 'claude' && chatProfile && manyAccounts" class="cs-acct-lock"
                   :title="`This chat runs on ${accountLabel(chatProfile)}. Open chats keep their account.`"
