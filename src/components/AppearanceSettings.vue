@@ -140,8 +140,11 @@ function setStrength(strength: PaletteStrength) {
 function toggleImageBackground() {
   const source = paletteImage.value;
   if (!source) return;
-  if (imageBackground.value) update({ backgroundType: "plain" });
-  else update({
+  if (imageBackground.value) {
+    // Off: the image stops being the background, so Apply will not store it.
+    const { image: _image, ...media } = props.theme.media ?? {};
+    update({ backgroundType: "plain", image: "lake", media });
+  } else update({
     backgroundType: "image",
     image: source.id,
     media: { ...props.theme.media, image: { id: source.id, name: source.name } },
@@ -428,10 +431,10 @@ const presetStyle = (palette: WorkspaceTheme["palette"]): CSSProperties => ({
             :tabindex="theme.preset === 'image' ? 0 : -1"
             :data-select="paletteImage ? undefined : 'manual'"
             aria-label="Palette from image"
-            :title="paletteImage ? `Palette from ${paletteImage.name}` : 'Build a palette from an image (or drop or paste one here)'"
+            :title="paletteImage ? `Palette from ${paletteImage.name}` : theme.preset === 'image' ? 'Saved palette from an image. Click to build a new one' : 'Build a palette from an image (or drop or paste one here)'"
             @click="choosePaletteImage"
           >
-            <span v-if="imagePalette" class="theme-preset-sample" :style="presetStyle(imagePalette.palette)"></span>
+            <span v-if="imagePalette || theme.preset === 'image'" class="theme-preset-sample" :style="presetStyle(imagePalette?.palette ?? theme.palette)"></span>
             <span v-else class="theme-preset-sample empty"><Icon name="image" :size="14" /></span>
             Image
           </button>

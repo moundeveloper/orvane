@@ -409,3 +409,44 @@ test("an image builds a matching palette, not a copy of its colours", async ({ p
   await third.getByRole("radio", { name: "Palette from image" }).click();
   await expect(third.getByLabel("Palette image", { exact: true })).toContainText("sunset-ridge.png");
 });
+
+test("an image palette keeps only its colours unless the image is also the background", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const png = Buffer.from(await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 60;
+    canvas.height = 40;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "#1c7e92";
+    context.fillRect(0, 0, 60, 26);
+    context.fillStyle = "#2e274e";
+    context.fillRect(0, 26, 60, 14);
+    return canvas.toDataURL("image/png").split(",")[1]!;
+  }), "base64");
+  const uploads: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().includes("/theme-media/")) uploads.push(request.url());
+  });
+  const panel = await openAppearance(page);
+  const chooser = page.waitForEvent("filechooser");
+  await panel.getByRole("radio", { name: "Palette from image" }).click();
+  await (await chooser).setFiles({ name: "harbour.png", mimeType: "image/png", buffer: png });
+  await expect(panel.getByLabel("Palette image", { exact: true })).toContainText("harbour.png");
+  // Background on, then off again: the image is no longer needed.
+  const asBackground = panel.getByRole("switch", { name: "Use the palette image as canvas background" });
+  await asBackground.click();
+  await asBackground.click();
+  await expect(asBackground).toHaveAttribute("aria-checked", "false");
+  const canvas = await panel.getByRole("button", { name: /^Edit Canvas colour/ }).getAttribute("aria-label");
+  await panel.getByRole("button", { name: /^Apply/ }).click();
+  await expect(panel.getByText("No changes")).toBeVisible();
+  expect(uploads).toEqual([]);
+  // The colours stay; the image and its card are gone.
+  await expect(panel.getByLabel("Palette image", { exact: true })).toHaveCount(0);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  const again = await openAppearance(page);
+  await expect(again.getByRole("radio", { name: "Palette from image" })).toHaveAttribute("aria-checked", "true");
+  expect(await again.getByRole("button", { name: /^Edit Canvas colour/ }).getAttribute("aria-label")).toBe(canvas);
+  await expect(again.getByLabel("Palette image", { exact: true })).toHaveCount(0);
+  await expect(again.getByRole("radio", { name: "Plain", exact: true })).toHaveAttribute("aria-checked", "true");
+});

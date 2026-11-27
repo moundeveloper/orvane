@@ -180,8 +180,15 @@ export function useWorkspaceAppearance(
     saving.value = true;
     error.value = "";
     try {
-      const value = workspaceThemeSchema.parse(draft.value);
-      for (const [id, file] of pending) await upload(id, file);
+      let value = workspaceThemeSchema.parse(draft.value);
+      // A palette from an image keeps only its five colours. The image file
+      // is stored only when it is also the canvas background.
+      if (value.paletteImage && value.media?.image?.id !== value.paletteImage.id) {
+        const { paletteImage: _image, ...colours } = value;
+        value = colours;
+      }
+      const kept = new Set([value.media?.image?.id, value.media?.video?.id, value.paletteImage?.id]);
+      for (const [id, file] of pending) if (kept.has(id)) await upload(id, file);
       await save(value);
       releasePreviews();
       if (draft.value) draft.value = value;
