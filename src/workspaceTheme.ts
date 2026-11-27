@@ -3,8 +3,16 @@ import { z } from "zod";
 const hex = z.string().regex(/^#[\da-f]{6}$/i);
 const paletteSchema = z.object({ canvas: hex, app: hex, text: hex, accent: hex, run: hex });
 const mediaSchema = z.object({ id: z.uuid(), name: z.string().min(1).max(200) });
+// Palette from image: the image a palette was built from, its colour groups
+// (enough to rebuild the palette at another strength) and the strength used.
+const paletteImageSchema = mediaSchema.extend({
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  strength: z.enum(["quiet", "balanced", "vivid"]),
+  swatches: z.array(z.object({ hex, weight: z.number().min(0).max(1) })).min(1).max(6),
+});
 export const workspaceThemeSchema = z.object({
-  preset: z.enum(["orvane", "sage", "sand", "harbor", "heather", "custom"]),
+  preset: z.enum(["orvane", "sage", "sand", "harbor", "heather", "image", "custom"]),
   palette: paletteSchema,
   backgroundType: z.enum(["plain", "image", "video", "code"]),
   image: z.union([z.enum(["lake", "dunes", "paper"]), z.uuid()]),
@@ -14,6 +22,7 @@ export const workspaceThemeSchema = z.object({
   dots: z.boolean(),
   speed: z.number().min(0.25).max(2),
   media: z.object({ image: mediaSchema.optional(), video: mediaSchema.optional() }).optional(),
+  paletteImage: paletteImageSchema.optional(),
 }).refine((theme) => (["image", "video"] as const).every((kind) =>
   !z.uuid().safeParse(theme[kind]).success || theme.media?.[kind]?.id === theme[kind],
 ));
@@ -23,6 +32,7 @@ export type ThemePalette = WorkspaceTheme["palette"];
 export type ThemePaletteKey = keyof ThemePalette;
 export type ThemeBackgroundType = WorkspaceTheme["backgroundType"];
 export type ThemeMediaKind = "image" | "video";
+export type ThemePaletteImage = NonNullable<WorkspaceTheme["paletteImage"]>;
 
 export const THEME_PRESETS = [
   { id: "orvane", name: "Orvane", palette: { canvas: "#e9edf0", app: "#f7f9fa", text: "#455968", accent: "#6f8998", run: "#365f78" } },

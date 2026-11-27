@@ -340,3 +340,72 @@ test("palette arrow buttons and Left/Right keys step through palettes", async ({
   await page.keyboard.press("ArrowRight");
   await expect(selected()).toHaveText(/Sage/);
 });
+
+test("an image builds a matching palette, not a copy of its colours", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  // A sunset: orange sky, yellow sun, violet hills, teal water.
+  const sunset = Buffer.from(await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 120;
+    canvas.height = 80;
+    const context = canvas.getContext("2d")!;
+    for (const [color, y, h] of [["#f98f3a", 0, 34], ["#f9d46b", 34, 10], ["#6a3f86", 44, 20], ["#1c7e92", 64, 16]] as const) {
+      context.fillStyle = color;
+      context.fillRect(0, y, 120, h);
+    }
+    return canvas.toDataURL("image/png").split(",")[1]!;
+  }), "base64");
+  const panel = await openAppearance(page);
+  const image = panel.getByRole("radio", { name: "Palette from image" });
+  await expect(image).toHaveAttribute("aria-checked", "false");
+  // Arrow keys pass over "Image" without opening a file picker.
+  await panel.getByRole("radio", { name: "Heather" }).click();
+  await page.keyboard.press("ArrowRight");
+  await expect(image).toBeFocused();
+  await expect(panel.getByRole("radio", { name: "Heather" })).toHaveAttribute("aria-checked", "true");
+
+  const chooser = page.waitForEvent("filechooser");
+  await image.press("Enter");
+  await (await chooser).setFiles({ name: "sunset-ridge.png", mimeType: "image/png", buffer: sunset });
+  await expect(image).toHaveAttribute("aria-checked", "true");
+  const source = panel.getByLabel("Palette image", { exact: true });
+  await expect(source).toContainText("sunset-ridge.png");
+  await expect(source).toContainText("120×80");
+  await expect(panel.getByLabel("Image mood")).toContainText("Warm");
+  await expect(panel.getByText("For the UI")).toBeVisible();
+  const token = (label: string) => panel.getByRole("button", { name: new RegExp(`^Edit ${label} colour`) });
+  await expect(token("Canvas")).toContainText("orange, almost grey");
+  await expect(token("Text")).toContainText("violet, dark");
+  const accent = async () => (await token("Accent").getAttribute("aria-label"))!.split(", ")[1];
+  const balanced = await accent();
+  // The palette goes with the image; it never copies the image's own colours.
+  for (const hex of ["#f98f3a", "#f9d46b", "#6a3f86", "#1c7e92"]) expect(balanced).not.toBe(hex);
+
+  const strength = panel.getByRole("radiogroup", { name: "Colour strength" });
+  await strength.getByRole("radio", { name: "Vivid" }).click();
+  const vivid = await accent();
+  expect(vivid).not.toBe(balanced);
+  await expect(panel.getByText(/Text on windows \d+\.\d:1$/)).toBeVisible();
+
+  const asBackground = panel.getByRole("switch", { name: "Use the palette image as canvas background" });
+  await asBackground.click();
+  await expect(asBackground).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator(".wallpaper-image")).toHaveCSS("background-image", /blob:/);
+
+  await panel.getByRole("button", { name: /^Apply/ }).click();
+  await expect(panel.getByText("No changes")).toBeVisible();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  const again = await openAppearance(page);
+  await expect(again.getByRole("radio", { name: "Palette from image" })).toHaveAttribute("aria-checked", "true");
+  await expect(again.getByLabel("Palette image", { exact: true })).toContainText("sunset-ridge.png");
+  await expect(again.getByLabel("Palette image", { exact: true }).locator("img")).toHaveJSProperty("complete", true);
+  expect(await again.getByRole("button", { name: /^Edit Accent colour/ }).getAttribute("aria-label")).toContain(vivid);
+  await expect(again.getByRole("radiogroup", { name: "Colour strength" }).getByRole("radio", { name: "Vivid" }))
+    .toHaveAttribute("aria-checked", "true");
+  // Another palette and back: the image palette is kept.
+  await page.keyboard.press("Escape");
+  const third = await openAppearance(page);
+  await third.getByRole("radio", { name: "Sage" }).click();
+  await third.getByRole("radio", { name: "Palette from image" }).click();
+  await expect(third.getByLabel("Palette image", { exact: true })).toContainText("sunset-ridge.png");
+});

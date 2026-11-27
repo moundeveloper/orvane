@@ -11,6 +11,7 @@ import {
   type WorkspaceTheme,
 } from "../workspaceTheme";
 import Icon from "./Icon.vue";
+import { imageMood, paletteFromSwatches, type PaletteStrength } from "../imagePalette";
 import dotsSource from "../themeAnimation-dots.ts?raw";
 import flowSource from "../themeAnimation-flow.ts?raw";
 import auroraSource from "../themeAnimation-aurora.ts?raw";
@@ -29,6 +30,7 @@ const emit = defineEmits<{
   "update:theme": [theme: WorkspaceTheme];
   "update:reduced": [value: boolean];
   "import-media": [file: File, kind: "image" | "video"];
+  "import-palette-image": [file: File];
   apply: [];
   discard: [];
   back: [];
@@ -68,6 +70,84 @@ function setPalette(preset: (typeof THEME_PRESETS)[number]) {
   update({ preset: preset.id, palette: { ...preset.palette } });
 }
 
+// Palette from image: the panel shows the image, its mood and the palette
+// built from it; the file itself is read in useWorkspaceAppearance.
+const paletteImage = computed(() => props.theme.paletteImage);
+const fromImage = computed(() => props.theme.preset === "image" && !!paletteImage.value);
+const imagePalette = computed(() => paletteImage.value
+  ? paletteFromSwatches(paletteImage.value.swatches, paletteImage.value.strength)
+  : undefined);
+const mood = computed(() => paletteImage.value ? imageMood(paletteImage.value.swatches) : []);
+const strengths = [
+  { id: "quiet", label: "Quiet" },
+  { id: "balanced", label: "Balanced" },
+  { id: "vivid", label: "Vivid" },
+] as const satisfies readonly { id: PaletteStrength; label: string }[];
+const imageBackground = computed(() =>
+  !!paletteImage.value && background.value === "image" && props.theme.image === paletteImage.value.id);
+
+// "Image" with an image already read selects its palette; otherwise it asks
+// for an image.
+function choosePaletteImage() {
+  if (imagePalette.value && props.theme.preset !== "image")
+    update({ preset: "image", palette: { ...imagePalette.value.palette } });
+  else if (!paletteImage.value) pickPaletteImage();
+}
+
+// A file input made on demand: the panel keeps a single file input (the
+// background one), so "the file field" stays unambiguous.
+function pickPaletteImage() {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/jpeg,image/png,image/webp,image/avif";
+  input.addEventListener("change", () => {
+    const file = input.files?.[0];
+    if (file) emit("import-palette-image", file);
+  }, { once: true });
+  input.click();
+}
+
+function imageFile(data: DataTransfer | null) {
+  return Array.from(data?.files ?? []).find((file) => file.type.startsWith("image/"));
+}
+
+// Drop an image on the Palette section, or paste one anywhere in the panel.
+function dropPaletteImage(event: DragEvent) {
+  const file = imageFile(event.dataTransfer);
+  if (!file) return;
+  event.preventDefault();
+  emit("import-palette-image", file);
+}
+
+function pastePaletteImage(event: ClipboardEvent) {
+  if ((event.target as HTMLElement).closest("input, textarea")) return;
+  const file = imageFile(event.clipboardData);
+  if (!file) return;
+  event.preventDefault();
+  emit("import-palette-image", file);
+}
+
+function setStrength(strength: PaletteStrength) {
+  const source = paletteImage.value;
+  if (!source) return;
+  update({
+    preset: "image",
+    palette: paletteFromSwatches(source.swatches, strength).palette,
+    paletteImage: { ...source, strength },
+  });
+}
+
+function toggleImageBackground() {
+  const source = paletteImage.value;
+  if (!source) return;
+  if (imageBackground.value) update({ backgroundType: "plain" });
+  else update({
+    backgroundType: "image",
+    image: source.id,
+    media: { ...props.theme.media, image: { id: source.id, name: source.name } },
+  });
+}
+
 // Previous / next palette, wrapping. From Custom, next is the first preset.
 function stepPalette(direction: number) {
   const at = THEME_PRESETS.findIndex((preset) => preset.id === props.theme.preset);
@@ -105,7 +185,8 @@ function radioKeys(event: KeyboardEvent, columns = 1) {
   event.preventDefault();
   event.stopPropagation();
   buttons[next]?.focus();
-  buttons[next]?.click();
+  // "Image" without an image yet opens a file picker: only on Enter/Space or click.
+  if (buttons[next]?.dataset.select !== "manual") buttons[next]?.click();
 }
 
 const fileInput = ref<HTMLInputElement>();
@@ -301,6 +382,7 @@ const presetStyle = (palette: WorkspaceTheme["palette"]): CSSProperties => ({
     @pointerdown.stop
     @wheel.stop
     @keydown="panelKeys"
+    @paste="pastePaletteImage"
   >
     <header class="appearance-heading">
       <button type="button" class="appearance-icon" aria-label="Back to Your workspace" title="Your workspace" @click="emit('back')">
@@ -315,7 +397,7 @@ const presetStyle = (palette: WorkspaceTheme["palette"]): CSSProperties => ({
     <div class="appearance-body" @scroll="dismissColor">
       <p class="appearance-help">Changes preview on the canvas behind this panel. Nothing is saved until you apply.</p>
 
-      <section class="appearance-section" aria-labelledby="appearance-palette-title">
+      <section class="appearance-section" aria-labelledby="appearance-palette-title" @dragover.prevent @drop="dropPaletteImage">
         <h2 id="appearance-palette-title" class="appearance-section-heading">
           <Palette :size="14" :stroke-width="1.75" aria-hidden="true" />
           Palette
@@ -338,12 +420,47 @@ const presetStyle = (palette: WorkspaceTheme["palette"]): CSSProperties => ({
             <span class="theme-preset-sample" :style="presetStyle(preset.palette)"></span>
             {{ preset.name }}
           </button>
+          <button
+            type="button"
+            class="theme-preset from-image"
+            role="radio"
+            :aria-checked="theme.preset === 'image'"
+            :tabindex="theme.preset === 'image' ? 0 : -1"
+            :data-select="paletteImage ? undefined : 'manual'"
+            aria-label="Palette from image"
+            :title="paletteImage ? `Palette from ${paletteImage.name}` : 'Build a palette from an image (or drop or paste one here)'"
+            @click="choosePaletteImage"
+          >
+            <span v-if="imagePalette" class="theme-preset-sample" :style="presetStyle(imagePalette.palette)"></span>
+            <span v-else class="theme-preset-sample empty"><Icon name="image" :size="14" /></span>
+            Image
+          </button>
           <button v-if="theme.preset === 'custom'" type="button" class="theme-preset custom" role="radio" aria-checked="true">
             <span class="theme-preset-sample" :style="presetStyle(theme.palette)"></span>
             Custom
           </button>
         </div>
-        <div class="theme-tokens">
+        <div v-if="fromImage && paletteImage" class="theme-image-source" aria-label="Palette image">
+          <div class="theme-image-row">
+            <img class="theme-image-thumb" :src="getThemeMediaUrl(paletteImage.id)" alt="" />
+            <span class="theme-image-name">
+              <b :title="paletteImage.name">{{ paletteImage.name }}</b>
+              <small>{{ paletteImage.width }}×{{ paletteImage.height }}</small>
+            </span>
+            <button type="button" class="theme-action" aria-label="Change palette image" @click="pickPaletteImage">Change</button>
+          </div>
+          <div class="theme-image-mood" aria-label="Image mood">
+            <span v-for="tag in mood" :key="tag">{{ tag }}</span>
+          </div>
+          <div class="theme-image-raw">
+            In the image
+            <span class="theme-image-strip" role="img" :aria-label="`Image colours: ${paletteImage.swatches.map((s) => s.hex).join(', ')}`">
+              <i v-for="swatch in paletteImage.swatches" :key="swatch.hex" :style="{ flex: swatch.weight, background: swatch.hex }" :title="`${swatch.hex} · ${Math.round(swatch.weight * 100)}%`"></i>
+            </span>
+          </div>
+        </div>
+        <div v-if="fromImage" class="theme-image-label">For the UI</div>
+        <div class="theme-tokens" :class="{ 'with-why': fromImage }">
           <button
             v-for="{ key, label } in THEME_COLORS"
             :key="key"
@@ -355,6 +472,7 @@ const presetStyle = (palette: WorkspaceTheme["palette"]): CSSProperties => ({
             @click="showColor($event, key, label)"
           >
             {{ label }}
+            <small v-if="fromImage && imagePalette" class="theme-token-why">{{ imagePalette.why[key] }}</small>
             <span><i class="color-swatch" :style="{ background: theme.palette[key] }"></i>{{ theme.palette[key] }}</span>
           </button>
         </div>
@@ -362,6 +480,25 @@ const presetStyle = (palette: WorkspaceTheme["palette"]): CSSProperties => ({
           <Icon :name="contrast < 4.5 ? 'alert' : 'check'" :size="12" />
           Text on windows {{ contrast.toFixed(1) }}:1{{ contrast < 4.5 ? " · below 4.5:1" : "" }}
         </div>
+        <template v-if="fromImage && paletteImage">
+          <div class="theme-background-types theme-strength" role="radiogroup" aria-label="Colour strength" @keydown="radioKeys($event)">
+            <button
+              v-for="option in strengths"
+              :key="option.id"
+              type="button"
+              role="radio"
+              :aria-checked="paletteImage.strength === option.id"
+              :tabindex="paletteImage.strength === option.id ? 0 : -1"
+              @click="setStrength(option.id)"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+          <div class="theme-setting-row">
+            <span>Also use it as canvas background</span>
+            <button type="button" class="theme-switch" role="switch" :aria-checked="imageBackground" aria-label="Use the palette image as canvas background" @click="toggleImageBackground"></button>
+          </div>
+        </template>
       </section>
 
       <section class="appearance-section" aria-labelledby="appearance-background-title">
@@ -685,6 +822,122 @@ const presetStyle = (palette: WorkspaceTheme["palette"]): CSSProperties => ({
 .theme-preset-steps button:focus-visible {
   outline: 2px solid var(--appearance-outline);
   outline-offset: 1px;
+}
+
+.theme-preset-sample.empty {
+  display: grid;
+  place-items: center;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px #263f5526;
+  color: var(--appearance-faint);
+}
+
+.theme-preset-sample.empty::before,
+.theme-preset-sample.empty::after {
+  display: none;
+}
+
+.theme-image-source {
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--appearance-line);
+  border-radius: 9px;
+}
+
+.theme-image-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.theme-image-thumb {
+  flex: none;
+  width: 64px;
+  height: 42px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.theme-image-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.theme-image-name b {
+  display: block;
+  overflow: hidden;
+  font: 500 11.5px var(--appearance-mono);
+  color: var(--appearance-strong);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.theme-image-name small {
+  font-size: 10.5px;
+  color: var(--appearance-faint);
+}
+
+.theme-image-mood {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+}
+
+.theme-image-mood span {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--appearance-hover);
+  font-size: 10.5px;
+  color: var(--appearance-muted);
+}
+
+.theme-image-raw {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 10.5px;
+  color: var(--appearance-faint);
+}
+
+.theme-image-strip {
+  flex: 1;
+  display: flex;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.theme-image-label {
+  margin-top: 12px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--appearance-faint);
+}
+
+.theme-tokens.with-why .theme-token {
+  gap: 8px;
+}
+
+.theme-token-why {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 10.5px;
+  color: var(--appearance-faint);
+  text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.theme-strength {
+  margin-top: 10px;
 }
 
 .theme-presets {

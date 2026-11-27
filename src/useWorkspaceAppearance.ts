@@ -1,4 +1,5 @@
 import { computed, onBeforeUnmount, ref } from "vue";
+import { paletteFromSwatches, readImageSwatches } from "./imagePalette.ts";
 import {
   addThemeMediaPreview, clearThemeMediaPreview, DEFAULT_THEME, MAX_THEME_MEDIA,
   THEME_COLORS, THEME_MEDIA_TYPES, themePaletteStyle, workspaceThemeSchema,
@@ -114,7 +115,8 @@ export function useWorkspaceAppearance(
     }
     if (!draft.value || saving.value || revision !== selection[kind]) return;
     const old = draft.value.media?.[kind]?.id;
-    if (old && pending.delete(old)) clearThemeMediaPreview(old);
+    // Keep the file a palette was built from: Appearance still shows it.
+    if (old && old !== draft.value.paletteImage?.id && pending.delete(old)) clearThemeMediaPreview(old);
     const id = crypto.randomUUID();
     pending.set(id, file);
     addThemeMediaPreview(id, file);
@@ -123,6 +125,54 @@ export function useWorkspaceAppearance(
       backgroundType: kind,
       [kind]: id,
       media: { ...draft.value.media, [kind]: { id, name: file.name.slice(0, 200) } },
+    });
+  }
+  // Palette from image: read the image's colour groups, build the palette
+  // that goes with it and keep the file to upload on Apply (its thumbnail in
+  // Appearance, and the canvas background if the owner also wants that).
+  let paletteRevision = 0;
+  async function importPaletteImage(file: File) {
+    if (!draft.value || saving.value) return;
+    const revision = ++paletteRevision;
+    const types: readonly string[] = THEME_MEDIA_TYPES.image;
+    if (!types.includes(file.type) || !file.size || file.size > MAX_THEME_MEDIA) {
+      error.value = "Choose a JPG, PNG, WebP, or AVIF image up to 30 MB.";
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    let read: { width: number; height: number; swatches: ReturnType<typeof readImageSwatches> };
+    try {
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+      read = { width: image.naturalWidth, height: image.naturalHeight, swatches: readImageSwatches(image) };
+    } catch {
+      if (revision === paletteRevision) error.value = "This image could not be opened.";
+      return;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+    if (!draft.value || saving.value || revision !== paletteRevision) return;
+    if (!read.swatches.length) {
+      error.value = "This image has no visible colours to read.";
+      return;
+    }
+    const current = draft.value;
+    const old = current.paletteImage?.id;
+    const asBackground = !!old && current.backgroundType === "image" && current.image === old;
+    // The old file goes unless it stays the canvas background.
+    if (old && (asBackground || old !== current.media?.image?.id) && pending.delete(old)) clearThemeMediaPreview(old);
+    const id = crypto.randomUUID();
+    pending.set(id, file);
+    addThemeMediaPreview(id, file);
+    const strength = current.paletteImage?.strength ?? "balanced";
+    const paletteImage = { id, name: file.name.slice(0, 200) || "Image", width: read.width, height: read.height, strength, swatches: read.swatches.slice(0, 6) };
+    update({
+      ...current,
+      preset: "image",
+      palette: paletteFromSwatches(paletteImage.swatches, strength).palette,
+      paletteImage,
+      ...(asBackground ? { image: id, media: { ...current.media, image: { id, name: paletteImage.name } } } : {}),
     });
   }
   async function apply() {
@@ -142,5 +192,5 @@ export function useWorkspaceAppearance(
       if (!draft.value) releasePreviews();
     }
   }
-  return { theme, dirty, changeCount, reduced, previewReduced, systemReduced, saving, error, paletteStyle, discard, close, update, importMedia, apply };
+  return { theme, dirty, changeCount, reduced, previewReduced, systemReduced, saving, error, paletteStyle, discard, close, update, importMedia, importPaletteImage, apply };
 }
