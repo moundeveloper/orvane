@@ -19,6 +19,7 @@ import { DRAG_MIME } from "../files/explorer";
 import { registerAppText } from "../../appText";
 import { TERMINAL } from "./controller";
 import Icon from "../Icon.vue";
+import { TERMINAL_DARK } from "../../terminalTint";
 import type { PaneNode } from "../../terminalLayout";
 
 const props = defineProps<{ pane: PaneNode; movable?: boolean; resizing?: boolean; dropEdge?: "left" | "right" | "top" | "bottom" }>();
@@ -85,6 +86,21 @@ const theme = {
   brightCyan: "#22949a",
   brightWhite: "#9aa8b0",
 };
+const dark = inject(TERMINAL_DARK, ref(false));
+const darkTheme = {
+  ...theme,
+  background: "#18242c", foreground: "#dfe8ed",
+  cursor: "#9cc4dc", cursorAccent: "#18242c",
+  selectionBackground: "#456477", selectionInactiveBackground: "#344b59", selectionForeground: "#ffffff",
+  scrollbarSliderBackground: "rgba(169,187,198,0.3)",
+  scrollbarSliderHoverBackground: "rgba(169,187,198,0.42)",
+  scrollbarSliderActiveBackground: "rgba(169,187,198,0.52)",
+  black: "#18242c", red: "#f0a49c", green: "#8fd6a8", yellow: "#e3c77c",
+  blue: "#9cc4dc", magenta: "#c7a4d5", cyan: "#8dd4d8", white: "#dfe8ed",
+  brightBlack: "#a3b5c0", brightRed: "#ffc0b8", brightGreen: "#adf0c5", brightYellow: "#f5dfa1",
+  brightBlue: "#b8ddf3", brightMagenta: "#e0bfee", brightCyan: "#adedef", brightWhite: "#ffffff",
+};
+watch(dark, (value) => { if (term) term.options.theme = value ? darkTheme : theme; });
 
 // xterm.js maps the pointer to a character cell without allowing for CSS
 // scaling, and the canvas zooms apps with a transform: at any zoom but
@@ -426,6 +442,7 @@ onMounted(async () => {
     moving.delete(props.pane.id);
     clearTimeout(kept.timer);
     ({ term, fit, exited } = kept);
+    term.options.theme = dark.value ? darkTheme : theme;
     host.value!.appendChild(kept.term.element!);
     wire(term);
     client.listen(props.pane.id, sessionListener());
@@ -442,7 +459,7 @@ onMounted(async () => {
       // Preserve the full current line through a narrow/wide resize cycle.
       reflowCursorLine: true,
       scrollback: 10000,
-      theme,
+      theme: dark.value ? darkTheme : theme,
     });
     fit = new FitAddon();
     term.loadAddon(fit);

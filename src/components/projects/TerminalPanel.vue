@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { nextTick, onMounted, reactive, ref, watch } from "vue";
+import { nextTick, onMounted, provide, reactive, ref, watch } from "vue";
+import { TERMINAL_DARK } from "../../terminalTint";
 import Icon from "../Icon.vue";
 import TerminalView from "../terminal/TerminalView.vue";
 import { uid, type Block } from "../../model";
@@ -8,6 +9,8 @@ import type { TerminalState } from "./types";
 
 const props = defineProps<{ block: Block; initialCwd: string; state?: TerminalState }>();
 const emit = defineEmits<{ stateChange: [state: TerminalState] }>();
+// This pane lives on the opaque Projects surface, rather than Terminal glass.
+provide(TERMINAL_DARK, ref(false));
 
 function migrateLayout(state?: TerminalState) {
   if (state?.layout !== undefined) return state.layout;

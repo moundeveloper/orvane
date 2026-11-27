@@ -56,8 +56,9 @@ test("SuiteCloud can connect with a certificate before an auth ID exists", async
   })));
 });
 
-test("NetSuite views browse data and save queries", async ({ page }) => {
-  test.setTimeout(60000);
+test("NetSuite views browse data and save queries", async ({ page }, info) => {
+  // A cold dev server compiles the NetSuite app (and its CodeMirror editors) on first use.
+  test.setTimeout(150_000);
   const editorErrors: string[] = [];
   page.on("pageerror", error => editorErrors.push(error.message));
   page.on("console", message => {
@@ -85,17 +86,22 @@ test("NetSuite views browse data and save queries", async ({ page }) => {
                   id: 2,
                   name: "Order script",
                   scriptid: "customscript_order",
-                  scripttype: "User Event",
+                  scripttype: "USEREVENT",
                   owner: "Alice",
                   scriptfile: "order.js",
+                  fileid: 11,
+                  deployments: 1,
+                  deployed: 1,
                 },
                 {
                   id: 3,
                   name: "Invoice script",
                   scriptid: "customscript_invoice",
-                  scripttype: "Scheduled",
+                  scripttype: "SCRIPTED",
                   owner: "Bob",
                   scriptfile: "invoice.js",
+                  deployments: 1,
+                  deployed: 1,
                 },
               ],
             };
@@ -103,16 +109,56 @@ test("NetSuite views browse data and save queries", async ({ page }) => {
             return {
               rows: [
                 {
-                  primarykey: 3,
+                  primarykey: args.id === 3 ? 4 : 3,
+                  deploymentid: 1,
                   scriptid:
                     args.id === 3
                       ? "customdeploy_invoice"
                       : "customdeploy_order",
-                  status: "RELEASED",
+                  status: args.id === 3 ? "NOTSCHEDULED" : "RELEASED",
+                  loglevel: "DEBUG",
+                  recordtype: args.id === 3 ? null : "SALESORDER",
                   isdeployed: "T",
                 },
               ],
             };
+          if (op === "log-search")
+            return {
+              rows: [
+                {
+                  id: 1,
+                  datetime: new Date().toISOString(),
+                  level: "ERROR",
+                  title: "Sample log",
+                  detail: "Details",
+                  deploymentId: 3,
+                  deploymentScriptId: "customdeploy_order",
+                },
+              ],
+              totalCount: 1,
+            };
+          if (op === "run-task")
+            return { deploymentId: args.deploymentId, submittedAt: new Date().toISOString() };
+          if (op === "task-status")
+            return {
+              instances: [
+                { status: "Processing", percent: "40", stage: null, created: new Date().toISOString() },
+              ],
+            };
+          if (op === "deployment-parameters")
+            return {
+              deploymentId: args.deploymentId,
+              parameters: [
+                { id: "custscript_batch", label: "Batch size", type: "integer", value: 50, text: "50" },
+              ],
+            };
+          if (op === "save-deployment-parameters") {
+            if ((window as any).failNextSave) {
+              (window as any).failNextSave = false;
+              throw Error("NetSuite rejected the parameter.");
+            }
+            return { deploymentId: args.deploymentId, saved: Object.keys(args.values) };
+          }
           if (op === "script-logs")
             return {
               rows: [
@@ -207,23 +253,68 @@ test("NetSuite views browse data and save queries", async ({ page }) => {
     .getByRole("button", { name: /Scripts/ })
     .filter({ hasText: "Scripts" })
     .click();
-  await app.getByRole("button", { name: /Order script/ }).click();
+  // Scripts: the table, deployments inline, the selected script's logs beside it.
+  const orderScript = app.getByRole("row", { name: /Order script/ });
+  await orderScript.getByRole("button", { name: "Show deployments" }).click();
   await expect(app.getByText("customdeploy_order")).toBeVisible();
-  await app
-    .locator(".ns-record")
-    .filter({ hasText: "Order script" })
-    .getByRole("button", { name: "Execution logs" })
-    .click();
-  await expect(app.getByText("Sample log")).toBeVisible();
-  await app.getByRole("button", { name: /Invoice script/ }).click();
-  await expect(app.getByText("customdeploy_invoice")).toBeVisible();
-  await expect(app.getByText("customdeploy_order")).toBeVisible();
-  await app.getByRole("button", { name: "Filter script types" }).click();
-  await app.getByRole("checkbox", { name: "Scheduled" }).check();
-  await expect(app.getByRole("button", { name: /Order script/ })).toHaveCount(
-    0,
-  );
-  await app.getByRole("button", { name: "Filter script types" }).click();
+  await expect(app.locator(".sc-drow").filter({ hasText: "customdeploy_order" })).toContainText("SALESORDER");
+  const scriptSide = app.getByRole("complementary", { name: "Selected script" });
+  await expect(scriptSide.getByText("Sample log")).toBeVisible();
+  // Map/Reduce and Scheduled deployments run from here and show their state.
+  const invoice = app.getByRole("row", { name: /Invoice script/ });
+  await invoice.getByRole("button", { name: "Show deployments" }).click();
+  const invoiceDeployment = app.locator(".sc-drow").filter({ hasText: "customdeploy_invoice" });
+  await invoiceDeployment.getByRole("button", { name: "Run" }).click();
+  await expect(invoiceDeployment.getByRole("status")).toContainText("Processing", { timeout: 10_000 });
+  await page.screenshot({ path: info.outputPath("scripts-table.png") });
+  // Parameters: edit and save with Ctrl+S.
+  await invoiceDeployment.getByRole("button", { name: "Parameters" }).click();
+  const parameters = page.getByRole("dialog", { name: "Deployment parameters" });
+  const batch = parameters.getByRole("textbox");
+  await expect(batch).toHaveValue("50");
+  await batch.fill("75");
+  // A failed save keeps the edit on screen, so it can be retried.
+  await page.evaluate(() => ((window as any).failNextSave = true));
+  await batch.press("Control+s");
+  await expect(parameters.getByRole("alert")).toContainText("NetSuite rejected the parameter.");
+  await expect(batch).toHaveValue("75");
+  await batch.press("Control+s");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).netSuiteCalls.filter((c: any) => c.op === "save-deployment-parameters").map((c: any) => c.args)))
+    .toEqual([
+      { deploymentId: 4, values: { custscript_batch: 75 } },
+      { deploymentId: 4, values: { custscript_batch: 75 } },
+    ]);
+  await expect(parameters.getByRole("alert")).toHaveCount(0);
+  await batch.press("Escape");
+  await expect(parameters).toHaveCount(0);
+  // Type chips filter the list.
+  await app.getByRole("group", { name: "Script types" }).getByRole("button", { name: /Scheduled/ }).click();
+  await expect(orderScript).toHaveCount(0);
+  await app.getByRole("group", { name: "Script types" }).getByRole("button", { name: /Scheduled/ }).click();
+  // Opening a script turns the table into the workbench; Esc goes back.
+  await orderScript.dblclick();
+  const scriptEditor = app.getByRole("region", { name: "Script", exact: true });
+  await expect(scriptEditor.getByRole("tab", { name: /order\.js/ })).toBeVisible();
+  await expect(scriptEditor.locator(".cm-content")).toContainText("define([], function() {});");
+  await expect(scriptSide.getByText("customdeploy_order")).toBeVisible();
+  await page.screenshot({ path: info.outputPath("scripts-workbench.png") });
+  // The related-file search opens above the editor, not clipped inside the
+  // tab strip: its field is the topmost element where it is drawn.
+  await scriptEditor.getByRole("button", { name: "Add related file" }).click();
+  const addFile = page.getByRole("dialog", { name: "Add related file" });
+  const addField = addFile.getByRole("textbox");
+  await expect(addField).toBeFocused();
+  expect(await addField.evaluate((field) => {
+    const box = field.getBoundingClientRect();
+    return document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2) === field;
+  })).toBe(true);
+  expect((await addFile.boundingBox())!.height).toBeGreaterThan(40);
+  await addField.press("Escape");
+  await expect(addFile).toHaveCount(0);
+  await app.getByRole("listbox", { name: "Scripts" }).getByRole("option", { name: /Order script/ }).press("Escape");
+  await expect(scriptEditor).toHaveCount(0);
+  await expect(orderScript).toHaveAttribute("aria-selected", "true");
   await app.getByRole("button", { name: "Apps menu" }).click();
   await app
     .getByRole("region", { name: "Apps menu" })

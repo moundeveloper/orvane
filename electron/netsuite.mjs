@@ -3,7 +3,7 @@ import { ipcMain, webContents } from "electron";
 // Only the Orvane window can address its own browser guests. No arbitrary page
 // JavaScript or credentials are exposed through this bridge.
 
-const WRITES = ["save-file", "create-folder", "upload-file", "rename-item", "move-items", "delete-items", "run-script", "run-task", "set-deployment-status"];
+const WRITES = ["save-file", "create-folder", "upload-file", "rename-item", "move-items", "delete-items", "run-script", "run-task", "set-deployment-status", "save-deployment-parameters", "clear-script-logs"];
 /** Whether the page still has a NetSuite session: signed out, NetSuite
  * redirects its home page to the login page. Unknown counts as signed in. */
 async function signedIn(contents) {
@@ -54,6 +54,10 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
     if (!allowed(event)) throw Error("Unauthorized request.");
     return processing.openRecord(event.sender, origin, kind, id);
   });
+  ipcMain.handle("orvane:netsuite-open-page", (event, origin, url, background) => {
+    if (!allowed(event)) throw Error("Unauthorized request.");
+    return processing.openPage(event.sender, origin, url, background);
+  });
   const run = async (event, id, operation, args, expectedSessionEpoch) => {
     const options = typeof args === "string" ? { sql: args } : args || {};
     if (!allowed(event)) throw Error("Unauthorized request.");
@@ -89,10 +93,16 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         "run-task",
         "set-deployment-status",
         "task-status",
+        // Scripts view (port of Magic NetSuite's script page).
+        "deployment-parameters",
+        "save-deployment-parameters",
+        "clear-script-logs",
+        "suitelet-url",
+        "record-deployments",
       ].includes(operation)
     )
       throw Error("Unknown NetSuite operation.");
-    if (["run-task", "set-deployment-status", "task-status"].includes(operation) && (!Number.isSafeInteger(options.deploymentId) || options.deploymentId <= 0))
+    if (["run-task", "set-deployment-status", "task-status", "deployment-parameters", "save-deployment-parameters", "clear-script-logs", "suitelet-url"].includes(operation) && (!Number.isSafeInteger(options.deploymentId) || options.deploymentId <= 0))
       throw Error("Choose a deployment (scriptdeployment.primarykey).");
     if (operation === "set-deployment-status" && !["NOTSCHEDULED", "SCHEDULED", "TESTING", "RELEASED"].includes(options.status))
       throw Error("Invalid deployment status.");
@@ -241,6 +251,26 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         !(options.fileIds.length + options.folderIds.length))
     )
       throw Error("Choose files or folders to delete.");
+    if (operation === "save-deployment-parameters") {
+      const values = options.values;
+      const plain = (v) =>
+        v === null || typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v)) ||
+        (typeof v === "string" && v.length <= 100000);
+      if (
+        !values || typeof values !== "object" || Array.isArray(values) ||
+        !Object.keys(values).length || Object.keys(values).length > 100 ||
+        !Object.entries(values).every(([key, v]) =>
+          /^custscript[a-z0-9_]*$/i.test(key) &&
+          (plain(v) || (Array.isArray(v) && v.length <= 1000 && v.every((item) => typeof item === "string" || typeof item === "number"))))
+      )
+        throw Error("Only custscript parameters with plain values can be saved.");
+    }
+    if (
+      operation === "record-deployments" &&
+      options.recordType !== undefined &&
+      (typeof options.recordType !== "string" || !/^[a-z0-9_]{1,100}$/i.test(options.recordType))
+    )
+      throw Error("Invalid record type.");
     const offset = options.offset ?? 0;
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000000)
       throw Error("Invalid result offset.");
@@ -272,6 +302,8 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         overwrite: options.overwrite,
         deploymentId: options.deploymentId,
         status: options.status,
+        values: options.values,
+        recordType: options.recordType,
       },
       origin: id,
     }).replace(/</g, "\\u003c");
@@ -428,6 +460,46 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         if (problem) throw Error('NetSuite refused to run the deployment: ' + problem);
         return { deploymentId: id, scriptId: deployment.scriptid, name: deployment.name, scriptType: deployment.scripttype, originalStatus, submittedAt };
         } catch (error) { return await putBack(error); }
+      }
+      if (input.operation === 'deployment-parameters') {
+        // The deployment's custscript parameters, as Magic's script page edits them.
+        if (!N.record?.load) throw Error('Reading a deployment is unavailable for this role.');
+        const rec = await N.record.load.promise({ type: 'scriptdeployment', id: input.options.deploymentId });
+        const plain = v => v instanceof Date ? v.toISOString() : v;
+        const parameters = rec.getFields().filter(id => /^custscript/i.test(id)).map(id => {
+          let field = null; try { field = rec.getField({ fieldId: id }); } catch {}
+          let text = null; try { text = rec.getText({ fieldId: id }); } catch {}
+          const value = rec.getValue({ fieldId: id });
+          return { id, label: field?.label || id, type: field?.type || null, value: Array.isArray(value) ? value.map(plain) : plain(value ?? null), text: Array.isArray(text) ? text.join(', ') : text ?? null };
+        }).sort((a, b) => String(a.label).localeCompare(String(b.label)));
+        return { deploymentId: input.options.deploymentId, scriptid: rec.getValue({ fieldId: 'scriptid' }) || null, parameters };
+      }
+      if (input.operation === 'save-deployment-parameters') {
+        if (!N.record?.submitFields) throw Error('Changing a deployment is unavailable for this role.');
+        await N.record.submitFields.promise({ type: 'scriptdeployment', id: input.options.deploymentId, values: input.options.values, options: { enableSourcing: true, ignoreMandatoryFields: true } });
+        return { deploymentId: input.options.deploymentId, saved: Object.keys(input.options.values) };
+      }
+      if (input.operation === 'clear-script-logs') {
+        // NetSuite's own "Delete" on the deployment's Execution Log subtab (the request Magic sends:
+        // script = the deployment number, scripttype = the script's internal ID).
+        const [deployment] = await run('SELECT primarykey, deploymentid, script FROM scriptdeployment WHERE primarykey = ?', [input.options.deploymentId]);
+        if (!deployment) throw Error('Deployment ' + input.options.deploymentId + ' not found.');
+        if (!deployment.deploymentid) throw Error('NetSuite did not return a deployment number for this deployment.');
+        await fetchChecked('/app/common/scripting/scriptnote.nl?delete=T&id=&script=' + encodeURIComponent(deployment.deploymentid) + '&scripttype=' + encodeURIComponent(deployment.script), 'the execution log');
+        return { deploymentId: deployment.primarykey, scriptId: deployment.script, cleared: true };
+      }
+      if (input.operation === 'suitelet-url') {
+        const [deployment] = await run('SELECT sd.scriptid AS deployment, s.scriptid AS script, s.scripttype FROM scriptdeployment sd JOIN script s ON s.id = sd.script WHERE sd.primarykey = ?', [input.options.deploymentId]);
+        if (!deployment) throw Error('Deployment ' + input.options.deploymentId + ' not found.');
+        if (deployment.scripttype !== 'SCRIPTLET') throw Error('Only Suitelet deployments have a page to open.');
+        const path = N.url.resolveScript({ scriptId: String(deployment.script).toLowerCase(), deploymentId: String(deployment.deployment).toLowerCase(), returnExternalUrl: false });
+        return { url: new URL(path, location.origin).href };
+      }
+      if (input.operation === 'record-deployments') {
+        // Magic's "Scripts deployed" view: which scripts run on a record type.
+        if (!input.options.recordType)
+          return { recordTypes: await run("SELECT sd.recordtype AS recordtype, COUNT(*) AS deployments FROM scriptdeployment sd WHERE sd.recordtype IS NOT NULL GROUP BY sd.recordtype ORDER BY sd.recordtype") };
+        return { rows: await run('SELECT s.id, s.name, s.scriptid, s.scripttype, sd.primarykey, sd.scriptid AS deployment, sd.isdeployed, sd.status, sd.loglevel, sd.recordtype FROM scriptdeployment sd JOIN script s ON s.id = sd.script WHERE UPPER(sd.recordtype) = UPPER(?) ORDER BY s.name, sd.scriptid', [input.options.recordType]) };
       }
       if (input.operation === 'run-script') {
         // Like Magic NetSuite's quick script: N modules unpacked, async body. Adds captured logs with levels,
@@ -740,7 +812,13 @@ export function setupNetSuite(isOrvane, partition, processing, lifecycle = {}) {
         ]);
         return { folders, files, path };
       }
-      if (input.operation === 'scripts') return { rows: await run('SELECT script.scriptid, script.id, script.name, script.scripttype, entity.entityid AS owner, file.name AS scriptfile, file.id AS fileid FROM script LEFT JOIN entity ON script.owner = entity.id LEFT JOIN file ON file.id = script.scriptfile ORDER BY script.name') };
+      if (input.operation === 'scripts') {
+        const rows = await run('SELECT script.scriptid, script.id, script.name, script.scripttype, entity.entityid AS owner, file.name AS scriptfile, file.id AS fileid FROM script LEFT JOIN entity ON script.owner = entity.id LEFT JOIN file ON file.id = script.scriptfile ORDER BY script.name');
+        // Deployment counts for the list (optional: the list still loads without them).
+        const counts = await run("SELECT script, COUNT(*) AS deployments, SUM(CASE WHEN isdeployed = 'T' THEN 1 ELSE 0 END) AS deployed FROM scriptdeployment GROUP BY script").catch(() => []);
+        const byScript = new Map(counts.map(c => [Number(c.script), c]));
+        return { rows: rows.map(r => { const c = byScript.get(Number(r.id)); return c ? { ...r, deployments: Number(c.deployments) || 0, deployed: Number(c.deployed) || 0 } : r; }) };
+      }
       if (input.operation === 'deployments') return { rows: await run('SELECT scriptDeployment.scriptid, scriptDeployment.recordtype, scriptDeployment.isdeployed, scriptDeployment.status, scriptDeployment.loglevel, scriptDeployment.primarykey, scriptDeployment.deploymentid FROM scriptdeployment WHERE script = ? ORDER BY scriptDeployment.scriptid', [input.options.id]) };
       const pageSize = 100, index = Math.floor(input.options.offset / pageSize), offset = index * pageSize;
       try {

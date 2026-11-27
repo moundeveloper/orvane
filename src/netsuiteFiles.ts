@@ -243,6 +243,20 @@ export async function clearVersions(environment: string, fileId: number) {
     failed(e);
   }
 }
+export async function removeVersion(version: FileVersion) {
+  const key = fileKey(version.environment, version.fileId);
+  versionCache.set(
+    key,
+    (await listVersions(version.environment, version.fileId)).filter(
+      (v) => v.id !== version.id,
+    ),
+  );
+  try {
+    await db.table("versions").delete(version.id);
+  } catch (e) {
+    failed(e);
+  }
+}
 // Lines added and removed going from `before` to `after`.
 export function lineDelta(before: string, after: string) {
   const a = before.split("\n"),

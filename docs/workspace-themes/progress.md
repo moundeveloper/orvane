@@ -8,7 +8,7 @@
 - [x] Compare the live panel with the approved reference and verify the workflow in isolated browser and Electron workspaces.
 - [x] Improve header legibility over wallpaper. Check both header clusters and the preview badge against the user's Emerald Archive video.
 - [x] Style pass (Claude, 26.11.2026): remove the top-left wordmark, put the Orvane mark in the dock's Center canvas button, theme the dock and Orvane's floating surfaces from the palette, drop the Plain header frost, and move the Appearance entry into the Workspace options settings area.
-- [ ] Implement the approved Terminal Auto tint. The six original Lab previews and implementation notes are in [Terminal over wallpaper](terminal-lab/README.md).
+- [x] Implement the approved Terminal Auto tint. The six original Lab previews and implementation notes are in [Terminal over wallpaper](terminal-lab/README.md).
 
 ## Workflow
 

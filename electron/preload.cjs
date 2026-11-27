@@ -140,6 +140,7 @@ contextBridge.exposeInMainWorld("orvaneDesktop", {
   netsuite: {
     tabs: () => ipcRenderer.invoke("orvane:netsuite-tabs"),
     openRecord: (origin, kind, id) => ipcRenderer.invoke("orvane:netsuite-open-record", origin, kind, id),
+    openPage: (origin, url, background) => ipcRenderer.invoke("orvane:netsuite-open-page", origin, url, background),
     run: (id, operation, args) => ipcRenderer.invoke("orvane:netsuite-run", id, operation, args),
   },
   /** A Browser page's alert/confirm/prompt, shown as an Orvane card. */

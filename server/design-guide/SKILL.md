@@ -77,6 +77,7 @@ Use UI Maker Lab (`uimaker_lab_round`, `uimaker_lab_write`, `uimaker_lab_view`).
 
 ## What the owner rejects (do not ship)
 
+- Coloured stripes or bars on one edge of a card, row, message or code line (`inset 2px 0 0` shadows, thick `border-left`). Hard rule: a design with this anywhere is rejected. Use a soft full-row tint, a dot or a label.
 - Cyberpunk / glitch / neon / HUD styling; anything "jarring" or "glitchy" (text that disappears and reappears).
 - Bouncing, overshoot, staggered entrances, a "jump" at the start of an animation, layout that moves to make room for an animation, waiting before input works, lingering exits.
 - Bulky indicators: keep loaders small and compact (the DNA loader had to be compressed in width and its merged dots made smaller).

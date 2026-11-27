@@ -1,32 +1,17 @@
 <script setup lang="ts">
 import {
-  computed,
   nextTick,
   onBeforeUnmount,
   onMounted,
   ref,
   watch,
 } from "vue";
-import {
-  agentNames,
-  agentPermissions,
-  type AgentProvider,
-  type AgentRun,
-} from "../agentSessions";
+import { agentNames, type AgentProvider, type AgentRun } from "../agentSessions";
 import { agentRequest } from "../exposition";
-import { flatten, type CanvasApp } from "../model";
+import type { CanvasApp } from "../model";
 import { harness } from "../agentHarness";
-import {
-  api,
-  baseName,
-  DRAG_MIME,
-  parentOf,
-  type FileEntry,
-  type Roots,
-} from "./files/explorer";
 import CustomSelect from "./CustomSelect.vue";
 import Icon from "./Icon.vue";
-import { accountById, accountDetail, accountReady, activeAccounts, claudeAccounts, loadAccounts } from "../claudeAccounts";
 import SessionChat from "./SessionChat.vue";
 import type { AgentDraft } from "../agentNavigation";
 import SessionList from "./SessionList.vue";
@@ -44,8 +29,8 @@ const emit = defineEmits<{
   "pin-draft": [draft: AgentDraft];
   /** Open this session in an Agent sessions app. */
   open: [key: string];
+  /** A task started here: Agent sessions follows its live run. */
   started: [run: AgentRun];
-  starting: [active: boolean];
 }>();
 /** New task starts a session; Sessions picks one and chats with it here. */
 const mode = ref<"new" | "sessions">("new");
@@ -71,10 +56,58 @@ watch(listCollapsed, (value) => {
 });
 const searchField = () => panel.value?.querySelector<HTMLInputElement>(".session-search input");
 const chat = ref<{ focus(): void }>();
+/** Agent sessions loads on demand: focus its composer once it is there
+ * (unless the user has moved on: another tab, or typing in another field). */
+let focusWatch: MutationObserver | undefined;
+/** The dock's height (folder card, pictures, composer): the New task box
+ * follows it as the draft grows. */
+const composeHeight = ref(190);
+let composeWatch: MutationObserver | undefined;
+let composeSize: ResizeObserver | undefined;
+let measured: Element | null = null;
+function watchCompose() {
+  const root = panel.value;
+  if (!root || composeWatch) return;
+  const follow = () => {
+    const compose = root.querySelector(".launcher-new .cs-compose");
+    if (compose === measured) return;
+    composeSize?.disconnect();
+    measured = compose;
+    if (!compose) return;
+    composeSize = new ResizeObserver(() => {
+      const height = (compose as HTMLElement).offsetHeight;
+      if (height) composeHeight.value = height;
+    });
+    composeSize.observe(compose);
+  };
+  composeWatch = new MutationObserver(follow);
+  composeWatch.observe(root, { childList: true, subtree: true });
+  follow();
+}
+function focusNew() {
+  focusWatch?.disconnect();
+  const root = panel.value;
+  if (!root) return;
+  const attempt = () => {
+    if (mode.value !== "new") return true;
+    const field = root.querySelector<HTMLTextAreaElement>('.launcher-new textarea[aria-label="Message"]');
+    if (!field) return false;
+    const active = document.activeElement;
+    const typingElsewhere = active instanceof HTMLElement && !root.contains(active)
+      && (active.isContentEditable || active.matches("input, textarea, select, iframe, webview"));
+    if (!typingElsewhere) field.focus({ preventScroll: true });
+    return true;
+  };
+  if (attempt()) return;
+  focusWatch = new MutationObserver(() => {
+    if (attempt()) focusWatch?.disconnect();
+  });
+  focusWatch.observe(root, { childList: true, subtree: true });
+}
 watch(mode, async (value) => {
   await nextTick();
   if (value === "sessions") searchField()?.focus({ preventScroll: true });
-  if (value === "new") prompt.value?.focus({ preventScroll: true });
+  if (value === "new") focusNew();
 });
 /** Enter or a click: go to the session's composer. */
 async function openChosen(session: AgentSession) {
@@ -90,14 +123,13 @@ function sessionsKey(event: KeyboardEvent) {
   if (target?.closest(".session-list")) return;
   list.value?.key(event);
 }
-/** Ctrl+Shift+J while the Sessions tab shows a chat pins that chat. */
+/** Ctrl+Shift+J pins the draft (New task) or the chat shown (Sessions). */
 function pinChosen() {
   if (mode.value === "new") {
-    if (busy.value || !surveying.value) return false;
-    emit("pin-draft", { provider: provider.value, folder: folder.value || surveying.value,
-      text: draft.value, paths: paths.value, model: model.value.trim(),
-      ...(provider.value === "claude" ? { profileId: profileId.value } : {}) });
-    draft.value = "";
+    const value = latest.value ?? newDraft.value;
+    if (!value) return false;
+    emit("pin-draft", value);
+    latest.value = { ...value, text: "" };
     return true;
   }
   if (mode.value !== "sessions" || !chosen.value) return false;
@@ -114,7 +146,6 @@ const preferencesKey = "orvane.agent-launcher.v1";
 type Preferences = {
   provider?: AgentProvider;
   models?: Partial<Record<AgentProvider, string>>;
-  folders?: string[];
   draft?: string;
 };
 function preferences(): Preferences {
@@ -129,211 +160,86 @@ const provider = ref<AgentProvider>(
   saved.provider === "claude" ? "claude" : "codex",
 );
 const models = ref(saved.models ?? {});
-const recent = ref(saved.folders ?? []);
-const draft = ref(saved.draft ?? "");
 const surveying = ref("");
-const folder = ref("");
-const customFolder = ref("");
-const directory = ref("");
-const entries = ref<FileEntry[]>([]);
-const browsing = ref(false);
-const attaching = ref(false);
-const paths = ref<string[]>([]);
-const attachment = ref("");
-const busy = ref(false);
 const error = ref("");
 const panel = ref<HTMLElement>();
-const prompt = ref<HTMLTextAreaElement>();
-const attachmentInput = ref<HTMLInputElement>();
-const customModel = ref(false);
-const modelCatalogues = ref<Record<string, { value: string; label: string }[]>>({});
+/** The draft handed to the composer (on open and on a provider switch);
+ * `latest` follows what the composer holds now. */
+const newDraft = ref<AgentDraft | null>(null);
+const latest = ref<AgentDraft | null>(null);
 const previous =
   document.activeElement instanceof HTMLElement ? document.activeElement : null;
-let browseSequence = 0;
-let disposed = false;
 let restoreFocus = false;
-const model = computed({
-  get: () => models.value[provider.value] ?? "",
-  set: (value: string) => {
-    models.value[provider.value] = value;
-  },
-});
 const providerOptions = Object.entries(agentNames).map(([value, label]) => ({
   value,
   label,
 }));
-// Claude account for this task: the New chats account unless picked here
-// (the pick is not remembered; Settings decides the default).
-const accountPick = ref("");
-const profileId = computed(() => accountPick.value || claudeAccounts.newChatProfileId);
-const accountOptions = computed(() =>
-  activeAccounts().map((account) => ({
-    value: account.id,
-    label: `${account.name} · ${accountDetail(account)}`,
-    disabled: !accountReady(account),
-  })),
-);
-const catalogueKey = computed(() => (provider.value === "claude"
-  ? `claude:${profileId.value}:${accountById(profileId.value)?.auth?.checkedAt ?? 0}` : provider.value));
-const modelOptions = computed(() => {
-  const listed = modelCatalogues.value[catalogueKey.value];
-  const options = listed?.length
-    ? listed
-    : provider.value === "claude"
-      ? ["sonnet", "opus", "haiku", "fable"].map((value) => ({
-          value,
-          label: value[0]!.toUpperCase() + value.slice(1),
-        }))
-      : [];
-  return [
-    ...(options.some((option) => option.value === "")
-      ? []
-      : [{ value: "", label: "Provider default" }]),
-    ...options,
-    ...(model.value && !options.some((option) => option.value === model.value)
-      ? [{ value: model.value, label: model.value }]
-      : []),
-    { value: "?", label: "Enter model ID…" },
-  ];
-});
-function chooseModel(value: string) {
-  customModel.value = value === "?";
-  if (value !== "?") model.value = value;
+function draftFor(kind: AgentProvider, text: string, folder: string, paths: string[] = []): AgentDraft {
+  return {
+    provider: kind,
+    folder,
+    text,
+    paths,
+    model: models.value[kind] ?? "",
+    // The default edit mode from Agent sessions → Settings.
+    mode: harness.settings.defaultModes?.[kind] ?? "",
+    effort: "",
+  };
 }
-const pinned = computed(() => {
-  const folders = new Set<string>();
-  for (const app of props.apps) {
-    if (app.archived || app.deleted) continue;
-    for (const block of flatten(app.blocks)) {
-      if (block.kind !== "files") continue;
-      try {
-        const state = JSON.parse(block.value || "{}");
-        for (const path of state.pins ?? [])
-          if (typeof path === "string") folders.add(path);
-        for (const pane of state.panes ?? [])
-          if (typeof pane.path === "string") folders.add(pane.path);
-      } catch {
-        /* An empty explorer contributes no folders. */
-      }
-    }
-  }
-  return [...folders];
-});
-const folderOptions = computed(() => [
-  { value: "", label: "Surveying", icon: "folder" },
-  ...[...new Set([...recent.value, ...pinned.value, folder.value])]
-    .filter((path) => path && path !== "?")
-    .map((path) => ({
-      value: path,
-      label: baseName(path) || path,
-      icon: "folder",
-    })),
-  { value: "?", label: "Choose a folder…", icon: "folder-open" },
-]);
-function chooseFolder(value: string) {
-  if (value === "?") {
-    browsing.value = true;
-    customFolder.value = folder.value;
-    void browse(folder.value || undefined);
-  } else {
-    folder.value = value;
-    closeBrowse();
-  }
+/** Another provider keeps the text, folder and attachments. */
+function chooseProvider(value: string) {
+  const kind: AgentProvider = value === "claude" ? "claude" : "codex";
+  if (kind === provider.value) return;
+  const now = latest.value ?? newDraft.value;
+  provider.value = kind;
+  newDraft.value = draftFor(kind, now?.text ?? "", now?.folder || surveying.value, now?.paths ?? []);
+  latest.value = null;
+  void nextTick(focusNew);
 }
-function closeBrowse() {
-  browsing.value = false;
-  browseSequence++;
+/** Sent: as soon as the draft's run starts, Agent sessions takes it over and
+ * shows it working (steps, the DNA loader). The session key comes later,
+ * once the CLI has written the session; it is the fallback. */
+let handedOver = false;
+async function handOver(runId: string) {
+  if (handedOver) return;
+  handedOver = true;
+  if (latest.value) latest.value = { ...latest.value, text: "", runId: undefined };
+  const run = await agentRequest<AgentRun | null>("inspect-run", { id: runId }).catch(() => null);
+  if (run) emit("started", run);
+  else handedOver = false;
 }
-async function browse(path?: string) {
-  const sequence = ++browseSequence;
-  error.value = "";
-  try {
-    const target = path || (await api<Roots>("roots")).home;
-    const data = await api<{ entries: FileEntry[] }>("list", { path: target });
-    if (sequence !== browseSequence) return;
-    directory.value = target;
-    entries.value = data.entries.filter((entry) => entry.dir && !entry.hidden);
-  } catch (cause) {
-    if (sequence === browseSequence) showError(cause);
-  }
+function trackDraft(value: AgentDraft) {
+  latest.value = value;
+  if (value.model !== undefined) models.value[value.provider] = value.model;
+  if (value.runId && mode.value === "new") void handOver(value.runId);
 }
-function useFolder(path: string) {
-  if (!path.trim()) return;
-  folder.value = path.trim();
-  closeBrowse();
-}
-function addPaths(items: string[]) {
-  paths.value = [
-    ...new Set([
-      ...paths.value,
-      ...items.map((path) => path.trim()).filter(Boolean),
-    ]),
-  ].slice(0, 20);
-}
-function drop(event: DragEvent) {
-  const files = event.dataTransfer?.getData(DRAG_MIME);
-  if (!files) return;
-  try {
-    const { paths: dropped } = JSON.parse(files);
-    if (Array.isArray(dropped))
-      addPaths(dropped.filter((path) => typeof path === "string"));
-  } catch {
-    /* Ignore drag data from other apps. */
-  }
+function started(key: string) {
+  if (mode.value !== "new" || handedOver) return;
+  handedOver = true;
+  if (latest.value) latest.value = { ...latest.value, text: "" };
+  emit("open", key);
 }
 function showError(cause: unknown) {
   error.value =
-    cause instanceof Error ? cause.message : "Could not start the task.";
+    cause instanceof Error ? cause.message : "Could not prepare the task.";
 }
 function storePreferences() {
+  const now = latest.value ?? newDraft.value;
   localStorage.setItem(
     preferencesKey,
     JSON.stringify({
       provider: provider.value,
       models: models.value,
-      folders: recent.value,
-      draft: draft.value,
+      draft: now ? now.text : saved.draft ?? "",
     }),
   );
 }
-async function start() {
-  if (busy.value || !draft.value.trim() || !surveying.value) return;
-  busy.value = true;
-  emit("starting", true);
-  error.value = "";
-  try {
-    const message = paths.value.length
-      ? `${draft.value}\n\nLocal attachments:\n${paths.value.map((path) => JSON.stringify(path)).join("\n")}`
-      : draft.value;
-    const run = await agentRequest<AgentRun>("start", {
-      message,
-      target: {
-        provider: provider.value,
-        ...(provider.value === "claude" ? { profileId: profileId.value } : {}),
-        folder: folder.value || undefined,
-        model: model.value.trim() || undefined,
-        // The default edit mode from Agent sessions → Settings.
-        ...(harness.settings.defaultModes?.[provider.value] ? { mode: harness.settings.defaultModes[provider.value] } : {}),
-      },
-    });
-    if (folder.value)
-      recent.value = [...new Set([folder.value, ...recent.value])].slice(0, 8);
-    draft.value = "";
-    if (!disposed) emit("started", run);
-  } catch (cause) {
-    if (!disposed) showError(cause);
-  } finally {
-    busy.value = false;
-    emit("starting", false);
-  }
-}
 function close() {
-  if (busy.value) return;
   restoreFocus = true;
   emit("close");
 }
 function dismiss() {
-  if (!busy.value) emit("close");
+  emit("close");
 }
 function dismissOnFrameFocus() {
   if (document.activeElement instanceof HTMLIFrameElement) dismiss();
@@ -342,76 +248,37 @@ function outside(event: PointerEvent) {
   if (event.button !== 0) return;
   const path = event.composedPath();
   if (
-    ![panel.value, props.popovers, props.anchor].some(
+    [panel.value, props.popovers, props.anchor].some(
       (element) => element && path.includes(element),
     )
   )
-    dismiss();
+    return;
+  // The composer's menus (model, effort, account) and picture peek are
+  // teleported to the body: they still belong to the launcher.
+  if (path.some((node) => node instanceof Element && node.matches(".select-popover, .image-peek")))
+    return;
+  dismiss();
 }
-async function toggleAttachments(open = !attaching.value) {
-  attaching.value = open;
-  if (open) {
-    await nextTick();
-    attachmentInput.value?.focus({ preventScroll: true });
-  }
-}
-function promptKey(event: KeyboardEvent) {
-  if (event.isComposing || busy.value) return;
-  if (event.key === "Escape") {
-    event.preventDefault();
-    event.stopPropagation();
-    panel.value?.focus({ preventScroll: true });
-  } else if (
-    event.key === "@" &&
-    /(?:^|\s)$/.test(draft.value.slice(0, prompt.value?.selectionStart ?? 0))
-  ) {
-    event.preventDefault();
-    void toggleAttachments(true);
-  } else if (
-    event.key === "Enter" &&
-    !event.shiftKey &&
-    !event.ctrlKey &&
-    !event.metaKey &&
-    !event.altKey
-  ) {
-    event.preventDefault();
-    if (!event.repeat) void start();
-  }
-}
-watch(
-  [provider, catalogueKey],
-  ([kind, key], before) => {
-    if (kind !== before?.[0]) customModel.value = false;
-    if (!modelCatalogues.value[key]) {
-      void agentRequest<{ models: { value: string; label: string }[] }>(
-        "models",
-        { provider: kind, ...(kind === "claude" ? { profileId: profileId.value } : {}) },
-      )
-        .then(({ models: listed }) => {
-          modelCatalogues.value[key] = listed;
-        })
-        .catch(() => {});
-    }
-  },
-  { immediate: true },
-);
-void loadAccounts();
 onMounted(async () => {
+  watchCompose();
   document.addEventListener("pointerdown", outside, true);
   window.addEventListener("orvane:guest-pointer-down", dismiss);
   window.addEventListener("blur", dismissOnFrameFocus);
-  await nextTick();
-  prompt.value?.focus({ preventScroll: true });
   try {
     surveying.value = (
       await agentRequest<{ surveying: string }>("launcher")
     ).surveying;
+    newDraft.value = draftFor(provider.value, saved.draft ?? "", surveying.value);
+    await nextTick();
+    focusNew();
   } catch (cause) {
     showError(cause);
   }
 });
 onBeforeUnmount(() => {
-  disposed = true;
+  focusWatch?.disconnect();
+  composeWatch?.disconnect();
+  composeSize?.disconnect();
   document.removeEventListener("pointerdown", outside, true);
   window.removeEventListener("orvane:guest-pointer-down", dismiss);
   window.removeEventListener("blur", dismissOnFrameFocus);
@@ -430,8 +297,6 @@ onBeforeUnmount(() => {
     tabindex="-1"
     aria-label="AI launcher"
     @keydown.esc.stop.prevent="close"
-    @dragover.prevent
-    @drop.prevent="drop"
   >
     <header>
       <Icon name="ai" :size="16" />
@@ -440,10 +305,21 @@ onBeforeUnmount(() => {
         <button type="button" role="tab" :aria-selected="mode === 'sessions'" @click="mode = 'sessions'">Sessions{{ sessionCount ? ` · ${sessionCount}` : "" }}</button>
       </div>
       <span class="launcher-space"></span>
-      <button v-if="mode === 'new'" type="button" class="launcher-icon" aria-label="Pin new session"
-        data-tip="Pin new session · Ctrl+Shift+J" :disabled="busy || !surveying" @click="pinChosen()">
-        <Icon name="pin" :size="15" />
-      </button>
+      <template v-if="mode === 'new'">
+        <CustomSelect
+          class="launcher-provider"
+          :model-value="provider"
+          aria-label="Provider"
+          :options="providerOptions"
+          trigger-icon="bot"
+          :teleport-to="popovers"
+          @update:model-value="chooseProvider"
+        />
+        <button type="button" class="launcher-icon" aria-label="Pin new session"
+          data-tip="Pin new session · Ctrl+Shift+J" :disabled="!newDraft" @click="pinChosen()">
+          <Icon name="pin" :size="15" />
+        </button>
+      </template>
       <template v-if="mode === 'sessions'">
         <button type="button" class="launcher-icon" aria-label="Pin to side" data-tip="Pin to side · Ctrl+Shift+J" :disabled="!chosen" @click="chosen && emit('pin', chosen.key)">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 2.5 13.5 6l-2.5 1-2.5 3 .5 2.5L4 7.5 6.5 8l3-2.5z" /><path d="M5.5 10.5 2.5 13.5" /></svg>
@@ -455,7 +331,6 @@ onBeforeUnmount(() => {
       <button
         type="button"
         aria-label="Close AI launcher"
-        :disabled="busy"
         @click="close"
       >
         <Icon name="close" :size="15" />
@@ -491,182 +366,27 @@ onBeforeUnmount(() => {
         <span class="launcher-space"></span><kbd>Esc</kbd> close
       </footer>
     </div>
-    <form v-if="mode === 'new'" @submit.prevent="start">
-      <div class="agent-composer">
-        <textarea
-          ref="prompt"
-          v-model="draft"
-          rows="2"
-          maxlength="12000"
-          aria-label="Task prompt"
-          aria-keyshortcuts="Enter Shift+Enter Escape"
-          placeholder="What should the agent work on?"
-          :readonly="busy"
-          @keydown="promptKey"
-        />
-        <div class="agent-context">
-          <button
-            type="button"
-            class="attach-trigger"
-            aria-label="Add context"
-            :aria-expanded="attaching"
-            :disabled="busy"
-            @click="toggleAttachments()"
-          >
-            <Icon name="attachment" :size="13" />Add context <kbd>@</kbd>
-          </button>
-          <ul
-            v-if="paths.length"
-            class="attachments"
-            aria-label="Local attachments"
-          >
-            <li v-for="path in paths" :key="path">
-              <span :title="path">{{ baseName(path) }}</span>
-              <button
-                type="button"
-                :disabled="busy"
-                :aria-label="`Remove ${baseName(path)}`"
-                @click="paths = paths.filter((item) => item !== path)"
-              >
-                <Icon name="close" :size="12" />
-              </button>
-            </li>
-          </ul>
-        </div>
-        <div v-if="attaching" class="agent-row">
-          <input
-            ref="attachmentInput"
-            v-model="attachment"
-            aria-label="Attachment path"
-            placeholder="Path to a local file or folder"
-            :disabled="busy"
-            @keydown.enter.prevent="
-              addPaths([attachment]);
-              attachment = '';
-            "
-          />
-          <button
-            type="button"
-            :disabled="busy || !attachment.trim()"
-            @click="
-              addPaths([attachment]);
-              attachment = '';
-            "
-          >
-            Add path
-          </button>
-        </div>
-        <div class="agent-controls">
-          <CustomSelect
-            v-model="provider"
-            aria-label="Provider"
-            :options="providerOptions"
-            trigger-icon="bot"
-            prefer-above
-            :teleport-to="popovers"
-            :disabled="busy"
-          />
-          <CustomSelect
-            v-if="provider === 'claude' && accountOptions.length > 1"
-            :model-value="profileId"
-            aria-label="Claude account"
-            :options="accountOptions"
-            trigger-icon="lock"
-            prefer-above
-            :teleport-to="popovers"
-            :disabled="busy"
-            @update:model-value="accountPick = $event"
-          />
-          <CustomSelect
-            :model-value="model"
-            aria-label="Model"
-            :options="modelOptions"
-            search-label="Find a model"
-            trigger-icon="cpu"
-            prefer-above
-            :teleport-to="popovers"
-            :disabled="busy"
-            @update:model-value="chooseModel"
-          />
-          <CustomSelect
-            :model-value="folder"
-            aria-label="Working folder"
-            :options="folderOptions"
-            search-label="Find a folder"
-            trigger-icon="folder"
-            prefer-above
-            :teleport-to="popovers"
-            :disabled="busy"
-            @update:model-value="chooseFolder"
-          />
-          <button
-            class="agent-start"
-            type="submit"
-            aria-label="Start task"
-            :title="busy ? 'Starting…' : 'Start task'"
-            :disabled="busy || !draft.trim() || !surveying"
-          >
-            <Icon name="up" :size="16" />
-          </button>
-        </div>
-        <input
-          v-if="customModel"
-          v-model="model"
-          aria-label="Model ID"
-          placeholder="Model ID"
-          :disabled="busy"
-        />
-        <div v-if="browsing" class="agent-picker">
-          <div class="agent-row">
-            <input
-              v-model="customFolder"
-              aria-label="Folder path"
-              placeholder="Absolute folder path"
-              @keydown.enter.prevent="useFolder(customFolder)"
-            />
-            <button
-              type="button"
-              :disabled="!customFolder.trim()"
-              @click="useFolder(customFolder)"
-            >
-              Use path
-            </button>
-          </div>
-          <div v-if="directory" class="agent-row">
-            <button
-              type="button"
-              :disabled="!parentOf(directory)"
-              @click="browse(parentOf(directory) ?? undefined)"
-            >
-              Up
-            </button>
-            <span :title="directory">{{ directory }}</span>
-            <button type="button" @click="useFolder(directory)">
-              Use folder
-            </button>
-          </div>
-          <div class="agent-folders">
-            <button
-              v-for="entry in entries"
-              :key="entry.path"
-              type="button"
-              @click="browse(entry.path)"
-            >
-              <Icon name="folder" :size="14" />{{ entry.name }}
-            </button>
-          </div>
-        </div>
-      </div>
-      <p v-if="error" class="agent-error" role="alert">{{ error }}</p>
-      <footer>
-        <div class="agent-destination">
-          <span :title="folder || surveying">{{
-            folder || surveying || "Preparing Surveying…"
-          }}</span
-          ><small>{{ agentPermissions[provider] }}</small>
-        </div>
+    <!-- New task is the Agent sessions composer itself (a draft pane): the same
+         round Send, picture paste, slash menu and mode pills as every chat box. -->
+    <div v-if="mode === 'new'" class="launcher-new">
+      <SessionChat
+        v-if="newDraft"
+        class="launcher-new-chat"
+        :style="{ height: `${composeHeight}px` }"
+        session-key=""
+        :initial-draft="newDraft"
+        place="launcher-new"
+        @leave="panel?.focus({ preventScroll: true })"
+        @draft-state="trackDraft"
+        @session-key="started"
+      />
+      <p v-else-if="error" class="agent-error" role="alert">{{ error }}</p>
+      <p v-else class="launcher-preparing" role="status">Preparing Surveying…</p>
+      <footer class="launcher-keys">
+        <kbd>Enter</kbd> start <kbd>Ctrl</kbd><kbd>V</kbd> paste picture <kbd>/</kbd> skills <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>J</kbd> pin
+        <span class="launcher-space"></span><kbd>Esc</kbd> close
       </footer>
-    </form>
+    </div>
   </section>
 </template>
 
@@ -708,13 +428,8 @@ onBeforeUnmount(() => {
   opacity: 0;
   transform: translateY(8px);
 }
-.agent-launcher .agent-composer,
-.agent-launcher .agent-composer:has(> textarea:focus) {
-  background: transparent;
-}
 header,
-footer,
-.agent-row {
+footer {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -723,10 +438,6 @@ header {
   padding: 9px 13px;
   border-bottom: 1px solid #e1e8ec;
   font-size: 13px;
-}
-header strong {
-  flex: 1;
-  font-weight: 600;
 }
 .launcher-space {
   flex: 1;
@@ -751,6 +462,17 @@ header strong {
   box-shadow: 0 1px 2px #263f5512;
   color: #273f50;
 }
+/* The provider sits in the header: the composer below has the model, effort
+   and edit mode, exactly as in Agent sessions. */
+header :deep(.launcher-provider) {
+  flex: none;
+  width: auto;
+  height: 26px;
+  padding: 0 9px;
+  gap: 8px;
+  border-radius: 7px;
+  font-size: 12px;
+}
 .launcher-sessions {
   display: flex;
   flex-direction: column;
@@ -762,6 +484,8 @@ header strong {
   max-height: 42%;
 }
 .launcher-list .launcher-icon {
+  display: inline-grid;
+  place-items: center;
   width: 24px;
   height: 24px;
   padding: 0;
@@ -784,9 +508,46 @@ header strong {
   margin-top: 4px;
   border-top: 1px solid #e3eaee;
 }
+/* New task: only the Agent sessions dock (folder card and composer). The
+   launcher header already names the task, so the chat's own header and the
+   empty conversation stay out. Agent sessions keeps its own layout (tiles,
+   the dock pinned to the bottom); the box is as tall as the dock measures. */
+.launcher-new {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden auto;
+}
+.launcher-new-chat {
+  flex: none;
+  min-height: 0;
+}
+.launcher-new-chat :deep(.agent-sessions-app) {
+  background: transparent;
+}
+.launcher-new-chat :deep(.cs-session-header),
+.launcher-new-chat :deep(.cs-chat) {
+  display: none;
+}
+.launcher-new-chat :deep(.cs-compose) {
+  padding: 12px 12px 10px;
+}
+.launcher-new-chat :deep(.cs-dock) {
+  max-height: min(52dvh, 440px);
+}
+.launcher-preparing,
+.agent-error {
+  margin: 0;
+  padding: 18px 14px;
+  font-size: 12px;
+  color: #5d7381;
+}
+.agent-error {
+  color: #80432c;
+}
 /* Switching tabs fades the new one in. */
 .launcher-sessions,
-form {
+.launcher-new {
   animation: launcher-tab-in 150ms ease-out;
 }
 @keyframes launcher-tab-in {
@@ -836,42 +597,7 @@ header .launcher-icon:hover:not(:disabled) {
   color: #5d7381;
   font: 10.5px/1 "Cascadia Code", Consolas, monospace;
 }
-form {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  overflow: auto;
-}
-input {
-  width: 100%;
-  min-width: 0;
-  padding: 8px 9px;
-  font: inherit;
-  color: inherit;
-  border: 1px solid #d4dfe6;
-  border-radius: 7px;
-  background: #fbfcfd;
-}
-.agent-composer > textarea {
-  min-height: 61px;
-  max-height: 30vh;
-}
-.agent-controls {
-  display: grid;
-  gap: 8px;
-  align-items: center;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.2fr) minmax(0, 1fr) auto;
-}
-small {
-  color: #526976;
-}
-.agent-controls :deep(.select-trigger) {
-  width: 100%;
-  min-width: 0;
-  gap: 12px;
-  min-height: 30px;
-}
-button {
+header > button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -882,114 +608,15 @@ button {
   font-size: 12px;
   white-space: nowrap;
 }
-button:hover {
+header > button:hover {
   background: #e5edf2;
 }
-button:disabled {
+header button:disabled {
   opacity: 0.5;
 }
-button:focus-visible,
-input:focus-visible {
+header button:focus-visible {
   outline: 2px solid #6f8998;
   outline-offset: 1px;
-}
-.agent-start {
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  color: #273f50;
-  background: #dce9ef;
-  border-color: #bacfd9;
-}
-.agent-context {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-.attach-trigger {
-  border-color: transparent;
-  background: transparent;
-  padding-inline: 4px 6px;
-}
-.attach-trigger kbd {
-  font: inherit;
-  font-size: 10px;
-  padding-inline: 3px;
-  border: 1px solid #bcd0db;
-  border-radius: 3px;
-}
-.agent-destination {
-  display: grid;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-}
-.agent-destination > span,
-.agent-row > span,
-.attachments span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.agent-row > span {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-}
-.agent-picker {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-.agent-folders {
-  display: grid;
-  gap: 3px;
-  max-height: 110px;
-  overflow: auto;
-  align-content: start;
-}
-.agent-folders button {
-  justify-content: flex-start;
-}
-.attachments {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.attachments li {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 100%;
-  padding-left: 6px;
-  border-radius: 5px;
-  background: #e6eef3;
-}
-.attachments button {
-  border: 0;
-  padding: 4px;
-}
-.agent-error {
-  margin: 0;
-  color: #80432c;
-  font-size: 12px;
-}
-@media (max-width: 460px) {
-  .agent-controls {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-  }
-  .agent-controls :deep(.select-trigger:nth-child(3)) {
-    grid-column: 1 / 3;
-  }
-  .agent-controls .agent-start {
-    grid-column: 3;
-    grid-row: 2;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
   .agent-launcher-enter-active,
@@ -998,7 +625,7 @@ input:focus-visible {
     transition: none;
   }
   .launcher-sessions,
-  form {
+  .launcher-new {
     animation: none;
   }
 }

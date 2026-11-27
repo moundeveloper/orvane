@@ -175,6 +175,16 @@ export function setupProcessing({ partition, isOrvane }) {
     const path = { script: '/app/common/scripting/script.nl', deployment: '/app/common/scripting/scriptrecord.nl', file: '/app/common/media/mediaitem.nl', folder: '/app/common/media/mediaitemfolder.nl' }[kind];
     host.send('orvane:open-tab', { from: source.id, url: `${origin}${path}?id=${id}`, background: false });
   }
+  // A Suitelet page of this environment, in a Browser tab (Scripts: Open Suitelet).
+  function openPage(host, origin, url, background = false) {
+    if (!netSuite(origin)) throw Error('Invalid NetSuite environment.');
+    let target;
+    try { target = new URL(String(url)); } catch { throw Error('Invalid NetSuite page.'); }
+    if (target.origin !== origin || target.pathname !== '/app/site/hosting/scriptlet.nl') throw Error('Only Suitelet pages of this environment can be opened.');
+    const source = listSources(host).find(w => site(w.getURL())?.origin === origin);
+    if (!source) throw Error('Open a Browser tab for this environment first.');
+    host.send('orvane:open-tab', { from: source.id, url: target.href, background: background === true });
+  }
   async function acquire(host, origin, { parallel = false } = {}) {
     if (!netSuite(origin)) throw Error('Choose a valid NetSuite environment.');
     const k = key(host, origin);
@@ -234,6 +244,6 @@ export function setupProcessing({ partition, isOrvane }) {
     await load(entry);
     return entry.status === 'ready';
   }
-  return { environments, acquire, openRecord, sourceChanged, owns, reload,
+  return { environments, acquire, openRecord, openPage, sourceChanged, owns, reload,
     supportsParallelReads: true, onSignInReset: fn => { resetSignIn = fn; } };
 }

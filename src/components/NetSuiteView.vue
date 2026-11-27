@@ -278,6 +278,7 @@ const api = (
       netsuite?: {
         tabs(): Promise<Tab[]>;
         openRecord?(origin: string, kind: string, id: number): Promise<void>;
+        openPage?(origin: string, url: string, background?: boolean): Promise<void>;
         run(
           id: string,
           operation: string,
@@ -391,6 +392,11 @@ async function openRecord(kind: string, id: unknown) {
   } catch (e) {
     error.value = message(e);
   }
+}
+/** A Suitelet page in a Browser tab (Scripts: Open Suitelet). */
+async function openPage(url: string, background = false) {
+  if (!api?.openPage) throw Error("Opening pages requires Orvane Desktop.");
+  await api.openPage(selected.value, url, background);
 }
 function editScriptFile(file: { id: number; name: string }) {
   focusedTab.value.file = file;
@@ -606,6 +612,7 @@ onBeforeUnmount(() => {
               :environment="selected"
               :request="fileRequest"
               :open-record="openRecord"
+              :open-page="openPage"
               :status="selectedStatus"
               :initial-script="tab.script"
               @edit-file="editScriptFile"

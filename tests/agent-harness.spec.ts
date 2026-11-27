@@ -316,7 +316,7 @@ test("pin a new Codex draft, answer Plan questions and preview a viewed image", 
   await page.goto("/");
   await page.getByRole("button", { name: "AI launcher", exact: true }).click();
   const launcher = page.getByRole("dialog", { name: "AI launcher" });
-  await launcher.getByRole("textbox", { name: "Task prompt" }).fill("Choose the panel layout");
+  await launcher.getByRole("textbox", { name: "Message", exact: true }).fill("Choose the panel layout");
   await launcher.getByRole("button", { name: "Pin new session" }).click();
   const side = page.getByRole("complementary", { name: "Pinned AI session" });
   const composer = side.getByRole("textbox", { name: "Message", exact: true });
