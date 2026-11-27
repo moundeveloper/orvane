@@ -3887,18 +3887,6 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   background: #f2f6f8;
 }
-.cs-queue::before {
-  position: absolute;
-  top: -12px;
-  left: -17px;
-  width: 16px;
-  height: 26px;
-  border-left: 1px solid #b9cbd6;
-  border-bottom: 1px solid #b9cbd6;
-  border-bottom-left-radius: 8px;
-  content: "";
-  pointer-events: none;
-}
 .cs-queue header { display: flex; align-items: baseline; gap: 7px; color: #657b89; font-size: 11px; }
 .cs-queue header strong { text-transform: uppercase; letter-spacing: .04em; font-size: 10.5px; font-weight: 600; }
 .cs-queue-count { margin-left: auto; }
